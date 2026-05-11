@@ -402,14 +402,7 @@ function Build-X64Scaffold
     $cSources += Get-Item (Join-Path $root "kernel\\core\\ramfs.c")
     $cSources += Get-ChildItem -Path (Join-Path $root "kernel\\arch\\x86_64\\*.c") |
         Where-Object { $_.Name -ne "uefi_app.c" }
-    if ($BuildProfile -eq "Product") {
-        $cSources = @($cSources | Where-Object {
-            ($_.Name -ne "virtio_net.c") -and ($_.Name -ne "e1000e.c")
-        })
-    }
-    else {
-        $cSources = @($cSources | Where-Object { $_.Name -ne "network_disabled.c" })
-    }
+    $cSources = @($cSources | Where-Object { $_.Name -ne "network_disabled.c" })
 
     foreach ($source in $cSources) {
         $objectPath = Join-Path $buildDir ($source.BaseName + "-x86_64.o")
@@ -452,6 +445,9 @@ function Build-X64Scaffold
     [byte[]]$bootBytes = [System.IO.File]::ReadAllBytes($bootBin)
     [byte[]]$kernelBytes = [System.IO.File]::ReadAllBytes($kernelBin)
     $loaderSectorLimit = 1024
+    $loaderReserveWarning = 128
+    $loaderReserveHardMinimum = 96
+    $uefiKernelByteLimit = 2 * 1024 * 1024
     $sectorCount = [int][Math]::Ceiling($kernelBytes.Length / 512.0)
     $loaderSectorReserve = $loaderSectorLimit - $sectorCount
     $kernelSizeMap = Get-BinutilsSectionSizes -Path $kernelPe
@@ -473,6 +469,15 @@ function Build-X64Scaffold
 
     if ($sectorCount -gt $loaderSectorLimit) {
         throw "x86_64 scaffold exceeds the chunked BIOS loader budget of $loaderSectorLimit sectors."
+    }
+    if ($loaderSectorReserve -lt $loaderReserveHardMinimum) {
+        throw "x86_64 scaffold BIOS loader reserve $loaderSectorReserve is below the hard minimum of $loaderReserveHardMinimum sectors."
+    }
+    if ($loaderSectorReserve -lt $loaderReserveWarning) {
+        Write-Warning "x86_64 scaffold BIOS loader reserve $loaderSectorReserve is below the warning threshold of $loaderReserveWarning sectors."
+    }
+    if ($kernelBytes.Length -gt $uefiKernelByteLimit) {
+        throw "x86_64 UEFI payload exceeds the $uefiKernelByteLimit-byte UEFI kernel file contract."
     }
 
     for ($i = 0; $i -le ($bootBytes.Length - $marker.Length - 2); $i++) {
@@ -519,9 +524,11 @@ function Build-X64Scaffold
     $sizeReportLines = @(
         "LimitlessOS x86_64 size map",
         "kernel-bytes=$($kernelBytes.Length)",
-        "kernel-sectors=$sectorCount",
-        "sector-limit=$loaderSectorLimit",
-        "sector-reserve=$loaderSectorReserve",
+        "bios-kernel-sectors=$sectorCount",
+        "bios-sector-limit=$loaderSectorLimit",
+        "bios-sector-reserve=$loaderSectorReserve",
+        "uefi-kernel-byte-limit=$uefiKernelByteLimit",
+        "uefi-kernel-byte-reserve=$($uefiKernelByteLimit - $kernelBytes.Length)",
         "section-text=$($kernelSizeMap.Text)",
         "section-rodata=$($kernelSizeMap.Rodata)",
         "section-data=$($kernelSizeMap.Data)",
@@ -569,13 +576,13 @@ function Build-X64Scaffold
     $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $kernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
     $profileStatusLines = if ($BuildProfile -eq "Product") {
-        "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, network, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
+        "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
     }
     else {
         "- build profile: Experimental`n- experimental proof/runtime surfaces may initialize, but verifier-visible logs must label them experimental or proof-only and they are not product-path behavior"
     }
     $networkStatusLine = if ($BuildProfile -eq "Product") {
-        "- Product profile does not initialize virtio-net or e1000e runtime exchange paths; network proof surfaces are compiled out or stubbed unavailable while preserving no ambient network authority"
+        "- Product profile initializes broker-private virtio-net or e1000e networking only when supported hardware is present, exposes status through the shell net command, and reports truthful unavailable telemetry without sockets or ambient network authority when hardware or DHCP is absent"
     }
     else {
         "- Experimental UEFI media paths attach a modern virtio-net/e1000e PCI device, discover it through ECAM vendor/device matching, parse network device configuration, complete broker-private ARP/DHCP/DNS/HTTP proof exchanges, and still grant no filesystem, storage, or ambient network authority"
@@ -637,11 +644,11 @@ LimitlessOS boot manifest v1
 architecture=x86_64
 kernel=KERNEL64.BIN
 kernel-bytes=$($kernelBytes.Length)
-kernel-sectors=$sectorCount
-kernel-sector-limit=$loaderSectorLimit
-kernel-sector-reserve=$loaderSectorReserve
+kernel-byte-limit=$uefiKernelByteLimit
+kernel-byte-reserve=$($uefiKernelByteLimit - $kernelBytes.Length)
 kernel-checksum=$kernelChecksumHex
 handoff=uefi-loader-proof
+boot-contract=uefi-kernel-file
 "@
 
     Write-Host "Packaging x86_64 UEFI FAT image"
@@ -687,6 +694,7 @@ entry: _start
 paging: active 4-level long mode with 16 MiB identity/high-half alias map and higher-half kernel execution
 loader: bounded chunked BIOS loader reads the scaffold in 127-sector chunks and supports images up to 1024 sectors before the low-memory stack window
 loader-budget: bios-sector-limit $loaderSectorLimit current-sectors $sectorCount reserve-sectors $loaderSectorReserve enforced 1
+uefi-loader-budget: kernel-byte-limit $uefiKernelByteLimit current-bytes $($kernelBytes.Length) reserve-bytes $($uefiKernelByteLimit - $kernelBytes.Length) checksum $kernelChecksumHex enforced 1
 size-map: text-bytes $($kernelSizeMap.Text) rodata-bytes $($kernelSizeMap.Rodata) data-bytes $($kernelSizeMap.Data) bss-bytes $($kernelSizeMap.Bss) top-object $($topSizeObject.Name) top-object-total $($topSizeObject.Total)
 boot-info: shared x86/x64 handoff contract active
 package-archive: shared bootstrap package catalog v2 summary visible on BIOS and UEFI x64 paths with kernel-service manifests and payload offset/size/checksum metadata included for sealed x64 services
@@ -699,7 +707,7 @@ descriptors: x64 kernel installs its own long-mode GDT and TSS, exposes kernel s
 services: shared x64 service namespace scaffold with package-aware query ABI visible on BIOS and UEFI x64 paths, including policy, console, RAMFS, input, display, block, and hardware-inventory endpoints
 capabilities: x64 service handles are principal-scoped and runtime-bound, can grant, delegate with short leases and attenuation, route, query live target exposure, revoke with child cascade, drain by authorized launch-broker request, and reject unknown-principal, wrong-owner, expired, stale, stale-runtime, second-hop, or over-broad authority through int 0x80 and native syscall proofs
 console: x64 brokered console syscall surface accepts only principal-scoped console service capabilities, validates user image or stack buffers before reading bytes, writes to the boot/debug console path, and reports write/byte/denial telemetry through int 0x80
-input: x64 brokered input syscall surface accepts only principal-scoped input service capabilities, validates writable user-stack or kernel-high buffers before copying command bytes, keeps the original byte-stream read path for compatibility, adds a line-oriented read syscall for shell command boundaries, normalizes backspace/delete bytes in line reads before copying command text to userspace, stages IRQ1-backed PS/2 keyboard input in a bounded broker-owned queue with set-1 scancode translation on BIOS boots, set-2 decoding support for framebuffer/UEFI handoff, and automatic set-1 fallback when high-bit set-1 release scancodes appear after a UEFI handoff, translates basic extended cursor/delete escape sequences, actively polls during authorized keyboard reads, clears stale pending bytes on scancode interpretation switches, discards overlong stale fragments before copying later lines, adds explicit keyboard byte-read and hardware-line-read syscalls that consume staged hardware bytes only after the caller presents scoped input authority, keeps hardware-keyboard bytes separate from the deterministic seeded startup stream until a live shell mode explicitly consumes them, seeds the command stream as cat README.TXT followed by a typo-corrected help line, line-delimited help ls, help cat, help stat, help mkdir, help write, write SHELL.TXT, cat SHELL.TXT, apps with M1-labeled product inventory, pwd, ls /, ls APPS with the same M1-labeled inventory, info ls, info cat, info stat, info mkdir, info write, cat README.TXT, stat README.TXT, helpX, and noop, and reports read/line/byte/edit/denial/eof plus keyboard IRQ/poll/scancode/translated-byte/pending/read/line/drop/last-key telemetry through int 0x80
+input: x64 brokered input syscall surface accepts only principal-scoped input service capabilities, validates writable user-stack or kernel-high buffers before copying command bytes, keeps the original byte-stream read path for compatibility, adds a line-oriented read syscall for shell command boundaries, normalizes backspace/delete bytes in line reads before copying command text to userspace, stages IRQ1-backed PS/2 keyboard input in a bounded broker-owned queue with set-1 scancode translation on BIOS boots, set-2 decoding support for framebuffer/UEFI handoff, and automatic set-1 fallback when high-bit set-1 release scancodes appear after a UEFI handoff, translates basic extended cursor/delete escape sequences, actively polls during authorized keyboard reads, clears stale pending bytes on scancode interpretation switches, discards overlong stale fragments before copying later lines, adds explicit keyboard byte-read and hardware-line-read syscalls that consume staged hardware bytes only after the caller presents scoped input authority, keeps hardware-keyboard bytes separate from the deterministic seeded startup stream until a live shell mode explicitly consumes them, seeds the command stream as cat README.TXT followed by a typo-corrected help line, line-delimited help ls, help cat, help stat, help mkdir, help write, write SHELL.TXT, cat SHELL.TXT, apps with M3-labeled product inventory, pwd, ls /, ls APPS with the same M3-labeled inventory, info ls, info cat, info stat, info mkdir, info write, cat README.TXT, stat README.TXT, helpX, and noop, and reports read/line/byte/edit/denial/eof plus keyboard IRQ/poll/scancode/translated-byte/pending/read/line/drop/last-key telemetry through int 0x80
 disk-sourced-shell: brokered shell startup now scans real ISO /APPS descriptors through the scoped read-only filesystem delegation, prefers checksum-verified disk flat binaries over sealed fallback code, and keeps keyboard input, console, RAMFS, block, and ISO filesystem authority separately scoped
 display: x64 brokered display syscall surface accepts only principal-scoped display service capabilities, consumes UEFI GOP framebuffer metadata from boot-info, draws bounded markers, clears a kernel-bounded text panel, renders tiny 5x7-font text only when framebuffer geometry is available, mirrors successful brokered console writes into a bounded line-cleared scrolling framebuffer viewport without exposing direct framebuffer access to shell processes, reports draw/pixel/clear/text/console-mirror/line-clear/wrap/scroll/denial/unavailable/token telemetry, and degrades to an explicit unavailable count on raw BIOS boots instead of bypassing the capability model
 block: x64 brokered block syscall surface exposes read-only sector-read paths only through principal-scoped block service capabilities, rejects wrong-owner calls before touching disk data, reports availability/status/read/byte/denial/unavailable/token telemetry, proves raw BIOS boot-media LBA0 reads with the 0x55AA boot signature, proves the UEFI/ISO AHCI drs-block route can publish a read-only block-worker-owned endpoint over a sealed drs-read result, lets the kernel storage layer consume that block capability for a broker-private ISO9660 README.TXT read, delegates one scoped read-only drs-fs-user filesystem capability to ring3 for /APPS/LS.APP, keeps one persistent drs-fs-shell delegation for a dynamic disk-sourced /APPS descriptor scan, and keeps NVMe IO reads broker-private without block publication, write, format, commit, or additional filesystem authority
@@ -816,7 +824,7 @@ uefi-graphics: UEFI app locates GOP through firmware boot services, reports fram
 uefi-framebuffer-handoff: UEFI records GOP framebuffer base/size/geometry in boot-info, maps it through a dedicated 0xB000 page-directory in the boot handoff, sets the framebuffer boot flag so UEFI boots report flags 0x3F, the x64 kernel draws/logs a kernel-owned marker before runtime mappings begin, ring3 userspace can draw a bounded marker plus a clearable text panel only through delegated display authority, and successful ring3 console writes are mirrored by the console service into a bounded line-cleared scrolling framebuffer viewport with dedicated console-mirror, line-clear, wrap, and scroll telemetry
 uefi-media-read: UEFI app resolves its loaded-image device, opens the boot volume through Simple File System, reads the staged root README.TXT, and verifies 66 bytes with prefix proof and checksum 0xDAF085B1 on both removable UEFI image and UEFI ISO verification
 uefi-loader-manifest: UEFI app reads BOOTMAN.TXT from the same boot volume, parses the declared KERNEL64.BIN byte count and FNV-1a checksum, and requires manifest-valid telemetry before payload verification
-uefi-loader-payload: UEFI app loads KERNEL64.BIN from boot media into an aligned 768 KiB handoff buffer and verifies $($kernelBytes.Length) bytes with checksum $kernelChecksumHex before reporting loader match 1 on both removable UEFI image and UEFI ISO verification, preserving verified loader headroom for upcoming x64 storage checkpoints without adding disk, MMIO, DMA, or filesystem authority
+uefi-loader-payload: UEFI app loads KERNEL64.BIN from boot media into an aligned 2 MiB handoff buffer and verifies $($kernelBytes.Length) bytes with checksum $kernelChecksumHex before reporting loader match 1 on both removable UEFI image and UEFI ISO verification, preserving verified loader headroom for upcoming x64 storage checkpoints without adding disk, MMIO, DMA, or filesystem authority
 uefi-kernel-placement: UEFI app selects a 2 MiB-aligned address inside the largest conventional firmware region, allocates exact EfiLoaderData pages with AllocatePages, copies the verified kernel payload into that allocation, zeroes page padding, rechecks the copied bytes before reporting placement match 1, and then separately proves the linked x64 scaffold can be allocated and copied at physical 0x10000 with entry 0xFFFFFFFF80010000, boot-info 0x9000, and page-root 0x1000 recorded for the guarded kernel-entry handoff
 uefi-memory-map: UEFI app captures the firmware memory map after payload load and again after kernel placement, reporting descriptor count, descriptor size, map key, page totals, conventional/loader/boot/runtime page classes, and largest conventional region before taking the final silent map key used by ExitBootServices
 uefi-boot-handoff: UEFI app allocates low handoff pages at 0x1000, builds the 16 MiB identity/high-half page-table substrate plus framebuffer page-directory at 0xB000, reserves 0xC000 for the broker-installed kernel MMIO page table, writes boot-info at 0x9000, copies a trampoline at 0xA000, and reports ready 1 with jump-ready 1 before leaving firmware
@@ -839,8 +847,8 @@ artifact-size-map: $sizeReportPathReport
     Write-Host "  architecture : x86_64"
     Write-Host "  build kind   : bios long-mode scaffold"
     Write-Host "  kernel size  : $($kernelBytes.Length) bytes"
-    Write-Host "  kernel sects : $sectorCount"
-    Write-Host "  loader budget: $sectorCount / $loaderSectorLimit sectors ($loaderSectorReserve reserve)"
+    Write-Host "  bios sectors : $sectorCount / $loaderSectorLimit sectors ($loaderSectorReserve reserve)"
+    Write-Host "  uefi budget  : $($kernelBytes.Length) / $uefiKernelByteLimit bytes ($($uefiKernelByteLimit - $kernelBytes.Length) reserve)"
     Write-Host "  section map  : text $($kernelSizeMap.Text), rodata $($kernelSizeMap.Rodata), data $($kernelSizeMap.Data), bss $($kernelSizeMap.Bss)"
     Write-Host "  top object   : $($topSizeObject.Name) ($($topSizeObject.Total) bytes)"
     Write-Host "  image        : $imagePath"

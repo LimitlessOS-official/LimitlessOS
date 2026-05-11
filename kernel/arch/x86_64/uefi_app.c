@@ -11,7 +11,7 @@
 #define EFI_PIXEL_BLUE_GREEN_RED_RESERVED8_BIT_PER_COLOR 1u
 #define EFI_FILE_MODE_READ 0x0000000000000001ull
 #define LIMITLESS_EFI_LOCAL_ERROR 0xFFFFFFFFFFFFFFFEull
-#define LIMITLESS_UEFI_LOADER_BUFFER_BYTES (768u * 1024u)
+#define LIMITLESS_UEFI_LOADER_BUFFER_BYTES (2u * 1024u * 1024u)
 #define LIMITLESS_UEFI_MEMORY_MAP_BYTES (32u * 1024u)
 #define LIMITLESS_UEFI_KERNEL_PLACEMENT_ALIGNMENT 0x0000000000200000ull
 #define LIMITLESS_UEFI_KERNEL_LINKED_BASE 0x0000000000010000ull
@@ -176,6 +176,7 @@ struct uefi_boot_handoff
     u32 ready;
     u32 pages;
     u32 identity_entries;
+    u32 kernel_bytes;
     u32 kernel_sectors;
     u32 trampoline_bytes;
     u32 trampoline_ready;
@@ -2222,6 +2223,7 @@ static void init_boot_handoff(struct uefi_boot_handoff *handoff)
     handoff->ready = 0u;
     handoff->pages = LIMITLESS_UEFI_BOOT_HANDOFF_PAGES;
     handoff->identity_entries = (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES;
+    handoff->kernel_bytes = 0u;
     handoff->kernel_sectors = 0u;
     handoff->trampoline_bytes = 0u;
     handoff->trampoline_ready = 0u;
@@ -2261,6 +2263,7 @@ static void write_boot_handoff_line(
 
     if (handoff != NULL && payload != NULL)
     {
+        handoff->kernel_bytes = payload->bytes;
         handoff->kernel_sectors = (payload->bytes + 511u) / 512u;
     }
 
@@ -2424,6 +2427,8 @@ static void write_boot_handoff_line(
     append_dec_u32(line, sizeof(line), &length, (handoff != NULL) ? handoff->trampoline_ready : 0u);
     append_string(line, sizeof(line), &length, " identity ");
     append_dec_u64(line, sizeof(line), &length, (handoff != NULL) ? handoff->identity_map_bytes : 0u);
+    append_string(line, sizeof(line), &length, " kernel-bytes ");
+    append_dec_u32(line, sizeof(line), &length, (handoff != NULL) ? handoff->kernel_bytes : 0u);
     append_string(line, sizeof(line), &length, " sectors ");
     append_dec_u32(line, sizeof(line), &length, (handoff != NULL) ? handoff->kernel_sectors : 0u);
     append_string(line, sizeof(line), &length, " entries ");

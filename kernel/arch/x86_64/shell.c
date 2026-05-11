@@ -6,6 +6,7 @@
 #include "ramfs.h"
 #include "runtime_image_x64.h"
 #include "types.h"
+#include "virtio_net_x64.h"
 
 #define SHELL64_MAX_LINE_BYTES 128u
 #define SHELL64_MAX_PATH_BYTES 128u
@@ -144,6 +145,89 @@ static u32 shell64_write_text(u32 console_capability_handle, u32 owner_id, const
         owner_id,
         (const u8 *)text,
         shell64_length(text));
+}
+
+static u32 shell64_format_decimal_u8(char *buffer, u32 value)
+{
+    u32 offset = 0u;
+
+    if (value >= 100u)
+    {
+        buffer[offset++] = (char)('0' + (value / 100u));
+        value %= 100u;
+        buffer[offset++] = (char)('0' + (value / 10u));
+        buffer[offset++] = (char)('0' + (value % 10u));
+        return offset;
+    }
+
+    if (value >= 10u)
+    {
+        buffer[offset++] = (char)('0' + (value / 10u));
+        buffer[offset++] = (char)('0' + (value % 10u));
+        return offset;
+    }
+
+    buffer[offset++] = (char)('0' + value);
+    return offset;
+}
+
+static u32 shell64_format_ipv4(char *buffer, u32 address)
+{
+    u32 offset = 0u;
+    u32 index;
+
+    for (index = 0u; index < 4u; ++index)
+    {
+        u32 octet = (address >> (24u - (index * 8u))) & 0xFFu;
+        offset += shell64_format_decimal_u8(buffer + offset, octet);
+        if (index != 3u)
+        {
+            buffer[offset++] = '.';
+        }
+    }
+
+    return offset;
+}
+
+static u32 shell64_write_ipv4_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 address)
+{
+    char buffer[16];
+    u32 length;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    length = shell64_format_ipv4(buffer, address);
+    (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static u32 shell64_print_network_status(u32 console_capability_handle, u32 owner_id)
+{
+    if (virtio_net64_dhcp_ack() == 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "no network\n");
+    }
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "network: online\n");
+    (void)shell64_write_ipv4_line(
+        console_capability_handle,
+        owner_id,
+        "ip: ",
+        virtio_net64_dhcp_ip());
+    (void)shell64_write_ipv4_line(
+        console_capability_handle,
+        owner_id,
+        "gateway: ",
+        virtio_net64_dhcp_gateway());
+    (void)shell64_write_ipv4_line(
+        console_capability_handle,
+        owner_id,
+        "dns: ",
+        virtio_net64_dhcp_dns());
+    return shell64_write_text(console_capability_handle, owner_id, "authority: brokered\n");
 }
 
 static u8 shell64_lower(u8 value)
@@ -431,6 +515,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: info <command>\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "net"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: net - show brokered network status\n");
+    }
+
     if (shell64_token_equals(token_start, token_length, "pwd"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: pwd\n");
@@ -481,6 +570,7 @@ static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
     return shell64_token_equals(token_start, token_length, "apps")
         || shell64_token_equals(token_start, token_length, "help")
         || shell64_token_equals(token_start, token_length, "info")
+        || shell64_token_equals(token_start, token_length, "net")
         || shell64_token_equals(token_start, token_length, "pwd");
 }
 
@@ -605,12 +695,13 @@ static u32 shell64_list_apps(
         "STAT\n"
         "TOUCH\n"
         "WRITE\n"
-        "Unavailable in M1:\n"
+        "Product services:\n"
+        "Network (hardware-gated): use net\n"
+        "Unavailable in M3:\n"
         "ASK (not AI)\n"
         "ECHO\n"
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n"
         "GUI\n"
-        "Network\n"
         "Installer\n"
         "Package manager\n"
         "AI assistant\n"
@@ -947,9 +1038,10 @@ u32 shell64_execute_line(
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Builtins: apps help info pwd\n"
+            "Builtins: apps help info net pwd\n"
             "Product apps: append cat copy delete ls mkdir move rename stat touch write\n"
-            "Unavailable in M1: ask (not AI), echo, aliases, gui, network, installer, package-manager, ai\n");
+            "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n"
+            "Unavailable in M3: ask (not AI), echo, aliases, gui, installer, package-manager, ai\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
@@ -960,6 +1052,11 @@ u32 shell64_execute_line(
     if (shell64_token_equals(command_start, command_length, "apps"))
     {
         return shell64_list_apps(console_capability_handle, root_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "net"))
+    {
+        return shell64_print_network_status(console_capability_handle, owner_id);
     }
 
     if (shell64_token_equals(command_start, command_length, "info"))

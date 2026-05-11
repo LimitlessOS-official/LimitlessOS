@@ -121,6 +121,20 @@ function Get-BinutilsSectionSizes
     }
 }
 
+function Get-Fnv1aDataChecksum
+{
+    param([byte[]]$Bytes)
+
+    [uint32]$hash = 2166136261
+    foreach ($byte in $Bytes) {
+        [uint32]$value = $byte
+        $hash = [uint32](($hash -bxor $value) -band 0xFFFFFFFF)
+        $hash = [uint32](([uint64]$hash * [uint64]16777619) % [uint64]4294967296)
+    }
+
+    return $hash
+}
+
 function Assert-OutputContains
 {
     param(
@@ -178,9 +192,10 @@ function Assert-X64M1RuntimeSurface
         throw "QEMU verification failed: x64 persistent shell transcript was not found for M1 runtime surface validation."
     }
 
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help info pwd$' -Message "M1 runtime help did not label shell builtins."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help info net pwd$' -Message "M3 runtime help did not label shell builtins."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M1: ask \(not AI\), echo, aliases, gui, network, installer, package-manager, ai$' -Message "M1 runtime help did not label unavailable surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M3: ask \(not AI\), echo, aliases, gui, installer, package-manager, ai$' -Message "M3 runtime help did not label unavailable surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -188,6 +203,7 @@ function Assert-X64M1RuntimeSurface
     }
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net$' -Message "M3 apps output did not label Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Internal files hidden from app output: HELLO\.TXT INDEX\.TXT$' -Message "M1 apps output did not label hidden internal app files."
 
@@ -201,6 +217,8 @@ function Assert-X64LoaderBudget
     param([string]$Root)
 
     $loaderSectorLimit = 1024
+    $loaderReserveHardMinimum = 96
+    $uefiKernelByteLimit = 2 * 1024 * 1024
     $kernelPePath = Join-Path $Root "dist\\limitlessos-x86_64.pe"
     $artifactBinPath = Join-Path $Root "dist\\limitlessos-x86_64.scaffold.bin"
     $reportPath = Join-Path $Root "dist\\limitlessos-x86_64.scaffold.txt"
@@ -230,25 +248,39 @@ function Assert-X64LoaderBudget
     }
 
     $loaderSectorReserve = $loaderSectorLimit - $sectorCount
+    if ($loaderSectorReserve -lt $loaderReserveHardMinimum) {
+        throw "QEMU verification failed: x64 scaffold BIOS reserve $loaderSectorReserve is below the hard minimum of $loaderReserveHardMinimum sectors."
+    }
+    if ($kernelBytes.Length -gt $uefiKernelByteLimit) {
+        throw "QEMU verification failed: x64 UEFI kernel payload $($kernelBytes.Length) exceeds the $uefiKernelByteLimit-byte UEFI file contract."
+    }
+    $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $kernelBytes
+    $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
     $kernelSizeMap = Get-BinutilsSectionSizes -Path $kernelPePath
     $reportLines = @(Get-Content $reportPath)
     $sizeReportLines = @(Get-Content $sizeReportPath)
     $manifestLines = @(Get-Content $manifestPath)
 
     Assert-OutputContains -Lines $reportLines -Pattern ("^loader-budget: bios-sector-limit {0} current-sectors {1} reserve-sectors {2} enforced 1$" -f $loaderSectorLimit, $sectorCount, $loaderSectorReserve) -Message "x64 scaffold report loader budget proof is missing or stale."
+    Assert-OutputContains -Lines $reportLines -Pattern ("^uefi-loader-budget: kernel-byte-limit {0} current-bytes {1} reserve-bytes {2} checksum {3} enforced 1$" -f $uefiKernelByteLimit, $kernelBytes.Length, ($uefiKernelByteLimit - $kernelBytes.Length), $kernelChecksumHex) -Message "x64 scaffold report UEFI byte-budget proof is missing or stale."
     Assert-OutputContains -Lines $reportLines -Pattern ("^size-map: text-bytes {0} rodata-bytes {1} data-bytes {2} bss-bytes {3} top-object .+ top-object-total [1-9][0-9]*$" -f $kernelSizeMap.Text, $kernelSizeMap.Rodata, $kernelSizeMap.Data, $kernelSizeMap.Bss) -Message "x64 scaffold report section size map is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^kernel-bytes={0}$" -f $kernelBytes.Length) -Message "x64 size-map kernel byte count is missing or stale."
-    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^kernel-sectors={0}$" -f $sectorCount) -Message "x64 size-map kernel sector count is missing or stale."
-    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^sector-limit={0}$" -f $loaderSectorLimit) -Message "x64 size-map sector limit is missing."
-    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^sector-reserve={0}$" -f $loaderSectorReserve) -Message "x64 size-map sector reserve is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-kernel-sectors={0}$" -f $sectorCount) -Message "x64 size-map BIOS kernel sector count is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-sector-limit={0}$" -f $loaderSectorLimit) -Message "x64 size-map BIOS sector limit is missing."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-sector-reserve={0}$" -f $loaderSectorReserve) -Message "x64 size-map BIOS sector reserve is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-byte-limit={0}$" -f $uefiKernelByteLimit) -Message "x64 size-map UEFI byte limit is missing."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $kernelBytes.Length)) -Message "x64 size-map UEFI byte reserve is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-text={0}$" -f $kernelSizeMap.Text) -Message "x64 size-map text section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-rodata={0}$" -f $kernelSizeMap.Rodata) -Message "x64 size-map rodata section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-data={0}$" -f $kernelSizeMap.Data) -Message "x64 size-map data section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-bss={0}$" -f $kernelSizeMap.Bss) -Message "x64 size-map bss section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern '^top-object=(scaffold|display)-x86_64\.o ' -Message "x64 size-map top object contributor is missing."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-sectors={0}$" -f $sectorCount) -Message "x64 UEFI manifest kernel sector count is missing or stale."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-sector-limit={0}$" -f $loaderSectorLimit) -Message "x64 UEFI manifest loader sector limit is missing."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-sector-reserve={0}$" -f $loaderSectorReserve) -Message "x64 UEFI manifest loader sector reserve is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-bytes={0}$" -f $kernelBytes.Length) -Message "x64 UEFI manifest kernel byte count is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-limit={0}$" -f $uefiKernelByteLimit) -Message "x64 UEFI manifest kernel byte limit is missing."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $kernelBytes.Length)) -Message "x64 UEFI manifest kernel byte reserve is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-checksum={0}$" -f $kernelChecksumHex) -Message "x64 UEFI manifest kernel checksum is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern '^boot-contract=uefi-kernel-file$' -Message "x64 UEFI manifest boot contract is missing or stale."
+    Assert-OutputNotContains -Lines $manifestLines -Pattern '^kernel-sector' -Message "x64 UEFI manifest still carries BIOS sector arithmetic."
 }
 
 function Wait-ForLogPattern
@@ -329,6 +361,7 @@ function Send-QemuKeyboardProbe
             "i", "n", "f", "o", "spc", "w", "r", "i", "t", "e", "ret",
             "c", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
             "s", "t", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
+            "n", "e", "t", "ret",
             "w", "r", "i", "t", "e", "spc", "w", "dot", "t", "x", "t", "spc", "o", "k", "ret",
             "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret",
             "e", "x", "i", "t", "ret"
@@ -2310,9 +2343,10 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ cat README\.TXT' -Message "x64 ring-3 input-backed prompt was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user input cli probe attempts 4 exits 4 result 0x49434C31 recorded 0x49434C31 expected 0x49434C31 command-bytes 14 read-bytes 32 prompt-bytes 14 console-writes 8 console-bytes 123 console-denials 0 input-reads 1 input-bytes 14 input-denials 0 input-eof 0 rip 0x00000000410003C0 rsp 0x0000000040020000 cs 0x0000000000000033 ss 0x000000000000002B' -Message "x64 ring-3 input/console/filesystem CLI proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help' -Message "x64 ring-3 shell stream help command was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help info pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help info net pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M1: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M3: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -2370,11 +2404,11 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] boot media read README\.TXT bytes 66 token 0xDAF085B1 prefix 1 status 0x0000000000000000' -Message "x64 UEFI boot-media file read proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] boot manifest read BOOTMAN\.TXT bytes [1-9][0-9]* token 0x[0-9A-F]+ valid 1 kernel-bytes [1-9][0-9]* kernel-checksum 0x[0-9A-F]+ status 0x0000000000000000' -Message "x64 UEFI loader manifest proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] loader payload read KERNEL64\.BIN bytes [1-9][0-9]* token 0x[0-9A-F]+ expected-bytes [1-9][0-9]* expected-token 0x[0-9A-F]+ match 1 status 0x0000000000000000' -Message "x64 UEFI loader payload checksum match was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] loader buffer base 0x[0-9A-F]+ capacity 786432 loaded [1-9][0-9]* pages [1-9][0-9]* token 0x[0-9A-F]+ match 1 status 0x0000000000000000' -Message "x64 UEFI loader handoff buffer proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] loader buffer base 0x[0-9A-F]+ capacity 2097152 loaded [1-9][0-9]* pages [1-9][0-9]* token 0x[0-9A-F]+ match 1 status 0x0000000000000000' -Message "x64 UEFI loader handoff buffer proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] memory map descriptors [1-9][0-9]* desc-size [1-9][0-9]* key 0x[0-9A-F]+ version [0-9]+ total-pages [1-9][0-9]* conventional-pages [1-9][0-9]* loader-pages [0-9]+ boot-pages [0-9]+ runtime-pages [0-9]+ largest-conv 0x[0-9A-F]+/[1-9][0-9]* status 0x0000000000000000' -Message "x64 UEFI memory map summary was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] kernel placement planned 1 request 0x[0-9A-F]+ base 0x[0-9A-F]+ bytes [1-9][0-9]* pages [1-9][0-9]* source 0x[0-9A-F]+ region 0x[0-9A-F]+/[1-9][0-9]* align 2097152 allocated 1 copied 1 token 0x[0-9A-F]+ match 1 status 0x0000000000000000' -Message "x64 UEFI firmware-backed kernel placement proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] linked kernel placement planned 1 request 0x0000000000010000 base 0x0000000000010000 bytes [1-9][0-9]* pages [1-9][0-9]* entry 0xFFFFFFFF80010000 boot-info 0x0000000000009000 page-root 0x0000000000001000 identity 16777216 source 0x[0-9A-F]+ allocated 1 copied 1 token 0x[0-9A-F]+ match 1 status 0x0000000000000000' -Message "x64 UEFI linked-base kernel placement proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] boot handoff tables planned 1 request 0x0000000000001000 base 0x0000000000001000 pages 13 pml4 0x0000000000001000 pdpt 0x0000000000002000 pd 0x0000000000003000 high-pdpt 0x0000000000004000 framebuffer-pd 0x000000000000B000 boot-info 0x0000000000009000 trampoline 0x000000000000A000 tramp-bytes [1-9][0-9]* tramp-ready 1 identity 16777216 sectors [1-9][0-9]* entries 8 flags 0x0000003F fb-base 0x[0-9A-F]+ fb-bytes 0x[0-9A-F]+ fb-geometry [1-9][0-9]*x[1-9][0-9]* fb-ppsl [1-9][0-9]* fb-format [0-1] fb-map-pdpt [0-9]+ fb-map-start [0-9]+ fb-map-entries [1-9][0-9]* fb-map-bytes [1-9][0-9]* fb-mapped 1 fb-token 0x[0-9A-F]+ token 0x[0-9A-F]+ allocated 1 built 1 ready 1 status 0x0000000000000000' -Message "x64 UEFI boot handoff tables and framebuffer map proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] boot handoff tables planned 1 request 0x0000000000001000 base 0x0000000000001000 pages 13 pml4 0x0000000000001000 pdpt 0x0000000000002000 pd 0x0000000000003000 high-pdpt 0x0000000000004000 framebuffer-pd 0x000000000000B000 boot-info 0x0000000000009000 trampoline 0x000000000000A000 tramp-bytes [1-9][0-9]* tramp-ready 1 identity 16777216 kernel-bytes [1-9][0-9]* sectors [1-9][0-9]* entries 8 flags 0x0000003F fb-base 0x[0-9A-F]+ fb-bytes 0x[0-9A-F]+ fb-geometry [1-9][0-9]*x[1-9][0-9]* fb-ppsl [1-9][0-9]* fb-format [0-1] fb-map-pdpt [0-9]+ fb-map-start [0-9]+ fb-map-entries [1-9][0-9]* fb-map-bytes [1-9][0-9]* fb-mapped 1 fb-token 0x[0-9A-F]+ token 0x[0-9A-F]+ allocated 1 built 1 ready 1 status 0x0000000000000000' -Message "x64 UEFI boot handoff tables and framebuffer map proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] handoff memory map descriptors [1-9][0-9]* desc-size [1-9][0-9]* key 0x[0-9A-F]+ version [0-9]+ total-pages [1-9][0-9]* conventional-pages [1-9][0-9]* loader-pages [1-9][0-9]* boot-pages [0-9]+ runtime-pages [0-9]+ largest-conv 0x[0-9A-F]+/[1-9][0-9]* status 0x0000000000000000' -Message "x64 UEFI post-placement handoff memory map was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] exit boot services status 0x0000000000000000 key 0x[0-9A-F]+ descriptors [1-9][0-9]* desc-size [1-9][0-9]* kernel-base 0x[0-9A-F]+ kernel-bytes [1-9][0-9]* kernel-pages [1-9][0-9]* placement-match 1 firmware-offline 1 handoff-ready 1' -Message "x64 UEFI ExitBootServices handoff proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] kernel entry guard linked-base 0x0000000000010000 linked-match 1 entry 0xFFFFFFFF80010000 boot-info 0x0000000000009000 page-root 0x0000000000001000 identity 16777216 tables-ready 1 jump-ready 1 reason handoff-ready' -Message "x64 UEFI kernel-entry guard proof was not observed."
@@ -2414,17 +2448,21 @@ else {
     }
     else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] build-profile Product product 1 experimental 0 experimental-runtime 0' -Message "x64 Product build-profile marker was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] experimental-runtime disabled proof-surface 0 gui unavailable network unavailable ai unavailable installer unavailable package-manager unavailable' -Message "x64 Product experimental-quarantine marker was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] experimental-runtime disabled proof-surface 0 gui unavailable network product-gated ai unavailable installer unavailable package-manager unavailable' -Message "x64 Product experimental-quarantine marker was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-compositor drs-compositor-init 0 drs-compositor-present 0 drs-compositor-cursor 0 drs-compositor-presents 0 drs-compositor-cursors 0' -Message "x64 Product compositor quarantine proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 0 drs-font-glyphs 256 drs-font-render 0 drs-font-renders 0' -Message "x64 Product font proof-surface quarantine was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 0 drs-wm-window-created 0 drs-wm-focus 0 drs-wm-present 0 drs-wm-windows 0 drs-wm-focuses 0 drs-wm-presents 0' -Message "x64 Product window-manager quarantine proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 0 drs-desktop-taskbar 0 drs-desktop-launcher 0 drs-desktop-terminal 0 drs-desktop-fileman 0 drs-desktop-settings 0' -Message "x64 Product desktop quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 0 drs-net-bar0 0x0000000000000000 drs-net-mapped 0 drs-net-common 0 drs-net-notify 0 drs-net-device-config 0 drs-net-mac 0x0000000000000000 drs-net-mac-nonzero 0 .* drs-net-tx 0 drs-net-rx 0 drs-net-arp-reply 0 .* fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 1 error 0' -Message "x64 Product network quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dhcp drs-dhcp-discover 0 drs-dhcp-offer 0 drs-dhcp-request 0 drs-dhcp-ack 0 drs-dhcp-ip 0x00000000 drs-dhcp-gateway 0x00000000 drs-dhcp-dns 0x00000000 drs-dhcp-lease 0 ambient-authority 0 unavailable 1 error 0' -Message "x64 Product DHCP quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dns drs-dns-query 0 drs-dns-response 0 drs-dns-rcode 0 drs-dns-resolved 0x00000000 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 1 error 0' -Message "x64 Product DNS quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-http drs-http-connected 0 drs-http-sent 0 drs-http-status 0 drs-http-response-bytes 0 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 1 error 0' -Message "x64 Product HTTP quarantine proof was not observed."
+        if ($NetworkDevice -eq "virtio") {
+            Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
+        }
+        else {
+            Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-e1000 drs-e1000-found 1 drs-e1000-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-e1000-mapped 1 drs-e1000-reset 1 drs-e1000-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-e1000-mac-nonzero 1 drs-e1000-link-up [0-1] drs-e1000-rx-queue 1 drs-e1000-tx-queue 1 drs-e1000-rx-buffers [1-9][0-9]* drs-e1000-tx 1 drs-e1000-rx 1 drs-e1000-dhcp 1 drs-e1000-dns 1 drs-e1000-http 200 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product e1000e brokered network proof was not observed."
+        }
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dhcp drs-dhcp-discover 1 drs-dhcp-offer 1 drs-dhcp-request 1 drs-dhcp-ack 1 drs-dhcp-ip 0x(?!00000000)[0-9A-F]{8} drs-dhcp-gateway 0x0A000202 drs-dhcp-dns 0x[0-9A-F]{8} drs-dhcp-lease [1-9][0-9]* ambient-authority 0 unavailable 0 error 0' -Message "x64 Product DHCP lease proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dns drs-dns-query 1 drs-dns-response 1 drs-dns-rcode 0 drs-dns-resolved 0x(?!00000000)[0-9A-F]{8} fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product DNS A-record proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-http drs-http-connected 1 drs-http-sent 1 drs-http-status [1-9][0-9]* drs-http-response-bytes [1-9][0-9]* fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product HTTP-over-TCP proof was not observed."
         Assert-OutputNotContains -Lines $outputLines -Pattern '\[x64\] drs-(compositor|wm|desktop).* 1' -Message "Product boot exposed an active GUI/window/desktop proof surface."
-        Assert-OutputNotContains -Lines $outputLines -Pattern '\[x64\] drs-(net|dhcp|dns|http).* unavailable 0' -Message "Product boot exposed an active network proof surface."
     }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] mmio planner service 9 .* map-request 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} plans 1 .* map-installed 1 .* port-state 3 .* policy-ready 1 .* denied-read-plan 0xFFFFFFFF read-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} read-state 3 read-flags 0x0000BFFF .* read-staged 1 read-denials 1 read-unavailable 0 denied-cmd-plan 0xFFFFFFFF cmd-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} cmd-state 3 cmd-flags 0x0001FFFF cmd-token 0x(?!00000000)[0-9A-F]{8} cmd-read-token 0x(?!00000000)[0-9A-F]{8} cmd-op 2 cmd-slot 0 cmd-header 32 cmd-table 144 cmd-cfis 20 cmd-cfis-dwords 5 cmd-prdt 1 cmd-prdt-bytes 16 cmd-atapi-packet 12 cmd-opcode 0x000000A0 cmd-packet-opcode 0x00000028 cmd-transfer 2048 cmd-armed 0 cmd-issued 0 cmd-dma 0 cmd-staged 1 cmd-denials 1 cmd-unavailable 0 denied-mem-plan 0xFFFFFFFF mem-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} mem-state 3 mem-flags 0x007BFFFF mem-token 0x(?!00000000)[0-9A-F]{8} mem-cmd-token 0x(?!00000000)[0-9A-F]{8} mem-slot 0 mem-pages 1 mem-page-bytes 4096 mem-page-virt 0x[0-9A-F]{13}000 mem-page-phys 0x[0-9A-F]{13}000 mem-page-checksum 0x76EFDDC5 mem-zeroed 1 mem-materialized 1 mem-list-off 0 mem-list-bytes 1024 mem-header-off 0 mem-header-bytes 32 mem-table-off 1024 mem-table-bytes 144 mem-prdt-off 1152 mem-prdt-bytes 16 mem-bounce-off 2048 mem-bounce-bytes 2048 mem-prdt-dbc 2047 mem-dma-low 0x00000000 mem-dma-high 0x00000000 mem-dma 0 mem-table-written 0 mem-port-programmed 0 mem-armed 0 mem-staged 1 mem-denials 1 mem-unavailable 0 denied-table-plan 0xFFFFFFFF table-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} table-state 3 table-flags 0x006FFFFF table-token 0x(?!00000000)[0-9A-F]{8} table-mem-token 0x(?!00000000)[0-9A-F]{8} table-check-before 0x76EFDDC5 table-check-after 0x3FBFAF45 table-check-changed 1 table-header-flags 0x00010025 table-prdtl 1 table-prdbc 0 table-ctba-low 0x00000000 table-ctba-high 0x00000000 table-cfis-type 0x00000027 table-cfis-flags 0x00000080 table-cfis-command 0x000000A0 table-cfis-device 0x00000040 table-cfis-count 0 table-packet-opcode 0x00000028 table-packet-blocks 1 table-prdt-dba-low 0x00000000 table-prdt-dba-high 0x00000000 table-prdt-dbc 2047 table-written 1 table-dma 0 table-port-programmed 0 table-armed 0 table-issued 0 table-staged 1 table-denials 1 table-unavailable 0 map-requests 1 .* queries 140 denials 9' -Message "x64 UEFI brokered MMIO AHCI table-prep proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] mmio planner service 9 .* denied-issue-plan 0xFFFFFFFF issue-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} issue-state 3 issue-flags 0x06FFFFFF issue-token 0x(?!00000000)[0-9A-F]{8} issue-table-token 0x(?!00000000)[0-9A-F]{8} issue-mem-token 0x(?!00000000)[0-9A-F]{8} issue-cmd-token 0x(?!00000000)[0-9A-F]{8} issue-read-token 0x(?!00000000)[0-9A-F]{8} issue-port 0x(?!FFFFFFFF)[0-9A-F]{8} issue-slot 0 issue-ci 0x00000000 issue-slot-mask 0x00000001 issue-slot-idle 1 issue-tfd-ready 1 issue-serr-clear 1 issue-policy-ready 1 issue-engine-st 0 issue-engine-fre 0 issue-engine-fr 0 issue-engine-cr 0 issue-stop-required 0 issue-start-required 1 issue-timeout 100 issue-poll-budget 10000 issue-table-check 0x3FBFAF45 issue-expected-check 0x3FBFAF45 issue-check-match 1 issue-dma 0 issue-port-programmed 0 issue-command-issued 0 issue-armed 0 issue-staged 1 issue-denials 1 issue-unavailable 0 map-requests 1 .* queries 170 denials 10' -Message "x64 UEFI brokered MMIO AHCI issue-preflight proof was not observed."
@@ -3599,6 +3637,16 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern 'This userspace shell is reading files through capability-checked handles\.' -Message "x64 persistent shell did not print README.TXT through the brokered filesystem path."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ stat readme\.txt' -Message "x64 persistent shell did not stat a lowercase README path."
     Assert-OutputContains -Lines $outputLines -Pattern 'type=file size=102' -Message "x64 persistent shell did not return README.TXT stat output."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ net' -Message "x64 persistent shell did not accept the Product net command."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $outputLines -Pattern '^no network$' -Message "x64 persistent shell did not report clean network unavailability on disk/BIOS media."
+    }
+    else {
+        Assert-OutputContains -Lines $outputLines -Pattern '^network: online$' -Message "x64 persistent shell did not report an active Product network lease."
+        Assert-OutputContains -Lines $outputLines -Pattern '^gateway: 10\.0\.2\.2$' -Message "x64 persistent shell did not report the DHCP gateway."
+        Assert-OutputContains -Lines $outputLines -Pattern '^dns: 10\.0\.2\.[0-9]+$' -Message "x64 persistent shell did not report the DHCP DNS server."
+        Assert-OutputContains -Lines $outputLines -Pattern '^authority: brokered$' -Message "x64 persistent shell did not label network authority as brokered."
+    }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ write w\.txt ok' -Message "x64 persistent shell did not accept a live write command with explicit text."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."
     Assert-OutputContains -Lines $outputLines -Pattern '^ok$' -Message "x64 persistent shell did not print the written file contents."

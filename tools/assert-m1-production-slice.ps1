@@ -14,15 +14,14 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
-$m1ShellBuiltins = @("apps", "help", "info", "pwd")
+$m1ShellBuiltins = @("apps", "help", "info", "net", "pwd")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
 $m1UnavailableFeatures = @(
-    "ASK (not AI; no consent-gated assistant path in M1)",
-    "ECHO (not product-path in M1)",
-    "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in M1 shell)",
-    "GUI/window-manager/desktop (experimental proof surface, not M1 product-path)",
-    "Network stack (experimental proof surface, not M1 product-path)",
+    "ASK (not AI; no consent-gated assistant path in Product)",
+    "ECHO (not Product path)",
+    "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in Product shell)",
+    "GUI/window-manager/desktop (experimental proof surface, not Product path)",
     "Installer",
     "Package manager",
     "AI assistant behavior"
@@ -422,10 +421,12 @@ function Assert-RuntimeShellSurfaceSource
     $source = Get-Content -Path $shellPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
-        "Builtins: apps help info pwd",
+        "Builtins: apps help info net pwd",
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
-        "Unavailable in M1: ask (not AI), echo, aliases, gui, network, installer, package-manager, ai",
+        "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
+        "Unavailable in M3: ask (not AI), echo, aliases, gui, installer, package-manager, ai",
         "ASK (not AI)",
+        "Network (hardware-gated): use net",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
@@ -460,7 +461,7 @@ function Assert-RuntimeShellSurfaceSource
     }
     foreach ($requiredProbeText in @(
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
-        "Unavailable ASK-not-AI ECHO aliases",
+        "Unavail ASK-not-AI ECHO aliases",
         "HELLO.TXT INDEX.TXT internal"
     )) {
         if (-not $runtimeSource.Contains($requiredProbeText)) {
@@ -474,6 +475,7 @@ function Assert-X64Artifacts
     $loaderSectorLimit = 1024
     $loaderReserveWarning = 128
     $loaderReserveHardMinimum = 96
+    $uefiKernelByteLimit = 2 * 1024 * 1024
     $stageDir = Join-Path $distDir "limitlessos-x86_64-uefi"
     $appsDir = Join-Path $stageDir "APPS"
     $manifestPath = Join-Path $stageDir "BOOTMAN.TXT"
@@ -517,9 +519,12 @@ function Assert-X64Artifacts
     if ($sectorReserve -lt $loaderReserveWarning) {
         Write-Warning "kernel sector reserve $sectorReserve is below the M1 warning threshold of $loaderReserveWarning sectors."
     }
+    if ($stagedKernelBytes.Length -gt $uefiKernelByteLimit) {
+        Fail-M1 "UEFI kernel byte count $($stagedKernelBytes.Length) exceeds the $uefiKernelByteLimit-byte UEFI file-size contract."
+    }
 
     $manifest = Read-KeyValueFile -Path $manifestPath
-    foreach ($key in @("architecture", "kernel", "kernel-bytes", "kernel-sectors", "kernel-sector-limit", "kernel-sector-reserve", "kernel-checksum")) {
+    foreach ($key in @("architecture", "kernel", "kernel-bytes", "kernel-byte-limit", "kernel-byte-reserve", "kernel-checksum", "boot-contract")) {
         if (-not $manifest.ContainsKey($key)) {
             Fail-M1 "BOOTMAN.TXT is missing required key '$key'."
         }
@@ -533,17 +538,17 @@ function Assert-X64Artifacts
     if ([int]$manifest["kernel-bytes"] -ne $stagedKernelBytes.Length) {
         Fail-M1 "BOOTMAN.TXT kernel byte count is stale."
     }
-    if ([int]$manifest["kernel-sectors"] -ne $sectorCount) {
-        Fail-M1 "BOOTMAN.TXT kernel sector count is stale."
+    if ([int]$manifest["kernel-byte-limit"] -ne $uefiKernelByteLimit) {
+        Fail-M1 "BOOTMAN.TXT UEFI kernel byte limit is stale."
     }
-    if ([int]$manifest["kernel-sector-limit"] -ne $loaderSectorLimit) {
-        Fail-M1 "BOOTMAN.TXT kernel sector limit is stale."
-    }
-    if ([int]$manifest["kernel-sector-reserve"] -ne $sectorReserve) {
-        Fail-M1 "BOOTMAN.TXT kernel sector reserve is stale."
+    if ([int]$manifest["kernel-byte-reserve"] -ne ($uefiKernelByteLimit - $stagedKernelBytes.Length)) {
+        Fail-M1 "BOOTMAN.TXT UEFI kernel byte reserve is stale."
     }
     if ($manifest["kernel-checksum"] -ne ("0x{0:X8}" -f $stagedChecksum)) {
         Fail-M1 "BOOTMAN.TXT kernel checksum is stale."
+    }
+    if ($manifest["boot-contract"] -ne "uefi-kernel-file") {
+        Fail-M1 "BOOTMAN.TXT boot contract is not the UEFI kernel file-size contract."
     }
 
     $appFiles = @(Get-ChildItem -Path $appsDir -Filter "*.APP" -File | Sort-Object Name)
@@ -597,6 +602,9 @@ function Assert-X64Artifacts
     if (-not ($reportLines | Where-Object { $_ -eq "loader-budget: bios-sector-limit $loaderSectorLimit current-sectors $sectorCount reserve-sectors $sectorReserve enforced 1" })) {
         Fail-M1 "scaffold report loader-budget line is missing or stale."
     }
+    if (-not ($reportLines | Where-Object { $_ -eq ("uefi-loader-budget: kernel-byte-limit {0} current-bytes {1} reserve-bytes {2} checksum 0x{3:X8} enforced 1" -f $uefiKernelByteLimit, $stagedKernelBytes.Length, ($uefiKernelByteLimit - $stagedKernelBytes.Length), $stagedChecksum) })) {
+        Fail-M1 "scaffold report UEFI loader byte-budget line is missing or stale."
+    }
     if (-not ($reportLines | Where-Object { $_ -eq "artifact-bin: dist\limitlessos-x86_64.scaffold.bin" })) {
         Fail-M1 "scaffold report does not use repo-relative artifact paths."
     }
@@ -624,13 +632,12 @@ function Assert-X64Artifacts
             [PSCustomObject]@{
                 name = "ECHO"
                 status = "unavailable"
-                reason = "not M1/M2 product-path"
+                reason = "not Product path"
             }
         )
         $activeExperimentalServices = if ($experimentalRuntimeEnabled) {
             @(
                 "gui proof surface",
-                "network proof surface",
                 "desktop proof surface",
                 "broad hardware proof telemetry"
             )
@@ -648,6 +655,8 @@ function Assert-X64Artifacts
                 sectors = $sectorCount
                 sectorLimit = $loaderSectorLimit
                 sectorReserve = $sectorReserve
+                uefiByteLimit = $uefiKernelByteLimit
+                uefiByteReserve = ($uefiKernelByteLimit - $stagedKernelBytes.Length)
                 checksum = ("0x{0:X8}" -f $stagedChecksum)
             }
             artifacts = [PSCustomObject]@{
@@ -703,6 +712,7 @@ function Assert-X64Artifacts
                 "x86_64 boot",
                 "persistent ring-3 shell",
                 "truthful shell help/apps",
+                "brokered DHCP/DNS/TCP/HTTP network status",
                 "brokered persistent file workflow",
                 "capability denial checks",
                 "NVMe persistence verification path"
@@ -712,9 +722,11 @@ function Assert-X64Artifacts
             productKernelBytes = $stagedKernelBytes.Length
             productKernelSectors = $sectorCount
             productKernelReserve = $sectorReserve
+            productUefiKernelByteLimit = $uefiKernelByteLimit
+            productUefiKernelByteReserve = ($uefiKernelByteLimit - $stagedKernelBytes.Length)
             productKernelChecksum = ("0x{0:X8}" -f $stagedChecksum)
             sectorBudgetStatus = $sectorBudgetStatus
-            bootContract = "BIOS-compatible 1024-sector loader contract; UEFI remains bound until explicitly changed"
+            bootContract = "Dual contract: BIOS keeps 1024-sector loader limit; UEFI uses a 2 MiB kernel file-size limit verified by BOOTMAN.TXT checksum"
             finalIsoVerified = $true
             runtimeSurfaceVerified = $true
             persistenceVerified = $false
@@ -727,6 +739,12 @@ function Assert-X64Artifacts
         }
         $m2InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m2.json" -f $BuildProfile.ToLowerInvariant())
         $m2Inventory | ConvertTo-Json -Depth 6 | Set-Content -Path $m2InventoryPath -Encoding Ascii
+
+        $m3Inventory = $m2Inventory.PSObject.Copy()
+        $m3Inventory.milestone = "M3 Product Boot Contract + Network Promotion"
+        $m3Inventory | Add-Member -Force -NotePropertyName productNetworkCapability -NotePropertyValue "brokered DHCP/DNS/TCP/HTTP status through net command; no sockets or ambient network authority"
+        $m3InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m3.json" -f $BuildProfile.ToLowerInvariant())
+        $m3Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m3InventoryPath -Encoding Ascii
     }
 }
 

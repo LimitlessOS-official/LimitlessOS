@@ -1,26 +1,28 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M2 Product Kernel Boundary + Experimental Quarantine
+## Current Gate: M3 Product Boot Contract + Network Promotion
 
-M1 cleanup-final is accepted. M2 is not a feature-expansion milestone. M2 exists to keep the serious Product path honest and to quarantine proof/demo surfaces so boot logs, docs, reports, runtime shell output, and verification gates agree.
+M1 cleanup-final and M2 quarantine are accepted. M3 splits the Product boot contract by boot path and promotes the existing brokered DHCP/DNS/TCP/HTTP proof chain into a truthful Product runtime surface.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- Current kernel: 460048 bytes, 899 / 1024 sectors, 125 reserve, checksum 0xDB264D1D
+- Current kernel: 468688 bytes, 916 / 1024 BIOS sectors, 108 BIOS reserve, checksum 0x90E2FA90
+- UEFI contract: 468688 / 2097152 bytes, verified against BOOTMAN.TXT byte count and checksum, with no UEFI sector arithmetic
 - Sector status: warning, because reserve is below 128
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps output, brokered persistent file workflow, NVMe persistence verification, capability denial checks, no ambient authority
+- Product builtins: apps, help, info, net, pwd
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps output, brokered persistent file workflow, hardware-gated brokered network status, NVMe persistence verification, capability denial checks, no ambient authority
 
 Experimental profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Experimental`
-- Current kernel: 468336 bytes, 915 / 1024 sectors, 109 reserve, checksum 0xA58341E8
-- Experimental surfaces may initialize proof-only GUI/network/storage paths, but they are not Product behavior.
+- Current artifact: recorded in `dist\limitlessos-x86_64.experimental.m3.json` when the Experimental profile is built
+- Experimental surfaces may initialize proof-only GUI/window-manager/desktop and broad hardware proof paths, but they are not Product behavior.
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, GUI/compositor/window manager/desktop, network, installer, package manager, AI assistant behavior
+- ASK, ECHO, aliases, GUI/compositor/window manager/desktop, installer, package manager, AI assistant behavior
 
 M2 evidence:
 
@@ -28,7 +30,13 @@ M2 evidence:
 - Product build/assert/disk/UEFI/ISO/e1000e/persistence commands passed.
 - Experimental build and UEFI verification passed.
 
-M3 must not start until Product reserve and boot-contract risk are explicitly addressed or accepted, and until any promoted surface has runtime behavior, docs, and verification that agree.
+M3 evidence:
+
+- Final evidence pack: `dist/m3-evidence-20260511-163350/m3-evidence.json`
+- Product build/assert/disk/UEFI/ISO/e1000e/persistence commands passed.
+- Experimental build and UEFI verification passed.
+
+M3 networking acceptance is intentionally narrow: UEFI/ISO paths with virtio-net or e1000e must prove DHCP, DNS, TCP, and HTTP and expose `net`; BIOS/disk paths must report cleanly unavailable. No socket API, packet API, or ambient network authority is part of M3.
 
 ## Phase 0: Bootstrap
 
@@ -151,7 +159,7 @@ Current bootstrap status:
   - The post-read-submit AHCI driver read-observe checkpoint now consumes that denied read-submit token only to prove no completion observation can appear under query-only authority. UEFI and ISO media prove `dobs-state 3`, `dobs-flags 0x3FFFFFFF`, read-submit token binding, block-worker ownership, query-only status, selected ATAPI port, operation `2`, LBA `0`, one block, `2048` read bytes, `4096` page bytes, checksum `0x76EFDDC5`, `dobs-dsub-denied 1`, `dobs-requested 1`, `dobs-granted 0`, `dobs-denied 1`, `dobs-bytes 0`, `dobs-obs-status 0`, `dobs-obs-bytes 0`, `dobs-obs-checksum 0x00000000`, `dobs-read-auth 0`, `dobs-exec-auth 0`, `dobs-block-endpoint 0`, `dobs-block-cap 0`, `dobs-fs-minted 0`, `dobs-buffer 1`, and zero MMIO-write/port-program/publish/command/DMA/arm/media-read/media-write side effects; BIOS/no-AHCI media reports unavailable `dobs-flags 0x7FFFFC01`.
   - The post-read-observe AHCI driver read-retire checkpoint now consumes that denied read-observe token only to prove no completion retirement or finalized result can appear under query-only authority. UEFI and ISO media prove `dret-state 3`, `dret-flags 0x3FFFFFFF`, read-observe token binding, block-worker ownership, query-only status, selected ATAPI port, operation `2`, LBA `0`, one block, `2048` read bytes, `4096` page bytes, checksum `0x76EFDDC5`, `dret-dobs-denied 1`, `dret-requested 1`, `dret-granted 0`, `dret-denied 1`, `dret-bytes 0`, `dret-ret-status 0`, `dret-ret-bytes 0`, `dret-ret-checksum 0x00000000`, `dret-read-auth 0`, `dret-exec-auth 0`, `dret-block-endpoint 0`, `dret-block-cap 0`, `dret-fs-minted 0`, `dret-buffer 1`, and zero MMIO-write/port-program/publish/command/DMA/arm/media-read/media-write side effects; BIOS/no-AHCI media reports unavailable `dret-flags 0x7FFFFC01`.
 - The sealed x86_64 userspace transfer image is now generated from readable assembly instead of a hand-maintained byte initializer. The x64 build assembles `kernel\arch\x86_64\runtime_image_user.asm` into a page-aligned 16 KiB persistent-shell bootstrap payload, emits the generated C header consumed by the kernel, and stamps that same payload size/checksum into package archive slot 1 so launch-broker integrity metadata follows the actual ring-3 proof image automatically.
-- The x64 BIOS loader budget is now a first-class checkpoint before each storage/input/display step. The compact build reports `loader-budget: bios-sector-limit 1024 current-sectors 896 reserve-sectors 128 enforced 1`, stamps matching sector-limit/reserve metadata into the UEFI boot manifest, emits `dist\limitlessos-x86_64.size.txt` with final section pressure (`text 356576`, `rodata 99872`, `data 1808`, `bss 430080`) plus the top object contributors, and every x64 QEMU verifier checks those host-side proofs before accepting disk, UEFI, or ISO output. UEFI and ISO verification also use widened QMP keyboard and mouse pacing so the compact scaffold keeps command lines and pointer packets distinct. This deliberately adds no ambient storage, input, or display authority; it keeps the next hardware checkpoint honest about the remaining BIOS scaffold headroom and points future compaction work at `mmio-x86_64.o`, `xhci-x86_64.o`, then `scaffold-x86_64.o`.
+- The x64 boot budget is now split by boot path. BIOS remains guarded by the 1024-sector loader ceiling and reserve thresholds, while UEFI Product is verified as a kernel file under the 2 MiB contract recorded in `BOOTMAN.TXT`. This deliberately adds no ambient storage, input, display, or network authority; it keeps the BIOS compatibility lane honest without forcing UEFI Product to pretend it is constrained by BIOS sector arithmetic.
 - The expanded `drs-nvme-fat` checkpoint gives the real-hardware storage lane its first broker-private NVMe FAT32 read and mutation proof without creating a block endpoint. UEFI/ISO media discover NVMe through the ECAM scanner, map a 64-bit BAR0 through broker-private MMIO, initialize admin queues, complete Identify Controller, create broker-private IO completion/submission queues through admin commands, submit namespace reads and writes into kernel-owned PRP buffers, validate GPT and the FAT32 VBR, parse BPB geometry, reconstruct ASCII and UTF-16 LFN entries, traverse `/APPS/DATA`, follow multi-cluster FAT chains, and verify staged `NVME.TXT`, `Limitless Long Name.txt`, `Caf\u00E9.txt`, `/APPS/DATA/FILE.TXT`, and `MULTI.BIN` content. The same checkpoint then opens only a broker-private mutation gate, allocates cluster `12` for a new LFN file, extends `NVME.TXT` through cluster `13`, tombstones and frees `/REMOVE.ME` on cluster `14`, flushes `16` dirty FAT/data/directory sectors through NVMe writes, and read-backs created/updated checksums `0x8B4D45D8` and `0x4E5F0AAE` while reporting zero filesystem delegation, zero block endpoint, zero caller-visible write authority, and zero commit authority; BIOS/disk media report unavailable.
 - The `drs-nvme-rw` checkpoint is now the first scoped caller-visible persistent storage write authority. It mints exactly one persistent read-write FAT32 capability from the existing NVMe driver, delegates it to the shell principal through the broker, gates shell-created files through that handle, proves wrong-owner/stale/revoked denial, writes and reads back `SHELL.TXT` with checksum `0x46A2678A`, records audit and commit counters, and verifies persistence with two sequential QEMU boots against the same writable NVMe image on both UEFI removable and ISO media. NVMe block endpoint publication, format authority, ambient filesystem authority, and additional filesystem capabilities remain zero; BIOS/disk media report unavailable.
 - The `drs-net` checkpoint adds QEMU networking as a broker-private virtio-net proof while real hardware validation proceeds. UEFI and ISO media find a modern virtio-net PCI function through ECAM, parse common/notify/device config capabilities, negotiate MAC support, stage RX/TX virtqueues in broker-private memory, transmit one ARP request for `10.0.2.2`, receive the gateway reply, and report nonzero local/peer MAC telemetry while granting zero filesystem authority, zero storage authority, and zero ambient network authority; BIOS/disk media report unavailable.

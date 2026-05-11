@@ -11540,7 +11540,7 @@ static void log_build_profile_surface(void)
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     write_line("[x64] experimental-runtime enabled proof-surface 1 not-product-path 1");
 #else
-    write_line("[x64] experimental-runtime disabled proof-surface 0 gui unavailable network unavailable ai unavailable installer unavailable package-manager unavailable");
+    write_line("[x64] experimental-runtime disabled proof-surface 0 gui unavailable network product-gated ai unavailable installer unavailable package-manager unavailable");
 #endif
 }
 
@@ -11709,9 +11709,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_xhci_surface();
     log_block_surface();
     log_pci_storage_surface();
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     virtio_net64_init();
-#endif
     log_virtio_net_surface();
     log_e1000_surface();
     log_dhcp_surface();
