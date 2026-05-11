@@ -2,6 +2,32 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
+## Current status: M2 quarantine
+
+The accepted product baseline is M1 cleanup-final. M2 is now `Product Kernel Boundary + Experimental Quarantine`: the goal is not new features, but keeping the real Product slice separate from proof/demo/experimental surfaces.
+
+Use the Product profile for the serious bootable slice:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+```
+
+Product currently boots to a persistent ring-3 shell, exposes only the M1 Product apps, verifies disk/UEFI/ISO boot paths, and proves reboot-surviving NVMe persistence through scoped write/commit authority. Current Product size is `460048` bytes, `899 / 1024` sectors, `125` reserve, checksum `0xDB264D1D`. The reserve is still below the 128-sector warning threshold.
+
+Product apps are: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE.
+
+Unavailable or non-product in Product: ASK, ECHO, aliases, GUI/compositor/window manager/desktop, network, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
+
+Use the Experimental profile only for proof surfaces:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Experimental
+```
+
+Experimental currently builds at `468336` bytes, `915 / 1024` sectors, `109` reserve, checksum `0xA58341E8`, and may initialize GUI/network/storage proof surfaces. Those surfaces are not Product.
+
+Authoritative current status and evidence are in `docs/status.md`. The final M2 evidence pack is `dist/m2-evidence-20260511-151717/m2-evidence.json`.
+
 This first milestone provides:
 
 - A bare-bones x86 BIOS boot path that assembles into a bootable disk image and now chunks kernel reads so the bootstrap image can grow past a single 64 KiB BIOS transfer window.

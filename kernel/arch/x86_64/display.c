@@ -1,5 +1,6 @@
 #include "display_x64.h"
 
+#include "arch_build.h"
 #include "capability_x64.h"
 #include "launch_x64.h"
 #include "pit.h"
@@ -326,6 +327,7 @@ static volatile u32 *display64_draw_buffer(void)
     return display64_physical_framebuffer();
 }
 
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
 static u32 display64_compositor_capacity_ok(void)
 {
     u64 pixels;
@@ -341,6 +343,7 @@ static u32 display64_compositor_capacity_ok(void)
         * (u64)g_display_boot_info->framebuffer_height;
     return (pixels <= (u64)(DISPLAY64_COMPOSITOR_MAX_SCANLINE * DISPLAY64_COMPOSITOR_MAX_HEIGHT)) ? 1u : 0u;
 }
+#endif
 
 static void display64_compositor_mark_dirty(u32 x, u32 y, u32 width, u32 height)
 {
@@ -666,6 +669,7 @@ static void display64_compositor_draw_cursor(void)
     ++g_display_compositor_cursor_count;
 }
 
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
 static void display64_compositor_init_back_buffer(void)
 {
     volatile u32 *framebuffer;
@@ -690,6 +694,7 @@ static void display64_compositor_init_back_buffer(void)
     g_display_compositor_cursor_x = g_display_boot_info->framebuffer_width >> 1u;
     g_display_compositor_cursor_y = g_display_boot_info->framebuffer_height >> 1u;
 }
+#endif
 
 static u32 display64_mix_token(u32 token, u32 value)
 {
@@ -2686,7 +2691,9 @@ void display64_init(const struct boot_info *boot_info)
         g_display_windows[window_index].focused = 0u;
         g_display_windows[window_index].z = 0u;
     }
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     display64_compositor_init_back_buffer();
+#endif
 }
 
 u32 display64_draw_marker(u32 display_capability_handle, u32 x, u32 y, u32 rgb, u32 owner_id)

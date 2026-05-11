@@ -1,6 +1,9 @@
 param(
     [ValidateSet("uefi", "iso")]
-    [string]$BootMedia = "uefi"
+    [string]$BootMedia = "uefi",
+
+    [ValidateSet("Product", "Experimental")]
+    [string]$BuildProfile = "Product"
 )
 
 Set-StrictMode -Version Latest
@@ -259,5 +262,33 @@ $run1Lines = @(Start-NvmeTwoBoot -Root $root -QemuPath $qemu.Source -FirmwarePat
 $run2Lines = @(Start-NvmeTwoBoot -Root $root -QemuPath $qemu.Source -FirmwarePath $firmwarePath -MediaPath $mediaPath -NvmeImagePath $nvmeImagePath -BootMedia $BootMedia -RunIndex 2 -ExpectedPersisted 1)
 
 Assert-PersistenceSecurityEvidence -Run1Lines $run1Lines -Run2Lines $run2Lines -NvmeImagePath $nvmeImagePath
+
+$m2InventoryPath = Join-Path $root ("dist\limitlessos-x86_64.{0}.m2.json" -f $BuildProfile.ToLowerInvariant())
+if (Test-Path $m2InventoryPath) {
+    $m2Inventory = Get-Content -Path $m2InventoryPath -Raw | ConvertFrom-Json
+    $persistenceEvidence = [PSCustomObject]@{
+        scopedWriteAuthorityRequired = $true
+        commitAuthorityRequired = $true
+        wrongOwnerDenialObserved = $true
+        staleRevokedDenialObserved = $true
+        readOnlyWriteDenialObserved = $true
+        nonzeroCommitFlushCounter = $true
+        sameNvmeImageReused = $true
+        notRamBacked = $true
+    }
+    $inventoryUpdates = @{
+        persistenceVerified = $true
+        persistenceBootMedia = $BootMedia
+        persistenceEvidence = $persistenceEvidence
+    }
+    foreach ($entry in $inventoryUpdates.GetEnumerator()) {
+        if ($m2Inventory.PSObject.Properties.Name -contains $entry.Key) {
+            $m2Inventory.$($entry.Key) = $entry.Value
+        } else {
+            $m2Inventory | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value
+        }
+    }
+    $m2Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m2InventoryPath -Encoding Ascii
+}
 
 Write-Output ("NVMe FAT32 shell persistence proof passed on x86_64 {0}: first boot wrote SHELL.TXT, second boot observed persisted content on the same NVMe image." -f $BootMedia)

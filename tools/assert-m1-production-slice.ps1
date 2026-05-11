@@ -2,6 +2,9 @@ param(
     [ValidateSet("x86_64")]
     [string]$Architecture = "x86_64",
 
+    [ValidateSet("Product", "Experimental")]
+    [string]$BuildProfile = "Product",
+
     [switch]$WriteInventory
 )
 
@@ -602,9 +605,43 @@ function Assert-X64Artifacts
     Assert-FinalIsoContents -IsoPath $isoPath -StageDir $stageDir -AppsDir $appsDir -ManifestPath $manifestPath -KernelPath $stagedKernelPath -EfiPath $stagedEfiPath
 
     if ($WriteInventory) {
+        $experimentalRuntimeEnabled = ($BuildProfile -eq "Experimental")
+        $sectorBudgetStatus = if ($sectorReserve -lt $loaderReserveHardMinimum) {
+            "fail"
+        }
+        elseif ($sectorReserve -lt $loaderReserveWarning) {
+            "warning"
+        }
+        else {
+            "ok"
+        }
+        $experimentalApps = @(
+            [PSCustomObject]@{
+                name = "ASK"
+                status = "unavailable"
+                reason = "not AI; no consent-gated assistant path is product-path"
+            },
+            [PSCustomObject]@{
+                name = "ECHO"
+                status = "unavailable"
+                reason = "not M1/M2 product-path"
+            }
+        )
+        $activeExperimentalServices = if ($experimentalRuntimeEnabled) {
+            @(
+                "gui proof surface",
+                "network proof surface",
+                "desktop proof surface",
+                "broad hardware proof telemetry"
+            )
+        }
+        else {
+            @()
+        }
         $inventory = [PSCustomObject]@{
             milestone = "M1 Real Bootable System Slice"
             architecture = $Architecture
+            buildProfile = $BuildProfile
             generatedUtc = [DateTime]::UtcNow.ToString("o")
             kernel = [PSCustomObject]@{
                 bytes = $stagedKernelBytes.Length
@@ -621,7 +658,7 @@ function Assert-X64Artifacts
                 report = Get-RepoRelativePath $reportPath
             }
             productApps = $m1ProductApps
-            experimentalApps = @()
+            experimentalApps = $experimentalApps
             shellBuiltins = $m1ShellBuiltins
             aliases = @($m1Aliases | ForEach-Object {
                 [PSCustomObject]@{
@@ -639,6 +676,9 @@ function Assert-X64Artifacts
             unavailableFeatures = $m1UnavailableFeatures
             runtimeHelpVerified = $true
             runtimeAppsVerified = $true
+            runtimeSurfaceVerified = $true
+            finalIsoVerified = $true
+            persistenceVerified = $false
             apps = @($appFiles | ForEach-Object {
                 $base = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
                 [PSCustomObject]@{
@@ -651,10 +691,46 @@ function Assert-X64Artifacts
         }
         $inventoryPath = Join-Path $distDir "limitlessos-x86_64.m1.json"
         $inventory | ConvertTo-Json -Depth 6 | Set-Content -Path $inventoryPath -Encoding Ascii
+
+        $m2Inventory = [PSCustomObject]@{
+            milestone = "M2 Product Kernel Boundary + Experimental Quarantine"
+            architecture = $Architecture
+            buildProfile = $BuildProfile
+            productApps = $m1ProductApps
+            experimentalApps = $experimentalApps
+            unavailableFeatures = $m1UnavailableFeatures
+            activeProductServices = @(
+                "x86_64 boot",
+                "persistent ring-3 shell",
+                "truthful shell help/apps",
+                "brokered persistent file workflow",
+                "capability denial checks",
+                "NVMe persistence verification path"
+            )
+            activeExperimentalServices = @($activeExperimentalServices)
+            experimentalRuntimeEnabled = $experimentalRuntimeEnabled
+            productKernelBytes = $stagedKernelBytes.Length
+            productKernelSectors = $sectorCount
+            productKernelReserve = $sectorReserve
+            productKernelChecksum = ("0x{0:X8}" -f $stagedChecksum)
+            sectorBudgetStatus = $sectorBudgetStatus
+            bootContract = "BIOS-compatible 1024-sector loader contract; UEFI remains bound until explicitly changed"
+            finalIsoVerified = $true
+            runtimeSurfaceVerified = $true
+            persistenceVerified = $false
+            artifacts = [PSCustomObject]@{
+                finalIso = Get-RepoRelativePath $isoPath
+                uefiImage = Get-RepoRelativePath $uefiImagePath
+                diskImage = Get-RepoRelativePath $diskImagePath
+                m1Inventory = Get-RepoRelativePath $inventoryPath
+            }
+        }
+        $m2InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m2.json" -f $BuildProfile.ToLowerInvariant())
+        $m2Inventory | ConvertTo-Json -Depth 6 | Set-Content -Path $m2InventoryPath -Encoding Ascii
     }
 }
 
 Assert-NoUnlabeledPlaceholders
 Assert-X64Artifacts
 
-Write-Host "M1 production-slice gate passed for $Architecture."
+Write-Host "M1 production-slice gate passed for $Architecture ($BuildProfile profile)."

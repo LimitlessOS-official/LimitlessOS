@@ -1,6 +1,9 @@
 param(
     [ValidateSet("x86", "x86_64")]
-    [string]$Architecture = "x86"
+    [string]$Architecture = "x86",
+
+    [ValidateSet("Product", "Experimental")]
+    [string]$BuildProfile = "Product"
 )
 
 Set-StrictMode -Version Latest
@@ -49,13 +52,17 @@ function Write-ArchBuildHeader
 {
     param(
         [string]$OutputPath,
-        [string]$TargetArchitecture
+        [string]$TargetArchitecture,
+        [string]$TargetBuildProfile
     )
 
     $bits = if ($TargetArchitecture -eq "x86") { 32 } else { 64 }
     $isX86 = if ($TargetArchitecture -eq "x86") { 1 } else { 0 }
     $isX64 = if ($TargetArchitecture -eq "x86_64") { 1 } else { 0 }
     $bootstrapKind = if ($TargetArchitecture -eq "x86") { "bios32-boot-image" } else { "bios64-long-mode-image" }
+    $isProduct = if ($TargetBuildProfile -eq "Product") { 1 } else { 0 }
+    $isExperimental = if ($TargetBuildProfile -eq "Experimental") { 1 } else { 0 }
+    $experimentalRuntime = $isExperimental
 
     $header = @"
 #ifndef LIMITLESS_ARCH_BUILD_H
@@ -66,6 +73,10 @@ function Write-ArchBuildHeader
 #define LIMITLESS_ARCH_X86 $isX86
 #define LIMITLESS_ARCH_X86_64 $isX64
 #define LIMITLESS_ARCH_BOOTSTRAP_KIND "$bootstrapKind"
+#define LIMITLESS_BUILD_PROFILE_NAME "$TargetBuildProfile"
+#define LIMITLESS_BUILD_PROFILE_PRODUCT $isProduct
+#define LIMITLESS_BUILD_PROFILE_EXPERIMENTAL $isExperimental
+#define LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED $experimentalRuntime
 
 #endif
 "@
@@ -391,6 +402,14 @@ function Build-X64Scaffold
     $cSources += Get-Item (Join-Path $root "kernel\\core\\ramfs.c")
     $cSources += Get-ChildItem -Path (Join-Path $root "kernel\\arch\\x86_64\\*.c") |
         Where-Object { $_.Name -ne "uefi_app.c" }
+    if ($BuildProfile -eq "Product") {
+        $cSources = @($cSources | Where-Object {
+            ($_.Name -ne "virtio_net.c") -and ($_.Name -ne "e1000e.c")
+        })
+    }
+    else {
+        $cSources = @($cSources | Where-Object { $_.Name -ne "network_disabled.c" })
+    }
 
     foreach ($source in $cSources) {
         $objectPath = Join-Path $buildDir ($source.BaseName + "-x86_64.o")
@@ -549,6 +568,18 @@ function Build-X64Scaffold
     }
     $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $kernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
+    $profileStatusLines = if ($BuildProfile -eq "Product") {
+        "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, network, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
+    }
+    else {
+        "- build profile: Experimental`n- experimental proof/runtime surfaces may initialize, but verifier-visible logs must label them experimental or proof-only and they are not product-path behavior"
+    }
+    $networkStatusLine = if ($BuildProfile -eq "Product") {
+        "- Product profile does not initialize virtio-net or e1000e runtime exchange paths; network proof surfaces are compiled out or stubbed unavailable while preserving no ambient network authority"
+    }
+    else {
+        "- Experimental UEFI media paths attach a modern virtio-net/e1000e PCI device, discover it through ECAM vendor/device matching, parse network device configuration, complete broker-private ARP/DHCP/DNS/HTTP proof exchanges, and still grant no filesystem, storage, or ambient network authority"
+    }
     Set-Content -Path $uefiReadmePath -Encoding Ascii -Value @"
 LimitlessOS x86_64 UEFI stage
 
@@ -556,15 +587,16 @@ This directory is the removable-media layout for the first UEFI scaffold lane.
 The fallback path is EFI\BOOT\BOOTX64.EFI.
 
 Current status:
-- removable UEFI image is bootable under OVMF in QEMU with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, broker-private virtio-net ARP/DHCP exchange telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, kernel-placement, linked-base placement, boot-handoff table, kernel-jump, and x64 userspace proofs
-- UEFI ISO is bootable under OVMF in QEMU with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, broker-private virtio-net ARP/DHCP exchange telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, kernel-placement, linked-base placement, boot-handoff table, kernel-jump, and x64 userspace proofs
+$profileStatusLines
+- removable UEFI image is bootable under OVMF in QEMU with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, profile-labeled network availability/quarantine telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, kernel-placement, linked-base placement, boot-handoff table, kernel-jump, and x64 userspace proofs
+- UEFI ISO is bootable under OVMF in QEMU with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, profile-labeled network availability/quarantine telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, kernel-placement, linked-base placement, boot-handoff table, kernel-jump, and x64 userspace proofs
 - both UEFI media paths read and verify the staged root README.TXT from the boot volume
 - both UEFI media paths read BOOTMAN.TXT, load KERNEL64.BIN into a bounded handoff buffer, and report a checksum match
 - both UEFI media paths allocate exact firmware-owned loader pages from conventional memory, copy/check KERNEL64.BIN there, and prove the linked x64 scaffold image can be copied at physical 0x10000 for the higher-half kernel entry
 - both UEFI media paths build the low boot-handoff page tables, dedicated framebuffer page-directory, and trampoline, take a final silent memory-map key, exit firmware boot services, jump into the x64 kernel, draw/log a kernel-owned framebuffer marker, and reach the compact sealed bootstrap, second-page userspace display/filesystem, real-media storage, and disk-sourced utility launch proofs
 - brokered keyboard proofs still read staged PS/2 bytes through scoped input authority, auto-fall back from set-2 to set-1 scancode decoding when the media path exposes set-1 release scancodes, and keep hardware input separate from command execution now sourced through disk-backed APPS descriptors and flat binaries
 - UEFI media paths also attach a qemu-xhci USB keyboard, discover the xHCI controller through ECAM class 0x0C/subclass 0x03/progif 0x30, map BAR0 through a broker-private kernel MMIO aperture, stage page-aligned DCBAA/command/event/control/interrupt-ring memory, reset and run the controller, enable and address a device slot, read USB configuration plus HID report descriptors, configure the boot keyboard interrupt endpoint, and prove drs-xhci by routing bounded boot-protocol HID reports into the same brokered input queue without creating ambient input authority
-- UEFI media paths also attach a modern virtio-net PCI device, discover it through ECAM vendor/device matching, parse common/notify/device configuration capabilities, negotiate MAC support, stage broker-private RX/TX virtqueues, send one ARP request to 10.0.2.2, complete a DHCP DISCOVER/OFFER/REQUEST/ACK lease through broker-private IPv4/UDP frames, and prove drs-net plus drs-dhcp without granting filesystem, storage, or ambient network authority
+$networkStatusLine
 - the hardware-inventory/MMIO proofs now keep AHCI access behind brokered query authority, deny wrong-owner map/snapshot/classification requests, discover PCI through ACPI MCFG/ECAM on UEFI media when available, fall back to legacy I/O-port config on BIOS/no-MCFG media, install a kernel-only/read-only/no-deref MMIO page-table view for Q35 AHCI candidates with cache-disabled/NX entry flags, and only read narrow HBA plus port-state snapshots and derived readiness policy until a real driver policy exists
 - the AHCI command-issue preflight now binds prepared table, memory, command, and read-plan tokens, records slot/controller readiness plus timeout policy, proves checksum match, and still reports zero DMA, MMIO writes, port programming, and command issue
 - the AHCI address-bind preflight now computes future command-list/table/bounce physical addresses and a predicted checksum without writing memory, mapping DMA, publishing ports, or issuing commands
@@ -648,6 +680,8 @@ $report = @"
 LimitlessOS x86_64 scaffold
 state: bootable bios long-mode scaffold
 arch: x86_64
+build-profile: $BuildProfile
+experimental-runtime-enabled: $(if ($BuildProfile -eq "Experimental") { 1 } else { 0 })
 bootstrap: bios64-long-mode-image
 entry: _start
 paging: active 4-level long mode with 16 MiB identity/high-half alias map and higher-half kernel execution
@@ -677,8 +711,7 @@ nvme-gpt: x64 UEFI and ISO media now prove drs-nvme-gpt by booting with a determ
 nvme-fat: x64 UEFI and ISO media now prove drs-nvme-fat by binding to the sealed drs-nvme-gpt token, parsing the FAT32 BPB from the already validated VBR, reconstructing ASCII and UTF-16 LFN entries, matching UTF-8 path input for the Caf\u00E9.txt fixture, traversing APPS/DATA subdirectories, following multi-cluster FAT chains, reading NVME.TXT plus long-name, Unicode-name, nested, and multi-cluster fixtures through the existing IO queue, matching staged content checksums, then exercising a broker-private mutation gate that allocates cluster 12 for a new LFN file, extends NVME.TXT through cluster 13, tombstones and frees REMOVE.ME on cluster 14, flushes every dirty FAT/data/directory sector through NVMe writes, and reads each result back while still publishing zero filesystem delegation, zero block endpoint, zero caller write authority, and zero commit authority; BIOS/disk media report unavailable
 apic: x64 UEFI handoff now records minimal ACPI MADT metadata so q35 UEFI and ISO media can enable the Local APIC, map the IOAPIC through a dedicated supervisor-only APIC page table, mask the 8259 PIC after bounded redirection setup, report drs-apic-madt 1, nonzero LAPIC/IOAPIC bases, drs-apic-pic-disabled 1, timer ticking 1, keyboard live 1, and keep the full storage chain green; drs-apic-override additionally records MADT interrupt source overrides for ISA IRQs 0-15, routes PIT/keyboard/AHCI through the remapped GSI/polarity/trigger data when present, proves QEMU q35 timer delivery through GSI 2, and leaves BIOS/disk media on the PIC fallback with no override scan
 xhci-input: x64 UEFI and ISO media now prove drs-xhci by finding an ECAM-discovered class 0x0C/subclass 0x03/progif 0x30 xHCI controller, mapping its BAR0 through a broker-private kernel MMIO aperture, staging page-aligned DCBAA, command-ring, event-ring, control-transfer, and interrupt-transfer memory, resetting and running the controller, enabling and addressing a USB device slot, reading USB configuration plus HID report descriptors, configuring a boot-protocol keyboard interrupt endpoint, and routing bounded 8-byte HID reports into the existing brokered input queue; BIOS/disk media report unavailable. This checkpoint proves the real controller enumeration path while preserving PS/2 fallback and creates no ambient input authority or user-visible USB device authority.
-virtio-net: x64 UEFI and ISO media now prove drs-net by finding a modern virtio-net PCI function through ECAM vendor/device matching, parsing the virtio common/notify/device configuration capabilities, enabling PCI memory and bus-master access only for the discovered device, negotiating VIRTIO_NET_F_MAC plus VERSION_1, staging broker-private RX/TX virtqueues and buffers, sending one Ethernet ARP request for QEMU gateway 10.0.2.2, polling completion, receiving a matching ARP reply with nonzero peer MAC/IP telemetry, and reporting zero filesystem authority, zero storage authority, and zero ambient network authority; BIOS/disk media report unavailable.
-dhcp: x64 UEFI and ISO media now prove drs-dhcp on top of the broker-private virtio-net queue by constructing minimal IPv4 and UDP headers, sending DHCPDISCOVER from port 68 to 67, parsing DHCPOFFER options, sending DHCPREQUEST for the offered address, parsing DHCPACK, recording the assigned QEMU address, gateway 10.0.2.2, DNS server, and lease time, and still reporting zero ambient network authority; BIOS/disk media report unavailable.
+network-profile: $networkStatusLine
 mmio-planner: x64 promotes discovered AHCI BAR metadata into a brokered MMIO planning surface that requires hardware-inventory query authority, proves wrong-owner denial for base queries plus map/controller-snapshot/port-snapshot/port-policy/read-plan/command-plan/memory-plan/table-prep/issue/bind/patch/publish/gate/write-window/revoke/open/session/drain/handoff/driver-probe/driver-intent/driver-buffer/driver-gate/driver-exec/driver-result/driver-publish/drg/dmr/drc/drcap/drx/drr/drd/drv/drk/dra/dru/dact/darm/dsub/dobs/dret/dprm/dwin/dlse/duse requests, classifies no-device BIOS boots as safe-no-touch/unmapped with unavailable controller, port, policy, read-plan, command-plan, memory-plan, table-prep, issue, bind, patch, publish, gate, write-window, revoke, open-attempt, session, drain, handoff, driver-probe, driver-intent, driver-buffer, driver-gate, driver-exec, driver-result, driver-publish, drg, dmr, drc, drcap, drx, drr, drd, drv, drk, dra, dru, dact, darm, dsub, dobs, dret, dprm, dwin, dlse, and duse telemetry, classifies Q35 UEFI AHCI as a bounded candidate, installs a kernel-only/read-only/no-deref page-table view at the reserved high-half MMIO window, reports page count, map-installed 1, table indices 511/510/128/0, cache-disabled/NX entry flags 0x8000000000000019, reads only CAP/GHC/PI/VS plus selected implemented/active port SSTS/signature/command/task-file/command-issue/error through brokered read-only snapshots, derives device kind/link/busy/DRQ/CI-idle/read-eligibility policy from those snapshots, stages non-executing AHCI read-plan, command-layout, one-page command-memory, broker-private table-prep, non-issuing issue-preflight, predicted address-bind, private address-patch, controller-publication preflight, revocation-gated publication, write-window policy, non-destructive revocation-preflight, denied write-window-open, blocked session, executed drain, post-drain handoff, driver-owned read-only probe, driver-owned read-intent, read-buffer, read-execution gate, denied execution attempt, result/export denial, block-publication denial, read-authority denial, denied media-read, read-completion denial, read-capability denial, read-export denial, read-response denial, read-delivery denial, read-visibility denial, read-commit denial, read-audit denial, read-upgrade denial, read-activation denial, read-arm denial, read-submit denial, read-observation denial, read-retirement denial, read-permission denial, read-window-open denial, read-lease denial, and read-use denial tokens that bind selected port, policy/read-plan/command-plan/memory-plan/table/issue/bind/patch/publish/gate/window/revoke/session/drain/handoff/probe/intent/buffer/gate/exec/result/publish/read-grant/media-read/complete/read-cap/read-export/read-response/read-delivery/read-visible/read-commit/read-audit/read-upgrade/read-activate/read-arm/read-submit/read-observe/read-retire/read-permit/read-window/read-lease tokens, LBA, block count, operation kind, command header/table sizes, CFIS/PRDT geometry, command opcode, ATAPI packet opcode, transfer hint, command-list/header/table/PRDT/bounce/FIS offsets, PRDT byte count, held-zero DMA address, live hardware-handle count, query-only driver ownership, read-only probe readiness, read-intent/buffer/result/publish/read-grant/media-read/complete/read-cap/read-export/read-response/read-delivery/read-visible/read-commit/read-audit/read-upgrade/read-activate/read-arm/read-submit/read-observe/read-retire/read-permit/read-window/read-lease/read-use shape, and checksum transition while proving all storage hardware mutation side effects plus media-read are zero, completion, read-capability, read-export, read-response, read-delivery, read-visible, read-commit, read-audit, read-upgrade, read-activate, read-arm, read-submit, read-observe, read-retire, read-permit, read-window, read-lease, and read-use requests produce no bytes, response/delivery/visibility/commit/audit/observed/retired status, upgraded, activated, armed, submitted, observed, retired, permit, read-window, read-lease, or read-use capability, or authority, and still performs no AHCI command, DMA mapping, controller-visible register write, user-visible read export, block-read response delivery, read-result visibility, block capability mint, filesystem authority mint, media read, or disk write
 mmio-command-page: x64 now materializes the AHCI command-memory preflight as a broker-owned page-aligned zeroed kernel page, reports its virtual and physical page addresses, checksum 0x76EFDDC5, mem-zeroed 1, and mem-materialized 1 on Q35 AHCI media, then prepares a non-issuing broker-private command table with checksum 0x3FBFAF45, header flags 0x00010025, CFIS command 0xA0, packet opcode 0x28, PRDT byte count 2047, and table-written 1 while keeping BIOS/no-AHCI media unavailable with zero page authority and still exposing no user mapping, no DMA address, no port programming, and no command issue
 mmio-drs-read: x64 now consumes drs-dwin into the first positive broker-private AHCI/ATAPI read: it patches the PRDT with the single-page bounce buffer physical address, records command-table checksum 0x14EC2F71 -> 0xD8BD95B6, programs only the selected port CLB/FB registers through the temporary kernel-only MMIO aperture, sets FRE/ST, clears PxIS/PxSERR, issues PxCI slot 0, polls bounded completion, seals 2048 bytes in the broker bounce buffer with a nonzero checksum, and still publishes no block endpoint, filesystem authority, user-visible read result, reusable read lease, write authority, commit authority, or media write
@@ -876,7 +909,7 @@ if (-not $?) {
 }
 
 Write-Host "Generating architecture build header"
-Write-ArchBuildHeader -OutputPath $archBuildHeader -TargetArchitecture $Architecture
+Write-ArchBuildHeader -OutputPath $archBuildHeader -TargetArchitecture $Architecture -TargetBuildProfile $BuildProfile
 
 if ($Architecture -eq "x86") {
     Build-X86
@@ -884,7 +917,7 @@ if ($Architecture -eq "x86") {
 else {
     Build-X64Scaffold
     Write-Host "Running M1 production-slice gate"
-    & $m1ProductionGate -Architecture x86_64 -WriteInventory
+    & $m1ProductionGate -Architecture x86_64 -BuildProfile $BuildProfile -WriteInventory
     if (-not $?) {
         throw "M1 production-slice gate failed."
     }

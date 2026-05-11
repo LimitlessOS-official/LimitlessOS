@@ -1,5 +1,6 @@
 #include "input_x64.h"
 
+#include "arch_build.h"
 #include "capability_x64.h"
 #include "display_x64.h"
 #include "launch_x64.h"
@@ -390,8 +391,10 @@ static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 
     g_mouse_x = input64_mouse_clamp_axis((s32)g_mouse_x + dx, g_mouse_width);
     g_mouse_y = input64_mouse_clamp_axis((s32)g_mouse_y + dy, g_mouse_height);
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     (void)display64_compositor_update_cursor(g_mouse_x, g_mouse_y, g_mouse_buttons);
     (void)display64_wm_process_mouse_event(g_mouse_x, g_mouse_y, g_mouse_buttons, dx, dy);
+#endif
     ++g_mouse_packet_count;
 
     if (g_mouse_pending >= INPUT64_MOUSE_QUEUE_CAPACITY)

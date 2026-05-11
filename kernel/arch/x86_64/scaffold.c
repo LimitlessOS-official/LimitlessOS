@@ -11528,6 +11528,22 @@ static int boot_info_is_valid_x64(const struct boot_info *boot_info)
     return 1;
 }
 
+static void log_build_profile_surface(void)
+{
+    write_string("[x64] build-profile ");
+    write_string(LIMITLESS_BUILD_PROFILE_NAME);
+    write_labeled_dec_u32(" product ", LIMITLESS_BUILD_PROFILE_PRODUCT);
+    write_labeled_dec_u32(" experimental ", LIMITLESS_BUILD_PROFILE_EXPERIMENTAL);
+    write_labeled_dec_u32(" experimental-runtime ", LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED);
+    write_line("");
+
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+    write_line("[x64] experimental-runtime enabled proof-surface 1 not-product-path 1");
+#else
+    write_line("[x64] experimental-runtime disabled proof-surface 0 gui unavailable network unavailable ai unavailable installer unavailable package-manager unavailable");
+#endif
+}
+
 void kernel_main64_scaffold(const struct boot_info *boot_info)
 {
     write_line(g_x64_scaffold_name);
@@ -11542,6 +11558,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     }
 
     log_boot_memory(boot_info);
+    log_build_profile_surface();
     services64_init();
     descriptors64_init();
     log_bootstrap_state(boot_info);
@@ -11658,13 +11675,21 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_service_surface();
     log_input_keyboard_surface();
     log_mouse_surface();
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     display64_compositor_probe(input64_mouse_x(), input64_mouse_y(), input64_mouse_buttons());
+#endif
     log_compositor_surface();
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     display64_font_probe();
+#endif
     log_font_surface();
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     display64_wm_probe();
+#endif
     log_window_manager_surface();
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     display64_desktop_probe();
+#endif
     log_desktop_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
@@ -11684,7 +11709,9 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_xhci_surface();
     log_block_surface();
     log_pci_storage_surface();
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     virtio_net64_init();
+#endif
     log_virtio_net_surface();
     log_e1000_surface();
     log_dhcp_surface();

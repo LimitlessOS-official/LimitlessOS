@@ -1,5 +1,35 @@
 # LimitlessOS Roadmap
 
+## Current Gate: M2 Product Kernel Boundary + Experimental Quarantine
+
+M1 cleanup-final is accepted. M2 is not a feature-expansion milestone. M2 exists to keep the serious Product path honest and to quarantine proof/demo surfaces so boot logs, docs, reports, runtime shell output, and verification gates agree.
+
+Product profile:
+
+- Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
+- Current kernel: 460048 bytes, 899 / 1024 sectors, 125 reserve, checksum 0xDB264D1D
+- Sector status: warning, because reserve is below 128
+- Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps output, brokered persistent file workflow, NVMe persistence verification, capability denial checks, no ambient authority
+
+Experimental profile:
+
+- Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Experimental`
+- Current kernel: 468336 bytes, 915 / 1024 sectors, 109 reserve, checksum 0xA58341E8
+- Experimental surfaces may initialize proof-only GUI/network/storage paths, but they are not Product behavior.
+
+Unavailable or non-product in the Product profile:
+
+- ASK, ECHO, aliases, GUI/compositor/window manager/desktop, network, installer, package manager, AI assistant behavior
+
+M2 evidence:
+
+- Final evidence pack: `dist/m2-evidence-20260511-151717/m2-evidence.json`
+- Product build/assert/disk/UEFI/ISO/e1000e/persistence commands passed.
+- Experimental build and UEFI verification passed.
+
+M3 must not start until Product reserve and boot-contract risk are explicitly addressed or accepted, and until any promoted surface has runtime behavior, docs, and verification that agree.
+
 ## Phase 0: Bootstrap
 
 - create a buildable boot image
