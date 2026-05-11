@@ -1,0 +1,80 @@
+#ifndef LIMITLESS_PROCESS_X64_H
+#define LIMITLESS_PROCESS_X64_H
+
+#include "types.h"
+
+#define PROCESS64_INVALID_PID 0xFFFFFFFFu
+
+#define PROCESS64_STATE_BOOTSTRAPPED 0x00000001u
+#define PROCESS64_STATE_SERVICE 0x00000002u
+#define PROCESS64_STATE_READY 0x00000004u
+#define PROCESS64_STATE_SEALED 0x00000008u
+#define PROCESS64_STATE_MANIFEST_VERIFIED 0x00000010u
+#define PROCESS64_STATE_LAUNCH_STARTED 0x00000020u
+#define PROCESS64_STATE_RESTARTED 0x00000040u
+#define PROCESS64_STATE_IMAGE_PLANNED 0x00000080u
+#define PROCESS64_STATE_IMAGE_MAPPED 0x00000100u
+#define PROCESS64_STATE_ENTRY_READY 0x00000200u
+#define PROCESS64_STATE_IMAGE_MAP_INSTALLED 0x00000400u
+#define PROCESS64_STATE_IMAGE_PROTECTED 0x00000800u
+#define PROCESS64_STATE_USER_ENTRY_PLANNED 0x00001000u
+#define PROCESS64_STATE_USER_ENTRY_BLOCKED 0x00002000u
+#define PROCESS64_STATE_USER_ENTRY_READY 0x00004000u
+
+#define PROCESS64_CLASS_SYSTEM 0x00000001u
+#define PROCESS64_CLASS_POLICY 0x00000002u
+#define PROCESS64_CLASS_INTERACTIVE 0x00000003u
+#define PROCESS64_CLASS_IO 0x00000004u
+#define PROCESS64_CLASS_BACKGROUND 0x00000005u
+
+void process64_init(void);
+u32 process64_count(void);
+u32 process64_pid_by_index(u32 index);
+u32 process64_pid_for_principal(u32 principal_id);
+u32 process64_principal(u32 pid);
+u32 process64_endpoint(u32 pid);
+u32 process64_endpoint_class(u32 pid);
+u32 process64_state(u32 pid);
+u32 process64_scheduler_class(u32 pid);
+u32 process64_capability_limit(u32 pid);
+u32 process64_manifest_index(u32 pid);
+u32 process64_manifest_package_id(u32 pid);
+u32 process64_manifest_executable_id(u32 pid);
+u32 process64_manifest_signer_id(u32 pid);
+u32 process64_manifest_token(u32 pid);
+u32 process64_runtime_generation(u32 pid);
+u32 process64_runtime_token(u32 pid);
+u32 process64_runtime_image_generation(u32 pid);
+u32 process64_runtime_image_token(u32 pid);
+u32 process64_runtime_image_base(u32 pid);
+u32 process64_runtime_image_entry(u32 pid);
+u32 process64_runtime_image_mapped_bytes(u32 pid);
+u32 process64_runtime_image_rights(u32 pid);
+u32 process64_runtime_image_plan_token(u32 pid);
+u32 process64_runtime_image_map_token(u32 pid);
+u32 process64_runtime_image_page_count(u32 pid);
+u32 process64_runtime_image_pml4_index(u32 pid);
+u32 process64_runtime_image_pdpt_index(u32 pid);
+u32 process64_runtime_image_pd_index(u32 pid);
+u32 process64_runtime_entry_transfer_token(u32 pid);
+u32 process64_runtime_image_install_token(u32 pid);
+u32 process64_runtime_image_source_checksum(u32 pid);
+u32 process64_runtime_image_entry_probe(u32 pid);
+u32 process64_runtime_image_map_installed(u32 pid);
+u32 process64_runtime_image_protection_flags(u32 pid);
+u32 process64_runtime_image_protection_token(u32 pid);
+u32 process64_runtime_user_entry_state(u32 pid);
+u32 process64_runtime_user_entry_token(u32 pid);
+u32 process64_runtime_user_entry_rip(u32 pid);
+u32 process64_runtime_user_entry_rsp(u32 pid);
+u32 process64_runtime_user_entry_selectors(u32 pid);
+u32 process64_runtime_user_entry_rflags(u32 pid);
+u32 process64_runtime_user_entry_denial(u32 pid);
+u32 process64_runtime_user_entry_ready(u32 pid);
+u32 process64_runtime_payload_offset(u32 pid);
+u32 process64_runtime_payload_size(u32 pid);
+u32 process64_runtime_payload_checksum(u32 pid);
+u32 process64_manifest_verified_count(void);
+const char *process64_name(u32 pid);
+
+#endif

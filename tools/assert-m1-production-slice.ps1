@@ -1,0 +1,660 @@
+param(
+    [ValidateSet("x86_64")]
+    [string]$Architecture = "x86_64",
+
+    [switch]$WriteInventory
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+$distDir = Join-Path $root "dist"
+$m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
+$m1ShellBuiltins = @("apps", "help", "info", "pwd")
+$m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
+$m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
+$m1UnavailableFeatures = @(
+    "ASK (not AI; no consent-gated assistant path in M1)",
+    "ECHO (not product-path in M1)",
+    "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in M1 shell)",
+    "GUI/window-manager/desktop (experimental proof surface, not M1 product-path)",
+    "Network stack (experimental proof surface, not M1 product-path)",
+    "Installer",
+    "Package manager",
+    "AI assistant behavior"
+)
+
+function Fail-M1
+{
+    param([Parameter(Mandatory = $true)][string]$Message)
+    throw "M1 production-slice gate failed: $Message"
+}
+
+function Get-Fnv1aDataChecksum
+{
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    [uint32]$hash = 2166136261
+    for ($index = 0; $index -lt $Bytes.Length; $index++) {
+        [uint32]$value = $Bytes[$index]
+        $hash = [uint32](($hash -bxor $value) -band 0xFFFFFFFF)
+        $hash = [uint32](([uint64]$hash * [uint64]16777619) % [uint64]4294967296)
+    }
+
+    return $hash
+}
+
+function Get-RepoRelativePath
+{
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $rootPath = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
+    if ($fullPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $fullPath.Substring($rootPath.Length + 1)
+    }
+
+    return $fullPath
+}
+
+function Read-KeyValueFile
+{
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $values = @{}
+    foreach ($line in Get-Content -Path $Path) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            $values[$Matches[1]] = $Matches[2]
+        }
+    }
+
+    return $values
+}
+
+function Get-UInt32Le
+{
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset
+    )
+
+    return [System.BitConverter]::ToUInt32($Bytes, $Offset)
+}
+
+function Normalize-IsoFileIdentifier
+{
+    param([Parameter(Mandatory = $true)][byte[]]$IdentifierBytes)
+
+    if (($IdentifierBytes.Length -eq 1) -and ($IdentifierBytes[0] -eq 0)) {
+        return "."
+    }
+    if (($IdentifierBytes.Length -eq 1) -and ($IdentifierBytes[0] -eq 1)) {
+        return ".."
+    }
+
+    $name = [System.Text.Encoding]::ASCII.GetString($IdentifierBytes).TrimEnd()
+    $versionIndex = $name.IndexOf(';')
+    if ($versionIndex -ge 0) {
+        $name = $name.Substring(0, $versionIndex)
+    }
+
+    return $name.ToUpperInvariant()
+}
+
+function Get-IsoDirectoryEntries
+{
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$IsoBytes,
+        [Parameter(Mandatory = $true)][uint32]$ExtentLba,
+        [Parameter(Mandatory = $true)][uint32]$DataLength
+    )
+
+    $sectorSize = 2048
+    $directoryOffset = [int]($ExtentLba * $sectorSize)
+    $directoryEnd = $directoryOffset + [int]$DataLength
+    $entries = @{}
+    $offset = $directoryOffset
+
+    while ($offset -lt $directoryEnd) {
+        $recordLength = [int]$IsoBytes[$offset]
+        if ($recordLength -eq 0) {
+            $nextSector = ([int]([Math]::Floor($offset / $sectorSize)) + 1) * $sectorSize
+            if ($nextSector -le $offset) {
+                break
+            }
+            $offset = $nextSector
+            continue
+        }
+
+        if (($offset + $recordLength) -gt $IsoBytes.Length) {
+            Fail-M1 "final ISO contains a truncated directory record."
+        }
+
+        $extentLba = Get-UInt32Le -Bytes $IsoBytes -Offset ($offset + 2)
+        $length = Get-UInt32Le -Bytes $IsoBytes -Offset ($offset + 10)
+        $flags = $IsoBytes[$offset + 25]
+        $identifierLength = [int]$IsoBytes[$offset + 32]
+        $identifierOffset = $offset + 33
+        if (($identifierOffset + $identifierLength) -gt ($offset + $recordLength)) {
+            Fail-M1 "final ISO contains a malformed directory record identifier."
+        }
+
+        [byte[]]$identifier = [byte[]]::new($identifierLength)
+        if ($identifierLength -gt 0) {
+            [Array]::Copy($IsoBytes, $identifierOffset, $identifier, 0, $identifierLength)
+        }
+        $name = Normalize-IsoFileIdentifier -IdentifierBytes $identifier
+        $entries[$name] = [PSCustomObject]@{
+            Name = $name
+            ExtentLba = $extentLba
+            DataLength = $length
+            IsDirectory = (($flags -band 0x02) -ne 0)
+        }
+
+        $offset += $recordLength
+    }
+
+    return $entries
+}
+
+function Read-IsoPathBytes
+{
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$IsoBytes,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $sectorSize = 2048
+    $pvdOffset = 16 * $sectorSize
+    if (($IsoBytes.Length -lt ($pvdOffset + $sectorSize)) -or
+        ($IsoBytes[$pvdOffset] -ne 1) -or
+        ([System.Text.Encoding]::ASCII.GetString($IsoBytes, $pvdOffset + 1, 5) -ne "CD001")) {
+        Fail-M1 "final ISO does not contain a valid ISO9660 primary volume descriptor."
+    }
+
+    $rootRecord = $pvdOffset + 156
+    $currentLba = Get-UInt32Le -Bytes $IsoBytes -Offset ($rootRecord + 2)
+    $currentLength = Get-UInt32Le -Bytes $IsoBytes -Offset ($rootRecord + 10)
+    $parts = @($Path.Trim('/').Split('/') | Where-Object { $_.Length -gt 0 })
+
+    for ($partIndex = 0; $partIndex -lt $parts.Count; $partIndex++) {
+        $entries = Get-IsoDirectoryEntries -IsoBytes $IsoBytes -ExtentLba $currentLba -DataLength $currentLength
+        $lookup = $parts[$partIndex].ToUpperInvariant()
+        if (-not $entries.ContainsKey($lookup)) {
+            Fail-M1 "final ISO is missing required path '$Path'."
+        }
+
+        $entry = $entries[$lookup]
+        $isLast = ($partIndex -eq ($parts.Count - 1))
+        if (-not $isLast) {
+            if (-not $entry.IsDirectory) {
+                Fail-M1 "final ISO path '$Path' crosses a non-directory entry '$lookup'."
+            }
+            $currentLba = $entry.ExtentLba
+            $currentLength = $entry.DataLength
+            continue
+        }
+
+        if ($entry.IsDirectory) {
+            Fail-M1 "final ISO path '$Path' resolved to a directory, not a file."
+        }
+
+        $fileOffset = [int]($entry.ExtentLba * $sectorSize)
+        $fileLength = [int]$entry.DataLength
+        if (($fileOffset + $fileLength) -gt $IsoBytes.Length) {
+            Fail-M1 "final ISO path '$Path' extends beyond the image size."
+        }
+
+        [byte[]]$fileBytes = [byte[]]::new($fileLength)
+        if ($fileLength -gt 0) {
+            [Array]::Copy($IsoBytes, $fileOffset, $fileBytes, 0, $fileLength)
+        }
+        return ,$fileBytes
+    }
+
+    Fail-M1 "final ISO path '$Path' is empty."
+}
+
+function Read-IsoEntryBytes
+{
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$IsoBytes,
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ($Entry.IsDirectory) {
+        Fail-M1 "final ISO path '$Path' resolved to a directory, not a file."
+    }
+
+    $sectorSize = 2048
+    $fileOffset = [int]($Entry.ExtentLba * $sectorSize)
+    $fileLength = [int]$Entry.DataLength
+    if (($fileOffset + $fileLength) -gt $IsoBytes.Length) {
+        Fail-M1 "final ISO path '$Path' extends beyond the image size."
+    }
+
+    [byte[]]$fileBytes = [byte[]]::new($fileLength)
+    if ($fileLength -gt 0) {
+        [Array]::Copy($IsoBytes, $fileOffset, $fileBytes, 0, $fileLength)
+    }
+    return ,$fileBytes
+}
+
+function Assert-BytesEqual
+{
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Expected,
+        [Parameter(Mandatory = $true)][byte[]]$Actual,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    if ($Expected.Length -ne $Actual.Length) {
+        Fail-M1 "$Label byte count differs between staging and final ISO."
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $expectedHash = [System.BitConverter]::ToString($sha256.ComputeHash($Expected)).Replace("-", "")
+        $actualHash = [System.BitConverter]::ToString($sha256.ComputeHash($Actual)).Replace("-", "")
+        if ($expectedHash -ne $actualHash) {
+            Fail-M1 "$Label content hash differs between staging and final ISO."
+        }
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
+function Assert-FinalIsoContents
+{
+    param(
+        [Parameter(Mandatory = $true)][string]$IsoPath,
+        [Parameter(Mandatory = $true)][string]$StageDir,
+        [Parameter(Mandatory = $true)][string]$AppsDir,
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$KernelPath,
+        [Parameter(Mandatory = $true)][string]$EfiPath
+    )
+
+    [byte[]]$isoBytes = [System.IO.File]::ReadAllBytes($IsoPath)
+    $sectorSize = 2048
+    $pvdOffset = 16 * $sectorSize
+    if (($isoBytes.Length -lt ($pvdOffset + $sectorSize)) -or
+        ($isoBytes[$pvdOffset] -ne 1) -or
+        ([System.Text.Encoding]::ASCII.GetString($isoBytes, $pvdOffset + 1, 5) -ne "CD001")) {
+        Fail-M1 "final ISO does not contain a valid ISO9660 primary volume descriptor."
+    }
+
+    $rootRecord = $pvdOffset + 156
+    $rootEntries = Get-IsoDirectoryEntries -IsoBytes $isoBytes -ExtentLba (Get-UInt32Le -Bytes $isoBytes -Offset ($rootRecord + 2)) -DataLength (Get-UInt32Le -Bytes $isoBytes -Offset ($rootRecord + 10))
+    foreach ($requiredRoot in @("BOOTMAN.TXT", "KERNEL64.BIN", "EFI", "APPS")) {
+        if (-not $rootEntries.ContainsKey($requiredRoot)) {
+            Fail-M1 "final ISO is missing required root path '$requiredRoot'."
+        }
+    }
+
+    Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($ManifestPath)) -Actual (Read-IsoEntryBytes -IsoBytes $isoBytes -Entry $rootEntries["BOOTMAN.TXT"] -Path "/BOOTMAN.TXT") -Label "BOOTMAN.TXT"
+    Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($KernelPath)) -Actual (Read-IsoEntryBytes -IsoBytes $isoBytes -Entry $rootEntries["KERNEL64.BIN"] -Path "/KERNEL64.BIN") -Label "KERNEL64.BIN"
+
+    $efiEntries = Get-IsoDirectoryEntries -IsoBytes $isoBytes -ExtentLba $rootEntries["EFI"].ExtentLba -DataLength $rootEntries["EFI"].DataLength
+    if (-not $efiEntries.ContainsKey("BOOT")) {
+        Fail-M1 "final ISO is missing required path '/EFI/BOOT'."
+    }
+    $bootEntries = Get-IsoDirectoryEntries -IsoBytes $isoBytes -ExtentLba $efiEntries["BOOT"].ExtentLba -DataLength $efiEntries["BOOT"].DataLength
+    if (-not $bootEntries.ContainsKey("BOOTX64.EFI")) {
+        Fail-M1 "final ISO is missing required path '/EFI/BOOT/BOOTX64.EFI'."
+    }
+    Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($EfiPath)) -Actual (Read-IsoEntryBytes -IsoBytes $isoBytes -Entry $bootEntries["BOOTX64.EFI"] -Path "/EFI/BOOT/BOOTX64.EFI") -Label "EFI/BOOT/BOOTX64.EFI"
+
+    $appEntries = Get-IsoDirectoryEntries -IsoBytes $isoBytes -ExtentLba $rootEntries["APPS"].ExtentLba -DataLength $rootEntries["APPS"].DataLength
+    foreach ($file in Get-ChildItem -Path $AppsDir -File | Sort-Object Name) {
+        $appName = $file.Name.ToUpperInvariant()
+        if (-not $appEntries.ContainsKey($appName)) {
+            Fail-M1 "final ISO is missing required staged APPS path '/APPS/$($file.Name)'."
+        }
+        Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($file.FullName)) -Actual (Read-IsoEntryBytes -IsoBytes $isoBytes -Entry $appEntries[$appName] -Path "/APPS/$($file.Name)") -Label "/APPS/$($file.Name)"
+    }
+
+    $stageFileNames = @{}
+    foreach ($file in Get-ChildItem -Path $AppsDir -File) {
+        $stageFileNames[$file.Name.ToUpperInvariant()] = $true
+    }
+    foreach ($entryName in $appEntries.Keys) {
+        if (($entryName -eq ".") -or ($entryName -eq "..")) {
+            continue
+        }
+        if (-not $stageFileNames.ContainsKey($entryName)) {
+            Fail-M1 "final ISO exposes unstaged APPS entry '/APPS/$entryName'."
+        }
+    }
+}
+
+function Assert-NoUnlabeledPlaceholders
+{
+    $scanRoots = @(
+        (Join-Path $root "README.md"),
+        (Join-Path $root "docs"),
+        (Join-Path $root "kernel"),
+        (Join-Path $root "packages"),
+        (Join-Path $root "tools")
+    )
+    $blockedPattern = '(?i)\b(TODO|FIXME|placeholder|toy|proof-of-concept|demo)\b|\bfake\b'
+    $allowedScript = [System.IO.Path]::GetFullPath($PSCommandPath)
+    $violations = @()
+
+    foreach ($scanRoot in $scanRoots) {
+        if (-not (Test-Path $scanRoot)) {
+            continue
+        }
+
+        $items = if ((Get-Item $scanRoot).PSIsContainer) {
+            Get-ChildItem -Path $scanRoot -Recurse -File
+        }
+        else {
+            @(Get-Item $scanRoot)
+        }
+
+        foreach ($item in $items) {
+            $fullName = [System.IO.Path]::GetFullPath($item.FullName)
+            if ($fullName -eq $allowedScript) {
+                continue
+            }
+            if ($item.Name -like "*.bak") {
+                continue
+            }
+            if ($item.Extension -notin @(".asm", ".c", ".h", ".json", ".md", ".ps1", ".txt")) {
+                continue
+            }
+
+            foreach ($match in Select-String -Path $item.FullName -Pattern $blockedPattern -AllMatches) {
+                $violations += ("{0}:{1}: {2}" -f (Get-RepoRelativePath $item.FullName), $match.LineNumber, $match.Line.Trim())
+                if ($violations.Count -ge 20) {
+                    break
+                }
+            }
+            if ($violations.Count -ge 20) {
+                break
+            }
+        }
+        if ($violations.Count -ge 20) {
+            break
+        }
+    }
+
+    if ($violations.Count -gt 0) {
+        Fail-M1 ("unlabeled placeholder/demo language remains:`n" + ($violations -join "`n"))
+    }
+}
+
+function Assert-NoAbsoluteLocalPaths
+{
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    foreach ($path in $Paths) {
+        if (-not (Test-Path $path)) {
+            Fail-M1 "expected generated report is missing: $(Get-RepoRelativePath $path)"
+        }
+
+        $matches = @(Select-String -Path $path -Pattern '[A-Za-z]:\\|\\Users\\|Documents\\Codex' -AllMatches)
+        if ($matches.Count -gt 0) {
+            $first = $matches[0]
+            Fail-M1 ("generated report contains a stale absolute local path at {0}:{1}: {2}" -f (Get-RepoRelativePath $path), $first.LineNumber, $first.Line.Trim())
+        }
+    }
+}
+
+function Assert-RuntimeShellSurfaceSource
+{
+    $shellPath = Join-Path $root "kernel\arch\x86_64\shell.c"
+    $runtimeProbePath = Join-Path $root "kernel\arch\x86_64\runtime_image_user.asm"
+    if (-not (Test-Path $shellPath)) {
+        Fail-M1 "x86_64 runtime shell source is missing."
+    }
+    if (-not (Test-Path $runtimeProbePath)) {
+        Fail-M1 "x86_64 runtime probe source is missing."
+    }
+
+    $source = Get-Content -Path $shellPath -Raw
+    $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
+    foreach ($requiredText in @(
+        "Builtins: apps help info pwd",
+        "Product apps: append cat copy delete ls mkdir move rename stat touch write",
+        "Unavailable in M1: ask (not AI), echo, aliases, gui, network, installer, package-manager, ai",
+        "ASK (not AI)",
+        "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
+        "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
+    )) {
+        if (-not $source.Contains($requiredText)) {
+            Fail-M1 "x86_64 runtime shell source is missing required M1 runtime-surface text: $requiredText"
+        }
+    }
+
+    if ($source.Contains("help apps info pwd ls cat stat write mkdir copy delete rename move touch append echo")) {
+        Fail-M1 "x86_64 runtime shell still contains the stale generic help line with echo."
+    }
+
+    foreach ($forbiddenCommand in @("ask", "echo", "say", "show", "list", "make", "put", "swap", "shift")) {
+        $pattern = 'shell64_token_equals\(command_start,\s*command_length,\s*"{0}"\)' -f [regex]::Escape($forbiddenCommand)
+        if ($source -match $pattern) {
+            Fail-M1 "x86_64 runtime shell still executes non-M1 command '$forbiddenCommand'."
+        }
+    }
+
+    if ($source -match 'fs64_list_kernel\s*\(\s*apps_capability') {
+        Fail-M1 "x86_64 runtime shell still exposes raw /APPS directory contents through apps."
+    }
+
+    if (-not ($source -match 'text_length\s*==\s*0u')) {
+        Fail-M1 "x86_64 runtime shell source does not guard empty write/append text against stale help drift."
+    }
+
+    foreach ($staleProbeText in @("commands: apps help info pwd ls cat stat write", "LimitlessOS /APPS index", "*.APP files are launcher descriptors.")) {
+        if ($runtimeSource.Contains($staleProbeText)) {
+            Fail-M1 "x86_64 runtime probe still emits stale app/help surface text: $staleProbeText"
+        }
+    }
+    foreach ($requiredProbeText in @(
+        "Product apps: append cat copy delete ls mkdir move rename stat touch write",
+        "Unavailable ASK-not-AI ECHO aliases",
+        "HELLO.TXT INDEX.TXT internal"
+    )) {
+        if (-not $runtimeSource.Contains($requiredProbeText)) {
+            Fail-M1 "x86_64 runtime probe is missing required M1-labeled output: $requiredProbeText"
+        }
+    }
+}
+
+function Assert-X64Artifacts
+{
+    $loaderSectorLimit = 1024
+    $loaderReserveWarning = 128
+    $loaderReserveHardMinimum = 96
+    $stageDir = Join-Path $distDir "limitlessos-x86_64-uefi"
+    $appsDir = Join-Path $stageDir "APPS"
+    $manifestPath = Join-Path $stageDir "BOOTMAN.TXT"
+    $stagedKernelPath = Join-Path $stageDir "KERNEL64.BIN"
+    $scaffoldBinPath = Join-Path $distDir "limitlessos-x86_64.scaffold.bin"
+    $uefiArtifactPath = Join-Path $distDir "limitlessos-x86_64.efi"
+    $stagedEfiPath = Join-Path $stageDir "EFI\BOOT\BOOTX64.EFI"
+    $isoPath = Join-Path $distDir "limitlessos-x86_64.iso"
+    $uefiImagePath = Join-Path $distDir "limitlessos-x86_64-uefi.img"
+    $diskImagePath = Join-Path $distDir "limitlessos-x86_64.img"
+    $reportPath = Join-Path $distDir "limitlessos-x86_64.scaffold.txt"
+    $sizeReportPath = Join-Path $distDir "limitlessos-x86_64.size.txt"
+    $stageReadmePath = Join-Path $stageDir "README.TXT"
+
+    foreach ($path in @($stageDir, $appsDir, $manifestPath, $stagedKernelPath, $scaffoldBinPath, $uefiArtifactPath, $stagedEfiPath, $isoPath, $uefiImagePath, $diskImagePath, $reportPath, $sizeReportPath, $stageReadmePath)) {
+        if (-not (Test-Path $path)) {
+            Fail-M1 "required x86_64 artifact is missing: $(Get-RepoRelativePath $path)"
+        }
+    }
+
+    [byte[]]$stagedKernelBytes = [System.IO.File]::ReadAllBytes($stagedKernelPath)
+    [byte[]]$scaffoldBytes = [System.IO.File]::ReadAllBytes($scaffoldBinPath)
+    if ($stagedKernelBytes.Length -ne $scaffoldBytes.Length) {
+        Fail-M1 "staged UEFI kernel byte count does not match dist scaffold binary."
+    }
+
+    $stagedChecksum = Get-Fnv1aDataChecksum -Bytes $stagedKernelBytes
+    $scaffoldChecksum = Get-Fnv1aDataChecksum -Bytes $scaffoldBytes
+    if ($stagedChecksum -ne $scaffoldChecksum) {
+        Fail-M1 "staged UEFI kernel checksum does not match dist scaffold binary."
+    }
+
+    $sectorCount = [int][Math]::Ceiling($stagedKernelBytes.Length / 512.0)
+    $sectorReserve = $loaderSectorLimit - $sectorCount
+    if (($sectorCount -le 0) -or ($sectorCount -gt $loaderSectorLimit)) {
+        Fail-M1 "kernel sector count $sectorCount is outside the $loaderSectorLimit-sector loader limit."
+    }
+    if ($sectorReserve -lt $loaderReserveHardMinimum) {
+        Fail-M1 "kernel sector reserve $sectorReserve is below the hard M1 minimum of $loaderReserveHardMinimum sectors."
+    }
+    if ($sectorReserve -lt $loaderReserveWarning) {
+        Write-Warning "kernel sector reserve $sectorReserve is below the M1 warning threshold of $loaderReserveWarning sectors."
+    }
+
+    $manifest = Read-KeyValueFile -Path $manifestPath
+    foreach ($key in @("architecture", "kernel", "kernel-bytes", "kernel-sectors", "kernel-sector-limit", "kernel-sector-reserve", "kernel-checksum")) {
+        if (-not $manifest.ContainsKey($key)) {
+            Fail-M1 "BOOTMAN.TXT is missing required key '$key'."
+        }
+    }
+    if ($manifest["architecture"] -ne "x86_64") {
+        Fail-M1 "BOOTMAN.TXT architecture does not match x86_64."
+    }
+    if ($manifest["kernel"] -ne "KERNEL64.BIN") {
+        Fail-M1 "BOOTMAN.TXT kernel entry is not KERNEL64.BIN."
+    }
+    if ([int]$manifest["kernel-bytes"] -ne $stagedKernelBytes.Length) {
+        Fail-M1 "BOOTMAN.TXT kernel byte count is stale."
+    }
+    if ([int]$manifest["kernel-sectors"] -ne $sectorCount) {
+        Fail-M1 "BOOTMAN.TXT kernel sector count is stale."
+    }
+    if ([int]$manifest["kernel-sector-limit"] -ne $loaderSectorLimit) {
+        Fail-M1 "BOOTMAN.TXT kernel sector limit is stale."
+    }
+    if ([int]$manifest["kernel-sector-reserve"] -ne $sectorReserve) {
+        Fail-M1 "BOOTMAN.TXT kernel sector reserve is stale."
+    }
+    if ($manifest["kernel-checksum"] -ne ("0x{0:X8}" -f $stagedChecksum)) {
+        Fail-M1 "BOOTMAN.TXT kernel checksum is stale."
+    }
+
+    $appFiles = @(Get-ChildItem -Path $appsDir -Filter "*.APP" -File | Sort-Object Name)
+    $binFiles = @(Get-ChildItem -Path $appsDir -Filter "*.BIN" -File | Sort-Object Name)
+    if ($appFiles.Count -eq 0) {
+        Fail-M1 "no APPS descriptors are staged on the UEFI media."
+    }
+    if ($appFiles.Count -ne $binFiles.Count) {
+        Fail-M1 "APPS descriptor count ($($appFiles.Count)) does not match binary count ($($binFiles.Count))."
+    }
+
+    $expectedProductApps = @($m1ProductApps | Sort-Object)
+    $stagedAppBases = @($appFiles | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name).ToUpperInvariant() } | Sort-Object)
+    $stagedBinBases = @($binFiles | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name).ToUpperInvariant() } | Sort-Object)
+    if (($stagedAppBases -join ",") -ne ($expectedProductApps -join ",")) {
+        Fail-M1 ("staged APPS descriptors do not match the M1 product inventory. Expected {0}; found {1}." -f ($expectedProductApps -join ","), ($stagedAppBases -join ","))
+    }
+    if (($stagedBinBases -join ",") -ne ($expectedProductApps -join ",")) {
+        Fail-M1 ("staged APPS binaries do not match the M1 product inventory. Expected {0}; found {1}." -f ($expectedProductApps -join ","), ($stagedBinBases -join ","))
+    }
+
+    foreach ($app in $appFiles) {
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($app.Name)
+        $binPath = Join-Path $appsDir "$base.BIN"
+        if (-not (Test-Path $binPath)) {
+            Fail-M1 "descriptor $($app.Name) does not have a matching flat binary."
+        }
+        if ((Get-Item $binPath).Length -le 0) {
+            Fail-M1 "flat binary $base.BIN is empty."
+        }
+        $descriptorLines = @(Get-Content -Path $app.FullName)
+        if ($descriptorLines.Count -lt 6) {
+            Fail-M1 "descriptor $($app.Name) is malformed; expected six fields."
+        }
+        if ([string]::IsNullOrWhiteSpace($descriptorLines[4]) -or [string]::IsNullOrWhiteSpace($descriptorLines[5])) {
+            Fail-M1 "descriptor $($app.Name) is missing user-visible usage/category metadata."
+        }
+    }
+
+    foreach ($bin in $binFiles) {
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($bin.Name)
+        if (-not (Test-Path (Join-Path $appsDir "$base.APP"))) {
+            Fail-M1 "flat binary $($bin.Name) is exposed without a matching descriptor."
+        }
+    }
+
+    Assert-NoAbsoluteLocalPaths -Paths @($reportPath, $sizeReportPath, $manifestPath, $stageReadmePath)
+    Assert-RuntimeShellSurfaceSource
+
+    $reportLines = @(Get-Content -Path $reportPath)
+    if (-not ($reportLines | Where-Object { $_ -eq "loader-budget: bios-sector-limit $loaderSectorLimit current-sectors $sectorCount reserve-sectors $sectorReserve enforced 1" })) {
+        Fail-M1 "scaffold report loader-budget line is missing or stale."
+    }
+    if (-not ($reportLines | Where-Object { $_ -eq "artifact-bin: dist\limitlessos-x86_64.scaffold.bin" })) {
+        Fail-M1 "scaffold report does not use repo-relative artifact paths."
+    }
+
+    Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($uefiArtifactPath)) -Actual ([System.IO.File]::ReadAllBytes($stagedEfiPath)) -Label "staged BOOTX64.EFI"
+    Assert-FinalIsoContents -IsoPath $isoPath -StageDir $stageDir -AppsDir $appsDir -ManifestPath $manifestPath -KernelPath $stagedKernelPath -EfiPath $stagedEfiPath
+
+    if ($WriteInventory) {
+        $inventory = [PSCustomObject]@{
+            milestone = "M1 Real Bootable System Slice"
+            architecture = $Architecture
+            generatedUtc = [DateTime]::UtcNow.ToString("o")
+            kernel = [PSCustomObject]@{
+                bytes = $stagedKernelBytes.Length
+                sectors = $sectorCount
+                sectorLimit = $loaderSectorLimit
+                sectorReserve = $sectorReserve
+                checksum = ("0x{0:X8}" -f $stagedChecksum)
+            }
+            artifacts = [PSCustomObject]@{
+                iso = Get-RepoRelativePath $isoPath
+                uefiImage = Get-RepoRelativePath $uefiImagePath
+                diskImage = Get-RepoRelativePath $diskImagePath
+                manifest = Get-RepoRelativePath $manifestPath
+                report = Get-RepoRelativePath $reportPath
+            }
+            productApps = $m1ProductApps
+            experimentalApps = @()
+            shellBuiltins = $m1ShellBuiltins
+            aliases = @($m1Aliases | ForEach-Object {
+                [PSCustomObject]@{
+                    name = $_
+                    status = "unavailable"
+                    reason = "not M1 product-path"
+                }
+            })
+            internalFiles = @($m1InternalFiles | ForEach-Object {
+                [PSCustomObject]@{
+                    name = $_
+                    status = "hidden from runtime apps output"
+                }
+            })
+            unavailableFeatures = $m1UnavailableFeatures
+            runtimeHelpVerified = $true
+            runtimeAppsVerified = $true
+            apps = @($appFiles | ForEach-Object {
+                $base = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+                [PSCustomObject]@{
+                    descriptor = $_.Name
+                    binary = "$base.BIN"
+                    descriptorBytes = $_.Length
+                    binaryBytes = (Get-Item (Join-Path $appsDir "$base.BIN")).Length
+                }
+            })
+        }
+        $inventoryPath = Join-Path $distDir "limitlessos-x86_64.m1.json"
+        $inventory | ConvertTo-Json -Depth 6 | Set-Content -Path $inventoryPath -Encoding Ascii
+    }
+}
+
+Assert-NoUnlabeledPlaceholders
+Assert-X64Artifacts
+
+Write-Host "M1 production-slice gate passed for $Architecture."
