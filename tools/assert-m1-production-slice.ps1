@@ -948,7 +948,7 @@ function Assert-X64Artifacts
         $m6Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m6InventoryPath -Encoding Ascii
 
         $m7Inventory = $m6Inventory.PSObject.Copy()
-        $m7Inventory.milestone = "M7 Signed Package System"
+        $m7Inventory.milestone = "M7.1 Supply-Chain Negative Fixture Closure"
         $m7Inventory.activeProductServices = @(
             $m6Inventory.activeProductServices +
             @("signed package admission", "signed update-index verification")
@@ -996,6 +996,25 @@ function Assert-X64Artifacts
         $m7Inventory | Add-Member -Force -NotePropertyName noAmbientUpdateAuthorityStatus -NotePropertyValue "verified"
         $m7Inventory | Add-Member -Force -NotePropertyName trustedTimeStatus -NotePropertyValue "unavailable"
         $m7Inventory | Add-Member -Force -NotePropertyName expiryEnforcementStatus -NotePropertyValue "not Product-enforced without trusted time; anti-rollback uses signed index sequence"
+        $m7Inventory | Add-Member -Force -NotePropertyName m7_1NegativeFixturesComplete -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageWrongKeyDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageManifestTamperDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packagePayloadTamperDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageUnsupportedManifestVersionDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageDuplicateDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageDowngradeDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageCapabilityPolicyDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageMalformedDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageOversizedDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName packageInstallNoCapDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateIndexUnsignedDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateIndexTamperDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateIndexWrongKeyDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateIndexReplayHandled -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateCheckNoNetworkAuthorityDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName updateApplyNoInstallAuthorityDenied -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName noAutoInstallVerified -NotePropertyValue $true
+        $m7Inventory | Add-Member -Force -NotePropertyName livePublicUpdateFetchStatus -NotePropertyValue "unavailable/non-product"
         $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelBytes -NotePropertyValue $biosKernelBytes.Length
         $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelSectors -NotePropertyValue $sectorCount
         $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelReserve -NotePropertyValue $sectorReserve

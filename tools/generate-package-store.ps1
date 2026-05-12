@@ -364,6 +364,7 @@ with open(input_path, "r", encoding="ascii") as handle:
     data = json.load(handle)
 
 private_key = Ed25519PrivateKey.generate()
+wrong_key = Ed25519PrivateKey.generate()
 public_key = private_key.public_key().public_bytes(
     encoding=serialization.Encoding.Raw,
     format=serialization.PublicFormat.Raw,
@@ -402,9 +403,11 @@ result = {
     "publicKeyHex": public_key.hex(),
     "publicKeyId": int.from_bytes(public_key[:4], "little"),
     "archiveSignatureHex": private_key.sign(b"LimitlessOS-M7-archive-v1\0" + archive).hex(),
+    "wrongKeyArchiveSignatureHex": wrong_key.sign(b"LimitlessOS-M7-archive-v1\0" + archive).hex(),
     "updateIndexSequence": 7,
     "updateIndexHex": current_index.hex(),
     "updateIndexSignatureHex": private_key.sign(index_prefix + current_index).hex(),
+    "wrongKeyUpdateIndexSignatureHex": wrong_key.sign(index_prefix + current_index).hex(),
     "rollbackIndexSequence": 6,
     "rollbackIndexHex": rollback_index.hex(),
     "rollbackIndexSignatureHex": private_key.sign(index_prefix + rollback_index).hex(),
@@ -444,6 +447,11 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add("    " + ($archiveSignatureValues -join ", "))
     $sigLines.Add("};")
     $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_signature_archive_wrong_key[64] = {")
+    $wrongKeyArchiveSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.wrongKeyArchiveSignatureHex)
+    $sigLines.Add("    " + ($wrongKeyArchiveSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
     $sigLines.Add("static const u8 package_store_update_index[PACKAGE_STORE_UPDATE_INDEX_BYTES] = {")
     $updateIndexValues = Convert-HexToCBytes -Hex ([string]$signOutput.updateIndexHex)
     $sigLines.Add("    " + ($updateIndexValues -join ", "))
@@ -452,6 +460,11 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add("static const u8 package_store_update_index_signature[64] = {")
     $updateIndexSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.updateIndexSignatureHex)
     $sigLines.Add("    " + ($updateIndexSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_update_index_wrong_key_signature[64] = {")
+    $wrongKeyUpdateIndexSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.wrongKeyUpdateIndexSignatureHex)
+    $sigLines.Add("    " + ($wrongKeyUpdateIndexSignatureValues -join ", "))
     $sigLines.Add("};")
     $sigLines.Add("")
     $sigLines.Add("static const u8 package_store_update_index_rollback[PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_BYTES] = {")

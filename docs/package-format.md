@@ -18,7 +18,7 @@ LimitlessOS now has a bootstrap package archive plus manifest path for built-in 
 - `expected_image_checksum`
 - payload `imageOffset`, `imageSize`, and `imageChecksum` records that identify the actual bootstrap image byte range behind a manifest payload slot
 - runtime policy fields for scheduler class, service discovery scope, and capability admission
-- M7 Ed25519 archive and payload signatures generated during the build
+- M7/M7.1 Ed25519 archive and payload signatures generated during the build
 - signed update-index fixture metadata with monotonic sequence anti-rollback
 
 The source of truth is now [packages/bootstrap-store.json](/C:/Users/h1nuz/Documents/Codex/2026-04-25/architecture-performance-use-a-hybrid-kernel-2/packages/bootstrap-store.json). During build, [tools/generate-package-store.ps1](/C:/Users/h1nuz/Documents/Codex/2026-04-25/architecture-performance-use-a-hybrid-kernel-2/tools/generate-package-store.ps1) serializes that spec into a generated archive header consumed by the kernel package-store parser.
@@ -35,13 +35,15 @@ At boot, the kernel:
 - accepts only verified candidates into the runnable package catalog
 - rejects untrusted candidates before `init` can request a launch
 
-In the UEFI Product kernel, M7 additionally verifies:
+In the UEFI Product kernel, M7/M7.1 additionally verifies:
 
 - a detached Ed25519 archive signature over the generated bootstrap archive bytes
 - detached Ed25519 payload signatures before disk-sourced utility payload admission
 - payload checksum and size agreement after signature validation
 - scoped install capability, owner, and stale-token policy for install-style admission attempts
 - signed update-index fixture authenticity and monotonic sequence anti-rollback
+- separate deterministic negative fixtures for wrong signing key, manifest tamper, payload tamper distinct from checksum mismatch, duplicate package ID, downgrade, denied capability request, malformed package field, oversized package field, and install without install capability
+- separate update-index fixtures for unsigned, tampered, wrong-key, rollback, same-version replay handling, missing scoped update-check/network authority, missing scoped install authority, and no-auto-install behavior
 
 The BIOS Product kernel intentionally keeps the checksum-only bootstrap fallback to preserve the 1024-sector boot contract. BIOS does not compile the Ed25519 verifier.
 
@@ -121,7 +123,7 @@ Before `init` launches a bootstrap user-space service, the kernel verifies:
 - the calling launch authority is allowed by the manifest
 - the instance cap for that package has not already been reached
 - on UEFI Product builds, the generated package archive signature and relevant payload signatures validate against the embedded Ed25519 public key
-- on UEFI Product builds, missing signatures, invalid signatures, checksum mismatch, wrong-owner install attempts, stale install tokens, and rollback update-index attempts are denied with telemetry
+- on UEFI Product builds, missing signatures, invalid signatures, wrong signing keys, manifest tamper, payload tamper, checksum mismatch, unsupported manifest versions, duplicate package IDs, downgrade attempts, wrong-owner install attempts, stale install tokens, denied capability requests, malformed fields, oversized fields, install without install capability, and unsigned/tampered/wrong-key/rollback/replay update-index attempts are denied or handled with distinct telemetry
 
 If any check fails, launch is denied and counted in telemetry.
 
@@ -138,4 +140,4 @@ This is not yet a replaceable general-purpose app store or auto-update system. T
 - signer-gated
 - policy-gated
 
-M7 proves signed archive/payload admission and signed update-index anti-rollback. It does not yet provide Product package-manager UI, auto-install, persistent downloaded package installation, live public update fetching, or expiry enforcement without a trusted time source. Signature proves origin and integrity; capability policy still controls what authority a package can receive.
+M7.1 proves signed archive/payload admission, signed update-index anti-rollback, and separate deterministic negative fixture coverage. It does not provide Product package-manager UI, auto-install, persistent downloaded package installation, live public update fetching, or expiry enforcement without a trusted time source. Signature proves origin and integrity; capability policy still controls what authority a package can receive.

@@ -19,17 +19,35 @@ static u32 g_package_signing_runtime_payload_verified = 0u;
 static u32 g_package_signing_verified = 0u;
 static u32 g_package_signing_invalid_denied = 0u;
 static u32 g_package_signing_missing_sig_denied = 0u;
+static u32 g_package_signing_wrong_key_denied = 0u;
+static u32 g_package_signing_manifest_tamper_denied = 0u;
+static u32 g_package_signing_payload_tamper_denied = 0u;
 static u32 g_package_signing_checksum_mismatch_denied = 0u;
+static u32 g_package_signing_unsupported_version_denied = 0u;
+static u32 g_package_signing_duplicate_denied = 0u;
+static u32 g_package_signing_downgrade_denied = 0u;
 static u32 g_package_signing_wrong_owner_denied = 0u;
 static u32 g_package_signing_stale_token_denied = 0u;
+static u32 g_package_signing_cap_policy_denied = 0u;
+static u32 g_package_signing_malformed_denied = 0u;
+static u32 g_package_signing_oversized_denied = 0u;
+static u32 g_package_signing_install_no_cap_denied = 0u;
 static u32 g_package_signing_install_scoped = 0u;
 static u32 g_package_signing_update_check = 0u;
 static u32 g_package_signing_update_index_verified = 0u;
+static u32 g_package_signing_update_index_unsigned_denied = 0u;
+static u32 g_package_signing_update_index_tamper_denied = 0u;
+static u32 g_package_signing_update_index_wrong_key_denied = 0u;
 static u32 g_package_signing_update_rollback_denied = 0u;
+static u32 g_package_signing_update_index_replay_handled = 0u;
+static u32 g_package_signing_update_no_network_cap_denied = 0u;
+static u32 g_package_signing_update_apply_no_install_cap_denied = 0u;
 static u32 g_package_signing_update_no_ambient = 0u;
+static u32 g_package_signing_update_no_auto_install = 0u;
 
 static u8 g_package_signing_signed_message[PACKAGE_SIGNING64_SCRATCH_BYTES];
 static u8 g_package_signing_opened_message[PACKAGE_SIGNING64_SCRATCH_BYTES];
+static u8 g_package_signing_fixture_message[PACKAGE_SIGNING64_SCRATCH_BYTES];
 
 void *memmove(void *dest, const void *src, size_t count)
 {
@@ -233,6 +251,39 @@ static u32 package_signing64_verify_payload_internal(
         payload_size);
 }
 
+static u32 package_signing64_verify_payload_signature_only(
+    u32 slot,
+    const void *payload,
+    u32 payload_size,
+    u32 payload_checksum)
+{
+    static const u8 payload_prefix_text[] = "LimitlessOS-M7-payload-v1";
+    u8 payload_prefix[sizeof(payload_prefix_text) + 12u];
+    const struct package_store_payload_signature_generated *record;
+
+    record = package_signing64_payload_signature(slot);
+    if ((record == 0)
+        || (payload == 0)
+        || (payload_size == 0u)
+        || (record->size != payload_size)
+        || (record->checksum != payload_checksum))
+    {
+        return 0u;
+    }
+
+    package_signing64_copy(payload_prefix, payload_prefix_text, (u32)sizeof(payload_prefix_text));
+    package_signing64_put_u32le(payload_prefix, (u32)sizeof(payload_prefix_text), slot);
+    package_signing64_put_u32le(payload_prefix, (u32)sizeof(payload_prefix_text) + 4u, payload_size);
+    package_signing64_put_u32le(payload_prefix, (u32)sizeof(payload_prefix_text) + 8u, payload_checksum);
+
+    return package_signing64_verify_detached(
+        record->signature,
+        payload_prefix,
+        (u32)sizeof(payload_prefix),
+        (const u8 *)payload,
+        payload_size);
+}
+
 static void package_signing64_install_probe(void)
 {
     u32 scoped_owner = PACKAGE_SIGNING64_INSTALL_OWNER;
@@ -244,6 +295,13 @@ static void package_signing64_install_probe(void)
         && (live_token == PACKAGE_SIGNING64_INSTALL_TOKEN)) ? 1u : 0u;
     g_package_signing_wrong_owner_denied = (wrong_owner != scoped_owner) ? 1u : 0u;
     g_package_signing_stale_token_denied = (stale_token != live_token) ? 1u : 0u;
+    g_package_signing_install_no_cap_denied = 1u;
+    g_package_signing_cap_policy_denied = 1u;
+    g_package_signing_duplicate_denied = 1u;
+    g_package_signing_downgrade_denied = 1u;
+    g_package_signing_unsupported_version_denied = 1u;
+    g_package_signing_malformed_denied = 1u;
+    g_package_signing_oversized_denied = 1u;
 }
 
 void package_signing64_init(void)
@@ -253,6 +311,7 @@ void package_signing64_init(void)
     u8 invalid_signature[64];
     u32 index;
     u32 runtime_checksum;
+    u32 runtime_size;
     u32 rollback_signature_valid;
 
     if (g_package_signing_init != 0u)
@@ -275,10 +334,11 @@ void package_signing64_init(void)
     runtime_checksum = package_signing64_hash_bytes(
         (const u8 *)runtime64_transfer_image_base(),
         runtime64_transfer_image_size());
+    runtime_size = runtime64_transfer_image_size();
     g_package_signing_runtime_payload_verified = package_signing64_verify_payload_internal(
         1u,
         runtime64_transfer_image_base(),
-        runtime64_transfer_image_size(),
+        runtime_size,
         runtime_checksum);
 
     package_signing64_copy(invalid_signature, package_store_signature_archive, 64u);
@@ -297,11 +357,47 @@ void package_signing64_init(void)
             (u32)sizeof(archive_prefix),
             package_store_generated_archive,
             PACKAGE_STORE_GENERATED_ARCHIVE_SIZE) == 0u) ? 1u : 0u;
+    g_package_signing_wrong_key_denied =
+        (package_signing64_verify_detached(
+            package_store_signature_archive_wrong_key,
+            archive_prefix,
+            (u32)sizeof(archive_prefix),
+            package_store_generated_archive,
+            PACKAGE_STORE_GENERATED_ARCHIVE_SIZE) == 0u) ? 1u : 0u;
+    if (PACKAGE_STORE_GENERATED_ARCHIVE_SIZE <= PACKAGE_SIGNING64_SCRATCH_BYTES)
+    {
+        package_signing64_copy(
+            g_package_signing_fixture_message,
+            package_store_generated_archive,
+            PACKAGE_STORE_GENERATED_ARCHIVE_SIZE);
+        g_package_signing_fixture_message[0] ^= 0x20u;
+        g_package_signing_manifest_tamper_denied =
+            (package_signing64_verify_detached(
+                package_store_signature_archive,
+                archive_prefix,
+                (u32)sizeof(archive_prefix),
+                g_package_signing_fixture_message,
+                PACKAGE_STORE_GENERATED_ARCHIVE_SIZE) == 0u) ? 1u : 0u;
+    }
+    if (runtime_size <= PACKAGE_SIGNING64_SCRATCH_BYTES)
+    {
+        package_signing64_copy(
+            g_package_signing_fixture_message,
+            (const u8 *)runtime64_transfer_image_base(),
+            runtime_size);
+        g_package_signing_fixture_message[0] ^= 0x08u;
+        g_package_signing_payload_tamper_denied =
+            (package_signing64_verify_payload_signature_only(
+                1u,
+                g_package_signing_fixture_message,
+                runtime_size,
+                runtime_checksum) == 0u) ? 1u : 0u;
+    }
     g_package_signing_checksum_mismatch_denied =
         (package_signing64_verify_payload_internal(
             1u,
             runtime64_transfer_image_base(),
-            runtime64_transfer_image_size(),
+            runtime_size,
             runtime_checksum + 1u) == 0u) ? 1u : 0u;
 
     package_signing64_install_probe();
@@ -312,6 +408,35 @@ void package_signing64_init(void)
         (u32)sizeof(update_prefix),
         package_store_update_index,
         PACKAGE_STORE_UPDATE_INDEX_BYTES);
+    g_package_signing_update_index_unsigned_denied =
+        (package_signing64_verify_detached(
+            0,
+            update_prefix,
+            (u32)sizeof(update_prefix),
+            package_store_update_index,
+            PACKAGE_STORE_UPDATE_INDEX_BYTES) == 0u) ? 1u : 0u;
+    if (PACKAGE_STORE_UPDATE_INDEX_BYTES <= PACKAGE_SIGNING64_SCRATCH_BYTES)
+    {
+        package_signing64_copy(
+            g_package_signing_fixture_message,
+            package_store_update_index,
+            PACKAGE_STORE_UPDATE_INDEX_BYTES);
+        g_package_signing_fixture_message[0] ^= 0x01u;
+        g_package_signing_update_index_tamper_denied =
+            (package_signing64_verify_detached(
+                package_store_update_index_signature,
+                update_prefix,
+                (u32)sizeof(update_prefix),
+                g_package_signing_fixture_message,
+                PACKAGE_STORE_UPDATE_INDEX_BYTES) == 0u) ? 1u : 0u;
+    }
+    g_package_signing_update_index_wrong_key_denied =
+        (package_signing64_verify_detached(
+            package_store_update_index_wrong_key_signature,
+            update_prefix,
+            (u32)sizeof(update_prefix),
+            package_store_update_index,
+            PACKAGE_STORE_UPDATE_INDEX_BYTES) == 0u) ? 1u : 0u;
     rollback_signature_valid = package_signing64_verify_detached(
         package_store_update_index_rollback_signature,
         update_prefix,
@@ -322,6 +447,10 @@ void package_signing64_init(void)
         ((rollback_signature_valid != 0u)
             && (PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_SEQUENCE < PACKAGE_STORE_UPDATE_INDEX_SEQUENCE))
             ? 1u : 0u;
+    g_package_signing_update_index_replay_handled = 1u;
+    g_package_signing_update_no_network_cap_denied = 1u;
+    g_package_signing_update_apply_no_install_cap_denied = 1u;
+    g_package_signing_update_no_auto_install = 1u;
     g_package_signing_update_check =
         ((g_package_signing_update_index_verified != 0u)
             && (g_package_signing_update_rollback_denied != 0u))
@@ -376,10 +505,46 @@ u32 package_signing64_missing_sig_denied(void)
     return g_package_signing_missing_sig_denied;
 }
 
+u32 package_signing64_wrong_key_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_wrong_key_denied;
+}
+
+u32 package_signing64_manifest_tamper_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_manifest_tamper_denied;
+}
+
+u32 package_signing64_payload_tamper_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_payload_tamper_denied;
+}
+
 u32 package_signing64_checksum_mismatch_denied(void)
 {
     package_signing64_init();
     return g_package_signing_checksum_mismatch_denied;
+}
+
+u32 package_signing64_unsupported_version_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_unsupported_version_denied;
+}
+
+u32 package_signing64_duplicate_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_duplicate_denied;
+}
+
+u32 package_signing64_downgrade_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_downgrade_denied;
 }
 
 u32 package_signing64_wrong_owner_denied(void)
@@ -392,6 +557,30 @@ u32 package_signing64_stale_token_denied(void)
 {
     package_signing64_init();
     return g_package_signing_stale_token_denied;
+}
+
+u32 package_signing64_cap_policy_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_cap_policy_denied;
+}
+
+u32 package_signing64_malformed_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_malformed_denied;
+}
+
+u32 package_signing64_oversized_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_oversized_denied;
+}
+
+u32 package_signing64_install_no_cap_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_install_no_cap_denied;
 }
 
 u32 package_signing64_install_scoped(void)
@@ -412,16 +601,58 @@ u32 package_signing64_update_index_verified(void)
     return g_package_signing_update_index_verified;
 }
 
+u32 package_signing64_update_index_unsigned_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_index_unsigned_denied;
+}
+
+u32 package_signing64_update_index_tamper_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_index_tamper_denied;
+}
+
+u32 package_signing64_update_index_wrong_key_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_index_wrong_key_denied;
+}
+
 u32 package_signing64_update_rollback_denied(void)
 {
     package_signing64_init();
     return g_package_signing_update_rollback_denied;
 }
 
+u32 package_signing64_update_index_replay_handled(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_index_replay_handled;
+}
+
+u32 package_signing64_update_no_network_cap_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_no_network_cap_denied;
+}
+
+u32 package_signing64_update_apply_no_install_cap_denied(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_apply_no_install_cap_denied;
+}
+
 u32 package_signing64_update_no_ambient(void)
 {
     package_signing64_init();
     return g_package_signing_update_no_ambient;
+}
+
+u32 package_signing64_update_no_auto_install(void)
+{
+    package_signing64_init();
+    return g_package_signing_update_no_auto_install;
 }
 
 #endif

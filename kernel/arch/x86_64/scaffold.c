@@ -4564,14 +4564,31 @@ static void log_package_signing_surface(void)
     write_labeled_dec_u32(" drs-pkg-verified ", package_signing64_verified());
     write_labeled_dec_u32(" drs-pkg-invalid-denied ", package_signing64_invalid_denied());
     write_labeled_dec_u32(" drs-pkg-missing-sig-denied ", package_signing64_missing_sig_denied());
+    write_labeled_dec_u32(" drs-pkg-wrong-key-denied ", package_signing64_wrong_key_denied());
+    write_labeled_dec_u32(" drs-pkg-manifest-tamper-denied ", package_signing64_manifest_tamper_denied());
+    write_labeled_dec_u32(" drs-pkg-payload-tamper-denied ", package_signing64_payload_tamper_denied());
     write_labeled_dec_u32(" drs-pkg-checksum-mismatch-denied ", package_signing64_checksum_mismatch_denied());
+    write_labeled_dec_u32(" drs-pkg-unsupported-version-denied ", package_signing64_unsupported_version_denied());
+    write_labeled_dec_u32(" drs-pkg-duplicate-denied ", package_signing64_duplicate_denied());
+    write_labeled_dec_u32(" drs-pkg-downgrade-denied ", package_signing64_downgrade_denied());
     write_labeled_dec_u32(" drs-pkg-wrong-owner-denied ", package_signing64_wrong_owner_denied());
     write_labeled_dec_u32(" drs-pkg-stale-token-denied ", package_signing64_stale_token_denied());
+    write_labeled_dec_u32(" drs-pkg-cap-policy-denied ", package_signing64_cap_policy_denied());
+    write_labeled_dec_u32(" drs-pkg-malformed-denied ", package_signing64_malformed_denied());
+    write_labeled_dec_u32(" drs-pkg-oversized-denied ", package_signing64_oversized_denied());
+    write_labeled_dec_u32(" drs-pkg-install-no-cap-denied ", package_signing64_install_no_cap_denied());
     write_labeled_dec_u32(" drs-pkg-install-scoped ", package_signing64_install_scoped());
     write_labeled_dec_u32(" drs-pkg-update-check ", package_signing64_update_check());
     write_labeled_dec_u32(" drs-pkg-update-index-verified ", package_signing64_update_index_verified());
+    write_labeled_dec_u32(" drs-pkg-update-index-unsigned-denied ", package_signing64_update_index_unsigned_denied());
+    write_labeled_dec_u32(" drs-pkg-update-index-tamper-denied ", package_signing64_update_index_tamper_denied());
+    write_labeled_dec_u32(" drs-pkg-update-index-wrong-key-denied ", package_signing64_update_index_wrong_key_denied());
     write_labeled_dec_u32(" drs-pkg-update-index-rollback-denied ", package_signing64_update_rollback_denied());
+    write_labeled_dec_u32(" drs-pkg-update-index-replay-handled ", package_signing64_update_index_replay_handled());
+    write_labeled_dec_u32(" drs-pkg-update-no-network-cap-denied ", package_signing64_update_no_network_cap_denied());
+    write_labeled_dec_u32(" drs-pkg-update-apply-no-install-cap-denied ", package_signing64_update_apply_no_install_cap_denied());
     write_labeled_dec_u32(" drs-pkg-update-no-ambient ", package_signing64_update_no_ambient());
+    write_labeled_dec_u32(" drs-pkg-update-no-auto-install ", package_signing64_update_no_auto_install());
     write_line("");
 }
 

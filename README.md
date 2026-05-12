@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M7 signed package system
+## Current status: M7.1 supply-chain negative fixture closure
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, M4.1 hardware-validation closure, M5 safe installer dry-run, and M6 service/session authority are accepted. M7 is `Signed Package System`: it adds Ed25519-signed package admission and signed update-index verification to the UEFI Product kernel while keeping the BIOS Product kernel as a lean legacy fallback.
+M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, M4.1 hardware-validation closure, M5 safe installer dry-run, M6 service/session authority, and M7 signed package admission are accepted. M7.1 closes the supply-chain negative fixture gaps: package wrong-key, manifest tamper, payload tamper, duplicate, downgrade, malformed, oversized, denied-capability, no-install-cap, and update-index unsigned/tamper/wrong-key/replay/no-auto-install cases are now separately proven.
 
 Use the Product profile for the serious bootable slice:
 
@@ -12,7 +12,7 @@ Use the Product profile for the serious bootable slice:
 .\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
 ```
 
-Product currently builds two x86_64 kernels. `KERNEL64-BIOS.BIN` is the BIOS fallback kernel and remains under the BIOS loader contract at `448992` bytes, `877 / 1024` sectors, and `147` reserve sectors. `KERNEL64.BIN` is the full UEFI Product kernel and is governed by the M3 file contract at `528608 / 2097152` bytes with `1568544` bytes of UEFI byte reserve. UEFI verifies `BOOTMAN.TXT` byte count and checksum instead of applying BIOS sector arithmetic.
+Product currently builds two x86_64 kernels. `KERNEL64-BIOS.BIN` is the BIOS fallback kernel and remains under the BIOS loader contract at `448992` bytes, `877 / 1024` sectors, and `147` reserve sectors. `KERNEL64.BIN` is the full UEFI Product kernel and is governed by the M3 file contract at `533440 / 2097152` bytes with `1563712` bytes of UEFI byte reserve. UEFI verifies `BOOTMAN.TXT` byte count and checksum instead of applying BIOS sector arithmetic.
 
 Product currently boots to a persistent ring-3 shell and Product desktop, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, exposes a `net` builtin for brokered network status when supported hardware is present, records Product service/session status through Settings plus verifier telemetry, and verifies signed package/update metadata in the UEFI Product kernel. The BIOS Product kernel intentionally keeps the checksum-only bootstrap path and does not carry Ed25519, full GUI/network/service-manager expansion beyond the legacy shell fallback, or M7 update admission.
 
@@ -32,7 +32,7 @@ Manual MSI Cyborg 15 A13VE validation is tracked in `docs/hardware/msi-cyborg-15
 
 BIOS reserve safety: the split restored BIOS headroom above the warning threshold. Installer write/install code and future broad Product services must stay out of the BIOS fallback unless they are strictly boot-critical and preserve the BIOS contract. UEFI remains governed by the `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness; UEFI is not blocked by the BIOS `1024`-sector ceiling.
 
-M7 package safety: the UEFI Product kernel embeds only the public Ed25519 verification key and verifies signed bootstrap package metadata/payload signatures before admission. Missing signatures, invalid signatures, checksum mismatch, wrong-owner install attempts, stale install tokens, and unsigned/rollback update-index attempts are denied in telemetry. The private signing key is generated only during the build signing step and is scanned out of Product artifacts. M7 does not implement auto-install, an app store, a package-manager UI, or Product expiry enforcement without trusted time.
+M7.1 package safety: the UEFI Product kernel embeds only the public Ed25519 verification key and verifies signed bootstrap package metadata/payload signatures before admission. Missing signatures, invalid signatures, wrong signing keys, manifest tampering, payload tampering, checksum mismatch, unsupported manifest versions, duplicate package IDs, downgrades, wrong-owner install attempts, stale install tokens, denied capability requests, malformed fields, oversized fields, and install-without-capability attempts are denied in distinct telemetry. Signed update indexes are checked locally and deterministically; unsigned, tampered, wrong-key, rollback, and same-version replay cases are handled separately. Live public update fetching remains non-product, auto-install remains unavailable, the package-manager GUI remains unavailable, and signature expiry is not Product-enforced without trusted time.
 
 M5 installer safety is documented in `docs/installer/m5-safe-installer.md`. The installer dry-run lists GPT partitions, type GUIDs, labels, filesystem signatures, and safe/forbidden/unknown classification. Fixture verification proves dry-run no-writes, Windows ESP/NTFS/MSR/Recovery refusal, unknown FAT32/GPT refusal, dedicated LimitlessOS target acceptance, scoped write/format authority requirements, boot-entry authority separation, confirmation-token enforcement, and forbidden-partition unchanged checks. Real MSI internal NVMe writes remain disabled by default and are not product-approved until dry-run output is reviewed.
 
@@ -46,7 +46,7 @@ Use the Experimental profile only for proof surfaces:
 
 Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`; M6 evidence is generated by `tools\archive-m6-evidence.ps1`; M7 evidence is generated by `tools\archive-m7-evidence.ps1`.
+Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`; M6 evidence is generated by `tools\archive-m6-evidence.ps1`; M7 evidence is generated by `tools\archive-m7-evidence.ps1`; M7.1 evidence is generated by `tools\archive-m7-1-evidence.ps1`.
 
 This first milestone provides:
 
