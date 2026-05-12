@@ -262,6 +262,13 @@ static void input64_keyboard_clear_pending(void)
 
 static void input64_keyboard_enqueue_byte(u8 value)
 {
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
+    if (display64_wm_process_keyboard_event(value) == 0u)
+    {
+        return;
+    }
+#endif
+
     if (g_keyboard_pending >= INPUT64_KEYBOARD_QUEUE_CAPACITY)
     {
         ++g_keyboard_drop_count;
@@ -391,7 +398,7 @@ static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 
     g_mouse_x = input64_mouse_clamp_axis((s32)g_mouse_x + dx, g_mouse_width);
     g_mouse_y = input64_mouse_clamp_axis((s32)g_mouse_y + dy, g_mouse_height);
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     (void)display64_compositor_update_cursor(g_mouse_x, g_mouse_y, g_mouse_buttons);
     (void)display64_wm_process_mouse_event(g_mouse_x, g_mouse_y, g_mouse_buttons, dx, dy);
 #endif

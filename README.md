@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M3 boot contract + Product networking
+## Current status: M4 interactive GUI promoted to Product
 
-M1 cleanup-final and M2 quarantine are accepted. M3 is `Product Boot Contract + Network Promotion`: the Product build now has a separate UEFI file-size contract and promotes the brokered DHCP/DNS/TCP/HTTP status path to Product without adding sockets or ambient network authority.
+M1 cleanup-final, M2 quarantine, and M3 Product networking are accepted. M4 is `Interactive GUI Promoted to Product`: the Product build now promotes the brokered compositor, window manager, desktop shell, and the Terminal/File Manager/Settings GUI apps only after real mouse and keyboard events flow through the input broker, window manager hit-testing/focus, compositor presentation, and focused-window routing path.
 
 Use the Product profile for the serious bootable slice:
 
@@ -12,15 +12,19 @@ Use the Product profile for the serious bootable slice:
 .\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
 ```
 
-Product currently boots to a persistent ring-3 shell, exposes only the Product apps and builtins, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, and exposes a `net` builtin for brokered network status when supported hardware is present. Current Product size is `468688` bytes, `916 / 1024` BIOS sectors, `108` BIOS reserve, checksum `0x90E2FA90`; the UEFI Product contract is `468688 / 2097152` bytes with `1628464` bytes reserve. The BIOS reserve is still below the 128-sector warning threshold.
+Product currently boots to a persistent ring-3 shell and Product desktop, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, and exposes a `net` builtin for brokered network status when supported hardware is present. Current Product size is `473488` bytes, `925 / 1024` BIOS sectors, `99` BIOS reserve, checksum `0x5D996177`; the UEFI Product contract is `473488 / 2097152` bytes with `1623664` bytes reserve. The BIOS reserve is still below the 128-sector warning threshold and above the 96-sector hard floor.
 
 Product apps are: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE.
 
 Product builtins are: apps, help, info, net, pwd.
 
+Product GUI apps are: Terminal, File Manager, Settings.
+
 Product networking is hardware-gated: UEFI/ISO paths with virtio-net or e1000e prove DHCP, DNS, TCP, and HTTP; BIOS/disk paths report cleanly unavailable. There is still no socket API and no ambient network access.
 
-Unavailable or non-product in Product: ASK, ECHO, aliases, GUI/compositor/window manager/desktop, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
+Product GUI authority is narrow: the compositor owns framebuffer presentation, the window manager owns focus/hit-testing/z-order, the input broker routes mouse/keyboard events, Terminal receives keyboard only while focused, File Manager is limited to brokered safe namespaces, and Settings is read-only system status. Apps do not receive raw framebuffer, raw input, ambient storage, or ambient network authority.
+
+Unavailable or non-product in Product: ASK, ECHO, aliases, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
 
 Use the Experimental profile only for proof surfaces:
 
@@ -28,9 +32,9 @@ Use the Experimental profile only for proof surfaces:
 .\tools\build.ps1 -Architecture x86_64 -BuildProfile Experimental
 ```
 
-Experimental may initialize proof-only GUI/window-manager/desktop and broad hardware proof surfaces. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
+Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The current M3 evidence pack is `dist/m3-evidence-20260511-163350/m3-evidence.json`.
+Authoritative current status and evidence are in `docs/status.md`. The current M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`.
 
 This first milestone provides:
 

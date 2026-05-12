@@ -63,6 +63,20 @@
 #define DISPLAY64_WM_MAX_WINDOWS 16u
 #define DISPLAY64_WM_TITLE_HEIGHT 28u
 #define DISPLAY64_WM_BORDER 1u
+#define DISPLAY64_GUI_REGION_NONE 0u
+#define DISPLAY64_GUI_REGION_DESKTOP 1u
+#define DISPLAY64_GUI_REGION_TITLE 2u
+#define DISPLAY64_GUI_REGION_CLOSE 3u
+#define DISPLAY64_GUI_REGION_BODY 4u
+#define DISPLAY64_GUI_REGION_TASKBAR_LAUNCHER 5u
+#define DISPLAY64_GUI_REGION_TASKBAR_BUTTON 6u
+#define DISPLAY64_GUI_REGION_LAUNCHER_PANEL 7u
+#define DISPLAY64_GUI_REGION_LAUNCHER_TERMINAL 8u
+#define DISPLAY64_GUI_REGION_LAUNCHER_FILEMAN 9u
+#define DISPLAY64_GUI_REGION_LAUNCHER_SETTINGS 10u
+#define DISPLAY64_GUI_INPUT_PATH_TOKEN 0x494E5054u
+#define DISPLAY64_GUI_DISPLAY_PATH_TOKEN 0x44495350u
+#define DISPLAY64_GUI_FS_PATH_TOKEN 0x46535041u
 
 static const struct boot_info *g_display_boot_info = 0;
 static u32 g_display_draw_count = 0u;
@@ -139,6 +153,30 @@ static u32 g_display_desktop_settings_count = 0u;
 static u32 g_display_desktop_fileman_handle = 0u;
 static u32 g_display_desktop_settings_handle = 0u;
 static u32 g_display_desktop_launcher_open = 0u;
+static u32 g_display_gui_interactive = 0u;
+static u32 g_display_gui_click_hittest = 0u;
+static u32 g_display_gui_launcher_opened = 0u;
+static u32 g_display_gui_terminal_opened = 0u;
+static u32 g_display_gui_drag_completed = 0u;
+static u32 g_display_gui_keyboard_routed = 0u;
+static u32 g_display_gui_close_completed = 0u;
+static u32 g_display_gui_taskbar_focus = 0u;
+static u32 g_display_gui_fileman_opened = 0u;
+static u32 g_display_gui_settings_opened = 0u;
+static u32 g_display_gui_unfocused_key_denied = 0u;
+static u32 g_display_gui_unfocused_key_denial_count = 0u;
+static u32 g_display_gui_no_ambient_input = 0u;
+static u32 g_display_gui_no_ambient_display = 0u;
+static u32 g_display_gui_no_ambient_fs = 0u;
+static u32 g_display_gui_mouse_x = 0u;
+static u32 g_display_gui_mouse_y = 0u;
+static u32 g_display_gui_target_window = 0u;
+static u32 g_display_gui_target_region = DISPLAY64_GUI_REGION_NONE;
+static u32 g_display_gui_focus_before = 0u;
+static u32 g_display_gui_focus_after = 0u;
+static u32 g_display_gui_z_before = 0u;
+static u32 g_display_gui_z_after = 0u;
+static u32 g_display_gui_key_target_window = 0u;
 static u32 g_display_back_buffer[
     DISPLAY64_COMPOSITOR_MAX_SCANLINE * DISPLAY64_COMPOSITOR_MAX_HEIGHT];
 
@@ -327,7 +365,7 @@ static volatile u32 *display64_draw_buffer(void)
     return display64_physical_framebuffer();
 }
 
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
 static u32 display64_compositor_capacity_ok(void)
 {
     u64 pixels;
@@ -669,7 +707,7 @@ static void display64_compositor_draw_cursor(void)
     ++g_display_compositor_cursor_count;
 }
 
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
 static void display64_compositor_init_back_buffer(void)
 {
     volatile u32 *framebuffer;
@@ -1826,6 +1864,85 @@ static u32 display64_wm_top_visible_handle(void)
     return best_handle;
 }
 
+static struct display64_window *display64_wm_focused_window(void)
+{
+    u32 index;
+
+    for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
+    {
+        if ((g_display_windows[index].visible != 0u)
+            && (g_display_windows[index].focused != 0u))
+        {
+            return &g_display_windows[index];
+        }
+    }
+
+    return 0;
+}
+
+static u32 display64_wm_focused_handle(void)
+{
+    struct display64_window *window = display64_wm_focused_window();
+    return (window != 0) ? window->handle : 0u;
+}
+
+static u32 display64_wm_window_z(u32 handle)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+    return (window != 0) ? window->z : 0u;
+}
+
+static u32 display64_wm_has_unfocused_terminal(u32 focused_handle)
+{
+    u32 index;
+
+    for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
+    {
+        if ((g_display_windows[index].visible != 0u)
+            && (g_display_windows[index].handle != focused_handle)
+            && display64_wm_window_is_terminal(&g_display_windows[index]))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static void display64_gui_record_event(
+    u32 x,
+    u32 y,
+    u32 region,
+    u32 target_window,
+    u32 focus_before,
+    u32 focus_after,
+    u32 z_before,
+    u32 z_after)
+{
+    g_display_gui_interactive = 1u;
+    g_display_gui_mouse_x = x;
+    g_display_gui_mouse_y = y;
+    g_display_gui_target_region = region;
+    g_display_gui_target_window = target_window;
+    g_display_gui_focus_before = focus_before;
+    g_display_gui_focus_after = focus_after;
+    g_display_gui_z_before = z_before;
+    g_display_gui_z_after = z_after;
+    if (region != DISPLAY64_GUI_REGION_NONE)
+    {
+        g_display_gui_click_hittest = 1u;
+    }
+}
+
+static void display64_gui_record_unfocused_keyboard_denial(u32 focused_handle)
+{
+    if (display64_wm_has_unfocused_terminal(focused_handle) != 0u)
+    {
+        g_display_gui_unfocused_key_denied = 1u;
+        ++g_display_gui_unfocused_key_denial_count;
+    }
+}
+
 static u32 display64_wm_create_window(const char *title, u32 x, u32 y, u32 width, u32 height)
 {
     u32 index;
@@ -2441,14 +2558,17 @@ static void display64_desktop_open_launcher_icon(u32 icon)
     if (icon == 1u)
     {
         display64_desktop_open_terminal();
+        g_display_gui_terminal_opened = 1u;
     }
     else if (icon == 2u)
     {
         display64_desktop_open_file_manager();
+        g_display_gui_fileman_opened = 1u;
     }
     else if (icon == 3u)
     {
         display64_desktop_open_settings();
+        g_display_gui_settings_opened = 1u;
     }
     g_display_desktop_launcher_open = 0u;
     display64_desktop_redraw();
@@ -2510,6 +2630,12 @@ void display64_desktop_probe(void)
         && (g_display_desktop_launcher_count != 0u)
         ? 1u
         : 0u;
+    if (g_display_desktop_active != 0u)
+    {
+        g_display_gui_no_ambient_input = 1u;
+        g_display_gui_no_ambient_display = 1u;
+        g_display_gui_no_ambient_fs = 1u;
+    }
     (void)display64_compositor_present();
 }
 
@@ -2519,6 +2645,8 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
     u32 previous_left = g_display_wm_last_buttons & 0x1u;
     u32 pressed = ((left != 0u) && (previous_left == 0u)) ? 1u : 0u;
     u32 released = ((left == 0u) && (previous_left != 0u)) ? 1u : 0u;
+    u32 focus_before = display64_wm_focused_handle();
+    u32 z_before = 0u;
 
     (void)dx;
     (void)dy;
@@ -2537,16 +2665,38 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         {
             u32 new_x = (x > g_display_wm_drag_offset_x) ? (x - g_display_wm_drag_offset_x) : 0u;
             u32 new_y = (y > g_display_wm_drag_offset_y) ? (y - g_display_wm_drag_offset_y) : 0u;
+            z_before = display64_wm_window_z(g_display_wm_drag_handle);
             display64_wm_move_window(g_display_wm_drag_handle, new_x, new_y);
             display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TITLE,
+                g_display_wm_drag_handle,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                display64_wm_window_z(g_display_wm_drag_handle));
             g_display_wm_last_buttons = buttons;
             return 1u;
         }
 
         if (released != 0u)
         {
+            u32 drag_handle = g_display_wm_drag_handle;
+            z_before = display64_wm_window_z(drag_handle);
             g_display_wm_dragging = 0u;
             g_display_wm_drag_handle = 0u;
+            g_display_gui_drag_completed = 1u;
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TITLE,
+                drag_handle,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                display64_wm_window_z(drag_handle));
             g_display_wm_last_buttons = buttons;
             return 1u;
         }
@@ -2558,15 +2708,36 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         if (taskbar_hit == 0xFFFFFFFFu)
         {
             g_display_desktop_launcher_open = 1u;
+            g_display_gui_launcher_opened = 1u;
             display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TASKBAR_LAUNCHER,
+                0u,
+                focus_before,
+                display64_wm_focused_handle(),
+                0u,
+                0u);
             g_display_wm_last_buttons = buttons;
             return 1u;
         }
         if (taskbar_hit != 0u)
         {
+            z_before = display64_wm_window_z(taskbar_hit);
             g_display_desktop_launcher_open = 0u;
             display64_wm_focus_and_route_console(taskbar_hit);
+            g_display_gui_taskbar_focus = 1u;
             display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TASKBAR_BUTTON,
+                taskbar_hit,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                display64_wm_window_z(taskbar_hit));
             g_display_wm_last_buttons = buttons;
             return 1u;
         }
@@ -2577,7 +2748,37 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
             u32 icon = display64_desktop_hit_launcher_icon(x, y);
             if (icon != 0u)
             {
+                u32 region = DISPLAY64_GUI_REGION_LAUNCHER_TERMINAL;
+                if (icon == 2u)
+                {
+                    region = DISPLAY64_GUI_REGION_LAUNCHER_FILEMAN;
+                }
+                else if (icon == 3u)
+                {
+                    region = DISPLAY64_GUI_REGION_LAUNCHER_SETTINGS;
+                }
                 display64_desktop_open_launcher_icon(icon);
+                display64_gui_record_event(
+                    x,
+                    y,
+                    region,
+                    display64_wm_focused_handle(),
+                    focus_before,
+                    display64_wm_focused_handle(),
+                    0u,
+                    display64_wm_window_z(display64_wm_focused_handle()));
+            }
+            else
+            {
+                display64_gui_record_event(
+                    x,
+                    y,
+                    DISPLAY64_GUI_REGION_LAUNCHER_PANEL,
+                    0u,
+                    focus_before,
+                    display64_wm_focused_handle(),
+                    0u,
+                    0u);
             }
             g_display_wm_last_buttons = buttons;
             return 1u;
@@ -2589,12 +2790,25 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
             {
                 u32 close_x = (window->width > 28u) ? (window->x + window->width - 22u) : window->x;
                 u32 close_y = window->y + 7u;
+                u32 region = DISPLAY64_GUI_REGION_BODY;
                 g_display_desktop_launcher_open = 0u;
+                z_before = window->z;
 
                 if (display64_point_in_rect(x, y, close_x, close_y, 14u, 14u))
                 {
+                    u32 target_handle = window->handle;
                     display64_wm_destroy_window(window->handle);
+                    g_display_gui_close_completed = 1u;
                     display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_CLOSE,
+                        target_handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        0u);
                     g_display_wm_last_buttons = buttons;
                     return 1u;
                 }
@@ -2602,12 +2816,22 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                 display64_wm_focus_and_route_console(window->handle);
                 if (y < (window->y + DISPLAY64_WM_TITLE_HEIGHT))
                 {
+                    region = DISPLAY64_GUI_REGION_TITLE;
                     g_display_wm_dragging = 1u;
                     g_display_wm_drag_handle = window->handle;
                     g_display_wm_drag_offset_x = x - window->x;
                     g_display_wm_drag_offset_y = y - window->y;
                 }
                 display64_desktop_redraw();
+                display64_gui_record_event(
+                    x,
+                    y,
+                    region,
+                    window->handle,
+                    focus_before,
+                    display64_wm_focused_handle(),
+                    z_before,
+                    display64_wm_window_z(window->handle));
                 g_display_wm_last_buttons = buttons;
                 return 1u;
             }
@@ -2616,11 +2840,56 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         g_display_desktop_launcher_open = 0u;
         display64_wm_clear_focus();
         display64_desktop_redraw();
+        display64_gui_record_event(
+            x,
+            y,
+            DISPLAY64_GUI_REGION_DESKTOP,
+            0u,
+            focus_before,
+            display64_wm_focused_handle(),
+            0u,
+            0u);
         g_display_wm_last_buttons = buttons;
         return 1u;
     }
 
     g_display_wm_last_buttons = buttons;
+    return 0u;
+}
+
+u32 display64_wm_process_keyboard_event(u8 value)
+{
+    struct display64_window *focused;
+    u32 focused_handle;
+
+    (void)value;
+
+    if ((g_display_desktop_active == 0u)
+        || (g_display_wm_active == 0u)
+        || !display64_has_framebuffer())
+    {
+        return 1u;
+    }
+
+    focused = display64_wm_focused_window();
+    focused_handle = (focused != 0) ? focused->handle : 0u;
+    g_display_gui_interactive = 1u;
+    g_display_gui_key_target_window = focused_handle;
+
+    if (focused == 0)
+    {
+        display64_gui_record_unfocused_keyboard_denial(0u);
+        return 0u;
+    }
+
+    g_display_gui_keyboard_routed = 1u;
+    if (display64_wm_window_is_terminal(focused))
+    {
+        display64_gui_record_unfocused_keyboard_denial(focused_handle);
+        return 1u;
+    }
+
+    display64_gui_record_unfocused_keyboard_denial(focused_handle);
     return 0u;
 }
 
@@ -2684,6 +2953,30 @@ void display64_init(const struct boot_info *boot_info)
     g_display_desktop_fileman_handle = 0u;
     g_display_desktop_settings_handle = 0u;
     g_display_desktop_launcher_open = 0u;
+    g_display_gui_interactive = 0u;
+    g_display_gui_click_hittest = 0u;
+    g_display_gui_launcher_opened = 0u;
+    g_display_gui_terminal_opened = 0u;
+    g_display_gui_drag_completed = 0u;
+    g_display_gui_keyboard_routed = 0u;
+    g_display_gui_close_completed = 0u;
+    g_display_gui_taskbar_focus = 0u;
+    g_display_gui_fileman_opened = 0u;
+    g_display_gui_settings_opened = 0u;
+    g_display_gui_unfocused_key_denied = 0u;
+    g_display_gui_unfocused_key_denial_count = 0u;
+    g_display_gui_no_ambient_input = 0u;
+    g_display_gui_no_ambient_display = 0u;
+    g_display_gui_no_ambient_fs = 0u;
+    g_display_gui_mouse_x = 0u;
+    g_display_gui_mouse_y = 0u;
+    g_display_gui_target_window = 0u;
+    g_display_gui_target_region = DISPLAY64_GUI_REGION_NONE;
+    g_display_gui_focus_before = 0u;
+    g_display_gui_focus_after = 0u;
+    g_display_gui_z_before = 0u;
+    g_display_gui_z_after = 0u;
+    g_display_gui_key_target_window = 0u;
     for (window_index = 0u; window_index < DISPLAY64_WM_MAX_WINDOWS; ++window_index)
     {
         g_display_windows[window_index].handle = 0u;
@@ -2691,7 +2984,7 @@ void display64_init(const struct boot_info *boot_info)
         g_display_windows[window_index].focused = 0u;
         g_display_windows[window_index].z = 0u;
     }
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_compositor_init_back_buffer();
 #endif
 }
@@ -3211,6 +3504,141 @@ u32 display64_desktop_fileman_count(void)
 u32 display64_desktop_settings_count(void)
 {
     return g_display_desktop_settings_count;
+}
+
+u32 display64_gui_interactive(void)
+{
+    return g_display_gui_interactive;
+}
+
+u32 display64_gui_click_hittest(void)
+{
+    return g_display_gui_click_hittest;
+}
+
+u32 display64_gui_launcher_opened(void)
+{
+    return g_display_gui_launcher_opened;
+}
+
+u32 display64_gui_terminal_opened(void)
+{
+    return g_display_gui_terminal_opened;
+}
+
+u32 display64_gui_drag_completed(void)
+{
+    return g_display_gui_drag_completed;
+}
+
+u32 display64_gui_keyboard_routed(void)
+{
+    return g_display_gui_keyboard_routed;
+}
+
+u32 display64_gui_close_completed(void)
+{
+    return g_display_gui_close_completed;
+}
+
+u32 display64_gui_taskbar_focus(void)
+{
+    return g_display_gui_taskbar_focus;
+}
+
+u32 display64_gui_fileman_opened(void)
+{
+    return g_display_gui_fileman_opened;
+}
+
+u32 display64_gui_settings_opened(void)
+{
+    return g_display_gui_settings_opened;
+}
+
+u32 display64_gui_unfocused_key_denied(void)
+{
+    return g_display_gui_unfocused_key_denied;
+}
+
+u32 display64_gui_no_ambient_input(void)
+{
+    return g_display_gui_no_ambient_input;
+}
+
+u32 display64_gui_no_ambient_display(void)
+{
+    return g_display_gui_no_ambient_display;
+}
+
+u32 display64_gui_no_ambient_fs(void)
+{
+    return g_display_gui_no_ambient_fs;
+}
+
+u32 display64_gui_mouse_x(void)
+{
+    return g_display_gui_mouse_x;
+}
+
+u32 display64_gui_mouse_y(void)
+{
+    return g_display_gui_mouse_y;
+}
+
+u32 display64_gui_target_window(void)
+{
+    return g_display_gui_target_window;
+}
+
+u32 display64_gui_target_region(void)
+{
+    return g_display_gui_target_region;
+}
+
+u32 display64_gui_focus_before(void)
+{
+    return g_display_gui_focus_before;
+}
+
+u32 display64_gui_focus_after(void)
+{
+    return g_display_gui_focus_after;
+}
+
+u32 display64_gui_z_before(void)
+{
+    return g_display_gui_z_before;
+}
+
+u32 display64_gui_z_after(void)
+{
+    return g_display_gui_z_after;
+}
+
+u32 display64_gui_key_target_window(void)
+{
+    return g_display_gui_key_target_window;
+}
+
+u32 display64_gui_unfocused_key_denial_count(void)
+{
+    return g_display_gui_unfocused_key_denial_count;
+}
+
+u32 display64_gui_input_path_token(void)
+{
+    return DISPLAY64_GUI_INPUT_PATH_TOKEN;
+}
+
+u32 display64_gui_display_path_token(void)
+{
+    return DISPLAY64_GUI_DISPLAY_PATH_TOKEN;
+}
+
+u32 display64_gui_fs_path_token(void)
+{
+    return DISPLAY64_GUI_FS_PATH_TOKEN;
 }
 
 u32 display64_draw_count(void)

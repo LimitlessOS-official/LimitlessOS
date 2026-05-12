@@ -274,7 +274,7 @@ $persistenceEvidence = [PSCustomObject]@{
     notRamBacked = $true
 }
 
-foreach ($milestoneSuffix in @("m2", "m3")) {
+foreach ($milestoneSuffix in @("m2", "m3", "m4")) {
     $inventoryPath = Join-Path $root ("dist\limitlessos-x86_64.{0}.{1}.json" -f $BuildProfile.ToLowerInvariant(), $milestoneSuffix)
     if (Test-Path $inventoryPath) {
         $inventory = Get-Content -Path $inventoryPath -Raw | ConvertFrom-Json

@@ -195,7 +195,8 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help info net pwd$' -Message "M3 runtime help did not label shell builtins."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M3: ask \(not AI\), echo, aliases, gui, installer, package-manager, ai$' -Message "M3 runtime help did not label unavailable surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings through brokered desktop input/display$' -Message "M4 runtime help did not describe Product GUI status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M4: ask \(not AI\), echo, aliases, installer, package-manager, ai$' -Message "M4 runtime help did not label unavailable surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -204,6 +205,7 @@ function Assert-X64M1RuntimeSurface
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net$' -Message "M3 apps output did not label Product network status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Internal files hidden from app output: HELLO\.TXT INDEX\.TXT$' -Message "M1 apps output did not label hidden internal app files."
 
@@ -314,7 +316,10 @@ function Send-QemuKeyboardProbe
         [int]$Port,
         [int]$DurationMilliseconds,
         [int]$KeyDelayMilliseconds,
-        [int]$LineDelayMilliseconds
+        [int]$LineDelayMilliseconds,
+        [string]$DebugLogPath = "",
+        [string]$FramebufferLogPath = "",
+        [bool]$GuiProbeEnabled = $false
     )
 
     $client = [System.Net.Sockets.TcpClient]::new()
@@ -346,10 +351,122 @@ function Send-QemuKeyboardProbe
 
         $deadline = [DateTime]::UtcNow.AddMilliseconds($DurationMilliseconds)
         $keyHoldMilliseconds = [Math]::Max(80, [int]($KeyDelayMilliseconds / 2))
-        $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"rel","data":{"axis":"x","value":36}},{"type":"rel","data":{"axis":"y","value":18}}]}}')
-        Start-Sleep -Milliseconds 300
+        $frameWidth = 1024
+        $frameHeight = 768
+        if (($FramebufferLogPath.Length -gt 0) -and (Test-Path $FramebufferLogPath)) {
+            $frameLine = Get-Content $FramebufferLogPath -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match 'framebuffer mode .* ([0-9]+)x([0-9]+)' } |
+                Select-Object -Last 1
+            if ($frameLine -and ($frameLine -match ' ([0-9]+)x([0-9]+) ')) {
+                $frameWidth = [int]$Matches[1]
+                $frameHeight = [int]$Matches[2]
+            }
+        }
+
+        # The guest initializes the brokered mouse cursor from its default
+        # 1024x768 bounds before the UEFI framebuffer bounds are known.  Keep
+        # the QMP-side relative mouse model aligned with that real runtime
+        # state so GUI clicks prove the intended hit-test path.
+        $cursor = @{ X = 512; Y = 384 }
+        $sendMoveTo = {
+            param([int]$X, [int]$Y)
+
+            while (($cursor.X -ne $X) -or ($cursor.Y -ne $Y)) {
+                $dx = $X - $cursor.X
+                $dy = $Y - $cursor.Y
+                if ($dx -gt 80) { $dx = 80 }
+                if ($dx -lt -80) { $dx = -80 }
+                if ($dy -gt 80) { $dy = 80 }
+                if ($dy -lt -80) { $dy = -80 }
+                $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"rel","data":{{"axis":"x","value":{0}}}}},{{"type":"rel","data":{{"axis":"y","value":{1}}}}}]}}}}' -f $dx, $dy))
+                $cursor.X += $dx
+                $cursor.Y += $dy
+                Start-Sleep -Milliseconds 55
+            }
+        }
+        $sendClick = {
+            $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
+            Start-Sleep -Milliseconds 120
+            $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
+            Start-Sleep -Milliseconds 220
+        }
+        $sendKey = {
+            param([string]$Key)
+
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":true,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds $keyHoldMilliseconds
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":false,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds $KeyDelayMilliseconds
+            if ($Key -eq "ret") {
+                Start-Sleep -Milliseconds $LineDelayMilliseconds
+            }
+        }
+
+        if ($GuiProbeEnabled) {
+            & $sendMoveTo ([int]($frameWidth / 2) + 36) ([int]($frameHeight / 2) + 18)
+            Start-Sleep -Milliseconds 300
+            & $sendKey "a"
+            & $sendKey "ret"
+
+            $taskbarY = $frameHeight - 24 - 32
+            $launcherY = $taskbarY + 16
+            $panelY = $taskbarY - 148 - 8
+            $terminalIconY = $panelY + 52
+            $fileIconY = $panelY + 88
+            $settingsIconY = $panelY + 52
+            $newTerminalWidth = [Math]::Min(760, [Math]::Max(160, $frameWidth - 96))
+            $dragStartX = 120
+            $dragStartY = 110
+            $dragEndX = 180
+            $dragEndY = 150
+            $newTerminalX = 66 + ($dragEndX - $dragStartX)
+            $newTerminalY = 98 + ($dragEndY - $dragStartY)
+            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            $originalCloseX = 32 + $originalTerminalWidth - 15
+
+            if ($DebugLogPath.Length -gt 0) {
+                Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] gui interactive input wait' -TimeoutMilliseconds 30000
+            }
+            else {
+                Start-Sleep -Milliseconds 5200
+            }
+
+            for ($guiAttempt = 0; $guiAttempt -lt 2; $guiAttempt++) {
+                & $sendMoveTo 22 $launcherY
+                & $sendClick
+                & $sendMoveTo 70 $terminalIconY
+                & $sendClick
+                & $sendMoveTo $dragStartX $dragStartY
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
+                Start-Sleep -Milliseconds 160
+                & $sendMoveTo $dragEndX $dragEndY
+                Start-Sleep -Milliseconds 160
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
+                Start-Sleep -Milliseconds 260
+                & $sendMoveTo 22 $launcherY
+                & $sendClick
+                & $sendMoveTo 70 $fileIconY
+                & $sendClick
+                & $sendKey "z"
+                & $sendMoveTo 22 $launcherY
+                & $sendClick
+                & $sendMoveTo 170 $settingsIconY
+                & $sendClick
+                & $sendMoveTo 90 $launcherY
+                & $sendClick
+                & $sendMoveTo $originalCloseX 63
+                & $sendClick
+                & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + [int]($newTerminalWidth / 2))) ($newTerminalY + 120)
+                & $sendClick
+                Start-Sleep -Milliseconds 350
+            }
+        }
+        else {
+            & $sendMoveTo 560 420
+            Start-Sleep -Milliseconds 300
+        }
+
         $keys = @(
-            "a", "ret",
             "l", "s", "ret",
             "h", "e", "l", "x", "backspace", "p", "ret",
             "h", "e", "l", "p", "spc", "c", "a", "t", "ret",
@@ -367,16 +484,8 @@ function Send-QemuKeyboardProbe
             "e", "x", "i", "t", "ret"
         )
         foreach ($key in $keys) {
-            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":true,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $key))
-            Start-Sleep -Milliseconds $keyHoldMilliseconds
-            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":false,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $key))
-            Start-Sleep -Milliseconds $KeyDelayMilliseconds
-            if ($key -eq "ret") {
-                Start-Sleep -Milliseconds $LineDelayMilliseconds
-            }
+            & $sendKey $key
         }
-
-        $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}},{"type":"btn","data":{"down":false,"button":"left"}}]}}')
 
         $remainingMilliseconds = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
         if ($remainingMilliseconds -gt 0) {
@@ -567,7 +676,7 @@ try {
         $probeMilliseconds = if ($BootMedia -eq "disk") { 52000 } else { 56000 }
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 1600 }
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:($BootMedia -ne "disk")
     }
     Start-Sleep -Seconds $bootWaitSeconds
 }
@@ -2346,7 +2455,8 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help info net pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M3: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M4: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -2436,6 +2546,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 UEFI font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 UEFI virtio-net brokered ARP proof was not observed."
         }
@@ -2448,11 +2559,12 @@ else {
     }
     else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] build-profile Product product 1 experimental 0 experimental-runtime 0' -Message "x64 Product build-profile marker was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] experimental-runtime disabled proof-surface 0 gui unavailable network product-gated ai unavailable installer unavailable package-manager unavailable' -Message "x64 Product experimental-quarantine marker was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-compositor drs-compositor-init 0 drs-compositor-present 0 drs-compositor-cursor 0 drs-compositor-presents 0 drs-compositor-cursors 0' -Message "x64 Product compositor quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 0 drs-font-glyphs 256 drs-font-render 0 drs-font-renders 0' -Message "x64 Product font proof-surface quarantine was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 0 drs-wm-window-created 0 drs-wm-focus 0 drs-wm-present 0 drs-wm-windows 0 drs-wm-focuses 0 drs-wm-presents 0' -Message "x64 Product window-manager quarantine proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 0 drs-desktop-taskbar 0 drs-desktop-launcher 0 drs-desktop-terminal 0 drs-desktop-fileman 0 drs-desktop-settings 0' -Message "x64 Product desktop quarantine proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] experimental-runtime disabled proof-surface 0 gui product-gated network product-gated ai unavailable installer unavailable package-manager unavailable' -Message "x64 Product experimental-quarantine marker was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-compositor drs-compositor-init 1 drs-compositor-present 1 drs-compositor-cursor 1 drs-compositor-presents [1-9][0-9]* drs-compositor-cursors [1-9][0-9]*' -Message "x64 Product compositor proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 Product font renderer proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }
@@ -2462,7 +2574,6 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dhcp drs-dhcp-discover 1 drs-dhcp-offer 1 drs-dhcp-request 1 drs-dhcp-ack 1 drs-dhcp-ip 0x(?!00000000)[0-9A-F]{8} drs-dhcp-gateway 0x0A000202 drs-dhcp-dns 0x[0-9A-F]{8} drs-dhcp-lease [1-9][0-9]* ambient-authority 0 unavailable 0 error 0' -Message "x64 Product DHCP lease proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-dns drs-dns-query 1 drs-dns-response 1 drs-dns-rcode 0 drs-dns-resolved 0x(?!00000000)[0-9A-F]{8} fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product DNS A-record proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-http drs-http-connected 1 drs-http-sent 1 drs-http-status [1-9][0-9]* drs-http-response-bytes [1-9][0-9]* fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product HTTP-over-TCP proof was not observed."
-        Assert-OutputNotContains -Lines $outputLines -Pattern '\[x64\] drs-(compositor|wm|desktop).* 1' -Message "Product boot exposed an active GUI/window/desktop proof surface."
     }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] mmio planner service 9 .* map-request 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} plans 1 .* map-installed 1 .* port-state 3 .* policy-ready 1 .* denied-read-plan 0xFFFFFFFF read-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} read-state 3 read-flags 0x0000BFFF .* read-staged 1 read-denials 1 read-unavailable 0 denied-cmd-plan 0xFFFFFFFF cmd-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} cmd-state 3 cmd-flags 0x0001FFFF cmd-token 0x(?!00000000)[0-9A-F]{8} cmd-read-token 0x(?!00000000)[0-9A-F]{8} cmd-op 2 cmd-slot 0 cmd-header 32 cmd-table 144 cmd-cfis 20 cmd-cfis-dwords 5 cmd-prdt 1 cmd-prdt-bytes 16 cmd-atapi-packet 12 cmd-opcode 0x000000A0 cmd-packet-opcode 0x00000028 cmd-transfer 2048 cmd-armed 0 cmd-issued 0 cmd-dma 0 cmd-staged 1 cmd-denials 1 cmd-unavailable 0 denied-mem-plan 0xFFFFFFFF mem-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} mem-state 3 mem-flags 0x007BFFFF mem-token 0x(?!00000000)[0-9A-F]{8} mem-cmd-token 0x(?!00000000)[0-9A-F]{8} mem-slot 0 mem-pages 1 mem-page-bytes 4096 mem-page-virt 0x[0-9A-F]{13}000 mem-page-phys 0x[0-9A-F]{13}000 mem-page-checksum 0x76EFDDC5 mem-zeroed 1 mem-materialized 1 mem-list-off 0 mem-list-bytes 1024 mem-header-off 0 mem-header-bytes 32 mem-table-off 1024 mem-table-bytes 144 mem-prdt-off 1152 mem-prdt-bytes 16 mem-bounce-off 2048 mem-bounce-bytes 2048 mem-prdt-dbc 2047 mem-dma-low 0x00000000 mem-dma-high 0x00000000 mem-dma 0 mem-table-written 0 mem-port-programmed 0 mem-armed 0 mem-staged 1 mem-denials 1 mem-unavailable 0 denied-table-plan 0xFFFFFFFF table-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} table-state 3 table-flags 0x006FFFFF table-token 0x(?!00000000)[0-9A-F]{8} table-mem-token 0x(?!00000000)[0-9A-F]{8} table-check-before 0x76EFDDC5 table-check-after 0x3FBFAF45 table-check-changed 1 table-header-flags 0x00010025 table-prdtl 1 table-prdbc 0 table-ctba-low 0x00000000 table-ctba-high 0x00000000 table-cfis-type 0x00000027 table-cfis-flags 0x00000080 table-cfis-command 0x000000A0 table-cfis-device 0x00000040 table-cfis-count 0 table-packet-opcode 0x00000028 table-packet-blocks 1 table-prdt-dba-low 0x00000000 table-prdt-dba-high 0x00000000 table-prdt-dbc 2047 table-written 1 table-dma 0 table-port-programmed 0 table-armed 0 table-issued 0 table-staged 1 table-denials 1 table-unavailable 0 map-requests 1 .* queries 140 denials 9' -Message "x64 UEFI brokered MMIO AHCI table-prep proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] mmio planner service 9 .* denied-issue-plan 0xFFFFFFFF issue-plan 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} issue-state 3 issue-flags 0x06FFFFFF issue-token 0x(?!00000000)[0-9A-F]{8} issue-table-token 0x(?!00000000)[0-9A-F]{8} issue-mem-token 0x(?!00000000)[0-9A-F]{8} issue-cmd-token 0x(?!00000000)[0-9A-F]{8} issue-read-token 0x(?!00000000)[0-9A-F]{8} issue-port 0x(?!FFFFFFFF)[0-9A-F]{8} issue-slot 0 issue-ci 0x00000000 issue-slot-mask 0x00000001 issue-slot-idle 1 issue-tfd-ready 1 issue-serr-clear 1 issue-policy-ready 1 issue-engine-st 0 issue-engine-fre 0 issue-engine-fr 0 issue-engine-cr 0 issue-stop-required 0 issue-start-required 1 issue-timeout 100 issue-poll-budget 10000 issue-table-check 0x3FBFAF45 issue-expected-check 0x3FBFAF45 issue-check-match 1 issue-dma 0 issue-port-programmed 0 issue-command-issued 0 issue-armed 0 issue-staged 1 issue-denials 1 issue-unavailable 0 map-requests 1 .* queries 170 denials 10' -Message "x64 UEFI brokered MMIO AHCI issue-preflight proof was not observed."

@@ -1,28 +1,29 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M3 Product Boot Contract + Network Promotion
+## Current Gate: M4 Interactive GUI Promoted to Product
 
-M1 cleanup-final and M2 quarantine are accepted. M3 splits the Product boot contract by boot path and promotes the existing brokered DHCP/DNS/TCP/HTTP proof chain into a truthful Product runtime surface.
+M1 cleanup-final, M2 quarantine, and M3 Product networking are accepted. M4 promotes the existing compositor/font/window-manager/desktop stack into Product only after real brokered mouse and keyboard events drive hit-testing, launcher activation, focused keyboard routing, drag, close, taskbar focus, Terminal launch, File Manager launch, and Settings launch.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- Current kernel: 468688 bytes, 916 / 1024 BIOS sectors, 108 BIOS reserve, checksum 0x90E2FA90
-- UEFI contract: 468688 / 2097152 bytes, verified against BOOTMAN.TXT byte count and checksum, with no UEFI sector arithmetic
+- Current kernel: 473488 bytes, 925 / 1024 BIOS sectors, 99 BIOS reserve, checksum 0x5D996177
+- UEFI contract: 473488 / 2097152 bytes, verified against BOOTMAN.TXT byte count and checksum, with no UEFI sector arithmetic
 - Sector status: warning, because reserve is below 128
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product builtins: apps, help, info, net, pwd
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps output, brokered persistent file workflow, hardware-gated brokered network status, NVMe persistence verification, capability denial checks, no ambient authority
+- Product GUI apps: Terminal, File Manager, Settings
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, capability denial checks, no ambient authority
 
 Experimental profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Experimental`
-- Current artifact: recorded in `dist\limitlessos-x86_64.experimental.m3.json` when the Experimental profile is built
-- Experimental surfaces may initialize proof-only GUI/window-manager/desktop and broad hardware proof paths, but they are not Product behavior.
+- Current artifact: recorded in `dist\limitlessos-x86_64.experimental.m4.json` when the Experimental profile is built
+- Experimental surfaces may initialize proof-only behavior beyond the M4 Product GUI and broad hardware proof paths, but they are not Product behavior.
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, GUI/compositor/window manager/desktop, installer, package manager, AI assistant behavior
+- ASK, ECHO, aliases, installer, package manager, AI assistant behavior
 
 M2 evidence:
 
@@ -37,6 +38,15 @@ M3 evidence:
 - Experimental build and UEFI verification passed.
 
 M3 networking acceptance is intentionally narrow: UEFI/ISO paths with virtio-net or e1000e must prove DHCP, DNS, TCP, and HTTP and expose `net`; BIOS/disk paths must report cleanly unavailable. No socket API, packet API, or ambient network authority is part of M3.
+
+M4 evidence:
+
+- Final evidence pack: `dist/m4-evidence-20260511-190105/m4-evidence.json`
+- Product build/assert/disk/UEFI/ISO/e1000e/persistence commands passed.
+- Product GUI interactive verification passed using real input events through QEMU/VirtualBox-style mouse and keyboard injection, not direct counter toggles.
+- Experimental build and UEFI verification passed.
+
+M4 GUI acceptance is intentionally narrow: Product GUI means Terminal, File Manager, Settings, taskbar/launcher/focus/drag/close behavior, compositor-owned framebuffer presentation, and brokered input routing. It does not imply a broad app platform, installer UI, package manager UI, arbitrary disk browser, or ambient display/input authority.
 
 ## Phase 0: Bootstrap
 

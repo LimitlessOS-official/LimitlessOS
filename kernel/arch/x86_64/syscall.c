@@ -619,6 +619,7 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD:
             xhci64_poll_keyboard();
+            xhci64_poll_mouse();
             {
                 u64 result = (u64)input64_read_keyboard(
                     (u32)arg0,
@@ -637,6 +638,7 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD_LINE:
             xhci64_poll_keyboard();
+            xhci64_poll_mouse();
             {
                 u64 result = (u64)input64_read_keyboard_line(
                     (u32)arg0,

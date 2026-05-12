@@ -697,11 +697,11 @@ static u32 shell64_list_apps(
         "WRITE\n"
         "Product services:\n"
         "Network (hardware-gated): use net\n"
-        "Unavailable in M3:\n"
+        "GUI desktop: Terminal File Manager Settings\n"
+        "Unavailable in M4:\n"
         "ASK (not AI)\n"
         "ECHO\n"
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n"
-        "GUI\n"
         "Installer\n"
         "Package manager\n"
         "AI assistant\n"
@@ -1041,7 +1041,8 @@ u32 shell64_execute_line(
             "Builtins: apps help info net pwd\n"
             "Product apps: append cat copy delete ls mkdir move rename stat touch write\n"
             "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n"
-            "Unavailable in M3: ask (not AI), echo, aliases, gui, installer, package-manager, ai\n");
+            "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n"
+            "Unavailable in M4: ask (not AI), echo, aliases, installer, package-manager, ai\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))

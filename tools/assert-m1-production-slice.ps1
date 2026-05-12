@@ -15,17 +15,22 @@ $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
 $m1ShellBuiltins = @("apps", "help", "info", "net", "pwd")
+$m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
-$m1UnavailableFeatures = @(
+$m4UnavailableFeatures = @(
     "ASK (not AI; no consent-gated assistant path in Product)",
     "ECHO (not Product path)",
     "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in Product shell)",
-    "GUI/window-manager/desktop (experimental proof surface, not Product path)",
     "Installer",
     "Package manager",
     "AI assistant behavior"
 )
+$m3UnavailableFeatures = @(
+    $m4UnavailableFeatures +
+    @("GUI/compositor/window manager/desktop/File Manager GUI/Settings GUI")
+)
+$m1UnavailableFeatures = $m4UnavailableFeatures
 
 function Fail-M1
 {
@@ -424,9 +429,11 @@ function Assert-RuntimeShellSurfaceSource
         "Builtins: apps help info net pwd",
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
-        "Unavailable in M3: ask (not AI), echo, aliases, gui, installer, package-manager, ai",
+        "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
+        "Unavailable in M4: ask (not AI), echo, aliases, installer, package-manager, ai",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
+        "GUI desktop: Terminal File Manager Settings",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
@@ -667,6 +674,7 @@ function Assert-X64Artifacts
                 report = Get-RepoRelativePath $reportPath
             }
             productApps = $m1ProductApps
+            productGuiApps = $m4ProductGuiApps
             experimentalApps = $experimentalApps
             shellBuiltins = $m1ShellBuiltins
             aliases = @($m1Aliases | ForEach-Object {
@@ -701,22 +709,35 @@ function Assert-X64Artifacts
         $inventoryPath = Join-Path $distDir "limitlessos-x86_64.m1.json"
         $inventory | ConvertTo-Json -Depth 6 | Set-Content -Path $inventoryPath -Encoding Ascii
 
+        $m2ProductServices = @(
+            "x86_64 boot",
+            "persistent ring-3 shell",
+            "truthful shell help/apps",
+            "brokered persistent file workflow",
+            "capability denial checks",
+            "NVMe persistence verification path"
+        )
+        $m3ProductServices = @(
+            $m2ProductServices +
+            @("brokered DHCP/DNS/TCP/HTTP network status")
+        )
+        $m4ProductServices = @(
+            $m3ProductServices +
+            @(
+                "brokered compositor/window-manager/desktop GUI",
+                "Terminal/File Manager/Settings Product GUI apps"
+            )
+        )
+
         $m2Inventory = [PSCustomObject]@{
             milestone = "M2 Product Kernel Boundary + Experimental Quarantine"
             architecture = $Architecture
             buildProfile = $BuildProfile
             productApps = $m1ProductApps
+            productGuiApps = @()
             experimentalApps = $experimentalApps
-            unavailableFeatures = $m1UnavailableFeatures
-            activeProductServices = @(
-                "x86_64 boot",
-                "persistent ring-3 shell",
-                "truthful shell help/apps",
-                "brokered DHCP/DNS/TCP/HTTP network status",
-                "brokered persistent file workflow",
-                "capability denial checks",
-                "NVMe persistence verification path"
-            )
+            unavailableFeatures = $m3UnavailableFeatures
+            activeProductServices = @($m2ProductServices)
             activeExperimentalServices = @($activeExperimentalServices)
             experimentalRuntimeEnabled = $experimentalRuntimeEnabled
             productKernelBytes = $stagedKernelBytes.Length
@@ -742,9 +763,26 @@ function Assert-X64Artifacts
 
         $m3Inventory = $m2Inventory.PSObject.Copy()
         $m3Inventory.milestone = "M3 Product Boot Contract + Network Promotion"
+        $m3Inventory.activeProductServices = @($m3ProductServices)
+        $m3Inventory.productGuiApps = @()
+        $m3Inventory.unavailableFeatures = $m3UnavailableFeatures
         $m3Inventory | Add-Member -Force -NotePropertyName productNetworkCapability -NotePropertyValue "brokered DHCP/DNS/TCP/HTTP status through net command; no sockets or ambient network authority"
         $m3InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m3.json" -f $BuildProfile.ToLowerInvariant())
         $m3Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m3InventoryPath -Encoding Ascii
+
+        $m4Inventory = $m3Inventory.PSObject.Copy()
+        $m4Inventory.milestone = "M4 Interactive GUI Promoted to Product"
+        $m4Inventory.productGuiApps = $m4ProductGuiApps
+        $m4Inventory.unavailableFeatures = $m4UnavailableFeatures
+        $m4Inventory.activeProductServices = @($m4ProductServices)
+        $m4Inventory | Add-Member -Force -NotePropertyName productGuiCapability -NotePropertyValue "brokered compositor/window-manager/desktop with Terminal, File Manager, and Settings; no direct app framebuffer or raw-input authority"
+        $m4Inventory | Add-Member -Force -NotePropertyName guiInteractiveVerified -NotePropertyValue $true
+        $m4Inventory | Add-Member -Force -NotePropertyName inputRoutingModel -NotePropertyValue "raw keyboard/mouse enter the input broker; the window manager routes events only to the focused window; unfocused terminal delivery is denied"
+        $m4Inventory | Add-Member -Force -NotePropertyName displayAuthorityModel -NotePropertyValue "the compositor owns physical framebuffer presentation; windows draw through brokered compositor/window-manager paths"
+        $m4Inventory | Add-Member -Force -NotePropertyName fileManagerAuthorityLimits -NotePropertyValue "File Manager is limited to RAMFS, boot-media read-only areas, and explicitly brokered persistent namespace; it must not browse or write internal laptop partitions"
+        $m4Inventory | Add-Member -Force -NotePropertyName settingsAuthority -NotePropertyValue "Settings receives read-only display/input/network/storage/profile/boot metadata and cannot write configuration"
+        $m4InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m4.json" -f $BuildProfile.ToLowerInvariant())
+        $m4Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m4InventoryPath -Encoding Ascii
     }
 }
 

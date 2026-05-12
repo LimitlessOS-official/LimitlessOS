@@ -4498,6 +4498,38 @@ static void log_desktop_surface(void)
     write_line("");
 }
 
+static void log_gui_interactive_surface(void)
+{
+    write_labeled_dec_u32("[x64] drs-gui drs-gui-interactive ", display64_gui_interactive());
+    write_labeled_dec_u32(" drs-gui-click-hittest ", display64_gui_click_hittest());
+    write_labeled_dec_u32(" drs-gui-launcher-opened ", display64_gui_launcher_opened());
+    write_labeled_dec_u32(" drs-gui-terminal-opened ", display64_gui_terminal_opened());
+    write_labeled_dec_u32(" drs-gui-drag-completed ", display64_gui_drag_completed());
+    write_labeled_dec_u32(" drs-gui-keyboard-routed ", display64_gui_keyboard_routed());
+    write_labeled_dec_u32(" drs-gui-close-completed ", display64_gui_close_completed());
+    write_labeled_dec_u32(" drs-gui-taskbar-focus ", display64_gui_taskbar_focus());
+    write_labeled_dec_u32(" drs-gui-fileman-opened ", display64_gui_fileman_opened());
+    write_labeled_dec_u32(" drs-gui-settings-opened ", display64_gui_settings_opened());
+    write_labeled_dec_u32(" drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
+    write_labeled_dec_u32(" drs-gui-no-ambient-input ", display64_gui_no_ambient_input());
+    write_labeled_dec_u32(" drs-gui-no-ambient-display ", display64_gui_no_ambient_display());
+    write_labeled_dec_u32(" drs-gui-no-ambient-fs ", display64_gui_no_ambient_fs());
+    write_labeled_dec_u32(" mouse-x ", display64_gui_mouse_x());
+    write_labeled_dec_u32(" mouse-y ", display64_gui_mouse_y());
+    write_labeled_dec_u32(" target-window ", display64_gui_target_window());
+    write_labeled_dec_u32(" target-region ", display64_gui_target_region());
+    write_labeled_dec_u32(" focus-before ", display64_gui_focus_before());
+    write_labeled_dec_u32(" focus-after ", display64_gui_focus_after());
+    write_labeled_dec_u32(" z-before ", display64_gui_z_before());
+    write_labeled_dec_u32(" z-after ", display64_gui_z_after());
+    write_labeled_dec_u32(" key-target-window ", display64_gui_key_target_window());
+    write_labeled_dec_u32(" unfocused-key-denials ", display64_gui_unfocused_key_denial_count());
+    write_labeled_hex_u32(" input-token ", display64_gui_input_path_token());
+    write_labeled_hex_u32(" display-token ", display64_gui_display_path_token());
+    write_labeled_hex_u32(" fs-token ", display64_gui_fs_path_token());
+    write_line("");
+}
+
 static void log_apic_surface(void)
 {
     static const struct scaffold_value_field apic_fields[] = {
@@ -11497,6 +11529,35 @@ static void collect_mouse_probe_input(u32 target_packets, u32 max_wait_ticks)
     xhci64_poll_mouse();
 }
 
+static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
+{
+    u32 target_ticks = pit_get_ticks() + max_wait_ticks;
+
+    interrupts64_enable();
+    while (((display64_gui_launcher_opened() == 0u)
+            || (display64_gui_terminal_opened() == 0u)
+            || (display64_gui_drag_completed() == 0u)
+            || (display64_gui_keyboard_routed() == 0u)
+            || (display64_gui_close_completed() == 0u)
+            || (display64_gui_taskbar_focus() == 0u)
+            || (display64_gui_fileman_opened() == 0u)
+            || (display64_gui_settings_opened() == 0u)
+            || (display64_gui_unfocused_key_denied() == 0u))
+        && (pit_get_ticks() < target_ticks))
+    {
+        input64_poll_keyboard();
+        xhci64_poll_keyboard();
+        input64_poll_mouse();
+        xhci64_poll_mouse();
+        cpu_halt();
+    }
+    interrupts64_disable();
+    input64_poll_keyboard();
+    xhci64_poll_keyboard();
+    input64_poll_mouse();
+    xhci64_poll_mouse();
+}
+
 static int boot_info_is_valid_x64(const struct boot_info *boot_info)
 {
     u32 required_flags = LIMITLESS_BOOT_FLAG_PROTECTED_MODE |
@@ -11540,7 +11601,7 @@ static void log_build_profile_surface(void)
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
     write_line("[x64] experimental-runtime enabled proof-surface 1 not-product-path 1");
 #else
-    write_line("[x64] experimental-runtime disabled proof-surface 0 gui unavailable network product-gated ai unavailable installer unavailable package-manager unavailable");
+    write_line("[x64] experimental-runtime disabled proof-surface 0 gui product-gated network product-gated ai unavailable installer unavailable package-manager unavailable");
 #endif
 }
 
@@ -11675,22 +11736,28 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_service_surface();
     log_input_keyboard_surface();
     log_mouse_surface();
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_compositor_probe(input64_mouse_x(), input64_mouse_y(), input64_mouse_buttons());
 #endif
     log_compositor_surface();
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_font_probe();
 #endif
     log_font_surface();
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_wm_probe();
 #endif
     log_window_manager_surface();
-#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED
+#if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_desktop_probe();
+    if (display64_desktop_init_done() != 0u)
+    {
+        write_line("[x64] gui interactive input wait");
+        collect_gui_interactive_probe_input(2000u);
+    }
 #endif
     log_desktop_surface();
+    log_gui_interactive_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
         input64_ps2_mouse_aux_enabled(),
