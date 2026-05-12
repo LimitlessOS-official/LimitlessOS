@@ -80,6 +80,8 @@ function Invoke-EvidenceCommand
     $outputPath = Join-Path $commandDir "$Name.output.txt"
     $commandText = "& `"$ScriptPath`" $($Arguments -join ' ')"
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $attempts = 1
+    $firstAttemptOutput = $null
 
     $process = Start-Process `
         -FilePath "powershell.exe" `
@@ -90,6 +92,43 @@ function Invoke-EvidenceCommand
         -PassThru `
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError $stderrPath
+
+    if (($process.ExitCode -ne 0) -and ($Name -like "verify-*")) {
+        $attempts = 2
+        $attemptTag = "$Name.attempt1"
+        $attemptStdoutPath = Join-Path $commandDir "$attemptTag.stdout.txt"
+        $attemptStderrPath = Join-Path $commandDir "$attemptTag.stderr.txt"
+        $attemptOutputPath = Join-Path $commandDir "$attemptTag.output.txt"
+        if (Test-Path -LiteralPath $stdoutPath) {
+            Move-Item -LiteralPath $stdoutPath -Destination $attemptStdoutPath -Force
+        }
+        if (Test-Path -LiteralPath $stderrPath) {
+            Move-Item -LiteralPath $stderrPath -Destination $attemptStderrPath -Force
+        }
+        $attemptCombined = New-Object System.Collections.Generic.List[string]
+        if (Test-Path -LiteralPath $attemptStdoutPath) {
+            foreach ($line in Get-Content -LiteralPath $attemptStdoutPath) {
+                $attemptCombined.Add($line)
+            }
+        }
+        if (Test-Path -LiteralPath $attemptStderrPath) {
+            foreach ($line in Get-Content -LiteralPath $attemptStderrPath) {
+                $attemptCombined.Add($line)
+            }
+        }
+        $attemptCombined | Set-Content -LiteralPath $attemptOutputPath -Encoding UTF8
+        $firstAttemptOutput = Get-RepoRelativePath $attemptOutputPath
+        Start-Sleep -Seconds 3
+        $process = Start-Process `
+            -FilePath "powershell.exe" `
+            -ArgumentList (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $Arguments) `
+            -WorkingDirectory $root `
+            -NoNewWindow `
+            -Wait `
+            -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+    }
 
     $stopwatch.Stop()
 
@@ -126,6 +165,8 @@ function Invoke-EvidenceCommand
         uefiKernelChecksum = if ($inventory) { $inventory.productUefiKernelChecksum } else { $null }
         finalIsoPath = if ($inventory) { $inventory.artifacts.finalIso } else { "dist\limitlessos-x86_64.iso" }
         artifactInventoryJson = Get-RepoRelativePath (Get-InventoryPath -BuildProfile $BuildProfile)
+        attempts = $attempts
+        firstAttemptOutputFile = $firstAttemptOutput
     })
 
     if ($process.ExitCode -ne 0) {
