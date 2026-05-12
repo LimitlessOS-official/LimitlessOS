@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M4.1 is `Real Hardware GUI Validation + BIOS Reserve Safety`.
+M5 is `Safe Installer + Partition Protection`.
 
-M4 is accepted as QEMU/QMP-verified and archived. M4.1 does not add features and does not begin M5. It preserves the Product GUI surface, adds the MSI Cyborg 15 A13VE manual hardware checklist/evidence template, and records the BIOS reserve safety decision before installer work can begin.
+M5 creates the first installer safety path for the MSI Cyborg 15 A13VE spare-space scenario without adding installer code to the BIOS-constrained Product kernel. It is implemented as host-side, raw-image verified tooling with dry-run classification, explicit capability flags, confirmation-token enforcement, forbidden-partition refusal, and fixture-only writes to dedicated LimitlessOS targets.
 
 ## Product Profile
 
@@ -59,6 +59,20 @@ M4.1 real-hardware validation:
 - required boot mode: UEFI USB
 - unsafe internal partitions must not be browsed or written
 - internal NVMe writes remain disabled unless a later safe installer path explicitly enables them through scoped authority
+
+M5 installer behavior:
+
+- implementation: `tools\limitless-installer.ps1`
+- fixtures: `tools\generate-installer-fixtures.ps1`
+- verifier: `tools\verify-installer-m5.ps1`
+- safety doc: `docs/installer/m5-safe-installer.md`
+- dry-run lists disks/images, GPT partitions, type GUIDs, labels, filesystem signatures, markers, classification, and zero-write plan
+- explicit physical dry-run path: `-PhysicalDriveNumber N -AllowPhysicalReadOnly -Mode DryRun`
+- install/write mode is image-fixture-only in M5
+- Windows ESP, NTFS, MSR, Recovery, unknown FAT32, and unknown GPT targets are refused
+- writes require hardware inventory, read-only block, write, and format capability flags plus a confirmation token
+- boot-entry changes require a separate boot-entry capability and are not performed by the default M5 path
+- real MSI internal NVMe writes remain disabled by default until dry-run output is reviewed
 
 Product apps:
 
@@ -171,6 +185,19 @@ M4.1 evidence pack:
 - archives the MSI Cyborg 15 A13VE checklist template
 - records current kernel budget and git status
 - records physical validation as pending until the user supplies real-hardware results
+
+M5 installer verification:
+
+- evidence pack: `dist/m5-evidence-20260511-194236/m5-evidence.json`
+- command: `.\tools\verify-installer-m5.ps1`
+- proves dry-run no-writes
+- proves Windows-like ESP/MSR/NTFS/Recovery refusal
+- proves unknown FAT32 and unknown GPT refusal
+- proves dedicated LimitlessOS target acceptance
+- proves scoped write/format capability and confirmation-token requirements
+- proves boot-entry authority separation
+- proves valid fixture install verifies markers/manifests and leaves forbidden partitions unchanged
+- all installer verifier predicates must pass before M5 is accepted
 
 ## Persistence
 

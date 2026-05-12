@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M4.1 hardware-validation closure
+## Current status: M5 safe installer and partition protection
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, and M4 QEMU/QMP interactive GUI promotion are accepted. M4.1 is a closure pass for real-hardware GUI validation and BIOS reserve safety. It adds no features and does not start M5 installer work.
+M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, and M4.1 hardware-validation closure are accepted. M5 is `Safe Installer + Partition Protection`: it adds a host-side, raw-image verified installer safety path without adding installer code to the BIOS-constrained Product kernel.
 
 Use the Product profile for the serious bootable slice:
 
@@ -28,6 +28,8 @@ Manual MSI Cyborg 15 A13VE validation is tracked in `docs/hardware/msi-cyborg-15
 
 BIOS reserve safety for M4.1: reserve is only `99` sectors, so M5 installer code must not be added to the BIOS-constrained Product kernel unless reserve is recovered above the `128`-sector warning threshold or the boot contract is intentionally changed. UEFI remains governed by the `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness; UEFI is not blocked by the BIOS `1024`-sector ceiling.
 
+M5 installer safety is documented in `docs/installer/m5-safe-installer.md`. The installer dry-run lists GPT partitions, type GUIDs, labels, filesystem signatures, and safe/forbidden/unknown classification. Fixture verification proves dry-run no-writes, Windows ESP/NTFS/MSR/Recovery refusal, unknown FAT32/GPT refusal, dedicated LimitlessOS target acceptance, scoped write/format authority requirements, boot-entry authority separation, confirmation-token enforcement, and forbidden-partition unchanged checks. Real MSI internal NVMe writes remain disabled by default and are not product-approved until dry-run output is reviewed.
+
 Unavailable or non-product in Product: ASK, ECHO, aliases, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
 
 Use the Experimental profile only for proof surfaces:
@@ -38,7 +40,7 @@ Use the Experimental profile only for proof surfaces:
 
 Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`.
+Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`.
 
 This first milestone provides:
 

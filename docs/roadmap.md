@@ -1,8 +1,8 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M4.1 Real Hardware GUI Validation + BIOS Reserve Safety
+## Current Gate: M5 Safe Installer + Partition Protection
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, and M4 QEMU/QMP interactive GUI promotion are accepted. M4.1 is a closure gate, not a feature gate: it preserves M4, adds a real-hardware validation checklist for the MSI Cyborg 15 A13VE, records manual evidence fields, and blocks M5 installer work from entering the BIOS-constrained Product kernel while BIOS reserve remains below the warning threshold.
+M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, and M4.1 hardware-validation closure are accepted. M5 adds a safe installer path focused on partition protection, dry-run truthfulness, explicit capability flags, and fixture-verified writes only to dedicated LimitlessOS targets. M5 does not add installer code to the BIOS-constrained Product kernel.
 
 Product profile:
 
@@ -56,6 +56,19 @@ M4.1 evidence:
 - Physical validation status: pending user-supplied MSI Cyborg 15 A13VE results
 - BIOS reserve policy: no M5 installer code may be added to the BIOS-constrained Product kernel while reserve remains below 128 sectors unless reserve is recovered or the boot contract is intentionally changed
 - UEFI policy: UEFI remains governed by the 2 MiB `KERNEL64.BIN` byte contract, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness, not by the BIOS sector ceiling
+
+M5 installer acceptance:
+
+- Evidence pack: `dist/m5-evidence-20260511-194236/m5-evidence.json`
+- Tooling: `tools\limitless-installer.ps1`, `tools\generate-installer-fixtures.ps1`, `tools\verify-installer-m5.ps1`
+- Documentation: `docs\installer\m5-safe-installer.md`
+- Dry-run: lists GPT partitions, type GUIDs, labels, filesystem signatures, marker state, classification, and exact zero-write plan
+- Forbidden: Windows ESP, NTFS, MSR, Recovery, unknown FAT32, unknown GPT, and any write-mode target without LimitlessOS type/label/marker
+- Accepted: dedicated LimitlessOS GPT type, approved labels, or `LIMITLESSOS_TARGET_V1` marker
+- Writes: fixture-only in M5, require scoped write and format capability flags plus confirmation token
+- Boot entries: require separate explicit authority; default M5 path performs no NVRAM changes
+- Real hardware: MSI Cyborg 15 A13VE may run dry-run only; internal NVMe writes remain disabled by default until output is reviewed
+- Kernel budget: installer code remains outside the BIOS-constrained Product kernel while reserve is below 128 sectors
 
 ## Phase 0: Bootstrap
 

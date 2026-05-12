@@ -40,6 +40,8 @@ This checklist is for the M4.1 closure pass. It must be filled from a real UEFI 
 - [ ] No ambient display/framebuffer authority observed.
 - [ ] No ambient filesystem/storage authority observed.
 - [ ] No internal NVMe writes occurred.
+- [ ] M5 installer dry-run, if executed, used explicit read-only mode only.
+- [ ] M5 installer dry-run output reviewed before any future write/install approval.
 
 ## Evidence Record
 
@@ -62,6 +64,8 @@ This checklist is for the M4.1 closure pass. It must be filled from a real UEFI 
 - File Manager result:
 - Settings result:
 - Internal storage write status:
+- M5 dry-run output filename:
+- M5 dry-run forbidden partition summary:
 - Network status:
 - Product app test notes:
 - Photos/video filenames:
