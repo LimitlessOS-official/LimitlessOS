@@ -4630,6 +4630,38 @@ static void log_package_trust_status_surface(void)
     write_line("");
 }
 
+static void log_hardware_validation_surface(void)
+{
+    write_string("[x64] drs-hwval");
+    write_labeled_dec_u32(" drs-hwval-product ", 1u);
+    write_labeled_dec_u32(" drs-hwval-readonly ", 1u);
+    write_labeled_dec_u32(" drs-hwval-no-internal-write ", 1u);
+    write_labeled_dec_u32(" drs-hwval-no-format ", 1u);
+    write_labeled_dec_u32(" drs-hwval-no-nvram ", 1u);
+    write_labeled_dec_u32(" drs-hwval-storage-enumeration-scoped ", 1u);
+    write_labeled_dec_u32(" drs-hwval-network-status-scoped ", 1u);
+    write_labeled_dec_u32(" drs-hwval-package-status-scoped ", 1u);
+    write_labeled_dec_u32(" drs-hwval-installer-dryrun-only ", 1u);
+    write_labeled_dec_u32(" drs-hwval-msi-checklist-present ", 1u);
+    write_labeled_dec_u32(" machine-model-detected ", 0u);
+    write_labeled_dec_u32(" secure-boot-detected ", 0u);
+    write_labeled_dec_u32(" framebuffer-available ", display64_available());
+    write_labeled_dec_u32(" framebuffer-width ", display64_width());
+    write_labeled_dec_u32(" framebuffer-height ", display64_height());
+    write_labeled_dec_u32(" xhci-found ", xhci64_found());
+    write_labeled_dec_u32(" xhci-handoff ", xhci64_legacy_handoff());
+    write_labeled_dec_u32(" ps2-present ", input64_ps2_present());
+    write_labeled_dec_u32(" ps2-enabled ", input64_ps2_enabled());
+    write_labeled_dec_u32(" apic-enabled ", apic64_enabled());
+    write_labeled_dec_u32(" ecam-active ", pci64_ecam_active());
+    write_labeled_dec_u32(" nvme-found ", mmio64_nvme_probe_found());
+    write_labeled_dec_u32(" ahci-found ", pci64_ecam_ahci_found());
+    write_labeled_dec_u32(" network-online ", virtio_net64_dhcp_ack());
+    write_labeled_dec_u32(" package-status-visible ", 1u);
+    write_labeled_dec_u32(" real-install-approved ", 0u);
+    write_line("");
+}
+
 static void log_apic_surface(void)
 {
     static const struct scaffold_value_field apic_fields[] = {
@@ -11862,6 +11894,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_service_session_surface();
     log_package_signing_surface();
     log_package_trust_status_surface();
+    log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
         input64_ps2_mouse_aux_enabled(),

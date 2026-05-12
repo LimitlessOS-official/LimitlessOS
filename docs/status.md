@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M8 is `Package Manager UX + Trust Policy Surface`.
+M9 is `Bare-Metal Validation + MSI Dry-Run Evidence`.
 
-M8 keeps the accepted M7.1 signed-package and update-index negative fixture coverage, then exposes that trust state through read-only Product surfaces: Settings and the `pkginfo` shell builtin. It does not add live public update fetching, auto-install, an app store, package install/apply actions, AI behavior, browser behavior, or real internal-disk install writes.
+M9 preserves the accepted M8 Product OS and adds a read-only hardware validation surface plus structured MSI dry-run evidence parsing. It does not add real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -58,6 +58,7 @@ Product behavior:
 - UEFI-only Ed25519 package archive and payload admission
 - UEFI-only signed update-index verification with rollback denial
 - read-only package trust visibility through Settings and `pkginfo`
+- read-only hardware validation visibility through `hwval`
 - capability denial checks
 - no ambient authority
 
@@ -84,13 +85,17 @@ M8 package trust UX behavior:
 - live public update fetching remains unavailable/non-product
 - trusted-time expiry remains unavailable/non-product without a trusted time source
 
-M4.1 real-hardware validation:
+M9 real-hardware validation:
 
 - MSI Cyborg 15 A13VE checklist: `docs/hardware/msi-cyborg-15-a13ve.md`
 - status: pending user-supplied physical results
 - required boot mode: UEFI USB
 - unsafe internal partitions must not be browsed or written
 - internal NVMe writes remain disabled unless a later safe installer path explicitly enables them through scoped authority
+- Product command: `hwval`
+- `hwval` is read-only and reports boot path, framebuffer status, input backends, xHCI, PS/2 fallback, APIC, PCI/ECAM, NVMe, AHCI, network, package trust, installer dry-run status, and disabled install/write/format/NVRAM state
+- MSI dry-run parser: `tools\parse-msi-dryrun-evidence.ps1`
+- parser output records detected disks, GPT partitions, type GUIDs, labels, filesystem signatures, forbidden partitions, LimitlessOS target candidates, write-disabled status, dry-run no-write status, and recommended next step
 
 M5 installer behavior:
 
@@ -136,6 +141,7 @@ Product builtins:
 
 - apps
 - help
+- hwval
 - info
 - net
 - pkginfo

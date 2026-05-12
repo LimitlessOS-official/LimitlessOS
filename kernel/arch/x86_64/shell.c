@@ -1,13 +1,20 @@
 #include "shell_x64.h"
 
+#include "apic_x64.h"
 #include "console_x64.h"
+#include "display_x64.h"
+#include "e1000e_x64.h"
 #include "fs_x64.h"
+#include "input_x64.h"
 #include "launch_x64.h"
+#include "mmio_x64.h"
 #include "package_signing_x64.h"
+#include "pci_x64.h"
 #include "ramfs.h"
 #include "runtime_image_x64.h"
 #include "types.h"
 #include "virtio_net_x64.h"
+#include "xhci_x64.h"
 
 #define SHELL64_MAX_LINE_BYTES 128u
 #define SHELL64_MAX_PATH_BYTES 128u
@@ -318,9 +325,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M8; scoped capability required\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M9; scoped capability required\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M8; scoped install required\n");
+        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M9; scoped install required\n");
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
@@ -343,10 +350,109 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M8; scoped capability required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M9; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M8; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M9; scoped install required\n");
     return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network\n");
+}
+
+static const char *shell64_yes_no(u32 value)
+{
+    return (value != 0u) ? "yes" : "no";
+}
+
+static u32 shell64_write_status_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    const char *value)
+{
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    (void)shell64_write_text(console_capability_handle, owner_id, value);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static u32 shell64_write_yes_no_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 value)
+{
+    return shell64_write_status_line(console_capability_handle, owner_id, label, shell64_yes_no(value));
+}
+
+static u32 shell64_print_hardware_validation_status(u32 console_capability_handle, u32 owner_id)
+{
+    u32 network_online = (virtio_net64_dhcp_ack() != 0u) ? 1u : 0u;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "hardware validation: read-only Product mode\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "machine model: unavailable from firmware table\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "secure boot: unavailable/not Product-detected\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "build profile: Product\n");
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "boot path: ",
+        (package_signing64_signed() != 0u) ? "UEFI Product" : "BIOS checksum fallback");
+    if (display64_available() != 0u)
+    {
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer width: ", display64_width());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer height: ", display64_height());
+    }
+    else
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "framebuffer: unavailable\n");
+    }
+
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "keyboard backend: ",
+        (input64_ps2_enabled() != 0u) ? "PS/2" : ((xhci64_input_live() != 0u) ? "xHCI HID" : "pending"));
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "mouse backend: ",
+        (input64_mouse_enabled() != 0u) ? "PS/2 mouse" : ((xhci64_mouse_device() != 0u) ? "xHCI HID mouse" : "pending"));
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci found: ", xhci64_found());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci handoff: ", xhci64_legacy_handoff());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci hid keyboard: ", xhci64_hid_device());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback present: ", input64_ps2_present());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback enabled: ", input64_ps2_enabled());
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "apic status: ",
+        (apic64_enabled() != 0u) ? "APIC enabled" : "PIC fallback");
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "pci/ecam status: ",
+        (pci64_ecam_active() != 0u) ? "ECAM active" : "legacy/fallback");
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme detected: ", mmio64_nvme_probe_found());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme ready: ", mmio64_nvme_probe_ready());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ahci detected: ", pci64_ecam_ahci_found());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "network device detected: ",
+        (virtio_net64_found() != 0u) || (e1000e64_found() != 0u));
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "network product status: ",
+        (network_online != 0u) ? "online brokered" : "unavailable cleanly");
+    (void)shell64_write_status_line(
+        console_capability_handle,
+        owner_id,
+        "package trust surface: ",
+        (package_signing64_signed() != 0u) ? "UEFI Ed25519 verified" : "BIOS checksum-only fallback");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer dry-run: pending manual evidence; dry-run only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "internal writes: disabled by default\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "format authority: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "real install approved: false\n");
+    return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage/installer/network/update/install\n");
 }
 
 static u8 shell64_lower(u8 value)
@@ -639,6 +745,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: net - show brokered network status\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "hwval"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval - show read-only hardware validation status\n");
+    }
+
     if (shell64_token_equals(token_start, token_length, "pkginfo"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: pkginfo - show read-only package trust status\n");
@@ -693,6 +804,7 @@ static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
 {
     return shell64_token_equals(token_start, token_length, "apps")
         || shell64_token_equals(token_start, token_length, "help")
+        || shell64_token_equals(token_start, token_length, "hwval")
         || shell64_token_equals(token_start, token_length, "info")
         || shell64_token_equals(token_start, token_length, "net")
         || shell64_token_equals(token_start, token_length, "pkginfo")
@@ -809,11 +921,12 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "APPEND\nCAT\nCOPY\nDELETE\nLS\nMKDIR\nMOVE\nRENAME\nSTAT\nTOUCH\nWRITE\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Product services:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; MSI evidence pending\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M8:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M9:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer writes/install\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
@@ -1149,16 +1262,17 @@ u32 shell64_execute_line(
         {
             return shell64_print_usage(console_capability_handle, owner_id, first_start, first_length);
         }
-        (void)shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help info net pkginfo pwd\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info net pkginfo pwd\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move rename stat touch write\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer writes disabled\n");
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M8: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes\n");
+            "Unavailable in M9: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
@@ -1174,6 +1288,11 @@ u32 shell64_execute_line(
     if (shell64_token_equals(command_start, command_length, "net"))
     {
         return shell64_print_network_status(console_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "hwval"))
+    {
+        return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
     }
 
     if (shell64_token_equals(command_start, command_length, "pkginfo"))

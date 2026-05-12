@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
-$m1ShellBuiltins = @("apps", "help", "info", "net", "pkginfo", "pwd")
+$m1ShellBuiltins = @("apps", "help", "hwval", "info", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
@@ -23,7 +23,9 @@ $m4UnavailableFeatures = @(
     "ECHO (not Product path)",
     "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in Product shell)",
     "Installer write/install path (M5 dry-run tooling is Product; internal writes disabled)",
-    "Package manager",
+    "Package install/apply UX",
+    "Live public update fetch",
+    "Trusted-time expiry enforcement",
     "AI assistant behavior"
 )
 $m3UnavailableFeatures = @(
@@ -481,15 +483,17 @@ function Assert-RuntimeShellSurfaceSource
     $source = Get-Content -Path $shellPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
-        "Builtins: apps help info net pkginfo pwd",
+        "Builtins: apps help hwval info net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
+        "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
-        "Unavailable in M8: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
+        "Unavailable in M9: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
+        "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
@@ -528,7 +532,7 @@ function Assert-RuntimeShellSurfaceSource
         }
     }
     foreach ($requiredProbeText in @(
-        "Builtins apps help info net pkginfo pwd",
+        "Builtins apps help hwval info net pkginfo pwd",
         "Product apps product set",
         "Unavail ASK-not-AI ECHO aliases",
         "HELLO.TXT INDEX.TXT internal"
@@ -837,7 +841,7 @@ function Assert-X64Artifacts
             [PSCustomObject]@{ name = "ASK"; status = "unavailable"; reason = "not AI; no consent-gated assistant path in Product" },
             [PSCustomObject]@{ name = "ECHO"; status = "unavailable"; reason = "not Product path" },
             [PSCustomObject]@{ name = "aliases"; status = "unavailable"; reason = "not Product shell commands" },
-            [PSCustomObject]@{ name = "package-manager"; status = "unavailable"; reason = "not implemented as Product behavior" },
+            [PSCustomObject]@{ name = "package install/apply UX"; status = "unavailable"; reason = "not implemented as Product behavior" },
             [PSCustomObject]@{ name = "AI assistant behavior"; status = "unavailable"; reason = "no consent-gated assistant path in Product" }
         )
 
@@ -1063,6 +1067,25 @@ function Assert-X64Artifacts
         $m8Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m8InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m8.json" -f $BuildProfile.ToLowerInvariant())
         $m8Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m8InventoryPath -Encoding Ascii
+
+        $m9Inventory = $m8Inventory.PSObject.Copy()
+        $m9Inventory.milestone = "M9 Bare-Metal Validation + MSI Dry-Run Evidence"
+        $m9Inventory.activeProductServices = @(
+            $m8Inventory.activeProductServices +
+            @("read-only hardware validation")
+        )
+        $m9Inventory.unavailableServices = @("full multiuser login/auth", "installer write/format/boot-entry authority", "auto-install", "app store", "live public update fetch", "package install/apply actions", "trusted-time expiry enforcement", "AI assistant")
+        $m9Inventory | Add-Member -Force -NotePropertyName hardwareValidationMode -NotePropertyValue "read-only Product hwval surface plus MSI manual evidence checklist"
+        $m9Inventory | Add-Member -Force -NotePropertyName hardwareValidationReadonly -NotePropertyValue $true
+        $m9Inventory | Add-Member -Force -NotePropertyName msiManualEvidenceStatus -NotePropertyValue "pending user-provided laptop boot and installer dry-run output"
+        $m9Inventory | Add-Member -Force -NotePropertyName installerDryRunParserStatus -NotePropertyValue "available"
+        $m9Inventory | Add-Member -Force -NotePropertyName realInstallApprovalStatus -NotePropertyValue $false
+        $m9Inventory | Add-Member -Force -NotePropertyName internalWriteStatus -NotePropertyValue "disabled by default"
+        $m9Inventory | Add-Member -Force -NotePropertyName hardwareValidationVerifierStatus -NotePropertyValue "pending archive run"
+        $m9Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m9Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m9InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m9.json" -f $BuildProfile.ToLowerInvariant())
+        $m9Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m9InventoryPath -Encoding Ascii
     }
 }
 

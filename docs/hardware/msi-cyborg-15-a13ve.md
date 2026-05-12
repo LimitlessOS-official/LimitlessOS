@@ -1,47 +1,77 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: pending physical validation.
+Status: M9 physical validation pending user evidence.
 
-This checklist is for the M4.1 closure pass. It must be filled from a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE or equivalent confirmed model. Do not treat QEMU/QMP evidence as a substitute for this checklist.
+This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
 ## Safety Rules
 
-- Boot through UEFI USB only.
-- Do not start installer work during M4.1.
-- Do not browse or write unsafe internal partitions.
-- Do not write the Windows ESP, NTFS partitions, Microsoft Reserved partitions, Recovery partitions, unknown FAT32 partitions, or unknown internal NVMe targets.
-- No internal NVMe writes are allowed unless a later safe installer path explicitly enables them through scoped authority.
-- Product GUI must preserve the M4 authority model: brokered input, compositor-owned display, window-manager-owned focus/hit-testing, scoped filesystem authority, no ambient storage, no ambient network, and no direct app access to raw framebuffer or raw input.
+- Boot through the UEFI USB entry only.
+- Run validation and installer dry-run only.
+- Do not start a real internal install.
+- Do not format any partition.
+- Do not create or modify NVRAM boot entries.
+- Do not write the Windows ESP.
+- Do not write NTFS partitions.
+- Do not write Microsoft Reserved partitions.
+- Do not write Recovery partitions.
+- Do not write unknown FAT32 partitions.
+- Do not write unknown GPT partitions.
+- Do not browse or write unsafe internal laptop partitions from File Manager.
+- Internal NVMe writes remain disabled by default until a later milestone explicitly approves a safe install path.
 
-## Boot Checklist
+## Boot And Desktop Checklist
 
-- [ ] Boot via UEFI USB.
-- [ ] Secure Boot state recorded.
-- [ ] LimitlessOS desktop appears.
-- [ ] Display resolution recorded.
-- [ ] Cursor moves visibly.
-- [ ] Launcher opens on click.
-- [ ] Terminal opens from launcher.
-- [ ] Terminal accepts keyboard input.
-- [ ] `help` output remains truthful.
-- [ ] `apps` output remains truthful.
-- [ ] Product apps run in Terminal: `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, `write`.
-- [ ] Window title-bar drag moves the window.
-- [ ] Mouse release exits drag mode.
-- [ ] Close button destroys the window and removes it from the taskbar.
-- [ ] Taskbar button focuses and raises the corresponding window.
-- [ ] File Manager opens.
-- [ ] File Manager shows only product-safe brokered namespaces.
-- [ ] File Manager does not browse unsafe internal partitions.
-- [ ] File Manager does not write unsafe internal partitions.
-- [ ] Settings opens.
-- [ ] Settings shows real read-only data: display, input backend, network status, storage status, build profile, boot mode, Product/Experimental state.
-- [ ] No ambient input authority observed.
-- [ ] No ambient display/framebuffer authority observed.
-- [ ] No ambient filesystem/storage authority observed.
-- [ ] No internal NVMe writes occurred.
-- [ ] M5 installer dry-run, if executed, used explicit read-only mode only.
-- [ ] M5 installer dry-run output reviewed before any future write/install approval.
+- [ ] Boot from USB using the UEFI entry.
+- [ ] Record Secure Boot state.
+- [ ] Confirm desktop appears.
+- [ ] Confirm display resolution.
+- [ ] Confirm cursor moves.
+- [ ] Confirm click opens launcher.
+- [ ] Confirm Terminal opens.
+- [ ] Confirm keyboard input works in Terminal.
+- [ ] Run `help`.
+- [ ] Run `apps`.
+- [ ] Run `pkginfo`.
+- [ ] Run `hwval`.
+- [ ] Confirm `help`, `apps`, `pkginfo`, and `hwval` remain truthful.
+- [ ] Run Product apps in Terminal: `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, `write`.
+- [ ] Confirm window title-bar drag moves a window.
+- [ ] Confirm mouse release exits drag mode.
+- [ ] Confirm close button destroys a window and removes it from the taskbar.
+- [ ] Confirm taskbar button focuses and raises the corresponding window.
+
+## Product App Checklist
+
+- [ ] Open Settings.
+- [ ] Confirm Settings shows package trust panel.
+- [ ] Confirm Settings shows read-only system data.
+- [ ] Confirm network status appears if the NIC path works.
+- [ ] Open File Manager.
+- [ ] Confirm File Manager shows only product-safe brokered namespaces.
+- [ ] Confirm File Manager does not browse unsafe internal partitions.
+- [ ] Confirm File Manager does not write unsafe internal partitions.
+
+## Installer Dry-Run Checklist
+
+- [ ] Run installer dry-run only.
+- [ ] Capture full installer dry-run output.
+- [ ] Parse dry-run output with `tools\parse-msi-dryrun-evidence.ps1`.
+- [ ] Confirm Windows ESP is forbidden.
+- [ ] Confirm NTFS is forbidden.
+- [ ] Confirm Microsoft Reserved partition is forbidden.
+- [ ] Confirm Recovery partition is forbidden.
+- [ ] Confirm unknown FAT32 partitions are forbidden.
+- [ ] Confirm unknown GPT partitions are forbidden.
+- [ ] Confirm internal NVMe writes are disabled by default.
+- [ ] Confirm no install/write/format/NVRAM action is available.
+- [ ] Confirm no real install is approved.
+
+Suggested read-only command shape from Windows/PowerShell after capturing output:
+
+```powershell
+.\tools\parse-msi-dryrun-evidence.ps1 -InputPath .\dist\msi-dryrun.txt -OutputPath .\dist\msi-dryrun-evidence.json
+```
 
 ## Evidence Record
 
@@ -52,22 +82,27 @@ This checklist is for the M4.1 closure pass. It must be filled from a real UEFI 
 - Secure Boot state:
 - Build profile:
 - ISO filename/checksum:
-- Kernel bytes:
-- BIOS sectors/reserve:
-- UEFI byte budget:
-- Kernel checksum:
+- BIOS Product bytes/sectors/reserve/checksum:
+- UEFI Product bytes/reserve/checksum:
 - Input backend used:
 - Display resolution:
 - Mouse/touchpad result:
 - Keyboard result:
+- GUI result:
 - Terminal result:
+- `help` result:
+- `apps` result:
+- `pkginfo` result:
+- `hwval` result:
 - File Manager result:
 - Settings result:
-- Internal storage write status:
-- M5 dry-run output filename:
-- M5 dry-run forbidden partition summary:
 - Network status:
-- Product app test notes:
+- NVMe detection result:
+- Installer dry-run result:
+- Internal storage write status:
+- Forbidden partition detection status:
+- M5 dry-run output filename:
+- Parsed dry-run evidence filename:
 - Photos/video filenames:
 - Tester:
 - Date/time:
@@ -75,4 +110,4 @@ This checklist is for the M4.1 closure pass. It must be filled from a real UEFI 
 
 ## Pass Criteria
 
-M4.1 hardware validation passes only when the checklist above is completed with no unsafe partition access, no untruthful Product surface, and no ambient authority exception. If any item fails, keep M4 accepted as QEMU/QMP-verified only and record the exact failing step here before attempting fixes.
+M9 hardware validation passes only when the checklist above is completed with no unsafe partition access, no untruthful Product surface, no ambient authority exception, and no internal install/write/format/NVRAM action. If any item fails, record the exact failing step and keep real internal install blocked.
