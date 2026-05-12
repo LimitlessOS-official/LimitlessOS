@@ -1,8 +1,8 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M4 Interactive GUI Promoted to Product
+## Current Gate: M4.1 Real Hardware GUI Validation + BIOS Reserve Safety
 
-M1 cleanup-final, M2 quarantine, and M3 Product networking are accepted. M4 promotes the existing compositor/font/window-manager/desktop stack into Product only after real brokered mouse and keyboard events drive hit-testing, launcher activation, focused keyboard routing, drag, close, taskbar focus, Terminal launch, File Manager launch, and Settings launch.
+M1 cleanup-final, M2 quarantine, M3 Product networking, and M4 QEMU/QMP interactive GUI promotion are accepted. M4.1 is a closure gate, not a feature gate: it preserves M4, adds a real-hardware validation checklist for the MSI Cyborg 15 A13VE, records manual evidence fields, and blocks M5 installer work from entering the BIOS-constrained Product kernel while BIOS reserve remains below the warning threshold.
 
 Product profile:
 
@@ -47,6 +47,15 @@ M4 evidence:
 - Experimental build and UEFI verification passed.
 
 M4 GUI acceptance is intentionally narrow: Product GUI means Terminal, File Manager, Settings, taskbar/launcher/focus/drag/close behavior, compositor-owned framebuffer presentation, and brokered input routing. It does not imply a broad app platform, installer UI, package manager UI, arbitrary disk browser, or ambient display/input authority.
+
+M4.1 evidence:
+
+- Closure evidence pack: `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`
+- Manual checklist: `docs/hardware/msi-cyborg-15-a13ve.md`
+- Closure archive command: `.\tools\archive-m4-1-evidence.ps1`
+- Physical validation status: pending user-supplied MSI Cyborg 15 A13VE results
+- BIOS reserve policy: no M5 installer code may be added to the BIOS-constrained Product kernel while reserve remains below 128 sectors unless reserve is recovered or the boot contract is intentionally changed
+- UEFI policy: UEFI remains governed by the 2 MiB `KERNEL64.BIN` byte contract, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness, not by the BIOS sector ceiling
 
 ## Phase 0: Bootstrap
 

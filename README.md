@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M4 interactive GUI promoted to Product
+## Current status: M4.1 hardware-validation closure
 
-M1 cleanup-final, M2 quarantine, and M3 Product networking are accepted. M4 is `Interactive GUI Promoted to Product`: the Product build now promotes the brokered compositor, window manager, desktop shell, and the Terminal/File Manager/Settings GUI apps only after real mouse and keyboard events flow through the input broker, window manager hit-testing/focus, compositor presentation, and focused-window routing path.
+M1 cleanup-final, M2 quarantine, M3 Product networking, and M4 QEMU/QMP interactive GUI promotion are accepted. M4.1 is a closure pass for real-hardware GUI validation and BIOS reserve safety. It adds no features and does not start M5 installer work.
 
 Use the Product profile for the serious bootable slice:
 
@@ -24,6 +24,10 @@ Product networking is hardware-gated: UEFI/ISO paths with virtio-net or e1000e p
 
 Product GUI authority is narrow: the compositor owns framebuffer presentation, the window manager owns focus/hit-testing/z-order, the input broker routes mouse/keyboard events, Terminal receives keyboard only while focused, File Manager is limited to brokered safe namespaces, and Settings is read-only system status. Apps do not receive raw framebuffer, raw input, ambient storage, or ambient network authority.
 
+Manual MSI Cyborg 15 A13VE validation is tracked in `docs/hardware/msi-cyborg-15-a13ve.md`. Physical validation is pending user-supplied results because this workspace cannot boot the target laptop.
+
+BIOS reserve safety for M4.1: reserve is only `99` sectors, so M5 installer code must not be added to the BIOS-constrained Product kernel unless reserve is recovered above the `128`-sector warning threshold or the boot contract is intentionally changed. UEFI remains governed by the `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness; UEFI is not blocked by the BIOS `1024`-sector ceiling.
+
 Unavailable or non-product in Product: ASK, ECHO, aliases, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
 
 Use the Experimental profile only for proof surfaces:
@@ -34,7 +38,7 @@ Use the Experimental profile only for proof surfaces:
 
 Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The current M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`.
+Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`.
 
 This first milestone provides:
 
