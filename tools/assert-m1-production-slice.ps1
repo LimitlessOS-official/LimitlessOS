@@ -954,8 +954,34 @@ function Assert-X64Artifacts
             @("signed package admission", "signed update-index verification")
         )
         $m7Inventory.unavailableServices = @("full multiuser login/auth", "installer write/format/boot-entry authority", "auto-install", "app store", "AI assistant")
+        $trustedPublicKeyId = "unavailable"
+        $trustedPublicKeyFingerprint = "unavailable"
+        $signatureHeaderPath = Join-Path $root "build\generated\package_store_signatures_generated.h"
+        if (Test-Path -LiteralPath $signatureHeaderPath) {
+            $signatureHeader = Get-Content -LiteralPath $signatureHeaderPath -Raw
+            if ($signatureHeader -match '#define\s+PACKAGE_STORE_SIGNATURE_PUBLIC_KEY_ID\s+(0x[0-9A-Fa-f]+)u') {
+                $trustedPublicKeyId = $Matches[1].ToUpperInvariant()
+            }
+            if ($signatureHeader -match '(?s)static\s+const\s+u8\s+package_store_signature_public_key\[32\]\s*=\s*\{(?<key>.*?)\};') {
+                $keyBytes = New-Object System.Collections.Generic.List[byte]
+                foreach ($byteMatch in [regex]::Matches($Matches["key"], '0x([0-9A-Fa-f]{2})')) {
+                    $keyBytes.Add([Convert]::ToByte($byteMatch.Groups[1].Value, 16))
+                }
+                if ($keyBytes.Count -eq 32) {
+                    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                    try {
+                        $digest = $sha256.ComputeHash($keyBytes.ToArray())
+                        $trustedPublicKeyFingerprint = (($digest | ForEach-Object { $_.ToString("X2") }) -join "")
+                    } finally {
+                        $sha256.Dispose()
+                    }
+                }
+            }
+        }
         $m7Inventory | Add-Member -Force -NotePropertyName packageFormatVersion -NotePropertyValue 2
         $m7Inventory | Add-Member -Force -NotePropertyName packageSignatureAlgorithm -NotePropertyValue "Ed25519"
+        $m7Inventory | Add-Member -Force -NotePropertyName trustedPublicKeyId -NotePropertyValue $trustedPublicKeyId
+        $m7Inventory | Add-Member -Force -NotePropertyName trustedPublicKeyFingerprint -NotePropertyValue $trustedPublicKeyFingerprint
         $m7Inventory | Add-Member -Force -NotePropertyName signedPackageCount -NotePropertyValue 12
         $m7Inventory | Add-Member -Force -NotePropertyName unsignedPackageCountDenied -NotePropertyValue 1
         $m7Inventory | Add-Member -Force -NotePropertyName invalidPackageCountDenied -NotePropertyValue 1
