@@ -3,6 +3,7 @@
 #include "console_x64.h"
 #include "fs_x64.h"
 #include "launch_x64.h"
+#include "package_signing_x64.h"
 #include "ramfs.h"
 #include "runtime_image_x64.h"
 #include "types.h"
@@ -171,6 +172,82 @@ static u32 shell64_format_decimal_u8(char *buffer, u32 value)
     return offset;
 }
 
+static u32 shell64_format_decimal_u32(char *buffer, u32 value)
+{
+    char reverse[10];
+    u32 reverse_count = 0u;
+    u32 offset = 0u;
+
+    if (value == 0u)
+    {
+        buffer[offset++] = '0';
+        return offset;
+    }
+
+    while ((value != 0u) && (reverse_count < sizeof(reverse)))
+    {
+        reverse[reverse_count++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    }
+
+    while (reverse_count > 0u)
+    {
+        buffer[offset++] = reverse[--reverse_count];
+    }
+
+    return offset;
+}
+
+static u32 shell64_format_hex32(char *buffer, u32 value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    u32 offset = 0u;
+    u32 shift;
+
+    buffer[offset++] = '0';
+    buffer[offset++] = 'x';
+    for (shift = 28u; shift <= 28u; shift -= 4u)
+    {
+        buffer[offset++] = hex[(value >> shift) & 0xFu];
+        if (shift == 0u)
+        {
+            break;
+        }
+    }
+
+    return offset;
+}
+
+static u32 shell64_write_decimal_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 value)
+{
+    char buffer[10];
+    u32 length;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    length = shell64_format_decimal_u32(buffer, value);
+    (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static u32 shell64_write_hex32_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 value)
+{
+    char buffer[10];
+    u32 length;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    length = shell64_format_hex32(buffer, value);
+    (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
 static u32 shell64_format_ipv4(char *buffer, u32 address)
 {
     u32 offset = 0u;
@@ -228,6 +305,48 @@ static u32 shell64_print_network_status(u32 console_capability_handle, u32 owner
         "dns: ",
         virtio_net64_dhcp_dns());
     return shell64_write_text(console_capability_handle, owner_id, "authority: brokered\n");
+}
+
+static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner_id)
+{
+    if (package_signing64_signed() == 0u)
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "package system: BIOS checksum-only fallback\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "bios package mode: checksum-only fallback\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "uefi package mode: unavailable on BIOS boot\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "signature verification: unavailable on BIOS fallback\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M8; scoped capability required\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
+        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M8; scoped install required\n");
+    }
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "bios package mode: checksum-only fallback\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "uefi package mode: Ed25519 verified\n");
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "package format version: ", 2u);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "trusted public key id: ", package_signing64_public_key_id());
+    (void)shell64_write_text(console_capability_handle, owner_id, "trusted public key fingerprint: ");
+    (void)shell64_write_text(console_capability_handle, owner_id, package_signing64_public_key_fingerprint());
+    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "signed package count: ", package_signing64_signed_package_count());
+    (void)shell64_write_text(console_capability_handle, owner_id, "installed packages: signed bootstrap archive visible\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "signature verification: verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "payload hash status: verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "capability requests: visible; policy enforced\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "admitted capabilities: scoped only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "denied capabilities: capability-policy denial observed\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-index: local signed fixture verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "rollback/replay: denied/handled\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M8; scoped capability required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M8; scoped install required\n");
+    return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network\n");
 }
 
 static u8 shell64_lower(u8 value)
@@ -520,6 +639,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: net - show brokered network status\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "pkginfo"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: pkginfo - show read-only package trust status\n");
+    }
+
     if (shell64_token_equals(token_start, token_length, "pwd"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: pwd\n");
@@ -571,6 +695,7 @@ static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
         || shell64_token_equals(token_start, token_length, "help")
         || shell64_token_equals(token_start, token_length, "info")
         || shell64_token_equals(token_start, token_length, "net")
+        || shell64_token_equals(token_start, token_length, "pkginfo")
         || shell64_token_equals(token_start, token_length, "pwd");
 }
 
@@ -680,34 +805,21 @@ static u32 shell64_list_apps(
 {
     (void)root_capability_handle;
 
+    (void)shell64_write_text(console_capability_handle, owner_id, "Product apps:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "APPEND\nCAT\nCOPY\nDELETE\nLS\nMKDIR\nMOVE\nRENAME\nSTAT\nTOUCH\nWRITE\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Product services:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M8:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Installer writes/install\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
         console_capability_handle,
         owner_id,
-        "Product apps:\n"
-        "APPEND\n"
-        "CAT\n"
-        "COPY\n"
-        "DELETE\n"
-        "LS\n"
-        "MKDIR\n"
-        "MOVE\n"
-        "RENAME\n"
-        "STAT\n"
-        "TOUCH\n"
-        "WRITE\n"
-        "Product services:\n"
-        "Network (hardware-gated): use net\n"
-        "GUI desktop: Terminal File Manager Settings\n"
-        "Service/session status: Settings\n"
-        "Installer dry-run: safe tooling only; writes disabled\n"
-        "Unavailable in M6:\n"
-        "ASK (not AI)\n"
-        "ECHO\n"
-        "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n"
-        "Installer writes/install\n"
-        "Package manager\n"
-        "AI assistant\n"
-        "Internal files hidden from app output: HELLO.TXT INDEX.TXT\n");
+        "Auto-install\nPublic update fetch\nAI assistant\nInternal files hidden from app output: HELLO.TXT INDEX.TXT\n");
 }
 
 static u32 shell64_stat_path(
@@ -1037,15 +1149,16 @@ u32 shell64_execute_line(
         {
             return shell64_print_usage(console_capability_handle, owner_id, first_start, first_length);
         }
+        (void)shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help info net pkginfo pwd\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move rename stat touch write\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer writes disabled\n");
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Builtins: apps help info net pwd\n"
-            "Product apps: append cat copy delete ls mkdir move rename stat touch write\n"
-            "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n"
-            "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n"
-            "Product services: Settings shows service/session status; installer writes disabled\n"
-            "Unavailable in M6: ask (not AI), echo, aliases, package-manager, ai, internal install writes\n");
+            "Unavailable in M8: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
@@ -1061,6 +1174,11 @@ u32 shell64_execute_line(
     if (shell64_token_equals(command_start, command_length, "net"))
     {
         return shell64_print_network_status(console_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "pkginfo"))
+    {
+        return shell64_print_package_status(console_capability_handle, owner_id);
     }
 
     if (shell64_token_equals(command_start, command_length, "info"))

@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M7.1 is `Supply-Chain Negative Fixture Closure`.
+M8 is `Package Manager UX + Trust Policy Surface`.
 
-M7.1 keeps the accepted M7 Product surface and closes the previously separate negative-test gaps for signed packages and update indexes. It adds deterministic fixtures for wrong signing key, manifest tamper, payload tamper distinct from checksum mismatch, duplicate package ID, downgrade, denied capability request, malformed package field, oversized package field, install without install capability, unsigned update index, tampered update index, wrong-key update index, same-version replay handling, and no-auto-install verification. It does not add live public update fetching, auto-install, an app store, package-manager UI, AI behavior, browser behavior, or real internal-disk install writes.
+M8 keeps the accepted M7.1 signed-package and update-index negative fixture coverage, then exposes that trust state through read-only Product surfaces: Settings and the `pkginfo` shell builtin. It does not add live public update fetching, auto-install, an app store, package install/apply actions, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 448992
-- BIOS kernel sectors: 877 / 1024
-- BIOS reserve: 147
-- BIOS checksum: 0x4AC0C30F
+- BIOS kernel bytes: 450048
+- BIOS kernel sectors: 879 / 1024
+- BIOS reserve: 145
+- BIOS checksum: 0x3AD697C1
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 533440
+- UEFI kernel bytes: 535552
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,563,712
+- UEFI byte reserve: 1,561,600
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -57,6 +57,7 @@ Product behavior:
 - NVMe persistence verification path
 - UEFI-only Ed25519 package archive and payload admission
 - UEFI-only signed update-index verification with rollback denial
+- read-only package trust visibility through Settings and `pkginfo`
 - capability denial checks
 - no ambient authority
 
@@ -73,6 +74,15 @@ M7.1 package behavior:
 - auto-install: unavailable
 - package-manager GUI: unavailable
 - trusted time: unavailable; expiry metadata is not Product-enforced without a trusted time source
+
+M8 package trust UX behavior:
+
+- Settings shows a read-only package trust panel
+- `pkginfo` shows package mode, format version, trusted public key id/fingerprint, signed package count, signature/hash status, capability request/admission/denial status, local signed update-index status, rollback/replay handling, no-auto-install status, public update fetch status, trusted-time expiry status, and install/update authority status
+- Settings and `pkginfo` do not receive install capability, update-apply capability, filesystem write authority, raw network authority, or raw package mutation authority
+- install/apply actions are unavailable in M8
+- live public update fetching remains unavailable/non-product
+- trusted-time expiry remains unavailable/non-product without a trusted time source
 
 M4.1 real-hardware validation:
 
@@ -128,6 +138,7 @@ Product builtins:
 - help
 - info
 - net
+- pkginfo
 - pwd
 
 Product GUI apps:
@@ -154,7 +165,10 @@ Unavailable or not product-path in Product:
 - ECHO
 - shell aliases SAY, SHOW, LIST, MAKE, PUT, SWAP, SHIFT
 - installer write/install authority
-- package manager
+- package install/update actions
+- app store
+- auto-install
+- live public update fetch
 - AI assistant behavior
 
 ## Experimental Profile

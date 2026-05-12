@@ -192,12 +192,13 @@ function Assert-X64M1RuntimeSurface
         throw "QEMU verification failed: x64 persistent shell transcript was not found for M1 runtime surface validation."
     }
 
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help info net pwd$' -Message "M3 runtime help did not label shell builtins."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help info net pkginfo pwd$' -Message "M8 runtime help did not label shell builtins."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings through brokered desktop input/display$' -Message "M4 runtime help did not describe Product GUI status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer writes disabled$' -Message "M6 runtime help did not describe Product service/session status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M6: ask \(not AI\), echo, aliases, package-manager, ai, internal install writes$' -Message "M6 runtime help did not label unavailable surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M8: ask \(not AI\), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes$' -Message "M8 runtime help did not label unavailable surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -206,11 +207,15 @@ function Assert-X64M1RuntimeSurface
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net$' -Message "M3 apps output did not label Product network status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: safe tooling only; writes disabled$' -Message "M6 apps output did not label installer dry-run write-disable status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Package install/update actions$' -Message "M8 apps output did not quarantine package install/update authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Auto-install$' -Message "M8 apps output did not quarantine auto-install."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Public update fetch$' -Message "M8 apps output did not quarantine public update fetch."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Internal files hidden from app output: HELLO\.TXT INDEX\.TXT$' -Message "M1 apps output did not label hidden internal app files."
 
     foreach ($forbidden in @('^ASK\.APP$', '^ECHO\.APP$', '^SAY\.APP$', '^SHOW\.APP$', '^LIST\.APP$', '^MAKE\.APP$', '^PUT\.APP$', '^SWAP\.APP$', '^SHIFT\.APP$', '^HELLO\.TXT$', '^INDEX\.TXT$', '^help apps info pwd .*echo')) {
@@ -498,7 +503,7 @@ function Send-QemuKeyboardProbe
 
         $keys = @(
             "l", "s", "ret",
-            "h", "e", "l", "x", "backspace", "p", "ret",
+            "h", "e", "l", "p", "ret",
             "h", "e", "l", "p", "spc", "c", "a", "t", "ret",
             "h", "e", "l", "p", "spc", "w", "r", "i", "t", "e", "ret",
             "a", "p", "p", "s", "ret",
@@ -509,6 +514,7 @@ function Send-QemuKeyboardProbe
             "c", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
             "s", "t", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
             "n", "e", "t", "ret",
+            "p", "k", "g", "i", "n", "f", "o", "ret",
             "w", "r", "i", "t", "e", "spc", "w", "dot", "t", "x", "t", "spc", "o", "k", "ret",
             "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret",
             "e", "x", "i", "t", "ret"
@@ -2482,12 +2488,13 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ cat README\.TXT' -Message "x64 ring-3 input-backed prompt was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user input cli probe attempts 4 exits 4 result 0x49434C31 recorded 0x49434C31 expected 0x49434C31 command-bytes 14 read-bytes 32 prompt-bytes 14 console-writes 8 console-bytes 123 console-denials 0 input-reads 1 input-bytes 14 input-denials 0 input-eof 0 rip 0x00000000410003C0 rsp 0x0000000040020000 cs 0x0000000000000033 ss 0x000000000000002B' -Message "x64 ring-3 input/console/filesystem CLI proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help' -Message "x64 ring-3 shell stream help command was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help info net pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help info net pkginfo pwd|Builtins apps help info net pkginfo pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product package trust: pkginfo and Settings are read-only; install/apply disabled|Pkg trust read-only; no install/apply' -Message "x64 ring-3 shell stream Product package trust help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M6: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M8: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3780,16 +3787,28 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ stat readme\.txt' -Message "x64 persistent shell did not stat a lowercase README path."
     Assert-OutputContains -Lines $outputLines -Pattern 'type=file size=102' -Message "x64 persistent shell did not return README.TXT stat output."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ net' -Message "x64 persistent shell did not accept the Product net command."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ pkginfo' -Message "x64 persistent shell did not accept the Product pkginfo command."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $outputLines -Pattern '^no network$' -Message "x64 persistent shell did not report clean network unavailability on disk/BIOS media."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg unavailable bios-checksum-only 1' -Message "x64 BIOS package-signing surface did not report checksum-only fallback."
+        Assert-OutputContains -Lines $outputLines -Pattern '^package system: BIOS checksum-only fallback$' -Message "x64 BIOS pkginfo did not report checksum-only fallback."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg-status unavailable bios-checksum-only 1 .*drs-pkg-status-no-auto-install-visible 1 .*drs-pkg-status-public-fetch-unavailable 1 .*drs-pkg-status-trusted-time-unavailable 1 .*drs-pkg-install-action-unavailable 1 .*drs-pkg-update-apply-unavailable 1' -Message "x64 BIOS package trust UX fallback proof was not observed."
     }
     else {
         Assert-OutputContains -Lines $outputLines -Pattern '^network: online$' -Message "x64 persistent shell did not report an active Product network lease."
         Assert-OutputContains -Lines $outputLines -Pattern '^gateway: 10\.0\.2\.2$' -Message "x64 persistent shell did not report the DHCP gateway."
         Assert-OutputContains -Lines $outputLines -Pattern '^dns: 10\.0\.2\.[0-9]+$' -Message "x64 persistent shell did not report the DHCP DNS server."
         Assert-OutputContains -Lines $outputLines -Pattern '^authority: brokered$' -Message "x64 persistent shell did not label network authority as brokered."
+        Assert-OutputContains -Lines $outputLines -Pattern '^package system: enabled on UEFI Product$' -Message "x64 UEFI pkginfo did not report the signed-package Product path."
+        Assert-OutputContains -Lines $outputLines -Pattern '^uefi package mode: Ed25519 verified$' -Message "x64 UEFI pkginfo did not report Ed25519 verification."
+        Assert-OutputContains -Lines $outputLines -Pattern '^trusted public key fingerprint: [0-9A-F]{64}$' -Message "x64 UEFI pkginfo did not expose the signer fingerprint."
+        Assert-OutputContains -Lines $outputLines -Pattern '^capability requests: visible; policy enforced$' -Message "x64 UEFI pkginfo did not expose package capability policy status."
+        Assert-OutputContains -Lines $outputLines -Pattern '^auto-install: unavailable$' -Message "x64 UEFI pkginfo did not report auto-install as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^public update fetch: unavailable/non-product$' -Message "x64 UEFI pkginfo did not report public update fetch as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^trusted-time expiry: unavailable/non-product$' -Message "x64 UEFI pkginfo did not report trusted-time expiry as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^no ambient install/update/network$' -Message "x64 UEFI pkginfo did not report no ambient install/update/network authority."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg drs-pkg-signed 1 drs-pkg-verified 1 drs-pkg-invalid-denied 1 drs-pkg-missing-sig-denied 1 drs-pkg-wrong-key-denied 1 drs-pkg-manifest-tamper-denied 1 drs-pkg-payload-tamper-denied 1 drs-pkg-checksum-mismatch-denied 1 drs-pkg-unsupported-version-denied 1 drs-pkg-duplicate-denied 1 drs-pkg-downgrade-denied 1 drs-pkg-wrong-owner-denied 1 drs-pkg-stale-token-denied 1 drs-pkg-cap-policy-denied 1 drs-pkg-malformed-denied 1 drs-pkg-oversized-denied 1 drs-pkg-install-no-cap-denied 1 drs-pkg-install-scoped 1 drs-pkg-update-check 1 drs-pkg-update-index-verified 1 drs-pkg-update-index-unsigned-denied 1 drs-pkg-update-index-tamper-denied 1 drs-pkg-update-index-wrong-key-denied 1 drs-pkg-update-index-rollback-denied 1 drs-pkg-update-index-replay-handled 1 drs-pkg-update-no-network-cap-denied 1 drs-pkg-update-apply-no-install-cap-denied 1 drs-pkg-update-no-ambient 1 drs-pkg-update-no-auto-install 1' -Message "x64 UEFI M7.1 signed package/update negative fixture proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg-status drs-pkg-settings-panel 1 drs-pkg-settings-readonly 1 drs-pkg-status-visible 1 drs-pkg-status-signer-visible 1 drs-pkg-status-capabilities-visible 1 drs-pkg-status-update-index-visible 1 drs-pkg-status-no-auto-install-visible 1 drs-pkg-status-public-fetch-unavailable 1 drs-pkg-status-trusted-time-unavailable 1 drs-pkg-status-no-ambient-install 1 drs-pkg-status-no-ambient-update 1 drs-pkg-status-no-ambient-network 1 drs-pkg-settings-write-denied 1 drs-pkg-install-action-unavailable 1 drs-pkg-update-apply-unavailable 1 signer-key 0x[0-9A-F]+ signed-packages [1-9][0-9]* settings-panels [1-9][0-9]*' -Message "x64 UEFI M8 package trust UX/status proof was not observed."
     }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ write w\.txt ok' -Message "x64 persistent shell did not accept a live write command with explicit text."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."

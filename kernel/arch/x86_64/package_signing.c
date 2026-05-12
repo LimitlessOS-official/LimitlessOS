@@ -655,4 +655,22 @@ u32 package_signing64_update_no_auto_install(void)
     return g_package_signing_update_no_auto_install;
 }
 
+u32 package_signing64_public_key_id(void)
+{
+    package_signing64_init();
+    return PACKAGE_STORE_SIGNATURE_PUBLIC_KEY_ID;
+}
+
+const char *package_signing64_public_key_fingerprint(void)
+{
+    package_signing64_init();
+    return PACKAGE_STORE_SIGNATURE_PUBLIC_KEY_FINGERPRINT;
+}
+
+u32 package_signing64_signed_package_count(void)
+{
+    package_signing64_init();
+    return PACKAGE_STORE_SIGNATURE_PAYLOAD_COUNT;
+}
+
 #endif

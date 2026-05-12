@@ -4592,6 +4592,44 @@ static void log_package_signing_surface(void)
     write_line("");
 }
 
+static void log_package_trust_status_surface(void)
+{
+    package_signing64_init();
+
+    if (package_signing64_signed() == 0u)
+    {
+        write_string("[x64] drs-pkg-status unavailable bios-checksum-only 1");
+        write_labeled_dec_u32(" drs-pkg-status-no-auto-install-visible ", 1u);
+        write_labeled_dec_u32(" drs-pkg-status-public-fetch-unavailable ", 1u);
+        write_labeled_dec_u32(" drs-pkg-status-trusted-time-unavailable ", 1u);
+        write_labeled_dec_u32(" drs-pkg-install-action-unavailable ", 1u);
+        write_labeled_dec_u32(" drs-pkg-update-apply-unavailable ", 1u);
+        write_line("");
+        return;
+    }
+
+    write_string("[x64] drs-pkg-status");
+    write_labeled_dec_u32(" drs-pkg-settings-panel ", scaffold_bool_u32(display64_pkg_settings_panel_count()));
+    write_labeled_dec_u32(" drs-pkg-settings-readonly ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-visible ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-signer-visible ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-capabilities-visible ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-update-index-visible ", package_signing64_update_index_verified());
+    write_labeled_dec_u32(" drs-pkg-status-no-auto-install-visible ", package_signing64_update_no_auto_install());
+    write_labeled_dec_u32(" drs-pkg-status-public-fetch-unavailable ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-trusted-time-unavailable ", 1u);
+    write_labeled_dec_u32(" drs-pkg-status-no-ambient-install ", package_signing64_install_no_cap_denied());
+    write_labeled_dec_u32(" drs-pkg-status-no-ambient-update ", package_signing64_update_apply_no_install_cap_denied());
+    write_labeled_dec_u32(" drs-pkg-status-no-ambient-network ", package_signing64_update_no_network_cap_denied());
+    write_labeled_dec_u32(" drs-pkg-settings-write-denied ", 1u);
+    write_labeled_dec_u32(" drs-pkg-install-action-unavailable ", 1u);
+    write_labeled_dec_u32(" drs-pkg-update-apply-unavailable ", 1u);
+    write_labeled_hex_u32(" signer-key ", package_signing64_public_key_id());
+    write_labeled_dec_u32(" signed-packages ", package_signing64_signed_package_count());
+    write_labeled_dec_u32(" settings-panels ", display64_pkg_settings_panel_count());
+    write_line("");
+}
+
 static void log_apic_surface(void)
 {
     static const struct scaffold_value_field apic_fields[] = {
@@ -11823,6 +11861,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_input_keyboard_surface();
     log_service_session_surface();
     log_package_signing_surface();
+    log_package_trust_status_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
         input64_ps2_mouse_aux_enabled(),

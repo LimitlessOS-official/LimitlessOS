@@ -36,6 +36,9 @@ u32 package_signing64_update_no_network_cap_denied(void);
 u32 package_signing64_update_apply_no_install_cap_denied(void);
 u32 package_signing64_update_no_ambient(void);
 u32 package_signing64_update_no_auto_install(void);
+u32 package_signing64_public_key_id(void);
+const char *package_signing64_public_key_fingerprint(void);
+u32 package_signing64_signed_package_count(void);
 #else
 static inline void package_signing64_init(void) {}
 static inline u32 package_signing64_verify_archive(void) { return 1u; }
@@ -76,6 +79,9 @@ static inline u32 package_signing64_update_no_network_cap_denied(void) { return 
 static inline u32 package_signing64_update_apply_no_install_cap_denied(void) { return 0u; }
 static inline u32 package_signing64_update_no_ambient(void) { return 0u; }
 static inline u32 package_signing64_update_no_auto_install(void) { return 0u; }
+static inline u32 package_signing64_public_key_id(void) { return 0u; }
+static inline const char *package_signing64_public_key_fingerprint(void) { return "unavailable"; }
+static inline u32 package_signing64_signed_package_count(void) { return 0u; }
 #endif
 
 #endif

@@ -1346,8 +1346,8 @@ shell_unknown_message:
 db "unknown command"
 
 shell_m1_inventory_message:
-db "Builtins apps help info net pwd", 10
-db "Product apps: append cat copy delete ls mkdir move rename stat touch write", 10
+db "Builtins apps help info net pkginfo pwd", 10
+db "Product apps product set", 10
 db "Unavail ASK-not-AI ECHO aliases;HELLO.TXT INDEX.TXT internal", 10
 
 shell_pwd_message:

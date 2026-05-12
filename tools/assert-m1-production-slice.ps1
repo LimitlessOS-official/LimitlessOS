@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
-$m1ShellBuiltins = @("apps", "help", "info", "net", "pwd")
+$m1ShellBuiltins = @("apps", "help", "info", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
@@ -481,14 +481,16 @@ function Assert-RuntimeShellSurfaceSource
     $source = Get-Content -Path $shellPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
-        "Builtins: apps help info net pwd",
+        "Builtins: apps help info net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
+        "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
-        "Unavailable in M6: ask (not AI), echo, aliases, package-manager, ai, internal install writes",
+        "Unavailable in M8: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
+        "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
         "Installer dry-run: safe tooling only; writes disabled",
@@ -526,7 +528,8 @@ function Assert-RuntimeShellSurfaceSource
         }
     }
     foreach ($requiredProbeText in @(
-        "Product apps: append cat copy delete ls mkdir move rename stat touch write",
+        "Builtins apps help info net pkginfo pwd",
+        "Product apps product set",
         "Unavail ASK-not-AI ECHO aliases",
         "HELLO.TXT INDEX.TXT internal"
     )) {
@@ -1028,6 +1031,38 @@ function Assert-X64Artifacts
         $m7Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m7InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m7.json" -f $BuildProfile.ToLowerInvariant())
         $m7Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m7InventoryPath -Encoding Ascii
+
+        $m8Inventory = $m7Inventory.PSObject.Copy()
+        $m8Inventory.milestone = "M8 Package Manager UX + Trust Policy Surface"
+        $m8Inventory.activeProductServices = @(
+            $m7Inventory.activeProductServices +
+            @("read-only package trust telemetry")
+        )
+        $m8Inventory.unavailableServices = @("full multiuser login/auth", "installer write/format/boot-entry authority", "auto-install", "app store", "live public update fetch", "package install/apply actions", "AI assistant")
+        $m8Inventory | Add-Member -Force -NotePropertyName packageTrustSurfaceVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName settingsPackagePanelVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName shellPackageStatusVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName packageManagerUxStatus -NotePropertyValue "read-only Product trust/status surface only; not an app store"
+        $m8Inventory | Add-Member -Force -NotePropertyName autoInstallStatus -NotePropertyValue "unavailable"
+        $m8Inventory | Add-Member -Force -NotePropertyName publicUpdateFetchStatus -NotePropertyValue "unavailable/non-product"
+        $m8Inventory | Add-Member -Force -NotePropertyName trustedTimeStatus -NotePropertyValue "unavailable/non-product"
+        $m8Inventory | Add-Member -Force -NotePropertyName installActionStatus -NotePropertyValue "disabled in M8; scoped install capability required for future apply"
+        $m8Inventory | Add-Member -Force -NotePropertyName updateApplyActionStatus -NotePropertyValue "disabled in M8; no auto-install"
+        $m8Inventory | Add-Member -Force -NotePropertyName biosPackageMode -NotePropertyValue "checksum-only fallback"
+        $m8Inventory | Add-Member -Force -NotePropertyName uefiPackageMode -NotePropertyValue "Ed25519 verified package admission"
+        $m8Inventory | Add-Member -Force -NotePropertyName signerKeyId -NotePropertyValue $trustedPublicKeyId
+        $m8Inventory | Add-Member -Force -NotePropertyName signerFingerprint -NotePropertyValue $trustedPublicKeyFingerprint
+        $m8Inventory | Add-Member -Force -NotePropertyName packageListVisible -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName capabilityRequestsVisible -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName deniedCapabilityRequestsVisible -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName settingsPackagePanelReadOnly -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName installUnavailableVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName updateApplyUnavailableVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName noAmbientPackageNetworkVerified -NotePropertyValue $true
+        $m8Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m8Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m8InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m8.json" -f $BuildProfile.ToLowerInvariant())
+        $m8Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m8InventoryPath -Encoding Ascii
     }
 }
 
