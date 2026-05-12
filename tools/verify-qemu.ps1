@@ -466,6 +466,7 @@ function Send-QemuKeyboardProbe
                 & $sendClick
                 & $sendMoveTo 90 $launcherY
                 & $sendClick
+                & $sendKey "a"
                 & $sendMoveTo $originalCloseX 63
                 & $sendClick
                 & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + [int]($newTerminalWidth / 2))) ($newTerminalY + 120)

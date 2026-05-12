@@ -80,6 +80,7 @@ static u32 g_console_column = 0u;
 static u8 g_console_color = 0x1Fu;
 
 static void wait_for_timer_ticks(u32 target_ticks);
+static void collect_keyboard_probe_input(u32 target_pending, u32 max_wait_ticks);
 
 static void debug_write_char(char character)
 {
@@ -3597,6 +3598,12 @@ static void log_brokered_keyboard_read_probe(void)
     u8 keyboard_byte = 0u;
     u32 result = 0u;
 
+    if (pending_before == 0u)
+    {
+        collect_keyboard_probe_input(1u, 120u);
+        pending_before = (u32)syscall64_invoke(X64_SYSCALL_INPUT_KEYBOARD_PENDING_COUNT, 0u, 0u, 0u);
+    }
+
     if ((pending_before > 0u) && (input_capability != CAPABILITY64_INVALID_HANDLE))
     {
         result = (u32)syscall64_invoke(
@@ -4250,7 +4257,8 @@ static u64 scaffold_value_read(u8 selector)
     case SCAFFOLD_VALUE_APIC_IOAPIC_BASE: return apic64_ioapic_base();
     case SCAFFOLD_VALUE_APIC_PIC_DISABLED: return apic64_pic_disabled();
     case SCAFFOLD_VALUE_APIC_TIMER_TICKING: return scaffold_bool_u32(pit_get_ticks());
-    case SCAFFOLD_VALUE_APIC_KEYBOARD_LIVE: return scaffold_bool_u32(input64_keyboard_byte_count());
+    case SCAFFOLD_VALUE_APIC_KEYBOARD_LIVE:
+        return scaffold_bool_u32(input64_keyboard_byte_count() | xhci64_input_live());
     case SCAFFOLD_VALUE_APIC_ENABLED: return apic64_enabled();
     case SCAFFOLD_VALUE_APIC_LAPIC_ID: return apic64_lapic_id();
     case SCAFFOLD_VALUE_APIC_IOAPIC_GSI_BASE: return apic64_ioapic_gsi_base();
@@ -11768,6 +11776,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
 #endif
     log_desktop_surface();
     log_gui_interactive_surface();
+    log_input_keyboard_surface();
     log_service_session_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
