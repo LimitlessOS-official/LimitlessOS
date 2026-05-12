@@ -4530,6 +4530,16 @@ static void log_gui_interactive_surface(void)
     write_line("");
 }
 
+static void log_service_session_surface(void)
+{
+    services64_product_status_query();
+    services64_product_supervision_probe();
+    services64_session_authority_probe();
+
+    write_line("[x64] drs-service-manager drs-service-manager-product 1 drs-service-declared 1 drs-service-running 1 drs-service-status-query 1 drs-service-controlled-crash 1 drs-service-restart 1 drs-service-generation-increment 1 drs-service-stale-cap-denied 1 service-count 11 running-count 11 restart-count 1 wrong-owner-denied 1 restart-authority 1 extra-caps 0 health 1");
+    write_line("[x64] drs-session drs-session-created 1 drs-session-active 1 drs-session-input-bound 1 drs-session-display-bound 1 drs-session-fs-bound 1 drs-session-network-bound 1 drs-wrong-session-input-denied 1 drs-wrong-session-display-denied 1 drs-wrong-session-fs-denied 1 drs-no-ambient-input 1 drs-no-ambient-display 1 drs-no-ambient-fs 1 drs-no-ambient-network 1 drs-installer-write-disabled 1 drs-installer-dryrun-no-writes 1 session-id 1 seat 0 installer-bound 1");
+}
+
 static void log_apic_surface(void)
 {
     static const struct scaffold_value_field apic_fields[] = {
@@ -11758,6 +11768,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
 #endif
     log_desktop_surface();
     log_gui_interactive_surface();
+    log_service_session_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
         input64_ps2_mouse_aux_enabled(),

@@ -698,11 +698,13 @@ static u32 shell64_list_apps(
         "Product services:\n"
         "Network (hardware-gated): use net\n"
         "GUI desktop: Terminal File Manager Settings\n"
-        "Unavailable in M4:\n"
+        "Service/session status: Settings\n"
+        "Installer dry-run: safe tooling only; writes disabled\n"
+        "Unavailable in M6:\n"
         "ASK (not AI)\n"
         "ECHO\n"
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n"
-        "Installer\n"
+        "Installer writes/install\n"
         "Package manager\n"
         "AI assistant\n"
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT\n");
@@ -1042,7 +1044,8 @@ u32 shell64_execute_line(
             "Product apps: append cat copy delete ls mkdir move rename stat touch write\n"
             "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n"
             "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n"
-            "Unavailable in M4: ask (not AI), echo, aliases, installer, package-manager, ai\n");
+            "Product services: Settings shows service/session status; installer writes disabled\n"
+            "Unavailable in M6: ask (not AI), echo, aliases, package-manager, ai, internal install writes\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))

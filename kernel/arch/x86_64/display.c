@@ -2331,6 +2331,10 @@ static void display64_desktop_draw_settings(u32 handle)
     (void)display64_draw_font_text(body_x, body_y + 88u, "Network DHCP DNS HTTP", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 112u, "About LimitlessOS", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     display64_draw_label_value(body_x, body_y + 130u, "Sectors ", g_display_boot_info->kernel_sector_count, 0x00B8C7D8u);
+    services64_product_status_query();
+    display64_draw_label_value(body_x, body_y + 148u, "Services ", services64_product_service_running(), 0x00B8C7D8u);
+    display64_draw_label_value(body_x + 128u, body_y + 148u, "Session ", services64_session_id(), 0x00B8C7D8u);
+    (void)display64_draw_font_text(body_x, body_y + 166u, "Installer writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_desktop_settings_count == 0u)
     {
         ++g_display_desktop_settings_count;

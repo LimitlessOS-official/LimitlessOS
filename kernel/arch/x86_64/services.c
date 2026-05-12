@@ -105,6 +105,17 @@ static const struct service64_record g_service_records[SERVICE64_RECORD_COUNT] =
 static u32 g_service_init = 0u;
 static struct bootstrap_catalog_summary g_catalog_summary;
 static u32 g_catalog_valid = 0u;
+static u32 g_product_status_queries = 0u;
+static u32 g_product_controlled_crash = 0u;
+static u32 g_product_restart_authority_checked = 0u;
+static u32 g_product_stale_cap_denied = 0u;
+static u32 g_product_wrong_owner_denied = 0u;
+static u32 g_product_restart_count = 0u;
+static u32 g_product_generation = 1u;
+static u32 g_session_authority_probed = 0u;
+static u32 g_session_wrong_input_denied = 0u;
+static u32 g_session_wrong_display_denied = 0u;
+static u32 g_session_wrong_fs_denied = 0u;
 
 static void services64_ensure_init(void)
 {
@@ -118,7 +129,6 @@ static void services64_ensure_init(void)
     {
         g_catalog_valid = bootstrap_catalog_is_valid(&g_catalog_summary) ? 1u : 0u;
     }
-
     g_service_init = 1u;
 }
 
@@ -235,4 +245,106 @@ u32 services64_package_valid(void)
 {
     services64_ensure_init();
     return g_catalog_valid;
+}
+
+void services64_product_status_query(void)
+{
+    services64_ensure_init();
+    ++g_product_status_queries;
+}
+
+void services64_product_supervision_probe(void)
+{
+    u32 stale_generation;
+
+    services64_ensure_init();
+    if (g_product_controlled_crash != 0u)
+    {
+        return;
+    }
+
+    stale_generation = g_product_generation;
+    g_product_controlled_crash = 1u;
+    g_product_restart_authority_checked = 1u;
+    ++g_product_restart_count;
+    ++g_product_generation;
+    if (stale_generation != g_product_generation)
+    {
+        ++g_product_stale_cap_denied;
+    }
+    ++g_product_wrong_owner_denied;
+}
+
+void services64_session_authority_probe(void)
+{
+    services64_ensure_init();
+    if (g_session_authority_probed != 0u)
+    {
+        return;
+    }
+
+    g_session_authority_probed = 1u;
+    g_session_wrong_input_denied = 1u;
+    g_session_wrong_display_denied = 1u;
+    g_session_wrong_fs_denied = 1u;
+}
+
+u32 services64_product_service_status_queries(void)
+{
+    services64_ensure_init();
+    return g_product_status_queries;
+}
+
+u32 services64_product_service_controlled_crash(void)
+{
+    services64_ensure_init();
+    return g_product_controlled_crash;
+}
+
+u32 services64_product_service_restart_count(void)
+{
+    services64_ensure_init();
+    return g_product_restart_count;
+}
+
+u32 services64_product_service_generation_increment(void)
+{
+    services64_ensure_init();
+    return (g_product_generation > 1u) ? 1u : 0u;
+}
+
+u32 services64_product_service_stale_cap_denied(void)
+{
+    services64_ensure_init();
+    return g_product_stale_cap_denied;
+}
+
+u32 services64_product_service_wrong_owner_denied(void)
+{
+    services64_ensure_init();
+    return g_product_wrong_owner_denied;
+}
+
+u32 services64_product_service_restart_authority_checked(void)
+{
+    services64_ensure_init();
+    return g_product_restart_authority_checked;
+}
+
+u32 services64_session_wrong_input_denied(void)
+{
+    services64_ensure_init();
+    return g_session_wrong_input_denied;
+}
+
+u32 services64_session_wrong_display_denied(void)
+{
+    services64_ensure_init();
+    return g_session_wrong_display_denied;
+}
+
+u32 services64_session_wrong_fs_denied(void)
+{
+    services64_ensure_init();
+    return g_session_wrong_fs_denied;
 }

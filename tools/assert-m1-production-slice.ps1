@@ -22,7 +22,7 @@ $m4UnavailableFeatures = @(
     "ASK (not AI; no consent-gated assistant path in Product)",
     "ECHO (not Product path)",
     "RAMFS aliases (SAY/SHOW/LIST/MAKE/PUT/SWAP/SHIFT unavailable in Product shell)",
-    "Installer",
+    "Installer write/install path (M5 dry-run tooling is Product; internal writes disabled)",
     "Package manager",
     "AI assistant behavior"
 )
@@ -63,6 +63,35 @@ function Get-RepoRelativePath
     }
 
     return $fullPath
+}
+
+function Get-GitCommit
+{
+    try {
+        $commit = (& git -C $root rev-parse --short HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            return $commit.Trim()
+        }
+    } catch {
+    }
+
+    return "unavailable"
+}
+
+function Get-GitStatusSummary
+{
+    try {
+        $status = @(& git -C $root status --short 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            if ($status.Count -eq 0) {
+                return "clean"
+            }
+            return ($status -join "; ")
+        }
+    } catch {
+    }
+
+    return "unavailable"
 }
 
 function Read-KeyValueFile
@@ -430,10 +459,14 @@ function Assert-RuntimeShellSurfaceSource
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
-        "Unavailable in M4: ask (not AI), echo, aliases, installer, package-manager, ai",
+        "Product services: Settings shows service/session status; installer writes disabled",
+        "Unavailable in M6: ask (not AI), echo, aliases, package-manager, ai, internal install writes",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "GUI desktop: Terminal File Manager Settings",
+        "Service/session status: Settings",
+        "Installer dry-run: safe tooling only; writes disabled",
+        "Installer writes/install",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
@@ -728,6 +761,30 @@ function Assert-X64Artifacts
                 "Terminal/File Manager/Settings Product GUI apps"
             )
         )
+        $m5ProductServices = @(
+            $m4ProductServices +
+            @("safe installer dry-run tooling with internal writes disabled by default")
+        )
+        $m6ServiceRecords = @(
+            [PSCustomObject]@{ id = "policy-security-broker"; name = "policy/security broker"; state = "running"; principal = "ai-policy"; manifestId = 1; generation = 1; restartCount = 0; capabilities = @("route-policy", "audit"); sessionBinding = $null; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "console-shell-broker"; name = "console/shell broker"; state = "running"; principal = "console"; manifestId = 2; generation = 1; restartCount = 0; capabilities = @("console", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "input-broker"; name = "input broker"; state = "running"; principal = "input"; manifestId = 3; generation = 1; restartCount = 0; capabilities = @("input", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "display-compositor"; name = "display/compositor"; state = "running"; principal = "display"; manifestId = 4; generation = 1; restartCount = 0; capabilities = @("display", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "window-manager-desktop"; name = "window manager / desktop shell"; state = "running"; principal = "display"; manifestId = 5; generation = 1; restartCount = 0; capabilities = @("display", "input", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "filesystem-broker"; name = "filesystem broker"; state = "running"; principal = "ramfs"; manifestId = 6; generation = 1; restartCount = 0; capabilities = @("ramfs", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "block-storage-broker"; name = "block/storage broker"; state = "running"; principal = "block"; manifestId = 7; generation = 1; restartCount = 0; capabilities = @("block", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "hardware-inventory-broker"; name = "hardware inventory broker"; state = "running"; principal = "hardware-inventory"; manifestId = 8; generation = 1; restartCount = 0; capabilities = @("hardware", "audit"); sessionBinding = $null; health = "ok"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "network-broker"; name = "network broker"; state = "running"; principal = "driver-host"; manifestId = 9; generation = 1; restartCount = 0; capabilities = @("route-driver", "audit"); sessionBinding = 1; health = "hardware-gated"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "installer-dryrun"; name = "installer dry-run service/tool"; state = "running"; principal = "init-supervisor"; manifestId = 10; generation = 1; restartCount = 0; capabilities = @("hardware-read", "block-read", "audit"); sessionBinding = 1; health = "writes-disabled"; productStatus = "Product active" },
+            [PSCustomObject]@{ id = "settings-system-info"; name = "settings/system-info provider"; state = "running"; principal = "telemetry"; manifestId = 11; generation = 2; restartCount = 1; capabilities = @("read-telemetry", "audit"); sessionBinding = 1; health = "ok"; productStatus = "Product active" }
+        )
+        $m6ExperimentalServices = @(
+            [PSCustomObject]@{ name = "ASK"; status = "unavailable"; reason = "not AI; no consent-gated assistant path in Product" },
+            [PSCustomObject]@{ name = "ECHO"; status = "unavailable"; reason = "not Product path" },
+            [PSCustomObject]@{ name = "aliases"; status = "unavailable"; reason = "not Product shell commands" },
+            [PSCustomObject]@{ name = "package-manager"; status = "unavailable"; reason = "not implemented as Product behavior" },
+            [PSCustomObject]@{ name = "AI assistant behavior"; status = "unavailable"; reason = "no consent-gated assistant path in Product" }
+        )
 
         $m2Inventory = [PSCustomObject]@{
             milestone = "M2 Product Kernel Boundary + Experimental Quarantine"
@@ -783,6 +840,54 @@ function Assert-X64Artifacts
         $m4Inventory | Add-Member -Force -NotePropertyName settingsAuthority -NotePropertyValue "Settings receives read-only display/input/network/storage/profile/boot metadata and cannot write configuration"
         $m4InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m4.json" -f $BuildProfile.ToLowerInvariant())
         $m4Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m4InventoryPath -Encoding Ascii
+
+        $m5Inventory = $m4Inventory.PSObject.Copy()
+        $m5Inventory.milestone = "M5 Safe Installer + Partition Protection"
+        $m5Inventory.activeProductServices = @($m5ProductServices)
+        $m5Inventory | Add-Member -Force -NotePropertyName installerCapability -NotePropertyValue "dry-run partition inspection is Product; internal NVMe writes, format, boot-entry, and firmware authority remain disabled by default"
+        $m5Inventory | Add-Member -Force -NotePropertyName installerDryRunVerified -NotePropertyValue $true
+        $m5Inventory | Add-Member -Force -NotePropertyName internalInstallWritesEnabled -NotePropertyValue $false
+        $m5InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m5.json" -f $BuildProfile.ToLowerInvariant())
+        $m5Inventory | ConvertTo-Json -Depth 8 | Set-Content -Path $m5InventoryPath -Encoding Ascii
+
+        $m6Inventory = $m5Inventory.PSObject.Copy()
+        $m6Inventory.milestone = "M6 Service Manager + User/Session Model"
+        $m6Inventory.activeProductServices = @($m6ServiceRecords | ForEach-Object { $_.name })
+        $m6Inventory.activeExperimentalServices = @()
+        $m6Inventory | Add-Member -Force -NotePropertyName productServices -NotePropertyValue $m6ServiceRecords
+        $m6Inventory | Add-Member -Force -NotePropertyName experimentalServices -NotePropertyValue $m6ExperimentalServices
+        $m6Inventory | Add-Member -Force -NotePropertyName unavailableServices -NotePropertyValue @("full multiuser login/auth", "installer write/format/boot-entry authority", "package manager", "AI assistant")
+        $m6Inventory | Add-Member -Force -NotePropertyName activeSessions -NotePropertyValue @(
+            [PSCustomObject]@{
+                sessionId = 1
+                userId = "local-console"
+                seatId = 0
+                inputScope = "active-session-only"
+                displayScope = "session-window-namespace"
+                windowNamespace = "local-console"
+                filesystemNamespaceGrants = @("RAMFS", "boot-media read-only", "brokered persistent namespace")
+                networkGrants = @("read-only network status")
+                installerGrants = @("dry-run read-only inventory")
+                state = "active"
+            }
+        )
+        $m6Inventory | Add-Member -Force -NotePropertyName sessionCount -NotePropertyValue 1
+        $m6Inventory | Add-Member -Force -NotePropertyName activeSeatCount -NotePropertyValue 1
+        $m6Inventory | Add-Member -Force -NotePropertyName serviceLifecycleVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName sessionAuthorityVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName inputRoutingVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName displayAuthorityVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName filesystemAuthorityVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName networkAuthorityVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName installerDryRunSafetyVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName controlledRestartVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName staleCapabilityDenialVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName noAmbientAuthorityVerified -NotePropertyValue $true
+        $m6Inventory | Add-Member -Force -NotePropertyName fullMultiuserAuth -NotePropertyValue "not implemented; M6 has one local console session"
+        $m6Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m6Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m6InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m6.json" -f $BuildProfile.ToLowerInvariant())
+        $m6Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m6InventoryPath -Encoding Ascii
     }
 }
 

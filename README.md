@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M5 safe installer and partition protection
+## Current status: M6 service manager and session model
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, and M4.1 hardware-validation closure are accepted. M5 is `Safe Installer + Partition Protection`: it adds a host-side, raw-image verified installer safety path without adding installer code to the BIOS-constrained Product kernel.
+M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, M4.1 hardware-validation closure, and M5 safe installer dry-run are accepted. M6 is `Service Manager + User/Session Model`: it promotes Product service lifecycle/status and a single local console session authority model without adding broad new features or enabling internal-disk install writes.
 
 Use the Product profile for the serious bootable slice:
 
@@ -12,7 +12,7 @@ Use the Product profile for the serious bootable slice:
 .\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
 ```
 
-Product currently boots to a persistent ring-3 shell and Product desktop, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, and exposes a `net` builtin for brokered network status when supported hardware is present. Current Product size is `473488` bytes, `925 / 1024` BIOS sectors, `99` BIOS reserve, checksum `0x5D996177`; the UEFI Product contract is `473488 / 2097152` bytes with `1623664` bytes reserve. The BIOS reserve is still below the 128-sector warning threshold and above the 96-sector hard floor.
+Product currently boots to a persistent ring-3 shell and Product desktop, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, exposes a `net` builtin for brokered network status when supported hardware is present, and records Product service/session status through Settings plus M6 verifier telemetry. Current Product size is `474528` bytes, `927 / 1024` BIOS sectors, `97` BIOS reserve, checksum `0xAFCCC5B6`; the UEFI Product contract is `474528 / 2097152` bytes with `1622624` bytes reserve. The BIOS reserve is still below the 128-sector warning threshold and above the 96-sector hard floor.
 
 Product apps are: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE.
 
@@ -20,17 +20,19 @@ Product builtins are: apps, help, info, net, pwd.
 
 Product GUI apps are: Terminal, File Manager, Settings.
 
+Product services now have an explicit M6 status model: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run tooling, and settings/system-info provider. M6 creates one local console session; it is not a full multiuser login/auth system.
+
 Product networking is hardware-gated: UEFI/ISO paths with virtio-net or e1000e prove DHCP, DNS, TCP, and HTTP; BIOS/disk paths report cleanly unavailable. There is still no socket API and no ambient network access.
 
 Product GUI authority is narrow: the compositor owns framebuffer presentation, the window manager owns focus/hit-testing/z-order, the input broker routes mouse/keyboard events, Terminal receives keyboard only while focused, File Manager is limited to brokered safe namespaces, and Settings is read-only system status. Apps do not receive raw framebuffer, raw input, ambient storage, or ambient network authority.
 
 Manual MSI Cyborg 15 A13VE validation is tracked in `docs/hardware/msi-cyborg-15-a13ve.md`. Physical validation is pending user-supplied results because this workspace cannot boot the target laptop.
 
-BIOS reserve safety for M4.1: reserve is only `99` sectors, so M5 installer code must not be added to the BIOS-constrained Product kernel unless reserve is recovered above the `128`-sector warning threshold or the boot contract is intentionally changed. UEFI remains governed by the `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness; UEFI is not blocked by the BIOS `1024`-sector ceiling.
+BIOS reserve safety: reserve is only `97` sectors. M6 added Product service/session status and verification telemetry, increasing the BIOS image by two sectors from the M5 baseline. Installer write/install code and any M7 work must not be added to the BIOS-constrained Product kernel unless reserve is recovered above the `128`-sector warning threshold or the boot contract is intentionally changed. UEFI remains governed by the `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness; UEFI is not blocked by the BIOS `1024`-sector ceiling.
 
 M5 installer safety is documented in `docs/installer/m5-safe-installer.md`. The installer dry-run lists GPT partitions, type GUIDs, labels, filesystem signatures, and safe/forbidden/unknown classification. Fixture verification proves dry-run no-writes, Windows ESP/NTFS/MSR/Recovery refusal, unknown FAT32/GPT refusal, dedicated LimitlessOS target acceptance, scoped write/format authority requirements, boot-entry authority separation, confirmation-token enforcement, and forbidden-partition unchanged checks. Real MSI internal NVMe writes remain disabled by default and are not product-approved until dry-run output is reviewed.
 
-Unavailable or non-product in Product: ASK, ECHO, aliases, installer, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
+Unavailable or non-product in Product: ASK, ECHO, aliases, installer write/install authority, package manager, and AI assistant behavior. These must not be presented as finished Product behavior.
 
 Use the Experimental profile only for proof surfaces:
 
@@ -40,7 +42,7 @@ Use the Experimental profile only for proof surfaces:
 
 Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`.
+Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`; M6 evidence is generated by `tools\archive-m6-evidence.ps1`.
 
 This first milestone provides:
 
@@ -145,7 +147,7 @@ The AHCI driver read-worker checkpoint consumes that denied read-queue token onl
 
 The AHCI driver read-schedule checkpoint consumes that denied read-worker token only to prove scheduler/run-queue admission stays closed. UEFI/ISO media report `driver-read-schedule-state 3`, `driver-read-schedule-flags 0x3FFFFFFF`, read-worker token binding, block-worker owner `0x00001006`, query-only binding, selected ATAPI port, operation `2`, LBA `0`, one block, `driver-read-schedule-read-bytes 2048`, `driver-read-schedule-page-bytes 4096`, checksum `0x76EFDDC5`, `driver-read-schedule-read-worker-denied 1`, `driver-read-schedule-requested 1`, `driver-read-schedule-granted 0`, `driver-read-schedule-denied 1`, `driver-read-schedule-policy-grant 0`, `driver-read-schedule-queue-inserted 0`, `driver-read-schedule-queue-depth 0`, `driver-read-schedule-worker-wake 0`, `driver-read-schedule-worker-dequeued 0`, `driver-read-schedule-worker-runnable 0`, `driver-read-schedule-worker-scheduled 0`, `driver-read-schedule-issue-authority 0`, `driver-read-schedule-dma-authority 0`, `driver-read-schedule-media-read-authority 0`, `driver-read-schedule-write-authority 0`, `driver-read-schedule-commit-authority 0`, `driver-read-schedule-block-endpoint 0`, `driver-read-schedule-block-cap-minted 0`, `driver-read-schedule-fs-minted 0`, `driver-read-schedule-buffer-unchanged 1`, and zero MMIO-write/port-program/publish/command/DMA/arm/media-read/media-write side effects. BIOS/no-AHCI media report unavailable `driver-read-schedule-flags 0x7FFFFC01`.
 
-The current Product userspace path is intentionally narrower and more truthful than the older proof inventory: `session-shell` runs in ring 3, resolves `console`, `ramfs`, `input`, storage, and network status through brokered capability paths, blocks on a brokered input queue instead of polling, and exposes only the Product builtins and Product apps in `help` and `apps`. The Product app set is `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, and `write`; `net` reports DHCP lease state when supported network hardware is present and reports `no network` otherwise. ASK, ECHO, legacy aliases, GUI, installer, package-manager, and AI surfaces are unavailable or experimental rather than presented as normal apps.
+The current Product userspace path is intentionally narrower and more truthful than the older proof inventory: `session-shell` runs in ring 3, resolves `console`, `ramfs`, `input`, storage, network status, and M6 service/session status through brokered capability paths, blocks on a brokered input queue instead of polling, and exposes only the Product builtins and Product apps in `help` and `apps`. The Product app set is `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, and `write`; `net` reports DHCP lease state when supported network hardware is present and reports `no network` otherwise. ASK, ECHO, legacy aliases, installer write/install authority, package-manager, and AI surfaces are unavailable or experimental rather than presented as normal apps.
 
 ## Build
 

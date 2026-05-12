@@ -196,7 +196,8 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings through brokered desktop input/display$' -Message "M4 runtime help did not describe Product GUI status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M4: ask \(not AI\), echo, aliases, installer, package-manager, ai$' -Message "M4 runtime help did not label unavailable surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer writes disabled$' -Message "M6 runtime help did not describe Product service/session status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M6: ask \(not AI\), echo, aliases, package-manager, ai, internal install writes$' -Message "M6 runtime help did not label unavailable surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -206,12 +207,23 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net$' -Message "M3 apps output did not label Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: safe tooling only; writes disabled$' -Message "M6 apps output did not label installer dry-run write-disable status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Internal files hidden from app output: HELLO\.TXT INDEX\.TXT$' -Message "M1 apps output did not label hidden internal app files."
 
     foreach ($forbidden in @('^ASK\.APP$', '^ECHO\.APP$', '^SAY\.APP$', '^SHOW\.APP$', '^LIST\.APP$', '^MAKE\.APP$', '^PUT\.APP$', '^SWAP\.APP$', '^SHIFT\.APP$', '^HELLO\.TXT$', '^INDEX\.TXT$', '^help apps info pwd .*echo')) {
         Assert-OutputNotContains -Lines $persistentLines -Pattern $forbidden -Message "M1 runtime shell exposed a non-product app or stale help line without an M1 label."
     }
+}
+
+function Assert-X64M6ServiceSessionSurface
+{
+    param([string[]]$Lines)
+
+    Assert-OutputContains -Lines $Lines -Pattern '\[x64\] drs-service-manager drs-service-manager-product 1 drs-service-declared 1 drs-service-running 1 drs-service-status-query 1 drs-service-controlled-crash 1 drs-service-restart 1 drs-service-generation-increment 1 drs-service-stale-cap-denied 1 service-count 11 running-count 11 restart-count 1 wrong-owner-denied 1 restart-authority 1 extra-caps 0 health 1' -Message "M6 Product service lifecycle/status surface was not observed."
+    Assert-OutputContains -Lines $Lines -Pattern '\[x64\] drs-session drs-session-created 1 drs-session-active 1 drs-session-input-bound 1 drs-session-display-bound 1 drs-session-fs-bound 1 drs-session-network-bound 1 drs-wrong-session-input-denied 1 drs-wrong-session-display-denied 1 drs-wrong-session-fs-denied 1 drs-no-ambient-input 1 drs-no-ambient-display 1 drs-no-ambient-fs 1 drs-no-ambient-network 1 drs-installer-write-disabled 1 drs-installer-dryrun-no-writes 1 session-id 1 seat 0 installer-bound 1' -Message "M6 local console session authority surface was not observed."
 }
 
 function Assert-X64LoaderBudget
@@ -2456,7 +2468,8 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M4: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M6: ask \(not AI\), echo, aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3761,6 +3774,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ write w\.txt ok' -Message "x64 persistent shell did not accept a live write command with explicit text."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."
     Assert-OutputContains -Lines $outputLines -Pattern '^ok$' -Message "x64 persistent shell did not print the written file contents."
+    Assert-X64M6ServiceSessionSurface -Lines $outputLines
     Assert-X64M1RuntimeSurface -Lines $outputLines
 }
 
