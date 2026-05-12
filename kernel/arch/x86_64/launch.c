@@ -3,6 +3,7 @@
 #include "bootstrap_catalog.h"
 #include "capability_x64.h"
 #include "descriptors_x64.h"
+#include "package_signing_x64.h"
 #include "paging_x64.h"
 #include "principal_x64.h"
 #include "runtime_image_x64.h"
@@ -1297,6 +1298,11 @@ static int launch64_validate_archive(void)
     checksum = launch64_hash_archive();
     if ((checksum != g_view.archive_checksum)
         || (checksum != PACKAGE_STORE_GENERATED_ARCHIVE_CHECKSUM))
+    {
+        return 0;
+    }
+
+    if (package_signing64_verify_archive() == 0u)
     {
         return 0;
     }
@@ -3085,6 +3091,14 @@ u32 launch64_stage_disk_flat_binary(
 
     source_checksum = launch64_hash_bytes((const u8 *)source, source_bytes);
     if (source_checksum != metadata.image_checksum)
+    {
+        return 0u;
+    }
+    if (package_signing64_verify_payload(
+            payload_slot,
+            source,
+            source_bytes,
+            source_checksum) == 0u)
     {
         return 0u;
     }

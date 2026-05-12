@@ -27,6 +27,7 @@ $uefiFatGenerator = Join-Path $root "tools\\generate-uefi-fat-image.ps1"
 $nvmeImageGenerator = Join-Path $root "tools\\generate-nvme-image.ps1"
 $m1ProductionGate = Join-Path $root "tools\\assert-m1-production-slice.ps1"
 $packageStoreHeader = Join-Path $generatedDir "package_store_generated.h"
+$packageStoreSignatureHeader = Join-Path $generatedDir "package_store_signatures_generated.h"
 $archBuildHeader = Join-Path $generatedDir "arch_build.h"
 $runtimeImageAsm = Join-Path $root "kernel\\arch\\x86_64\\runtime_image_user.asm"
 $runtimeImageBin = Join-Path $buildDir "runtime-image-x86_64.bin"
@@ -330,17 +331,21 @@ function Build-X64Scaffold
     $interruptStubSource = Join-Path $root "kernel\\arch\\x86_64\\interrupts.asm"
     $kernelLinker = Join-Path $root "kernel\\linker-x86_64.ld"
     $includeDir = Join-Path $root "kernel\\include"
+    $ed25519Dir = Join-Path $root "third_party\\ed25519_ref10"
 
     $bootBin = Join-Path $buildDir "boot64.bin"
     $entryObj = Join-Path $buildDir "entry-x86_64.o"
     $interruptsAsmObj = Join-Path $buildDir "interrupts-asm-x86_64.o"
-    $kernelPe = Join-Path $buildDir "kernel-x86_64.pe"
-    $kernelBin = Join-Path $buildDir "kernel-x86_64.bin"
+    $kernelPe = Join-Path $buildDir "kernel-x86_64-bios.pe"
+    $kernelBin = Join-Path $buildDir "kernel-x86_64-bios.bin"
+    $uefiKernelPe = Join-Path $buildDir "kernel-x86_64-uefi.pe"
+    $uefiKernelBin = Join-Path $buildDir "kernel-x86_64-uefi.bin"
     $uefiObject = Join-Path $buildDir "uefi-app-x86_64.o"
     $uefiPe = Join-Path $buildDir "limitlessos-x86_64.efi"
     $imagePath = Join-Path $distDir "limitlessos-x86_64.img"
     $isoPath = Join-Path $distDir "limitlessos-x86_64.iso"
-    $kernelOut = Join-Path $distDir "limitlessos-x86_64.kernel.bin"
+    $kernelOut = Join-Path $distDir "KERNEL64-BIOS.BIN"
+    $uefiKernelOut = Join-Path $distDir "KERNEL64.BIN"
     $uefiArtifact = Join-Path $distDir "limitlessos-x86_64.efi"
     $uefiImage = Join-Path $distDir "limitlessos-x86_64-uefi.img"
     $uefiStageDir = Join-Path $distDir "limitlessos-x86_64-uefi"
@@ -354,8 +359,10 @@ function Build-X64Scaffold
     $uefiLsBinPath = Join-Path $uefiAppsDir "LS.BIN"
     $uefiCatAppPath = Join-Path $uefiAppsDir "CAT.APP"
     $uefiStatAppPath = Join-Path $uefiAppsDir "STAT.APP"
-    $artifactPe = Join-Path $distDir "limitlessos-x86_64.pe"
+    $artifactPe = Join-Path $distDir "limitlessos-x86_64-bios.pe"
+    $uefiArtifactPe = Join-Path $distDir "limitlessos-x86_64-uefi-kernel.pe"
     $artifactBin = Join-Path $distDir "limitlessos-x86_64.scaffold.bin"
+    $uefiArtifactBin = Join-Path $distDir "limitlessos-x86_64.uefi-kernel.bin"
     $reportPath = Join-Path $distDir "limitlessos-x86_64.scaffold.txt"
     $sizeReportPath = Join-Path $distDir "limitlessos-x86_64.size.txt"
 
@@ -395,34 +402,64 @@ function Build-X64Scaffold
         "-I$includeDir",
         "-I$generatedDir"
     )
+    $uefiOnlyCFlags = @($cFlags + "-I$ed25519Dir")
 
-    Write-Host "Compiling x86_64 scaffold sources"
-    $objectFiles = @($entryObj, $interruptsAsmObj)
-    $cSources = @()
-    $cSources += Get-Item (Join-Path $root "kernel\\core\\ramfs.c")
-    $cSources += Get-ChildItem -Path (Join-Path $root "kernel\\arch\\x86_64\\*.c") |
+    Write-Host "Compiling x86_64 BIOS Product kernel sources"
+    $commonSources = @()
+    $commonSources += Get-Item (Join-Path $root "kernel\\core\\ramfs.c")
+    $commonSources += Get-ChildItem -Path (Join-Path $root "kernel\\arch\\x86_64\\*.c") |
         Where-Object { $_.Name -ne "uefi_app.c" }
-    $cSources = @($cSources | Where-Object { $_.Name -ne "network_disabled.c" })
+    $commonSources = @($commonSources | Where-Object { $_.Name -ne "network_disabled.c" })
+    $commonSources = @($commonSources | Where-Object { $_.Name -ne "package_signing.c" })
+    $biosSources = @($commonSources | Where-Object {
+            ($_.Name -ne "virtio_net.c") -and ($_.Name -ne "e1000e.c")
+        })
+    $biosSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\network_disabled.c")
+    $uefiSources = @($commonSources)
+    $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\package_signing.c")
+    $uefiSources += @(
+        "fe.c",
+        "ge.c",
+        "open.c",
+        "sc_reduce.c",
+        "sha512.c",
+        "verify.c"
+    ) | ForEach-Object { Get-Item (Join-Path $ed25519Dir $_) }
+    $biosCFlags = @($cFlags + "-DLIMITLESS_X64_BIOS_KERNEL=1")
+    $uefiCFlags = @($uefiOnlyCFlags + "-DLIMITLESS_X64_UEFI_KERNEL=1")
+    $objectFiles = @($entryObj, $interruptsAsmObj)
 
-    foreach ($source in $cSources) {
-        $objectPath = Join-Path $buildDir ($source.BaseName + "-x86_64.o")
-        & gcc @cFlags -c $source.FullName -o $objectPath
+    foreach ($source in $biosSources) {
+        $objectPath = Join-Path $buildDir ($source.BaseName + "-x86_64-bios.o")
+        & gcc @biosCFlags -c $source.FullName -o $objectPath
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to compile $($source.Name)."
+            throw "Failed to compile BIOS $($source.Name)."
         }
 
         $objectFiles += $objectPath
     }
 
+    Write-Host "Compiling x86_64 UEFI Product kernel sources"
+    $uefiObjectFiles = @($entryObj, $interruptsAsmObj)
+    foreach ($source in $uefiSources) {
+        $objectPath = Join-Path $buildDir ($source.BaseName + "-x86_64-uefi.o")
+        & gcc @uefiCFlags -c $source.FullName -o $objectPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to compile UEFI $($source.Name)."
+        }
+
+        $uefiObjectFiles += $objectPath
+    }
+
     $uefiSource = Join-Path $root "kernel\\arch\\x86_64\\uefi_app.c"
     $uefiSupportObjects = @()
     Write-Host "Compiling x86_64 UEFI app"
-    & gcc @cFlags -c $uefiSource -o $uefiObject
+    & gcc @uefiCFlags -c $uefiSource -o $uefiObject
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to compile x86_64 UEFI app."
     }
 
-    $uefiSupportObjects = @($objectFiles | Where-Object { $_ -like "*services-x86_64.o" })
+    $uefiSupportObjects = @($uefiObjectFiles | Where-Object { $_ -like "*services-x86_64-uefi.o" })
 
     Write-Host "Linking x86_64 scaffold"
     & ld -m i386pep --image-base 0 --disable-reloc-section -T $kernelLinker -nostdlib -o $kernelPe @objectFiles
@@ -436,6 +473,18 @@ function Build-X64Scaffold
         throw "Failed to convert x86_64 scaffold."
     }
 
+    Write-Host "Linking x86_64 UEFI Product kernel"
+    & ld -m i386pep --image-base 0 --disable-reloc-section -T $kernelLinker -nostdlib -o $uefiKernelPe @uefiObjectFiles
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to link x86_64 UEFI Product kernel."
+    }
+
+    Write-Host "Converting x86_64 UEFI Product kernel to raw binary"
+    & objcopy -O binary $uefiKernelPe $uefiKernelBin
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to convert x86_64 UEFI Product kernel."
+    }
+
     Write-Host "Linking x86_64 UEFI app"
     & ld -m i386pep --subsystem 10 --image-base 0 --entry efi_main -nostdlib -o $uefiPe $uefiObject @uefiSupportObjects
     if ($LASTEXITCODE -ne 0) {
@@ -444,6 +493,7 @@ function Build-X64Scaffold
 
     [byte[]]$bootBytes = [System.IO.File]::ReadAllBytes($bootBin)
     [byte[]]$kernelBytes = [System.IO.File]::ReadAllBytes($kernelBin)
+    [byte[]]$uefiKernelBytes = [System.IO.File]::ReadAllBytes($uefiKernelBin)
     $loaderSectorLimit = 1024
     $loaderReserveWarning = 128
     $loaderReserveHardMinimum = 96
@@ -451,11 +501,17 @@ function Build-X64Scaffold
     $sectorCount = [int][Math]::Ceiling($kernelBytes.Length / 512.0)
     $loaderSectorReserve = $loaderSectorLimit - $sectorCount
     $kernelSizeMap = Get-BinutilsSectionSizes -Path $kernelPe
+    $uefiKernelSizeMap = Get-BinutilsSectionSizes -Path $uefiKernelPe
     $objectSizeMaps = @($objectFiles | ForEach-Object { Get-BinutilsSectionSizes -Path $_ })
+    $uefiObjectSizeMaps = @($uefiObjectFiles | ForEach-Object { Get-BinutilsSectionSizes -Path $_ })
     $topObjectSizeMaps = @($objectSizeMaps |
         Sort-Object -Property @{ Expression = { $_.Total }; Descending = $true }, Name |
         Select-Object -First 3)
+    $uefiTopObjectSizeMaps = @($uefiObjectSizeMaps |
+        Sort-Object -Property @{ Expression = { $_.Total }; Descending = $true }, Name |
+        Select-Object -First 3)
     $topSizeObject = $topObjectSizeMaps[0]
+    $uefiTopSizeObject = $uefiTopObjectSizeMaps[0]
     $marker = [System.Text.Encoding]::ASCII.GetBytes("KS64")
     $markerIndex = -1
 
@@ -476,7 +532,7 @@ function Build-X64Scaffold
     if ($loaderSectorReserve -lt $loaderReserveWarning) {
         Write-Warning "x86_64 scaffold BIOS loader reserve $loaderSectorReserve is below the warning threshold of $loaderReserveWarning sectors."
     }
-    if ($kernelBytes.Length -gt $uefiKernelByteLimit) {
+    if ($uefiKernelBytes.Length -gt $uefiKernelByteLimit) {
         throw "x86_64 UEFI payload exceeds the $uefiKernelByteLimit-byte UEFI kernel file contract."
     }
 
@@ -517,8 +573,11 @@ function Build-X64Scaffold
     }
 
     [System.IO.File]::WriteAllBytes($kernelOut, $kernelBytes)
+    [System.IO.File]::WriteAllBytes($uefiKernelOut, $uefiKernelBytes)
     [System.IO.File]::WriteAllBytes($artifactBin, $kernelBytes)
+    [System.IO.File]::WriteAllBytes($uefiArtifactBin, $uefiKernelBytes)
     Copy-Item -Force $kernelPe $artifactPe
+    Copy-Item -Force $uefiKernelPe $uefiArtifactPe
     Copy-Item -Force $uefiPe $uefiArtifact
 
     $sizeReportLines = @(
@@ -527,15 +586,23 @@ function Build-X64Scaffold
         "bios-kernel-sectors=$sectorCount",
         "bios-sector-limit=$loaderSectorLimit",
         "bios-sector-reserve=$loaderSectorReserve",
+        "uefi-kernel-bytes=$($uefiKernelBytes.Length)",
         "uefi-kernel-byte-limit=$uefiKernelByteLimit",
-        "uefi-kernel-byte-reserve=$($uefiKernelByteLimit - $kernelBytes.Length)",
+        "uefi-kernel-byte-reserve=$($uefiKernelByteLimit - $uefiKernelBytes.Length)",
         "section-text=$($kernelSizeMap.Text)",
         "section-rodata=$($kernelSizeMap.Rodata)",
         "section-data=$($kernelSizeMap.Data)",
-        "section-bss=$($kernelSizeMap.Bss)"
+        "section-bss=$($kernelSizeMap.Bss)",
+        "uefi-section-text=$($uefiKernelSizeMap.Text)",
+        "uefi-section-rodata=$($uefiKernelSizeMap.Rodata)",
+        "uefi-section-data=$($uefiKernelSizeMap.Data)",
+        "uefi-section-bss=$($uefiKernelSizeMap.Bss)"
     )
     foreach ($objectSizeMap in $topObjectSizeMaps) {
         $sizeReportLines += "top-object=$($objectSizeMap.Name) text=$($objectSizeMap.Text) rodata=$($objectSizeMap.Rodata) data=$($objectSizeMap.Data) bss=$($objectSizeMap.Bss) total=$($objectSizeMap.Total)"
+    }
+    foreach ($objectSizeMap in $uefiTopObjectSizeMaps) {
+        $sizeReportLines += "uefi-top-object=$($objectSizeMap.Name) text=$($objectSizeMap.Text) rodata=$($objectSizeMap.Rodata) data=$($objectSizeMap.Data) bss=$($objectSizeMap.Bss) total=$($objectSizeMap.Total)"
     }
     Set-Content -Path $sizeReportPath -Value $sizeReportLines -Encoding Ascii
 
@@ -546,7 +613,7 @@ function Build-X64Scaffold
     New-Item -ItemType Directory -Force -Path $uefiBootDir | Out-Null
     New-Item -ItemType Directory -Force -Path $uefiAppsDir | Out-Null
     Copy-Item -Force $uefiPe $uefiBootPath
-    [System.IO.File]::WriteAllBytes($uefiKernelPath, $kernelBytes)
+    [System.IO.File]::WriteAllBytes($uefiKernelPath, $uefiKernelBytes)
     $uefiLsAppText = "3`n3`n2`n3`nls [path] - list directory entries from cwd or a given path`nfilesystem`n"
     $uefiCatAppText = "4`n3`n2`n3`ncat <path> - print file contents`nfilesystem`n"
     $uefiStatAppText = "7`n3`n2`n3`nstat <path> - show file or directory metadata`nfilesystem`n"
@@ -573,7 +640,7 @@ function Build-X64Scaffold
     foreach ($spec in $diskFlatBinarySpecs) {
         Copy-Item -Force $spec.Bin (Join-Path $uefiAppsDir "$($spec.Name).BIN")
     }
-    $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $kernelBytes
+    $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
     $profileStatusLines = if ($BuildProfile -eq "Product") {
         "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
@@ -643,9 +710,9 @@ $networkStatusLine
 LimitlessOS boot manifest v1
 architecture=x86_64
 kernel=KERNEL64.BIN
-kernel-bytes=$($kernelBytes.Length)
+kernel-bytes=$($uefiKernelBytes.Length)
 kernel-byte-limit=$uefiKernelByteLimit
-kernel-byte-reserve=$($uefiKernelByteLimit - $kernelBytes.Length)
+kernel-byte-reserve=$($uefiKernelByteLimit - $uefiKernelBytes.Length)
 kernel-checksum=$kernelChecksumHex
 handoff=uefi-loader-proof
 boot-contract=uefi-kernel-file
@@ -681,6 +748,8 @@ boot-contract=uefi-kernel-file
     $imageReport = ConvertTo-RepoRelativePath $imagePath
     $artifactPeReport = ConvertTo-RepoRelativePath $artifactPe
     $artifactBinReport = ConvertTo-RepoRelativePath $artifactBin
+    $uefiArtifactPeReport = ConvertTo-RepoRelativePath $uefiArtifactPe
+    $uefiArtifactBinReport = ConvertTo-RepoRelativePath $uefiArtifactBin
     $sizeReportPathReport = ConvertTo-RepoRelativePath $sizeReportPath
 
 $report = @"
@@ -694,8 +763,9 @@ entry: _start
 paging: active 4-level long mode with 16 MiB identity/high-half alias map and higher-half kernel execution
 loader: bounded chunked BIOS loader reads the scaffold in 127-sector chunks and supports images up to 1024 sectors before the low-memory stack window
 loader-budget: bios-sector-limit $loaderSectorLimit current-sectors $sectorCount reserve-sectors $loaderSectorReserve enforced 1
-uefi-loader-budget: kernel-byte-limit $uefiKernelByteLimit current-bytes $($kernelBytes.Length) reserve-bytes $($uefiKernelByteLimit - $kernelBytes.Length) checksum $kernelChecksumHex enforced 1
+uefi-loader-budget: kernel-byte-limit $uefiKernelByteLimit current-bytes $($uefiKernelBytes.Length) reserve-bytes $($uefiKernelByteLimit - $uefiKernelBytes.Length) checksum $kernelChecksumHex enforced 1
 size-map: text-bytes $($kernelSizeMap.Text) rodata-bytes $($kernelSizeMap.Rodata) data-bytes $($kernelSizeMap.Data) bss-bytes $($kernelSizeMap.Bss) top-object $($topSizeObject.Name) top-object-total $($topSizeObject.Total)
+uefi-size-map: text-bytes $($uefiKernelSizeMap.Text) rodata-bytes $($uefiKernelSizeMap.Rodata) data-bytes $($uefiKernelSizeMap.Data) bss-bytes $($uefiKernelSizeMap.Bss) top-object $($uefiTopSizeObject.Name) top-object-total $($uefiTopSizeObject.Total)
 boot-info: shared x86/x64 handoff contract active
 package-archive: shared bootstrap package catalog v2 summary visible on BIOS and UEFI x64 paths with kernel-service manifests and payload offset/size/checksum metadata included for sealed x64 services
 runtime-image-source: sealed x64 ring3 transfer image assembled from $runtimeImageAsmReport into a generated page-aligned 16 KiB persistent-shell bootstrap payload before package metadata and kernel compilation
@@ -824,7 +894,7 @@ uefi-graphics: UEFI app locates GOP through firmware boot services, reports fram
 uefi-framebuffer-handoff: UEFI records GOP framebuffer base/size/geometry in boot-info, maps it through a dedicated 0xB000 page-directory in the boot handoff, sets the framebuffer boot flag so UEFI boots report flags 0x3F, the x64 kernel draws/logs a kernel-owned marker before runtime mappings begin, ring3 userspace can draw a bounded marker plus a clearable text panel only through delegated display authority, and successful ring3 console writes are mirrored by the console service into a bounded line-cleared scrolling framebuffer viewport with dedicated console-mirror, line-clear, wrap, and scroll telemetry
 uefi-media-read: UEFI app resolves its loaded-image device, opens the boot volume through Simple File System, reads the staged root README.TXT, and verifies 66 bytes with prefix proof and checksum 0xDAF085B1 on both removable UEFI image and UEFI ISO verification
 uefi-loader-manifest: UEFI app reads BOOTMAN.TXT from the same boot volume, parses the declared KERNEL64.BIN byte count and FNV-1a checksum, and requires manifest-valid telemetry before payload verification
-uefi-loader-payload: UEFI app loads KERNEL64.BIN from boot media into an aligned 2 MiB handoff buffer and verifies $($kernelBytes.Length) bytes with checksum $kernelChecksumHex before reporting loader match 1 on both removable UEFI image and UEFI ISO verification, preserving verified loader headroom for upcoming x64 storage checkpoints without adding disk, MMIO, DMA, or filesystem authority
+uefi-loader-payload: UEFI app loads KERNEL64.BIN from boot media into an aligned 2 MiB handoff buffer and verifies $($uefiKernelBytes.Length) bytes with checksum $kernelChecksumHex before reporting loader match 1 on both removable UEFI image and UEFI ISO verification, preserving verified loader headroom for upcoming x64 storage checkpoints without adding disk, MMIO, DMA, or filesystem authority
 uefi-kernel-placement: UEFI app selects a 2 MiB-aligned address inside the largest conventional firmware region, allocates exact EfiLoaderData pages with AllocatePages, copies the verified kernel payload into that allocation, zeroes page padding, rechecks the copied bytes before reporting placement match 1, and then separately proves the linked x64 scaffold can be allocated and copied at physical 0x10000 with entry 0xFFFFFFFF80010000, boot-info 0x9000, and page-root 0x1000 recorded for the guarded kernel-entry handoff
 uefi-memory-map: UEFI app captures the firmware memory map after payload load and again after kernel placement, reporting descriptor count, descriptor size, map key, page totals, conventional/loader/boot/runtime page classes, and largest conventional region before taking the final silent map key used by ExitBootServices
 uefi-boot-handoff: UEFI app allocates low handoff pages at 0x1000, builds the 16 MiB identity/high-half page-table substrate plus framebuffer page-directory at 0xB000, reserves 0xC000 for the broker-installed kernel MMIO page table, writes boot-info at 0x9000, copies a trampoline at 0xA000, and reports ready 1 with jump-ready 1 before leaving firmware
@@ -838,6 +908,8 @@ artifact-image: $imageReport
 artifact-iso: $isoReport
 artifact-pe: $artifactPeReport
 artifact-bin: $artifactBinReport
+artifact-uefi-pe: $uefiArtifactPeReport
+artifact-uefi-bin: $uefiArtifactBinReport
 artifact-size-map: $sizeReportPathReport
 "@
     Set-Content -Path $reportPath -Value $report -Encoding Ascii
@@ -846,20 +918,26 @@ artifact-size-map: $sizeReportPathReport
     Write-Host "Build complete"
     Write-Host "  architecture : x86_64"
     Write-Host "  build kind   : bios long-mode scaffold"
-    Write-Host "  kernel size  : $($kernelBytes.Length) bytes"
+    Write-Host "  bios kernel  : $($kernelBytes.Length) bytes"
+    Write-Host "  uefi kernel  : $($uefiKernelBytes.Length) bytes"
     Write-Host "  bios sectors : $sectorCount / $loaderSectorLimit sectors ($loaderSectorReserve reserve)"
-    Write-Host "  uefi budget  : $($kernelBytes.Length) / $uefiKernelByteLimit bytes ($($uefiKernelByteLimit - $kernelBytes.Length) reserve)"
+    Write-Host "  uefi budget  : $($uefiKernelBytes.Length) / $uefiKernelByteLimit bytes ($($uefiKernelByteLimit - $uefiKernelBytes.Length) reserve)"
     Write-Host "  section map  : text $($kernelSizeMap.Text), rodata $($kernelSizeMap.Rodata), data $($kernelSizeMap.Data), bss $($kernelSizeMap.Bss)"
     Write-Host "  top object   : $($topSizeObject.Name) ($($topSizeObject.Total) bytes)"
+    Write-Host "  uefi section : text $($uefiKernelSizeMap.Text), rodata $($uefiKernelSizeMap.Rodata), data $($uefiKernelSizeMap.Data), bss $($uefiKernelSizeMap.Bss)"
+    Write-Host "  uefi top obj : $($uefiTopSizeObject.Name) ($($uefiTopSizeObject.Total) bytes)"
     Write-Host "  image        : $imagePath"
     Write-Host "  iso          : $isoPath"
     Write-Host "  uefi app     : $uefiArtifact"
     Write-Host "  uefi image   : $uefiImage"
     Write-Host "  uefi stage   : $uefiStageDir"
     Write-Host "  uefi manifest: $uefiManifestPath"
-    Write-Host "  uefi payload : $uefiKernelPath ($($kernelBytes.Length) bytes checksum $kernelChecksumHex)"
+    Write-Host "  bios payload : $kernelOut ($($kernelBytes.Length) bytes)"
+    Write-Host "  uefi payload : $uefiKernelPath ($($uefiKernelBytes.Length) bytes checksum $kernelChecksumHex)"
     Write-Host "  artifact pe  : $artifactPe"
     Write-Host "  artifact bin : $artifactBin"
+    Write-Host "  uefi pe      : $uefiArtifactPe"
+    Write-Host "  uefi bin     : $uefiArtifactBin"
     Write-Host "  size map     : $sizeReportPath"
     Write-Host "  report       : $reportPath"
 }
@@ -909,6 +987,7 @@ if ($Architecture -eq "x86_64") {
     $packageStoreArgs.PayloadSlot = 1
     $packageStoreArgs.FlatBinaryImagePath = @($diskLsImageBin) + @($diskFlatBinarySpecs | ForEach-Object { $_.Bin })
     $packageStoreArgs.FlatBinaryPayloadSlot = @([uint32]2) + @($diskFlatBinarySpecs | ForEach-Object { [uint32]$_.Slot })
+    $packageStoreArgs.OutputSignaturePath = $packageStoreSignatureHeader
 }
 
 & $packageStoreGenerator @packageStoreArgs

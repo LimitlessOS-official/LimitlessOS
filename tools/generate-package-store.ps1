@@ -11,7 +11,9 @@ param(
 
     [string[]]$FlatBinaryImagePath = @(),
 
-    [uint32[]]$FlatBinaryPayloadSlot = @()
+    [uint32[]]$FlatBinaryPayloadSlot = @(),
+
+    [string]$OutputSignaturePath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -105,6 +107,26 @@ function Get-Fnv1aDataChecksum {
     }
 
     return $hash
+}
+
+function Convert-BytesToHex {
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($byte in $Bytes) {
+        [void]$builder.AppendFormat("{0:x2}", $byte)
+    }
+    return $builder.ToString()
+}
+
+function Convert-HexToCBytes {
+    param([Parameter(Mandatory = $true)][string]$Hex)
+
+    $values = New-Object 'System.Collections.Generic.List[string]'
+    for ($i = 0; $i -lt $Hex.Length; $i += 2) {
+        $values.Add(("0x{0}" -f $Hex.Substring($i, 2).ToUpperInvariant()))
+    }
+    return $values
 }
 
 $inputFullPath = [System.IO.Path]::GetFullPath($InputPath)
@@ -303,6 +325,159 @@ $checksumOffset = 24
 [byte[]]$checksumBytes = [System.BitConverter]::GetBytes($checksum)
 for ($i = 0; $i -lt 4; $i++) {
     $archive[$checksumOffset + $i] = $checksumBytes[$i]
+}
+
+if ($OutputSignaturePath.Trim().Length -gt 0) {
+    $signatureFullPath = [System.IO.Path]::GetFullPath($OutputSignaturePath)
+    $signatureDir = Split-Path -Parent $signatureFullPath
+    New-Item -ItemType Directory -Force $signatureDir | Out-Null
+
+    $payloadSigningInputs = @()
+    foreach ($payload in $payloadRecords) {
+        if ($payloadOverrides.ContainsKey([uint32]$payload.Slot)) {
+            $payloadOverride = $payloadOverrides[[uint32]$payload.Slot]
+            $payloadSigningInputs += [pscustomobject]@{
+                slot = [uint32]$payload.Slot
+                size = [uint32]$payload.ImageSize
+                checksum = [uint32]$payload.ImageChecksum
+                path = $payloadOverride.Path
+            }
+        }
+    }
+
+    $signInput = [pscustomobject]@{
+        archiveHex = Convert-BytesToHex -Bytes $archive
+        payloads = $payloadSigningInputs
+    }
+    $signInputPath = Join-Path $outputDir "package_store_sign_input.json"
+    $signOutputPath = Join-Path $outputDir "package_store_sign_output.json"
+    $signInput | ConvertTo-Json -Depth 6 | Set-Content -Path $signInputPath -Encoding ASCII
+
+    $signScript = @'
+import json
+import sys
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
+input_path, output_path = sys.argv[1], sys.argv[2]
+with open(input_path, "r", encoding="ascii") as handle:
+    data = json.load(handle)
+
+private_key = Ed25519PrivateKey.generate()
+public_key = private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
+archive = bytes.fromhex(data["archiveHex"])
+payload_results = []
+for payload in data["payloads"]:
+    with open(payload["path"], "rb") as handle:
+        payload_bytes = handle.read()
+    prefix = (
+        b"LimitlessOS-M7-payload-v1\0"
+        + int(payload["slot"]).to_bytes(4, "little")
+        + int(payload["size"]).to_bytes(4, "little")
+        + int(payload["checksum"]).to_bytes(4, "little")
+    )
+    payload_results.append({
+        "slot": int(payload["slot"]),
+        "size": int(payload["size"]),
+        "checksum": int(payload["checksum"]),
+        "signatureHex": private_key.sign(prefix + payload_bytes).hex(),
+    })
+
+current_index = (
+    "limitlessos-update-index-v1\n"
+    "sequence=7\n"
+    "package-count=%d\n" % len(payload_results)
+).encode("ascii")
+rollback_index = (
+    "limitlessos-update-index-v1\n"
+    "sequence=6\n"
+    "package-count=%d\n" % len(payload_results)
+).encode("ascii")
+index_prefix = b"LimitlessOS-M7-update-index-v1\0"
+result = {
+    "algorithm": "Ed25519",
+    "publicKeyHex": public_key.hex(),
+    "publicKeyId": int.from_bytes(public_key[:4], "little"),
+    "archiveSignatureHex": private_key.sign(b"LimitlessOS-M7-archive-v1\0" + archive).hex(),
+    "updateIndexSequence": 7,
+    "updateIndexHex": current_index.hex(),
+    "updateIndexSignatureHex": private_key.sign(index_prefix + current_index).hex(),
+    "rollbackIndexSequence": 6,
+    "rollbackIndexHex": rollback_index.hex(),
+    "rollbackIndexSignatureHex": private_key.sign(index_prefix + rollback_index).hex(),
+    "payloads": payload_results,
+}
+with open(output_path, "w", encoding="ascii") as handle:
+    json.dump(result, handle, indent=2, sort_keys=True)
+'@
+    $signScriptPath = Join-Path $outputDir "package_store_sign.py"
+    Set-Content -Path $signScriptPath -Value $signScript -Encoding ASCII
+    & python $signScriptPath $signInputPath $signOutputPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to sign bootstrap package archive."
+    }
+
+    $signOutput = Get-Content -Raw -Path $signOutputPath | ConvertFrom-Json
+    $sigLines = New-Object 'System.Collections.Generic.List[string]'
+    $sigLines.Add("#ifndef LIMITLESS_PACKAGE_STORE_SIGNATURES_GENERATED_H")
+    $sigLines.Add("#define LIMITLESS_PACKAGE_STORE_SIGNATURES_GENERATED_H")
+    $sigLines.Add("")
+    $sigLines.Add("// Generated by tools/generate-package-store.ps1. Contains public-key and signatures only.")
+    $sigLines.Add("#define PACKAGE_STORE_SIGNATURE_ALGORITHM_ED25519 1u")
+    $sigLines.Add(("#define PACKAGE_STORE_SIGNATURE_PUBLIC_KEY_ID 0x{0:X8}u" -f ([uint32]$signOutput.publicKeyId)))
+    $sigLines.Add(("#define PACKAGE_STORE_SIGNATURE_PAYLOAD_COUNT {0}u" -f @($signOutput.payloads).Count))
+    $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_SEQUENCE {0}u" -f ([uint32]$signOutput.updateIndexSequence)))
+    $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_SEQUENCE {0}u" -f ([uint32]$signOutput.rollbackIndexSequence)))
+    $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_BYTES {0}u" -f (([string]$signOutput.updateIndexHex).Length / 2)))
+    $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_BYTES {0}u" -f (([string]$signOutput.rollbackIndexHex).Length / 2)))
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_signature_public_key[32] = {")
+    $publicKeyValues = Convert-HexToCBytes -Hex ([string]$signOutput.publicKeyHex)
+    $sigLines.Add("    " + ($publicKeyValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_signature_archive[64] = {")
+    $archiveSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.archiveSignatureHex)
+    $sigLines.Add("    " + ($archiveSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_update_index[PACKAGE_STORE_UPDATE_INDEX_BYTES] = {")
+    $updateIndexValues = Convert-HexToCBytes -Hex ([string]$signOutput.updateIndexHex)
+    $sigLines.Add("    " + ($updateIndexValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_update_index_signature[64] = {")
+    $updateIndexSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.updateIndexSignatureHex)
+    $sigLines.Add("    " + ($updateIndexSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_update_index_rollback[PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_BYTES] = {")
+    $rollbackIndexValues = Convert-HexToCBytes -Hex ([string]$signOutput.rollbackIndexHex)
+    $sigLines.Add("    " + ($rollbackIndexValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 package_store_update_index_rollback_signature[64] = {")
+    $rollbackIndexSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.rollbackIndexSignatureHex)
+    $sigLines.Add("    " + ($rollbackIndexSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("struct package_store_payload_signature_generated { u32 slot; u32 size; u32 checksum; u8 signature[64]; };")
+    $sigLines.Add("static const struct package_store_payload_signature_generated package_store_payload_signatures[PACKAGE_STORE_SIGNATURE_PAYLOAD_COUNT] = {")
+    foreach ($payload in @($signOutput.payloads)) {
+        $payloadSignatureValues = Convert-HexToCBytes -Hex ([string]$payload.signatureHex)
+        $sigLines.Add(("    {{ {0}u, {1}u, 0x{2:X8}u, {{ {3} }} }}," -f `
+            ([uint32]$payload.slot), `
+            ([uint32]$payload.size), `
+            ([uint32]$payload.checksum), `
+            ($payloadSignatureValues -join ", ")))
+    }
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("#endif")
+    Set-Content -Path $signatureFullPath -Value $sigLines -Encoding ASCII
 }
 
 $lines = New-Object 'System.Collections.Generic.List[string]'

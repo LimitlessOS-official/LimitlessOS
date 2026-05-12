@@ -12,6 +12,7 @@
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #include "paging_x64.h"
+#include "package_signing_x64.h"
 #include "pci_x64.h"
 #include "pic.h"
 #include "pit.h"
@@ -4546,6 +4547,32 @@ static void log_service_session_surface(void)
 
     write_line("[x64] drs-service-manager drs-service-manager-product 1 drs-service-declared 1 drs-service-running 1 drs-service-status-query 1 drs-service-controlled-crash 1 drs-service-restart 1 drs-service-generation-increment 1 drs-service-stale-cap-denied 1 service-count 11 running-count 11 restart-count 1 wrong-owner-denied 1 restart-authority 1 extra-caps 0 health 1");
     write_line("[x64] drs-session drs-session-created 1 drs-session-active 1 drs-session-input-bound 1 drs-session-display-bound 1 drs-session-fs-bound 1 drs-session-network-bound 1 drs-wrong-session-input-denied 1 drs-wrong-session-display-denied 1 drs-wrong-session-fs-denied 1 drs-no-ambient-input 1 drs-no-ambient-display 1 drs-no-ambient-fs 1 drs-no-ambient-network 1 drs-installer-write-disabled 1 drs-installer-dryrun-no-writes 1 session-id 1 seat 0 installer-bound 1");
+}
+
+static void log_package_signing_surface(void)
+{
+    package_signing64_init();
+
+    if (package_signing64_signed() == 0u)
+    {
+        write_line("[x64] drs-pkg unavailable bios-checksum-only 1");
+        return;
+    }
+
+    write_string("[x64] drs-pkg");
+    write_labeled_dec_u32(" drs-pkg-signed ", package_signing64_signed());
+    write_labeled_dec_u32(" drs-pkg-verified ", package_signing64_verified());
+    write_labeled_dec_u32(" drs-pkg-invalid-denied ", package_signing64_invalid_denied());
+    write_labeled_dec_u32(" drs-pkg-missing-sig-denied ", package_signing64_missing_sig_denied());
+    write_labeled_dec_u32(" drs-pkg-checksum-mismatch-denied ", package_signing64_checksum_mismatch_denied());
+    write_labeled_dec_u32(" drs-pkg-wrong-owner-denied ", package_signing64_wrong_owner_denied());
+    write_labeled_dec_u32(" drs-pkg-stale-token-denied ", package_signing64_stale_token_denied());
+    write_labeled_dec_u32(" drs-pkg-install-scoped ", package_signing64_install_scoped());
+    write_labeled_dec_u32(" drs-pkg-update-check ", package_signing64_update_check());
+    write_labeled_dec_u32(" drs-pkg-update-index-verified ", package_signing64_update_index_verified());
+    write_labeled_dec_u32(" drs-pkg-update-index-rollback-denied ", package_signing64_update_rollback_denied());
+    write_labeled_dec_u32(" drs-pkg-update-no-ambient ", package_signing64_update_no_ambient());
+    write_line("");
 }
 
 static void log_apic_surface(void)
@@ -11778,6 +11805,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_gui_interactive_surface();
     log_input_keyboard_surface();
     log_service_session_surface();
+    log_package_signing_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),
         input64_ps2_mouse_aux_enabled(),

@@ -2,7 +2,7 @@
 
 ## Current bootstrap shape
 
-LimitlessOS now has a bootstrap package archive plus manifest path for built-in user-space services and small user-space utilities. The current v2 format is intentionally small, but it is no longer handwritten directly in kernel code:
+LimitlessOS now has a bootstrap package archive plus manifest path for built-in user-space services and small user-space utilities. The current v2 format is intentionally small, build-generated, and, in the UEFI Product kernel, admitted through Ed25519 signature verification:
 
 - `package_id`
 - `package_name`
@@ -18,6 +18,8 @@ LimitlessOS now has a bootstrap package archive plus manifest path for built-in 
 - `expected_image_checksum`
 - payload `imageOffset`, `imageSize`, and `imageChecksum` records that identify the actual bootstrap image byte range behind a manifest payload slot
 - runtime policy fields for scheduler class, service discovery scope, and capability admission
+- M7 Ed25519 archive and payload signatures generated during the build
+- signed update-index fixture metadata with monotonic sequence anti-rollback
 
 The source of truth is now [packages/bootstrap-store.json](/C:/Users/h1nuz/Documents/Codex/2026-04-25/architecture-performance-use-a-hybrid-kernel-2/packages/bootstrap-store.json). During build, [tools/generate-package-store.ps1](/C:/Users/h1nuz/Documents/Codex/2026-04-25/architecture-performance-use-a-hybrid-kernel-2/tools/generate-package-store.ps1) serializes that spec into a generated archive header consumed by the kernel package-store parser.
 
@@ -33,12 +35,22 @@ At boot, the kernel:
 - accepts only verified candidates into the runnable package catalog
 - rejects untrusted candidates before `init` can request a launch
 
+In the UEFI Product kernel, M7 additionally verifies:
+
+- a detached Ed25519 archive signature over the generated bootstrap archive bytes
+- detached Ed25519 payload signatures before disk-sourced utility payload admission
+- payload checksum and size agreement after signature validation
+- scoped install capability, owner, and stale-token policy for install-style admission attempts
+- signed update-index fixture authenticity and monotonic sequence anti-rollback
+
+The BIOS Product kernel intentionally keeps the checksum-only bootstrap fallback to preserve the 1024-sector boot contract. BIOS does not compile the Ed25519 verifier.
+
 This means "available in the store" and "launchable by policy" are now distinct states.
 
 The current archive already uses that split for both long-lived services and shell-launched tools:
 
 - `bootstrap-session` and `bootstrap-worker` are launched by `init`
-- `utility-echo`, `utility-ls`, and `utility-cat` are launchable only from the session shell authority path
+- Product utilities are launchable only from the session shell authority path and only through descriptor-declared capability delegation
 
 ## Filesystem launcher descriptors
 
@@ -75,16 +87,14 @@ The current launch-flag bits are:
 - `2`: delegated console binding required
 - `4`: delegated input binding required
 
-In practice, the shell now enforces the authority bits for capability delegation, validates the separate argument-policy field before it decides how to marshal arguments into the delegated shared buffer, honors the launch flags before deciding whether the app should receive delegated `console` or `input` capabilities, uses the fifth-line summary to answer `help <command>` without keeping a second per-app usage table in shell code, uses the sixth-line category tag to power `apps` plus `apps <category>` discovery views from the same launcher files, and now decodes the same six-line record through `info <command>` so descriptor inspection stays inside the same file-capability path as launch discovery while remaining human-readable from ring 3. `/APPS/INDEX.TXT` is also seeded as a plain text note that explains the directory at a glance. For example:
+In practice, the shell now enforces the authority bits for capability delegation, validates the separate argument-policy field before it decides how to marshal arguments into the delegated shared buffer, honors the launch flags before deciding whether the app should receive delegated `console` or `input` capabilities, uses the fifth-line summary to answer `help <command>` without keeping a second per-app usage table in shell code, uses the sixth-line category tag to power Product app discovery, and decodes the same six-line record through `info <command>` so descriptor inspection stays inside the same file-capability path as launch discovery while remaining human-readable from ring 3. Product shell output hides internal notes and labels unavailable surfaces instead of presenting raw `/APPS` internals as finished apps. `/APPS/INDEX.TXT` remains an internal note, not a Product app. For example:
 
-- `ECHO.APP` and `SAY.APP` are buffer-only with policy `1` and launch flags `3` so the shell waits and delegates `console`
 - `LS.APP`, `CAT.APP`, and `STAT.APP` request buffer plus base directory authority with policy `2` and launch flags `3` so they receive both filesystem and `console` authority
 - `MKDIR.APP`, `TOUCH.APP`, and `DELETE.APP` request buffer plus base directory authority with policy `2` and launch flags `1` so they stay foreground-only without ambient output authority, and `MKDIR.APP` now interprets nested paths in userspace by repeatedly applying that same delegated base-directory authority one segment at a time
 - `WRITE.APP` and `APPEND.APP` request buffer plus base directory authority with policy `3` and launch flags `1`
 - `RENAME.APP` requests buffer plus base directory authority with policy `4` and launch flags `1`
 - `MOVE.APP` and `COPY.APP` request buffer plus both base and destination directory authority with policy `5` and launch flags `1`
-- `ASK.APP` is buffer-only with policy `1` and launch flags `7` so the shell delegates both `console` and `input`, proving that interactive apps can launch through the same descriptor contract
-- `SHOW.APP`, `LIST.APP`, `MAKE.APP`, `PUT.APP`, `SWAP.APP`, and `SHIFT.APP` are generic alias descriptors that reuse those same verified utility packages while proving that launch discovery, authority shape, and console binding all come from the descriptor file, not from a hardcoded shell command table
+- `ASK.APP`, `ECHO.APP`, and alias descriptors remain unavailable/non-product in the Product shell unless promoted by a later milestone with matching descriptors, binaries, docs, and verification
 
 ## Archive layout
 
@@ -110,19 +120,22 @@ Before `init` launches a bootstrap user-space service, the kernel verifies:
 - the required bootstrap policy approval has already happened when the manifest asks for it
 - the calling launch authority is allowed by the manifest
 - the instance cap for that package has not already been reached
+- on UEFI Product builds, the generated package archive signature and relevant payload signatures validate against the embedded Ed25519 public key
+- on UEFI Product builds, missing signatures, invalid signatures, checksum mismatch, wrong-owner install attempts, stale install tokens, and rollback update-index attempts are denied with telemetry
 
 If any check fails, launch is denied and counted in telemetry.
 
 ## What this is not yet
 
-This is not yet a replaceable on-disk package system and it is not yet a true asymmetric signature pipeline. The current bootstrap format is:
+This is not yet a replaceable general-purpose app store or auto-update system. The current bootstrap format is:
 
 - measured
 - kernel-enforced
 - build-generated from an external manifest spec
 - archive-validated
+- Ed25519-signed on UEFI Product builds
 - store-loaded
 - signer-gated
 - policy-gated
 
-The next stage is to move this into signed package artifacts with persistent storage and measured loading from a real package source instead of a build-generated bootstrap archive.
+M7 proves signed archive/payload admission and signed update-index anti-rollback. It does not yet provide Product package-manager UI, auto-install, persistent downloaded package installation, live public update fetching, or expiry enforcement without a trusted time source. Signature proves origin and integrity; capability policy still controls what authority a package can receive.

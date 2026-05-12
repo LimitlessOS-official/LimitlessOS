@@ -233,8 +233,10 @@ function Assert-X64LoaderBudget
     $loaderSectorLimit = 1024
     $loaderReserveHardMinimum = 96
     $uefiKernelByteLimit = 2 * 1024 * 1024
-    $kernelPePath = Join-Path $Root "dist\\limitlessos-x86_64.pe"
+    $kernelPePath = Join-Path $Root "dist\\limitlessos-x86_64-bios.pe"
     $artifactBinPath = Join-Path $Root "dist\\limitlessos-x86_64.scaffold.bin"
+    $uefiKernelPePath = Join-Path $Root "dist\\limitlessos-x86_64-uefi-kernel.pe"
+    $uefiArtifactBinPath = Join-Path $Root "dist\\limitlessos-x86_64.uefi-kernel.bin"
     $reportPath = Join-Path $Root "dist\\limitlessos-x86_64.scaffold.txt"
     $sizeReportPath = Join-Path $Root "dist\\limitlessos-x86_64.size.txt"
     $manifestPath = Join-Path $Root "dist\\limitlessos-x86_64-uefi\\BOOTMAN.TXT"
@@ -244,6 +246,12 @@ function Assert-X64LoaderBudget
     }
     if (-not (Test-Path $artifactBinPath)) {
         throw "QEMU verification failed: x64 scaffold binary was not found for loader budget validation."
+    }
+    if (-not (Test-Path $uefiKernelPePath)) {
+        throw "QEMU verification failed: x64 UEFI kernel PE was not found for size-map validation."
+    }
+    if (-not (Test-Path $uefiArtifactBinPath)) {
+        throw "QEMU verification failed: x64 UEFI kernel binary was not found for byte-contract validation."
     }
     if (-not (Test-Path $reportPath)) {
         throw "QEMU verification failed: x64 scaffold report was not found for loader budget validation."
@@ -256,6 +264,7 @@ function Assert-X64LoaderBudget
     }
 
     [byte[]]$kernelBytes = [System.IO.File]::ReadAllBytes($artifactBinPath)
+    [byte[]]$uefiKernelBytes = [System.IO.File]::ReadAllBytes($uefiArtifactBinPath)
     $sectorCount = [int][Math]::Ceiling($kernelBytes.Length / 512.0)
     if (($sectorCount -le 0) -or ($sectorCount -gt $loaderSectorLimit)) {
         throw "QEMU verification failed: x64 scaffold consumes $sectorCount BIOS sectors, outside the $loaderSectorLimit-sector loader budget."
@@ -265,34 +274,42 @@ function Assert-X64LoaderBudget
     if ($loaderSectorReserve -lt $loaderReserveHardMinimum) {
         throw "QEMU verification failed: x64 scaffold BIOS reserve $loaderSectorReserve is below the hard minimum of $loaderReserveHardMinimum sectors."
     }
-    if ($kernelBytes.Length -gt $uefiKernelByteLimit) {
-        throw "QEMU verification failed: x64 UEFI kernel payload $($kernelBytes.Length) exceeds the $uefiKernelByteLimit-byte UEFI file contract."
+    if ($uefiKernelBytes.Length -gt $uefiKernelByteLimit) {
+        throw "QEMU verification failed: x64 UEFI kernel payload $($uefiKernelBytes.Length) exceeds the $uefiKernelByteLimit-byte UEFI file contract."
     }
-    $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $kernelBytes
-    $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
+    $uefiKernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
+    $uefiKernelChecksumHex = "0x{0:X8}" -f $uefiKernelChecksum
     $kernelSizeMap = Get-BinutilsSectionSizes -Path $kernelPePath
+    $uefiKernelSizeMap = Get-BinutilsSectionSizes -Path $uefiKernelPePath
     $reportLines = @(Get-Content $reportPath)
     $sizeReportLines = @(Get-Content $sizeReportPath)
     $manifestLines = @(Get-Content $manifestPath)
 
     Assert-OutputContains -Lines $reportLines -Pattern ("^loader-budget: bios-sector-limit {0} current-sectors {1} reserve-sectors {2} enforced 1$" -f $loaderSectorLimit, $sectorCount, $loaderSectorReserve) -Message "x64 scaffold report loader budget proof is missing or stale."
-    Assert-OutputContains -Lines $reportLines -Pattern ("^uefi-loader-budget: kernel-byte-limit {0} current-bytes {1} reserve-bytes {2} checksum {3} enforced 1$" -f $uefiKernelByteLimit, $kernelBytes.Length, ($uefiKernelByteLimit - $kernelBytes.Length), $kernelChecksumHex) -Message "x64 scaffold report UEFI byte-budget proof is missing or stale."
+    Assert-OutputContains -Lines $reportLines -Pattern ("^uefi-loader-budget: kernel-byte-limit {0} current-bytes {1} reserve-bytes {2} checksum {3} enforced 1$" -f $uefiKernelByteLimit, $uefiKernelBytes.Length, ($uefiKernelByteLimit - $uefiKernelBytes.Length), $uefiKernelChecksumHex) -Message "x64 scaffold report UEFI byte-budget proof is missing or stale."
     Assert-OutputContains -Lines $reportLines -Pattern ("^size-map: text-bytes {0} rodata-bytes {1} data-bytes {2} bss-bytes {3} top-object .+ top-object-total [1-9][0-9]*$" -f $kernelSizeMap.Text, $kernelSizeMap.Rodata, $kernelSizeMap.Data, $kernelSizeMap.Bss) -Message "x64 scaffold report section size map is missing or stale."
+    Assert-OutputContains -Lines $reportLines -Pattern ("^uefi-size-map: text-bytes {0} rodata-bytes {1} data-bytes {2} bss-bytes {3} top-object .+ top-object-total [1-9][0-9]*$" -f $uefiKernelSizeMap.Text, $uefiKernelSizeMap.Rodata, $uefiKernelSizeMap.Data, $uefiKernelSizeMap.Bss) -Message "x64 scaffold report UEFI section size map is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^kernel-bytes={0}$" -f $kernelBytes.Length) -Message "x64 size-map kernel byte count is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-kernel-sectors={0}$" -f $sectorCount) -Message "x64 size-map BIOS kernel sector count is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-sector-limit={0}$" -f $loaderSectorLimit) -Message "x64 size-map BIOS sector limit is missing."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^bios-sector-reserve={0}$" -f $loaderSectorReserve) -Message "x64 size-map BIOS sector reserve is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-bytes={0}$" -f $uefiKernelBytes.Length) -Message "x64 size-map UEFI kernel byte count is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-byte-limit={0}$" -f $uefiKernelByteLimit) -Message "x64 size-map UEFI byte limit is missing."
-    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $kernelBytes.Length)) -Message "x64 size-map UEFI byte reserve is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $uefiKernelBytes.Length)) -Message "x64 size-map UEFI byte reserve is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-text={0}$" -f $kernelSizeMap.Text) -Message "x64 size-map text section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-rodata={0}$" -f $kernelSizeMap.Rodata) -Message "x64 size-map rodata section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-data={0}$" -f $kernelSizeMap.Data) -Message "x64 size-map data section is missing or stale."
     Assert-OutputContains -Lines $sizeReportLines -Pattern ("^section-bss={0}$" -f $kernelSizeMap.Bss) -Message "x64 size-map bss section is missing or stale."
-    Assert-OutputContains -Lines $sizeReportLines -Pattern '^top-object=(scaffold|display)-x86_64\.o ' -Message "x64 size-map top object contributor is missing."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-bytes={0}$" -f $kernelBytes.Length) -Message "x64 UEFI manifest kernel byte count is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern '^top-object=(scaffold|display)-x86_64-bios\.o ' -Message "x64 size-map top object contributor is missing."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-section-text={0}$" -f $uefiKernelSizeMap.Text) -Message "x64 size-map UEFI text section is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-section-rodata={0}$" -f $uefiKernelSizeMap.Rodata) -Message "x64 size-map UEFI rodata section is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-section-data={0}$" -f $uefiKernelSizeMap.Data) -Message "x64 size-map UEFI data section is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern ("^uefi-section-bss={0}$" -f $uefiKernelSizeMap.Bss) -Message "x64 size-map UEFI bss section is missing or stale."
+    Assert-OutputContains -Lines $sizeReportLines -Pattern '^uefi-top-object=.+-x86_64-uefi\.o ' -Message "x64 size-map UEFI top object contributor is missing."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-bytes={0}$" -f $uefiKernelBytes.Length) -Message "x64 UEFI manifest kernel byte count is missing or stale."
     Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-limit={0}$" -f $uefiKernelByteLimit) -Message "x64 UEFI manifest kernel byte limit is missing."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $kernelBytes.Length)) -Message "x64 UEFI manifest kernel byte reserve is missing or stale."
-    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-checksum={0}$" -f $kernelChecksumHex) -Message "x64 UEFI manifest kernel checksum is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $uefiKernelBytes.Length)) -Message "x64 UEFI manifest kernel byte reserve is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-checksum={0}$" -f $uefiKernelChecksumHex) -Message "x64 UEFI manifest kernel checksum is missing or stale."
     Assert-OutputContains -Lines $manifestLines -Pattern '^boot-contract=uefi-kernel-file$' -Message "x64 UEFI manifest boot contract is missing or stale."
     Assert-OutputNotContains -Lines $manifestLines -Pattern '^kernel-sector' -Message "x64 UEFI manifest still carries BIOS sector arithmetic."
 }
@@ -3765,12 +3782,14 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ net' -Message "x64 persistent shell did not accept the Product net command."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $outputLines -Pattern '^no network$' -Message "x64 persistent shell did not report clean network unavailability on disk/BIOS media."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg unavailable bios-checksum-only 1' -Message "x64 BIOS package-signing surface did not report checksum-only fallback."
     }
     else {
         Assert-OutputContains -Lines $outputLines -Pattern '^network: online$' -Message "x64 persistent shell did not report an active Product network lease."
         Assert-OutputContains -Lines $outputLines -Pattern '^gateway: 10\.0\.2\.2$' -Message "x64 persistent shell did not report the DHCP gateway."
         Assert-OutputContains -Lines $outputLines -Pattern '^dns: 10\.0\.2\.[0-9]+$' -Message "x64 persistent shell did not report the DHCP DNS server."
         Assert-OutputContains -Lines $outputLines -Pattern '^authority: brokered$' -Message "x64 persistent shell did not label network authority as brokered."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg drs-pkg-signed 1 drs-pkg-verified 1 drs-pkg-invalid-denied 1 drs-pkg-missing-sig-denied 1 drs-pkg-checksum-mismatch-denied 1 drs-pkg-wrong-owner-denied 1 drs-pkg-stale-token-denied 1 drs-pkg-install-scoped 1 drs-pkg-update-check 1 drs-pkg-update-index-verified 1 drs-pkg-update-index-rollback-denied 1 drs-pkg-update-no-ambient 1' -Message "x64 UEFI M7 signed package admission/update proof was not observed."
     }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ write w\.txt ok' -Message "x64 persistent shell did not accept a live write command with explicit text."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."

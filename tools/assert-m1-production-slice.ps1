@@ -94,6 +94,32 @@ function Get-GitStatusSummary
     return "unavailable"
 }
 
+function Assert-NoPrivateKeyMaterialInProductArtifacts
+{
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    $forbiddenPatterns = @(
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "PRIVATE KEY-----",
+        "Ed25519PrivateKey.generate",
+        "private_key ="
+    )
+
+    foreach ($path in $Paths) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            continue
+        }
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        foreach ($pattern in $forbiddenPatterns) {
+            if ($text.Contains($pattern)) {
+                Fail-M1 ("Product artifact contains forbidden private-key marker '{0}': {1}" -f $pattern, (Get-RepoRelativePath $path))
+            }
+        }
+    }
+}
+
 function Read-KeyValueFile
 {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -521,6 +547,8 @@ function Assert-X64Artifacts
     $manifestPath = Join-Path $stageDir "BOOTMAN.TXT"
     $stagedKernelPath = Join-Path $stageDir "KERNEL64.BIN"
     $scaffoldBinPath = Join-Path $distDir "limitlessos-x86_64.scaffold.bin"
+    $uefiKernelBinPath = Join-Path $distDir "limitlessos-x86_64.uefi-kernel.bin"
+    $biosKernelBinPath = Join-Path $distDir "KERNEL64-BIOS.BIN"
     $uefiArtifactPath = Join-Path $distDir "limitlessos-x86_64.efi"
     $stagedEfiPath = Join-Path $stageDir "EFI\BOOT\BOOTX64.EFI"
     $isoPath = Join-Path $distDir "limitlessos-x86_64.iso"
@@ -530,7 +558,7 @@ function Assert-X64Artifacts
     $sizeReportPath = Join-Path $distDir "limitlessos-x86_64.size.txt"
     $stageReadmePath = Join-Path $stageDir "README.TXT"
 
-    foreach ($path in @($stageDir, $appsDir, $manifestPath, $stagedKernelPath, $scaffoldBinPath, $uefiArtifactPath, $stagedEfiPath, $isoPath, $uefiImagePath, $diskImagePath, $reportPath, $sizeReportPath, $stageReadmePath)) {
+    foreach ($path in @($stageDir, $appsDir, $manifestPath, $stagedKernelPath, $scaffoldBinPath, $uefiKernelBinPath, $biosKernelBinPath, $uefiArtifactPath, $stagedEfiPath, $isoPath, $uefiImagePath, $diskImagePath, $reportPath, $sizeReportPath, $stageReadmePath)) {
         if (-not (Test-Path $path)) {
             Fail-M1 "required x86_64 artifact is missing: $(Get-RepoRelativePath $path)"
         }
@@ -538,17 +566,23 @@ function Assert-X64Artifacts
 
     [byte[]]$stagedKernelBytes = [System.IO.File]::ReadAllBytes($stagedKernelPath)
     [byte[]]$scaffoldBytes = [System.IO.File]::ReadAllBytes($scaffoldBinPath)
-    if ($stagedKernelBytes.Length -ne $scaffoldBytes.Length) {
-        Fail-M1 "staged UEFI kernel byte count does not match dist scaffold binary."
+    [byte[]]$uefiKernelBytes = [System.IO.File]::ReadAllBytes($uefiKernelBinPath)
+    [byte[]]$biosKernelBytes = [System.IO.File]::ReadAllBytes($biosKernelBinPath)
+    if ($stagedKernelBytes.Length -ne $uefiKernelBytes.Length) {
+        Fail-M1 "staged UEFI kernel byte count does not match dist UEFI kernel binary."
     }
 
     $stagedChecksum = Get-Fnv1aDataChecksum -Bytes $stagedKernelBytes
-    $scaffoldChecksum = Get-Fnv1aDataChecksum -Bytes $scaffoldBytes
-    if ($stagedChecksum -ne $scaffoldChecksum) {
-        Fail-M1 "staged UEFI kernel checksum does not match dist scaffold binary."
+    $uefiKernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
+    $biosKernelChecksum = Get-Fnv1aDataChecksum -Bytes $biosKernelBytes
+    if ($stagedChecksum -ne $uefiKernelChecksum) {
+        Fail-M1 "staged UEFI kernel checksum does not match dist UEFI kernel binary."
+    }
+    if ($biosKernelBytes.Length -ne $scaffoldBytes.Length) {
+        Fail-M1 "BIOS kernel byte count does not match dist scaffold binary."
     }
 
-    $sectorCount = [int][Math]::Ceiling($stagedKernelBytes.Length / 512.0)
+    $sectorCount = [int][Math]::Ceiling($biosKernelBytes.Length / 512.0)
     $sectorReserve = $loaderSectorLimit - $sectorCount
     if (($sectorCount -le 0) -or ($sectorCount -gt $loaderSectorLimit)) {
         Fail-M1 "kernel sector count $sectorCount is outside the $loaderSectorLimit-sector loader limit."
@@ -651,6 +685,17 @@ function Assert-X64Artifacts
 
     Assert-BytesEqual -Expected ([System.IO.File]::ReadAllBytes($uefiArtifactPath)) -Actual ([System.IO.File]::ReadAllBytes($stagedEfiPath)) -Label "staged BOOTX64.EFI"
     Assert-FinalIsoContents -IsoPath $isoPath -StageDir $stageDir -AppsDir $appsDir -ManifestPath $manifestPath -KernelPath $stagedKernelPath -EfiPath $stagedEfiPath
+    Assert-NoPrivateKeyMaterialInProductArtifacts -Paths @(
+        $biosKernelBinPath,
+        $scaffoldBinPath,
+        $uefiKernelBinPath,
+        $stagedKernelPath,
+        $uefiArtifactPath,
+        $stagedEfiPath,
+        $isoPath,
+        $uefiImagePath,
+        $diskImagePath
+    )
 
     if ($WriteInventory) {
         $experimentalRuntimeEnabled = ($BuildProfile -eq "Experimental")
@@ -691,13 +736,20 @@ function Assert-X64Artifacts
             buildProfile = $BuildProfile
             generatedUtc = [DateTime]::UtcNow.ToString("o")
             kernel = [PSCustomObject]@{
-                bytes = $stagedKernelBytes.Length
+                bytes = $biosKernelBytes.Length
                 sectors = $sectorCount
                 sectorLimit = $loaderSectorLimit
                 sectorReserve = $sectorReserve
+                checksum = ("0x{0:X8}" -f $biosKernelChecksum)
+                biosBytes = $biosKernelBytes.Length
+                biosSectors = $sectorCount
+                biosSectorLimit = $loaderSectorLimit
+                biosSectorReserve = $sectorReserve
+                biosChecksum = ("0x{0:X8}" -f $biosKernelChecksum)
+                uefiBytes = $stagedKernelBytes.Length
                 uefiByteLimit = $uefiKernelByteLimit
                 uefiByteReserve = ($uefiKernelByteLimit - $stagedKernelBytes.Length)
-                checksum = ("0x{0:X8}" -f $stagedChecksum)
+                uefiChecksum = ("0x{0:X8}" -f $stagedChecksum)
             }
             artifacts = [PSCustomObject]@{
                 iso = Get-RepoRelativePath $isoPath
@@ -797,12 +849,18 @@ function Assert-X64Artifacts
             activeProductServices = @($m2ProductServices)
             activeExperimentalServices = @($activeExperimentalServices)
             experimentalRuntimeEnabled = $experimentalRuntimeEnabled
-            productKernelBytes = $stagedKernelBytes.Length
+            productKernelBytes = $biosKernelBytes.Length
             productKernelSectors = $sectorCount
             productKernelReserve = $sectorReserve
+            productBiosKernelBytes = $biosKernelBytes.Length
+            productBiosKernelSectors = $sectorCount
+            productBiosKernelReserve = $sectorReserve
+            productBiosKernelChecksum = ("0x{0:X8}" -f $biosKernelChecksum)
+            productUefiKernelBytes = $stagedKernelBytes.Length
             productUefiKernelByteLimit = $uefiKernelByteLimit
             productUefiKernelByteReserve = ($uefiKernelByteLimit - $stagedKernelBytes.Length)
-            productKernelChecksum = ("0x{0:X8}" -f $stagedChecksum)
+            productUefiKernelChecksum = ("0x{0:X8}" -f $stagedChecksum)
+            productKernelChecksum = ("0x{0:X8}" -f $biosKernelChecksum)
             sectorBudgetStatus = $sectorBudgetStatus
             bootContract = "Dual contract: BIOS keeps 1024-sector loader limit; UEFI uses a 2 MiB kernel file-size limit verified by BOOTMAN.TXT checksum"
             finalIsoVerified = $true
@@ -888,6 +946,43 @@ function Assert-X64Artifacts
         $m6Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m6InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m6.json" -f $BuildProfile.ToLowerInvariant())
         $m6Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m6InventoryPath -Encoding Ascii
+
+        $m7Inventory = $m6Inventory.PSObject.Copy()
+        $m7Inventory.milestone = "M7 Signed Package System"
+        $m7Inventory.activeProductServices = @(
+            $m6Inventory.activeProductServices +
+            @("signed package admission", "signed update-index verification")
+        )
+        $m7Inventory.unavailableServices = @("full multiuser login/auth", "installer write/format/boot-entry authority", "auto-install", "app store", "AI assistant")
+        $m7Inventory | Add-Member -Force -NotePropertyName packageFormatVersion -NotePropertyValue 2
+        $m7Inventory | Add-Member -Force -NotePropertyName packageSignatureAlgorithm -NotePropertyValue "Ed25519"
+        $m7Inventory | Add-Member -Force -NotePropertyName signedPackageCount -NotePropertyValue 12
+        $m7Inventory | Add-Member -Force -NotePropertyName unsignedPackageCountDenied -NotePropertyValue 1
+        $m7Inventory | Add-Member -Force -NotePropertyName invalidPackageCountDenied -NotePropertyValue 1
+        $m7Inventory | Add-Member -Force -NotePropertyName packageSignatureVerificationStatus -NotePropertyValue "UEFI Product verifies signed archive and payload signatures before admission; BIOS Product remains checksum-only fallback"
+        $m7Inventory | Add-Member -Force -NotePropertyName updateIndexVerificationStatus -NotePropertyValue "signed local update-index fixture verified with Ed25519"
+        $m7Inventory | Add-Member -Force -NotePropertyName updateRollbackDenialStatus -NotePropertyValue "older signed index generation denied without rollback authority"
+        $m7Inventory | Add-Member -Force -NotePropertyName privateKeyArtifactScanStatus -NotePropertyValue "passed"
+        $m7Inventory | Add-Member -Force -NotePropertyName packageInstallCapabilityEnforcementStatus -NotePropertyValue "scoped install capability required; no ambient install authority"
+        $m7Inventory | Add-Member -Force -NotePropertyName packageWrongOwnerDenialStatus -NotePropertyValue "verified"
+        $m7Inventory | Add-Member -Force -NotePropertyName packageStaleTokenDenialStatus -NotePropertyValue "verified"
+        $m7Inventory | Add-Member -Force -NotePropertyName noAmbientInstallAuthorityStatus -NotePropertyValue "verified"
+        $m7Inventory | Add-Member -Force -NotePropertyName noAmbientUpdateAuthorityStatus -NotePropertyValue "verified"
+        $m7Inventory | Add-Member -Force -NotePropertyName trustedTimeStatus -NotePropertyValue "unavailable"
+        $m7Inventory | Add-Member -Force -NotePropertyName expiryEnforcementStatus -NotePropertyValue "not Product-enforced without trusted time; anti-rollback uses signed index sequence"
+        $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelBytes -NotePropertyValue $biosKernelBytes.Length
+        $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelSectors -NotePropertyValue $sectorCount
+        $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelReserve -NotePropertyValue $sectorReserve
+        $m7Inventory | Add-Member -Force -NotePropertyName productBiosKernelChecksum -NotePropertyValue ("0x{0:X8}" -f $biosKernelChecksum)
+        $m7Inventory | Add-Member -Force -NotePropertyName productUefiKernelBytes -NotePropertyValue $stagedKernelBytes.Length
+        $m7Inventory | Add-Member -Force -NotePropertyName productUefiKernelByteLimit -NotePropertyValue $uefiKernelByteLimit
+        $m7Inventory | Add-Member -Force -NotePropertyName productUefiKernelByteReserve -NotePropertyValue ($uefiKernelByteLimit - $stagedKernelBytes.Length)
+        $m7Inventory | Add-Member -Force -NotePropertyName productUefiKernelChecksum -NotePropertyValue ("0x{0:X8}" -f $stagedChecksum)
+        $m7Inventory | Add-Member -Force -NotePropertyName bootContract -NotePropertyValue "Split contract: BIOS KERNEL64-BIOS.BIN is limited to 1024 sectors; UEFI KERNEL64.BIN is limited to 2 MiB and verified by BOOTMAN.TXT byte count/checksum"
+        $m7Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m7Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m7InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m7.json" -f $BuildProfile.ToLowerInvariant())
+        $m7Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m7InventoryPath -Encoding Ascii
     }
 }
 
