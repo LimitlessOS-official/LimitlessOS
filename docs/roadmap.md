@@ -132,6 +132,86 @@ M10 user-authentication acceptance:
 - Internal NVMe writes remain disabled by default; real install remains unapproved
 - No M10 work may start until the M9 evidence archive is clean
 
+## Roadmap Addendum: Account Association, Cloud Storage, and AI Policy
+
+This addendum is forward-looking only. It does not alter accepted M1-M10 scope, does not expand M10, and does not backport remote identity, cloud storage, AI behavior, package-manager UX, or internal install/write behavior into earlier milestones. M10 remains local-only authentication: one local user, first-run setup, login, lock/unlock, and scoped session authority.
+
+M11: Identity Foundation + Secrets Vault
+
+- Add a local account identity model.
+- Add an account type enum: local, personal, enterprise.
+- Add a secret/token vault.
+- Add account association records.
+- No remote login yet.
+- No cloud storage yet.
+- No internet dependency.
+- No ambient identity authority.
+
+M12: Trusted Network Identity Transport
+
+- Add trusted endpoint verification.
+- Add trusted time status.
+- Add encrypted account transport.
+- Add token refresh transport.
+- Add offline/online state.
+- No plaintext account login.
+- No ambient network authority.
+
+M13: Account Association
+
+- Local login remains available offline.
+- Personal login supports email/password and/or security key, with internet required.
+- Enterprise login supports email/password and/or security key, with internet required.
+- Account association attaches to the local user/session.
+- No cloud storage yet.
+- No enterprise policy without a verified enterprise account.
+- No remote account grants ambient authority.
+
+M14: Cloud Storage Broker
+
+- Add account-scoped cloud storage.
+- Add folder-level grants.
+- Add on-demand, selective, and offline-cache modes.
+- No automatic upload.
+- No hidden sync.
+- No AI access without scoped consent.
+- No app direct cloud authority.
+
+M15: Installer UX v2
+
+- Add beginner mode.
+- Add advanced mode.
+- Add hardware-aware recommendations.
+- Add component selection.
+- Add local, personal, and enterprise account setup.
+- AI-assisted setup remains unavailable until an AI policy broker exists.
+- Cloud storage is optional.
+- No internal install/write unless separately approved.
+
+M16: AI Policy Broker Foundation
+
+- Add an AI principal.
+- Add a consent broker.
+- Add an action request schema.
+- Add an audit log.
+- Add an AI settings skeleton.
+- No AI actions yet.
+
+M17: AI Assistant Read-Only Mode
+
+- Add explanations, summaries, and suggestions.
+- Read access is allowed only by explicit scoped permission.
+- No writes or automation.
+
+M18: AI Consent-Scoped Action Mode
+
+- Actions run only through explicit scoped capabilities.
+- Support allow-once, allow-session, folder-scoped, read-only, and dry-run consent modes.
+- Denial paths and audit are required.
+- No self-modification.
+- No unsigned package installs.
+- No hidden autonomy.
+
 ## Phase 0: Bootstrap
 
 - create a buildable boot image
