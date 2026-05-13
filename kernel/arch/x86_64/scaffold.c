@@ -1,4 +1,5 @@
 #include "arch_build.h"
+#include "account_association_x64.h"
 #include "apic_x64.h"
 #include "auth_x64.h"
 #include "block_x64.h"
@@ -4652,6 +4653,56 @@ static void log_identity_transport_surface(void)
     write_string(identity_transport64_token_storage_status());
     write_string(" trusted-time ");
     write_line(identity_transport64_trusted_time_string());
+#endif
+}
+
+static void log_account_association_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    account_association64_init();
+    write_labeled_dec_u32("[x64] drs-account drs-account-association-product ", account_association64_product());
+    write_labeled_dec_u32(" drs-account-local-active ", account_association64_local_active());
+    write_labeled_dec_u32(" drs-account-personal-unavailable ", account_association64_personal_unavailable());
+    write_labeled_dec_u32(" drs-account-enterprise-unavailable ", account_association64_enterprise_unavailable());
+    write_labeled_dec_u32(" drs-account-cloud-unavailable ", account_association64_cloud_unavailable());
+    write_labeled_dec_u32(" drs-account-security-key-unavailable ", account_association64_security_key_unavailable());
+    write_labeled_dec_u32(" drs-account-settings-panel ", scaffold_bool_u32(display64_account_settings_panel_count()));
+    write_labeled_dec_u32(" drs-account-status-readonly ", account_association64_status_readonly());
+    write_labeled_dec_u32(" drs-account-mutation-denied ", account_association64_mutation_denied());
+    write_labeled_dec_u32(" drs-account-unlink-denied ", account_association64_unlink_denied());
+    write_labeled_dec_u32(" drs-account-token-storage-denied ", account_association64_token_storage_denied());
+    write_labeled_dec_u32(" drs-account-credential-transport-denied ", account_association64_credential_transport_denied());
+    write_labeled_dec_u32(" drs-account-enterprise-policy-unavailable ", account_association64_enterprise_policy_unavailable());
+    write_labeled_dec_u32(" drs-account-remote-no-ambient-authority ", account_association64_remote_no_ambient_authority());
+    write_labeled_dec_u32(" drs-no-ambient-account-identity ", account_association64_no_ambient_identity());
+    write_labeled_dec_u32(" drs-no-ambient-account-network ", account_association64_no_ambient_network());
+    write_labeled_dec_u32(" drs-no-ambient-account-secret ", account_association64_no_ambient_secret());
+    write_string(" mode ");
+    write_string(account_association64_mode());
+    write_string(" local ");
+    write_string(account_association64_local_status());
+    write_string(" personal ");
+    write_string(account_association64_personal_status());
+    write_string(" enterprise ");
+    write_string(account_association64_enterprise_status());
+    write_string(" cloud ");
+    write_string(account_association64_cloud_status());
+    write_string(" security-key ");
+    write_string(account_association64_security_key_status());
+    write_string(" enterprise-policy ");
+    write_string(account_association64_enterprise_policy_status());
+    write_string(" encrypted ");
+    write_string(account_association64_encrypted_transport_status());
+    write_string(" token-storage ");
+    write_string(account_association64_token_storage_status());
+    write_string(" trusted-time ");
+    write_string(account_association64_trusted_time_status());
+    write_string(" remote-login ");
+    write_string(account_association64_remote_login_status());
+    write_string(" local-user ");
+    write_string(account_association64_local_user_id());
+    write_string(" provider ");
+    write_line(account_association64_provider_id());
 #endif
 }
 
@@ -12023,6 +12074,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_package_trust_status_surface();
     log_identity_surface();
     log_identity_transport_surface();
+    log_account_association_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

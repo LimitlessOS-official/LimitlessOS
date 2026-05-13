@@ -415,6 +415,7 @@ function Build-X64Scaffold
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "package_signing.c" })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "identity.c" })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "identity_transport.c" })
+    $commonSources = @($commonSources | Where-Object { $_.Name -ne "account_association.c" })
     $biosSources = @($commonSources | Where-Object {
             ($_.Name -ne "virtio_net.c") -and ($_.Name -ne "e1000e.c")
         })
@@ -422,6 +423,7 @@ function Build-X64Scaffold
     $uefiSources = @($commonSources)
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\identity.c")
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\identity_transport.c")
+    $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\account_association.c")
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\package_signing.c")
     $uefiSources += @(
         "fe.c",

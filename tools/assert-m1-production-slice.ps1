@@ -491,24 +491,29 @@ function Assert-RuntimeShellSurfaceSource
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
-        "Product identity: Settings shows local account, vault, and trusted transport status; remote/cloud unavailable",
-        "Unavailable in M12: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, encrypted-identity-transport, ai",
+        "Product identity: Settings shows local account, association, vault, and trusted transport status; remote/cloud unavailable",
+        "Unavailable in M13: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, cloud-storage, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
-        "Identity/vault/transport status: Settings; local only; no secret storage",
+        "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
         "Installer writes/install",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Personal login",
         "Enterprise login",
+        "Account linking",
         "Cloud storage",
         "Encrypted secret storage",
         "Encrypted identity transport",
+        "Security key login",
+        "Credential transport",
+        "Token storage",
+        "Enterprise policy",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
         if (-not $source.Contains($requiredText)) {
@@ -1240,6 +1245,51 @@ function Assert-X64Artifacts
         $m12Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m12InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m12.json" -f $BuildProfile.ToLowerInvariant())
         $m12Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m12InventoryPath -Encoding Ascii
+
+        $m13Inventory = $m12Inventory.PSObject.Copy()
+        $m13Inventory.milestone = "M13 Account Association"
+        $m13Inventory.activeProductServices = @(
+            $m12Inventory.activeProductServices +
+            @("account association broker status")
+        )
+        $m13Inventory.unavailableFeatures = @(
+            $m12Inventory.unavailableFeatures +
+            @(
+                "Personal account association",
+                "Enterprise account association",
+                "Cloud association",
+                "Security key login",
+                "Remote account authority",
+                "Enterprise policy enrollment"
+            )
+        ) | Select-Object -Unique
+        $m13Inventory | Add-Member -Force -NotePropertyName accountAssociationMode -NotePropertyValue "Mode B association policy/status only"
+        $m13Inventory | Add-Member -Force -NotePropertyName localAssociationStatus -NotePropertyValue "active/offline-capable"
+        $m13Inventory | Add-Member -Force -NotePropertyName personalAssociationStatus -NotePropertyValue "planned/unavailable"
+        $m13Inventory | Add-Member -Force -NotePropertyName enterpriseAssociationStatus -NotePropertyValue "planned/unavailable"
+        $m13Inventory | Add-Member -Force -NotePropertyName cloudAssociationStatus -NotePropertyValue "planned/unavailable"
+        $m13Inventory | Add-Member -Force -NotePropertyName securityKeyStatus -NotePropertyValue "planned/unavailable"
+        $m13Inventory | Add-Member -Force -NotePropertyName enterprisePolicyStatus -NotePropertyValue "planned/unavailable"
+        $m13Inventory | Add-Member -Force -NotePropertyName encryptedTransportStatus -NotePropertyValue "unavailable/non-product"
+        $m13Inventory | Add-Member -Force -NotePropertyName tokenStorageStatus -NotePropertyValue "denied while vault remains Mode B"
+        $m13Inventory | Add-Member -Force -NotePropertyName trustedTimeStatus -NotePropertyValue "unavailable/non-product; account expiry not Product-enforced"
+        $m13Inventory | Add-Member -Force -NotePropertyName accountSettingsPanelVerified -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName accountShellStatusVerified -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName accountShellStatusCommand -NotePropertyValue "pkginfo read-only account association status"
+        $m13Inventory | Add-Member -Force -NotePropertyName accountMutationDenied -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName accountUnlinkDenied -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName cloudAssociationDenied -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName tokenStorageDenied -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName credentialTransportDenied -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName enterprisePolicyUnavailable -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName noAmbientIdentityAuthorityVerified -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName noAmbientNetworkAuthorityVerified -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName noAmbientSecretAuthorityVerified -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName noM14WorkStarted -NotePropertyValue $true
+        $m13Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m13Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m13InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m13.json" -f $BuildProfile.ToLowerInvariant())
+        $m13Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m13InventoryPath -Encoding Ascii
     }
 }
 

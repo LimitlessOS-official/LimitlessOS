@@ -1,25 +1,26 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M12 Trusted Network Identity Transport
+## Current Gate: M13 Account Association
 
-M1 cleanup-final through M11 identity/vault foundation are accepted. M12 adds a Product trusted identity-transport foundation while preserving M10 and M11 exactly: local login remains the only Product login flow, one local user remains the only active account, and no remote auth or cloud account login exists. M12 verifies signed local identity-provider descriptors and exposes endpoint-trust status, but it does not implement encrypted account transport, account association, token persistence, cloud storage, multiuser account management, PAM/LDAP/remote auth, app-store behavior, auto-update, live public update fetching, or real internal-disk install/write work.
+M1 cleanup-final through M12 trusted identity transport are accepted. M13 adds Product account association status while preserving M10, M11, and M12 exactly: local login remains the only Product login flow, one local user remains the only active account, signed provider descriptors remain metadata-only trust inputs, and no remote auth or cloud account login exists. M13 records local association as active/offline-capable and labels personal, enterprise, cloud, security-key, credential, token, and enterprise-policy paths unavailable or denied. It does not implement account linking, encrypted account transport, token persistence, cloud storage, multiuser account management, PAM/LDAP/remote auth, app-store behavior, auto-update, live public update fetching, or real internal-disk install/write work.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- BIOS kernel: `KERNEL64-BIOS.BIN`, 457088 bytes, 893 / 1024 BIOS sectors, 131 reserve, checksum recorded in the generated artifact inventory
-- UEFI kernel: `KERNEL64.BIN`, 560352 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- BIOS kernel: `KERNEL64-BIOS.BIN`, 457312 bytes, 894 / 1024 BIOS sectors, 130 reserve, checksum recorded in the generated artifact inventory
+- UEFI kernel: `KERNEL64.BIN`, 561696 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
 - Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings
-- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification
+- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
-- Product identity: local account type active, local association active, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, no ambient identity authority
+- Product identity/account association: local account type active, local association active/offline-capable, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, security-key login planned/unavailable, no ambient identity or account authority
 - Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product, no ambient secret authority
-- Product identity transport: Mode B endpoint-trust foundation only; signed local provider descriptors are verified, rollback/unsupported/tampered descriptors are denied, encrypted identity transport is unavailable, credential transport is denied, token storage is denied, and account association remains unavailable
+- Product identity transport: Mode B endpoint-trust foundation only; signed local provider descriptors are verified, rollback/unsupported/tampered descriptors are denied, encrypted identity transport is unavailable, credential transport is denied, and token storage is denied
+- Product account association: Mode B policy/status only; local association is active, personal/enterprise/cloud association remains unavailable, account mutation/unlink/token/cloud/enterprise-policy paths are denied, and remote account identity grants no OS authority
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport status in Settings and `pkginfo`, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account status in Settings and `pkginfo`, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -29,7 +30,7 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, personal account login, enterprise account login, cloud account association, cloud storage, security-key login, remote login, encrypted identity transport, credential transport, encrypted-at-rest secret storage, token storage, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
+- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, cloud storage, security-key login, remote login, encrypted identity transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
 
 M2 evidence:
 
@@ -155,7 +156,17 @@ M12 trusted identity-transport acceptance:
 - Identity transport requires scoped network authority; no-network-cap, plaintext credential transport, unverified endpoint credential transport, and token storage attempts are denied
 - Settings and `pkginfo` show read-only identity transport status
 - Personal login, enterprise login, cloud association, remote login, encrypted account transport, and trusted-time expiry enforcement remain unavailable/non-product
-- No M13 work may start until M12 evidence is clean
+- M12 evidence is accepted and M13 may build only on the Mode B status/policy boundary
+
+M13 account-association acceptance:
+
+- Evidence pack: generated by `tools\archive-m13-evidence.ps1 -IncludeExperimental`
+- Product account association mode is Mode B association policy/status only
+- Local association is active/offline-capable and local login remains the only Product login flow
+- Personal association, enterprise association, cloud association, security-key login, encrypted transport, token storage, enterprise policy, and remote account authority remain unavailable or denied
+- Settings and `pkginfo` show read-only account association status
+- Account mutation, unlink, credential transport, token storage, cloud association, enterprise policy, app account mutation, and remote ambient authority are denied
+- No M14 work may start until M13 evidence is clean
 
 ## Roadmap Addendum: Account Association, Cloud Storage, and AI Policy
 
@@ -185,9 +196,9 @@ M12: Trusted Network Identity Transport
 M13: Account Association
 
 - Local login remains available offline.
-- Personal login supports email/password and/or security key, with internet required.
-- Enterprise login supports email/password and/or security key, with internet required.
-- Account association attaches to the local user/session.
+- Personal login remains unavailable/planned until encrypted transport and safe token handling exist.
+- Enterprise login remains unavailable/planned until encrypted transport, verified enterprise provider state, and safe policy boundaries exist.
+- Account association status attaches to the local user/session.
 - No cloud storage yet.
 - No enterprise policy without a verified enterprise account.
 - No remote account grants ambient authority.

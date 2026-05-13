@@ -2,6 +2,7 @@
 
 #include "arch_build.h"
 #include "auth_x64.h"
+#include "account_association_x64.h"
 #include "capability_x64.h"
 #include "identity_x64.h"
 #include "identity_transport_x64.h"
@@ -157,6 +158,7 @@ static u32 g_display_desktop_settings_count = 0u;
 static u32 g_display_pkg_settings_panel_count = 0u;
 static u32 g_display_identity_settings_panel_count = 0u;
 static u32 g_display_identity_transport_settings_panel_count = 0u;
+static u32 g_display_account_settings_panel_count = 0u;
 static u32 g_display_desktop_fileman_handle = 0u;
 static u32 g_display_desktop_settings_handle = 0u;
 static u32 g_display_desktop_launcher_open = 0u;
@@ -2424,18 +2426,26 @@ static void display64_desktop_draw_settings(u32 handle)
         ++g_display_identity_transport_settings_panel_count;
     }
     (void)identity_transport64_status_readonly();
-    (void)display64_draw_font_text(body_x, body_y + 406u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    account_association64_init();
+    (void)display64_draw_font_text(body_x, body_y + 396u, "Account association", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 414u, "Local active; personal/enterprise unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 432u, "Cloud/key unavailable; tokens denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_account_settings_panel_count == 0u)
+    {
+        ++g_display_account_settings_panel_count;
+    }
+    (void)account_association64_status_readonly();
+    (void)display64_draw_font_text(body_x, body_y + 456u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 424u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        display64_draw_label_value(body_x, body_y + 442u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
+        (void)display64_draw_font_text(body_x, body_y + 474u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        display64_draw_label_value(body_x, body_y + 492u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 424u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        (void)display64_draw_font_text(body_x, body_y + 442u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 474u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 492u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
-    (void)display64_draw_font_text(body_x, body_y + 460u, "No auto-install/public fetch", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
 #else
     (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
@@ -2687,7 +2697,7 @@ static void display64_desktop_open_settings(void)
         u32 side_w = (g_display_boot_info->framebuffer_width > (side_x + 24u))
             ? display64_min_u32(320u, g_display_boot_info->framebuffer_width - side_x - 24u)
             : 160u;
-        u32 settings_y = (g_display_boot_info->framebuffer_height < 620u) ? 250u : 310u;
+        u32 settings_y = (g_display_boot_info->framebuffer_height < 620u) ? 220u : 250u;
         g_display_desktop_settings_handle = display64_wm_create_window("Settings", side_x, settings_y, side_w, 500u);
     }
     display64_wm_focus_and_route_console(g_display_desktop_settings_handle);
@@ -2719,7 +2729,7 @@ void display64_desktop_probe(void)
     u32 side_x;
     u32 side_w;
     u32 file_y = 64u;
-    u32 settings_y = 310u;
+    u32 settings_y = 250u;
     struct display64_window *terminal;
 
     if ((g_display_compositor_active == 0u)
@@ -2744,7 +2754,7 @@ void display64_desktop_probe(void)
     }
     if (g_display_boot_info->framebuffer_height < 620u)
     {
-        settings_y = 250u;
+        settings_y = 220u;
     }
 
     g_display_desktop_terminal_count = (g_display_wm_shell_handle != 0u) ? 1u : 0u;
@@ -3113,6 +3123,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_pkg_settings_panel_count = 0u;
     g_display_identity_settings_panel_count = 0u;
     g_display_identity_transport_settings_panel_count = 0u;
+    g_display_account_settings_panel_count = 0u;
     g_display_desktop_fileman_handle = 0u;
     g_display_desktop_settings_handle = 0u;
     g_display_desktop_launcher_open = 0u;
@@ -3682,6 +3693,11 @@ u32 display64_identity_settings_panel_count(void)
 u32 display64_identity_transport_settings_panel_count(void)
 {
     return g_display_identity_transport_settings_panel_count;
+}
+
+u32 display64_account_settings_panel_count(void)
+{
+    return g_display_account_settings_panel_count;
 }
 
 u32 display64_gui_interactive(void)

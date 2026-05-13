@@ -66,8 +66,8 @@ Assert-Line -Lines $lines -Pattern '^update-index: local signed fixture verified
 Assert-Line -Lines $lines -Pattern '^auto-install: unavailable$' -Message "M8 package UX verifier failed: no-auto-install status was not visible."
 Assert-Line -Lines $lines -Pattern '^public update fetch: unavailable/non-product$' -Message "M8 package UX verifier failed: public update fetch status was not visible."
 Assert-Line -Lines $lines -Pattern '^trusted-time expiry: unavailable/non-product$' -Message "M8 package UX verifier failed: trusted-time status was not visible."
-Assert-Line -Lines $lines -Pattern '^install authority: disabled in M(8|9|10|11|12); scoped capability required$' -Message "M8 package UX verifier failed: install authority status was not visible."
-Assert-Line -Lines $lines -Pattern '^update-apply authority: disabled in M(8|9|10|11|12); scoped install required$' -Message "M8 package UX verifier failed: update-apply authority status was not visible."
+Assert-Line -Lines $lines -Pattern '^install authority: disabled in M(8|9|10|11|12|13); scoped capability required$' -Message "M8 package UX verifier failed: install authority status was not visible."
+Assert-Line -Lines $lines -Pattern '^update-apply authority: disabled in M(8|9|10|11|12|13); scoped install required$' -Message "M8 package UX verifier failed: update-apply authority status was not visible."
 Assert-Line -Lines $lines -Pattern '^no ambient install/update/network$' -Message "M8 package UX verifier failed: no ambient authority status was not visible."
 
 Write-Host "M8 package UX verifier passed for $BootMedia."

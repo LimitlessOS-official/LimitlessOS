@@ -109,4 +109,4 @@ The M12 verifier requires:
 - Credential transport remains denied.
 - Token storage remains denied.
 - Trusted-time expiry enforcement remains unavailable without a trusted time source.
-- M13 account association has not started.
+- M13 may build on this as account association policy/status only. It must not treat signed descriptors as remote login, encrypted transport, token storage, cloud storage, or OS authority.

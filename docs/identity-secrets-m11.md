@@ -98,4 +98,4 @@ M12 builds on this foundation by verifying signed identity-provider descriptor m
 - Encrypted secret storage.
 - AI assistant behavior.
 
-Those surfaces must not appear as active Product behavior in M11. M12 may report trusted identity transport foundation status, but it must still label encrypted transport, credential transport, token persistence, account association, and remote login unavailable until later milestones implement and verify them.
+Those surfaces must not appear as active Product behavior in M11. M12 may report trusted identity transport foundation status, and M13 may report account association policy/status, but both must still label encrypted transport, credential transport, token persistence, cloud association, remote login, and remote account authority unavailable until later milestones implement and verify them.
