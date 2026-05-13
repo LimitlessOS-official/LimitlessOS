@@ -4,6 +4,7 @@
 #include "auth_x64.h"
 #include "account_association_x64.h"
 #include "capability_x64.h"
+#include "cloud_storage_x64.h"
 #include "identity_x64.h"
 #include "identity_transport_x64.h"
 #include "launch_x64.h"
@@ -159,6 +160,8 @@ static u32 g_display_pkg_settings_panel_count = 0u;
 static u32 g_display_identity_settings_panel_count = 0u;
 static u32 g_display_identity_transport_settings_panel_count = 0u;
 static u32 g_display_account_settings_panel_count = 0u;
+static u32 g_display_cloud_settings_panel_count = 0u;
+static u32 g_display_cloud_fileman_status_count = 0u;
 static u32 g_display_desktop_fileman_handle = 0u;
 static u32 g_display_desktop_settings_handle = 0u;
 static u32 g_display_desktop_launcher_open = 0u;
@@ -2366,12 +2369,22 @@ static void display64_desktop_draw_file_manager(u32 handle)
     display64_compositor_draw_rect(body_x + 100u, body_y - 4u, 1u, body_h, 0x00426174u);
     (void)display64_draw_font_text(body_x, body_y, "RAMFS /", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 20u, "NVME FAT32", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 40u, "Cloud", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y, "README.TXT", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "NVME.TXT", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "Cloud unavailable", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "No sync/upload", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    cloud_storage64_init();
+    (void)cloud_storage64_fileman_status_readonly();
+#endif
     if (g_display_desktop_fileman_count == 0u)
     {
         ++g_display_desktop_fileman_count;
+    }
+    if (g_display_cloud_fileman_status_count == 0u)
+    {
+        ++g_display_cloud_fileman_status_count;
     }
 }
 
@@ -2406,45 +2419,49 @@ static void display64_desktop_draw_settings(u32 handle)
     (void)display64_draw_font_text(body_x + 18u, body_y + 188u, "Lock", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)display64_draw_font_text(body_x, body_y + 216u, "Identity", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 234u, "Account local active", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 252u, "Personal/enterprise planned", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 270u, "Cloud storage planned", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 288u, "Vault metadata only", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 306u, "Encrypted secrets unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 324u, "No ambient identity/secret", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 234u, "Local active; vault metadata only", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 252u, "No ambient identity/secret", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_identity_settings_panel_count == 0u)
     {
         ++g_display_identity_settings_panel_count;
     }
     (void)identity64_status_readonly();
     identity_transport64_init();
-    (void)display64_draw_font_text(body_x, body_y + 342u, "Identity transport", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 360u, "Descriptor verified; encrypted transport unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 378u, "Credentials/tokens denied; remote/cloud unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 270u, "Identity transport", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 288u, "Descriptor verified; encrypted transport unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_identity_transport_settings_panel_count == 0u)
     {
         ++g_display_identity_transport_settings_panel_count;
     }
     (void)identity_transport64_status_readonly();
     account_association64_init();
-    (void)display64_draw_font_text(body_x, body_y + 396u, "Account association", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 414u, "Local active; personal/enterprise unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 432u, "Cloud/key unavailable; tokens denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 306u, "Account association", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 324u, "Local active; personal/enterprise unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 342u, "Cloud/key unavailable; tokens denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_account_settings_panel_count == 0u)
     {
         ++g_display_account_settings_panel_count;
     }
     (void)account_association64_status_readonly();
-    (void)display64_draw_font_text(body_x, body_y + 456u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    cloud_storage64_init();
+    (void)display64_draw_font_text(body_x, body_y + 360u, "Cloud storage", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 378u, "Broker foundation; descriptor verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 396u, "No sync/upload/download; AI denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_cloud_settings_panel_count == 0u)
+    {
+        ++g_display_cloud_settings_panel_count;
+    }
+    (void)cloud_storage64_settings_readonly();
+    (void)display64_draw_font_text(body_x, body_y + 420u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 474u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        display64_draw_label_value(body_x, body_y + 492u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
+        (void)display64_draw_font_text(body_x, body_y + 438u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        display64_draw_label_value(body_x, body_y + 456u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 474u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        (void)display64_draw_font_text(body_x, body_y + 492u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 438u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 456u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
 #else
     (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
@@ -3124,6 +3141,8 @@ void display64_init(const struct boot_info *boot_info)
     g_display_identity_settings_panel_count = 0u;
     g_display_identity_transport_settings_panel_count = 0u;
     g_display_account_settings_panel_count = 0u;
+    g_display_cloud_settings_panel_count = 0u;
+    g_display_cloud_fileman_status_count = 0u;
     g_display_desktop_fileman_handle = 0u;
     g_display_desktop_settings_handle = 0u;
     g_display_desktop_launcher_open = 0u;
@@ -3698,6 +3717,16 @@ u32 display64_identity_transport_settings_panel_count(void)
 u32 display64_account_settings_panel_count(void)
 {
     return g_display_account_settings_panel_count;
+}
+
+u32 display64_cloud_settings_panel_count(void)
+{
+    return g_display_cloud_settings_panel_count;
+}
+
+u32 display64_cloud_fileman_status_count(void)
+{
+    return g_display_cloud_fileman_status_count;
 }
 
 u32 display64_gui_interactive(void)

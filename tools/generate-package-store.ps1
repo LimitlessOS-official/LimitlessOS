@@ -400,6 +400,7 @@ rollback_index = (
 ).encode("ascii")
 index_prefix = b"LimitlessOS-M7-update-index-v1\0"
 descriptor_prefix = b"LimitlessOS-M12-idprovider-v1\0"
+cloud_descriptor_prefix = b"LimitlessOS-M14-cloud-provider-v1\0"
 public_key_id = int.from_bytes(public_key[:4], "little")
 public_key_fingerprint = hashlib.sha256(public_key).hexdigest().upper()
 
@@ -429,6 +430,37 @@ def make_identity_descriptor(sequence, descriptor_version=1, protocol_version=1)
 identity_descriptor = make_identity_descriptor(12).encode("ascii")
 identity_descriptor_rollback = make_identity_descriptor(11).encode("ascii")
 identity_descriptor_unsupported = make_identity_descriptor(12, descriptor_version=99).encode("ascii")
+
+def make_cloud_descriptor(sequence, descriptor_version=1, protocol_version=1, include_provider_type=True):
+    provider_type_line = "provider-type=cloud-storage\n" if include_provider_type else ""
+    return (
+        "limitlessos-cloud-provider-v1\n"
+        "provider-id=cloud.fixture.limitless\n"
+        + provider_type_line +
+        "display-name=Limitless Cloud Fixture\n"
+        "descriptor-version=%d\n"
+        "protocol-version=%d\n"
+        "endpoint=fixture://cloud/storage\n"
+        "endpoint-public-key-id=CLOUD-FIXTURE-01\n"
+        "endpoint-public-key-fingerprint=48B57D1348F32F6A4E19381CB2222D7CBFD2F7C11F84C8C0B05E981B2CEEC2E4\n"
+        "supported-modes=descriptor-only\n"
+        "token-policy=denied\n"
+        "offline-cache-policy=planned-unavailable\n"
+        "sync-policy=unavailable\n"
+        "required-transport-security=encrypted\n"
+        "required-account-association=personal-or-enterprise\n"
+        "minimum-os-version=M14\n"
+        "sequence=%d\n"
+        "trusted-time-required=0\n"
+        "expiry=not-enforceable-without-trusted-time\n"
+        "signer-key-id=0x%08X\n"
+        "signer-fingerprint=%s\n"
+    ) % (descriptor_version, protocol_version, sequence, public_key_id, public_key_fingerprint)
+
+cloud_descriptor = make_cloud_descriptor(14).encode("ascii")
+cloud_descriptor_rollback = make_cloud_descriptor(13).encode("ascii")
+cloud_descriptor_unsupported = make_cloud_descriptor(14, descriptor_version=99).encode("ascii")
+cloud_descriptor_malformed = make_cloud_descriptor(14, include_provider_type=False).encode("ascii")
 result = {
     "algorithm": "Ed25519",
     "publicKeyHex": public_key.hex(),
@@ -452,6 +484,17 @@ result = {
     "identityProviderDescriptorRollbackSignatureHex": private_key.sign(descriptor_prefix + identity_descriptor_rollback).hex(),
     "identityProviderDescriptorUnsupportedHex": identity_descriptor_unsupported.hex(),
     "identityProviderDescriptorUnsupportedSignatureHex": private_key.sign(descriptor_prefix + identity_descriptor_unsupported).hex(),
+    "cloudProviderDescriptorSequence": 14,
+    "cloudProviderDescriptorHex": cloud_descriptor.hex(),
+    "cloudProviderDescriptorSignatureHex": private_key.sign(cloud_descriptor_prefix + cloud_descriptor).hex(),
+    "wrongKeyCloudProviderDescriptorSignatureHex": wrong_key.sign(cloud_descriptor_prefix + cloud_descriptor).hex(),
+    "cloudProviderDescriptorRollbackSequence": 13,
+    "cloudProviderDescriptorRollbackHex": cloud_descriptor_rollback.hex(),
+    "cloudProviderDescriptorRollbackSignatureHex": private_key.sign(cloud_descriptor_prefix + cloud_descriptor_rollback).hex(),
+    "cloudProviderDescriptorUnsupportedHex": cloud_descriptor_unsupported.hex(),
+    "cloudProviderDescriptorUnsupportedSignatureHex": private_key.sign(cloud_descriptor_prefix + cloud_descriptor_unsupported).hex(),
+    "cloudProviderDescriptorMalformedHex": cloud_descriptor_malformed.hex(),
+    "cloudProviderDescriptorMalformedSignatureHex": private_key.sign(cloud_descriptor_prefix + cloud_descriptor_malformed).hex(),
     "payloads": payload_results,
 }
 with open(output_path, "w", encoding="ascii") as handle:
@@ -483,6 +526,12 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorHex).Length / 2)))
     $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_ROLLBACK_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorRollbackHex).Length / 2)))
     $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_UNSUPPORTED_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorUnsupportedHex).Length / 2)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_SEQUENCE {0}u" -f ([uint32]$signOutput.cloudProviderDescriptorSequence)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_ROLLBACK_SEQUENCE {0}u" -f ([uint32]$signOutput.cloudProviderDescriptorRollbackSequence)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_BYTES {0}u" -f (([string]$signOutput.cloudProviderDescriptorHex).Length / 2)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_ROLLBACK_BYTES {0}u" -f (([string]$signOutput.cloudProviderDescriptorRollbackHex).Length / 2)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_UNSUPPORTED_BYTES {0}u" -f (([string]$signOutput.cloudProviderDescriptorUnsupportedHex).Length / 2)))
+    $sigLines.Add(("#define CLOUD_PROVIDER_DESCRIPTOR_MALFORMED_BYTES {0}u" -f (([string]$signOutput.cloudProviderDescriptorMalformedHex).Length / 2)))
     $sigLines.Add("")
     $sigLines.Add("static const u8 package_store_signature_public_key[32] = {")
     $publicKeyValues = Convert-HexToCBytes -Hex ([string]$signOutput.publicKeyHex)
@@ -557,6 +606,51 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add("static const u8 identity_provider_descriptor_unsupported_signature[64] = {")
     $identityDescriptorUnsupportedSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorUnsupportedSignatureHex)
     $sigLines.Add("    " + ($identityDescriptorUnsupportedSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor[CLOUD_PROVIDER_DESCRIPTOR_BYTES] = {")
+    $cloudDescriptorValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorHex)
+    $sigLines.Add("    " + ($cloudDescriptorValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_signature[64] = {")
+    $cloudDescriptorSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorSignatureHex)
+    $sigLines.Add("    " + ($cloudDescriptorSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_wrong_key_signature[64] = {")
+    $cloudDescriptorWrongKeySignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.wrongKeyCloudProviderDescriptorSignatureHex)
+    $sigLines.Add("    " + ($cloudDescriptorWrongKeySignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_rollback[CLOUD_PROVIDER_DESCRIPTOR_ROLLBACK_BYTES] = {")
+    $cloudDescriptorRollbackValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorRollbackHex)
+    $sigLines.Add("    " + ($cloudDescriptorRollbackValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_rollback_signature[64] = {")
+    $cloudDescriptorRollbackSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorRollbackSignatureHex)
+    $sigLines.Add("    " + ($cloudDescriptorRollbackSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_unsupported[CLOUD_PROVIDER_DESCRIPTOR_UNSUPPORTED_BYTES] = {")
+    $cloudDescriptorUnsupportedValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorUnsupportedHex)
+    $sigLines.Add("    " + ($cloudDescriptorUnsupportedValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_unsupported_signature[64] = {")
+    $cloudDescriptorUnsupportedSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorUnsupportedSignatureHex)
+    $sigLines.Add("    " + ($cloudDescriptorUnsupportedSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_malformed[CLOUD_PROVIDER_DESCRIPTOR_MALFORMED_BYTES] = {")
+    $cloudDescriptorMalformedValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorMalformedHex)
+    $sigLines.Add("    " + ($cloudDescriptorMalformedValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 cloud_provider_descriptor_malformed_signature[64] = {")
+    $cloudDescriptorMalformedSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.cloudProviderDescriptorMalformedSignatureHex)
+    $sigLines.Add("    " + ($cloudDescriptorMalformedSignatureValues -join ", "))
     $sigLines.Add("};")
     $sigLines.Add("")
     $sigLines.Add("struct package_store_payload_signature_generated { u32 slot; u32 size; u32 checksum; u8 signature[64]; };")

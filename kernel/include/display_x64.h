@@ -71,6 +71,8 @@ u32 display64_pkg_settings_panel_count(void);
 u32 display64_identity_settings_panel_count(void);
 u32 display64_identity_transport_settings_panel_count(void);
 u32 display64_account_settings_panel_count(void);
+u32 display64_cloud_settings_panel_count(void);
+u32 display64_cloud_fileman_status_count(void);
 u32 display64_gui_interactive(void);
 u32 display64_gui_click_hittest(void);
 u32 display64_gui_launcher_opened(void);

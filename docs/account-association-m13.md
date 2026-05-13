@@ -76,4 +76,4 @@ The M13 verifier requires:
 - Token storage remains denied while the vault remains Mode B.
 - Enterprise policy enrollment remains unavailable/planned.
 - Trusted-time expiry enforcement remains unavailable without a trusted time source.
-- M14 cloud storage has not started.
+- M14 cloud-storage broker foundation builds on this boundary: cloud association remains unavailable/planned and M14 adds only read-only cloud policy/status, not real cloud storage.

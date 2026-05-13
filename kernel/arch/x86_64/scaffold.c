@@ -5,6 +5,7 @@
 #include "block_x64.h"
 #include "boot_info.h"
 #include "capability_x64.h"
+#include "cloud_storage_x64.h"
 #include "descriptors_x64.h"
 #include "display_x64.h"
 #include "e1000e_x64.h"
@@ -4703,6 +4704,71 @@ static void log_account_association_surface(void)
     write_string(account_association64_local_user_id());
     write_string(" provider ");
     write_line(account_association64_provider_id());
+#endif
+}
+
+static void log_cloud_storage_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    cloud_storage64_init();
+    write_labeled_dec_u32("[x64] drs-cloud drs-cloud-broker-product ", cloud_storage64_broker_product());
+    write_labeled_dec_u32(" drs-cloud-provider-descriptor ", cloud_storage64_provider_descriptor());
+    write_labeled_dec_u32(" drs-cloud-provider-verified ", cloud_storage64_provider_verified());
+    write_labeled_dec_u32(" drs-cloud-provider-missing-sig-denied ", cloud_storage64_provider_missing_sig_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-invalid-sig-denied ", cloud_storage64_provider_invalid_sig_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-wrong-key-denied ", cloud_storage64_provider_wrong_key_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-tamper-denied ", cloud_storage64_provider_tamper_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-rollback-denied ", cloud_storage64_provider_rollback_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-version-denied ", cloud_storage64_provider_version_denied());
+    write_labeled_dec_u32(" drs-cloud-provider-malformed-denied ", cloud_storage64_provider_malformed_denied());
+    write_labeled_dec_u32(" drs-cloud-association-unavailable ", cloud_storage64_association_unavailable());
+    write_labeled_dec_u32(" drs-cloud-account-unavailable ", cloud_storage64_account_unavailable());
+    write_labeled_dec_u32(" drs-cloud-token-storage-denied ", cloud_storage64_token_storage_denied());
+    write_labeled_dec_u32(" drs-cloud-encrypted-transport-unavailable ", cloud_storage64_encrypted_transport_unavailable());
+    write_labeled_dec_u32(" drs-cloud-upload-denied ", cloud_storage64_upload_denied());
+    write_labeled_dec_u32(" drs-cloud-download-denied ", cloud_storage64_download_denied());
+    write_labeled_dec_u32(" drs-cloud-sync-denied ", cloud_storage64_sync_denied());
+    write_labeled_dec_u32(" drs-cloud-auto-upload-unavailable ", cloud_storage64_auto_upload_unavailable());
+    write_labeled_dec_u32(" drs-cloud-auto-download-unavailable ", cloud_storage64_auto_download_unavailable());
+    write_labeled_dec_u32(" drs-cloud-ai-access-unavailable ", cloud_storage64_ai_access_unavailable());
+    write_labeled_dec_u32(" drs-cloud-app-direct-denied ", cloud_storage64_app_direct_denied());
+    write_labeled_dec_u32(" drs-cloud-settings-panel ", scaffold_bool_u32(display64_cloud_settings_panel_count()));
+    write_labeled_dec_u32(" drs-cloud-settings-readonly ", cloud_storage64_settings_readonly());
+    write_labeled_dec_u32(" drs-cloud-fileman-status ", scaffold_bool_u32(display64_cloud_fileman_status_count()));
+    write_labeled_dec_u32(" drs-cloud-fileman-mutation-denied ", cloud_storage64_fileman_mutation_denied());
+    write_labeled_dec_u32(" drs-no-ambient-cloud ", cloud_storage64_no_ambient_cloud());
+    write_labeled_dec_u32(" drs-no-ambient-cloud-fs ", cloud_storage64_no_ambient_fs());
+    write_labeled_dec_u32(" drs-no-ambient-cloud-network ", cloud_storage64_no_ambient_network());
+    write_labeled_dec_u32(" drs-no-ambient-cloud-identity ", cloud_storage64_no_ambient_identity());
+    write_labeled_dec_u32(" drs-no-ambient-cloud-secret ", cloud_storage64_no_ambient_secret());
+    write_string(" mode ");
+    write_string(cloud_storage64_broker_status());
+    write_string(" storage-mode ");
+    write_string(cloud_storage64_mode());
+    write_string(" provider ");
+    write_string(cloud_storage64_provider_id());
+    write_string(" descriptor ");
+    write_string(cloud_storage64_descriptor_status());
+    write_string(" account ");
+    write_string(cloud_storage64_account_status());
+    write_string(" association ");
+    write_string(cloud_storage64_association_status());
+    write_string(" token-storage ");
+    write_string(cloud_storage64_token_storage_status());
+    write_string(" encrypted ");
+    write_string(cloud_storage64_encrypted_transport_status());
+    write_string(" sync ");
+    write_string(cloud_storage64_sync_status());
+    write_string(" upload ");
+    write_string(cloud_storage64_upload_status());
+    write_string(" download ");
+    write_string(cloud_storage64_download_status());
+    write_string(" offline-cache ");
+    write_string(cloud_storage64_offline_cache_status());
+    write_string(" ai ");
+    write_string(cloud_storage64_ai_access_status());
+    write_string(" app-direct ");
+    write_line(cloud_storage64_app_direct_status());
 #endif
 }
 
@@ -12075,6 +12141,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_identity_surface();
     log_identity_transport_surface();
     log_account_association_surface();
+    log_cloud_storage_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

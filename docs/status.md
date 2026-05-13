@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M13 is `Account Association`.
+M14 is `Cloud Storage Broker Foundation`.
 
-M13 preserves M10 local login, M11 identity/vault behavior, and M12 signed identity-provider descriptor verification, then adds Product account-association status. UEFI Product records local, personal, and enterprise association records, but it uses Mode B association policy/status only: local association is active/offline-capable, while personal association, enterprise association, cloud association, security-key login, encrypted account transport, credential transport, token storage, enterprise policy, and remote account authority remain unavailable, planned, or denied. M13 does not add account linking, remote login, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
+M14 preserves M10 local login, M11 identity/vault behavior, M12 signed identity-provider descriptor verification, and M13 account association, then adds Product cloud-storage broker policy/status. UEFI Product verifies a signed deterministic local cloud-provider descriptor fixture and records cloud-storage policy state, but it does not enable real public cloud storage: cloud account association, token storage, encrypted cloud transport, sync, automatic upload/download, offline cache, AI cloud access, and app-direct cloud authority remain unavailable, planned, or denied. M14 does not add cloud login, cloud sync, token persistence, account linking, remote login, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 457312
+- BIOS kernel bytes: 457696
 - BIOS kernel sectors: 894 / 1024
 - BIOS reserve: 130
 - BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 561696
+- UEFI kernel bytes: 571616
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,535,456
+- UEFI byte reserve: 1,525,536
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -66,6 +66,7 @@ Product behavior:
 - read-only identity/vault status through Settings
 - read-only signed identity-provider descriptor and transport-safety status through Settings and `pkginfo`
 - read-only account association status through Settings and `pkginfo`
+- read-only cloud-storage broker and cloud-provider descriptor status through Settings, File Manager, and `pkginfo`
 - capability denial checks
 - no ambient authority
 
@@ -136,6 +137,24 @@ M13 account association behavior:
 - shell account status: `pkginfo` read-only text; no mutation commands
 - denials: account mutation without authority, account unlink without authority, credential transport, token storage, cloud association, enterprise policy, remote ambient authority, ambient account identity, ambient account network, and ambient account secret authority
 
+M14 cloud-storage broker behavior:
+
+- implementation: UEFI Product cloud-storage broker state and read-only Settings/File Manager/pkginfo surfaces; BIOS fallback remains lean and reports cloud storage unavailable
+- broker mode: Product foundation active, policy/status only
+- provider descriptor: signed deterministic local fixture, no public cloud dependency
+- descriptor fields: provider id/type/display name, descriptor/protocol version, fixture endpoint, endpoint key id/fingerprint, supported modes, token policy, offline-cache policy, sync policy, required transport security, required account association, minimum OS version, sequence/generation, trusted-time/expiry metadata, signer key id, and signature
+- cloud account status: unavailable/planned
+- cloud association status: unavailable/planned
+- token storage: denied while vault remains Mode B
+- encrypted cloud transport: unavailable/non-product
+- sync: unavailable
+- upload/download: denied
+- automatic upload/download: unavailable
+- offline cache: planned/unavailable
+- AI cloud access: unavailable
+- File Manager cloud surface: read-only unavailable-status area only; no cloud namespace is exposed
+- denials: missing signature, invalid signature, wrong key, tamper, rollback, unsupported descriptor version, malformed descriptor, upload, download, sync, Settings mutation, File Manager mutation, app direct cloud authority, AI cloud access, ambient cloud, ambient filesystem, ambient network, ambient identity, and ambient secret authority
+
 M7.1 package behavior:
 
 - implementation: UEFI Product kernel only; BIOS Product remains checksum-only fallback
@@ -189,7 +208,7 @@ M6 service/session behavior:
 
 - design note: `docs/service-session-m6.md`
 - service lifecycle states are modeled as declared, admitted, launching, running, degraded, stopping, stopped, crashed, restarting, and denied
-- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, and settings/system-info provider
+- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, and cloud-storage broker foundation
 - Settings is the Product-safe status surface for service/session information
 - controlled restart verification is limited to the scoped settings/system-info provider path
 - stale capabilities from the old generation are denied
@@ -197,6 +216,7 @@ M6 service/session behavior:
 - M11 associates the authenticated session with a local identity record and vault metadata foundation without adding remote identity, personal account login, enterprise account login, cloud storage, or token storage
 - M12 adds signed local identity-provider descriptor verification and read-only identity transport status without adding remote login, account association, encrypted credential transport, or token persistence
 - M13 records local account association as active and labels personal, enterprise, cloud, security-key, credential, token, and enterprise-policy paths unavailable without adding account linking or remote login
+- M14 records cloud-storage policy state and labels real cloud storage, sync, upload/download, token storage, encrypted transport, offline cache, AI cloud access, and app-direct cloud authority unavailable or denied
 - wrong-session input, display, and filesystem delivery are denied
 - raw input, direct framebuffer, ambient filesystem, and ambient network access remain denied
 
@@ -261,7 +281,12 @@ Unavailable or not product-path in Product:
 - enterprise account login
 - account linking
 - cloud account association
-- cloud storage
+- real public cloud storage
+- cloud sync
+- automatic cloud upload/download
+- offline cloud cache
+- AI cloud access
+- app-direct cloud authority
 - security-key login
 - remote login
 - encrypted-at-rest secret storage
@@ -407,6 +432,12 @@ M13 evidence pack:
 - records Product account association verification plus all preserved M12 verification commands
 - proves local association active/offline-capable, personal/enterprise/cloud/security-key unavailable, credential transport denied, token storage denied while vault remains Mode B, enterprise policy unavailable, account mutation/unlink denied, remote account no-ambient-authority denial, Settings/pkginfo read-only status, and no ambient account identity/network/secret authority
 
+M14 evidence pack:
+
+- generated by `.\tools\archive-m14-evidence.ps1 -IncludeExperimental`
+- records Product cloud-storage broker verification plus all preserved M13 verification commands
+- proves signed local cloud-provider descriptor acceptance, missing/invalid/wrong-key/tampered/rollback/unsupported/malformed descriptor denials, Settings/File Manager/pkginfo read-only status, upload/download/sync denial, automatic upload/download unavailability, AI cloud access unavailability, app-direct cloud authority denial, and no ambient cloud/filesystem/network/identity/secret authority
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -434,6 +465,7 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - M11 has a local identity model and vault foundation only; personal login, enterprise login, cloud association, cloud storage, encrypted secret storage, and token storage remain unavailable.
 - M12 has an identity transport foundation only; encrypted account transport, credential transport, token persistence, remote login, and trusted-time expiry enforcement remain unavailable.
 - M13 has an account association status foundation only; local association is active, but personal/enterprise/cloud association, account linking, security-key login, enterprise policy, token persistence, and remote account authority remain unavailable.
+- M14 has a cloud-storage broker foundation only; real public cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority remain unavailable or denied.
 - There is no real AI assistant path.
 - Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.

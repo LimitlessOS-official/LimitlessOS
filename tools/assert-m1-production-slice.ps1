@@ -491,8 +491,9 @@ function Assert-RuntimeShellSurfaceSource
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
-        "Product identity: Settings shows local account, association, vault, and trusted transport status; remote/cloud unavailable",
-        "Unavailable in M13: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, cloud-storage, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai",
+        "Product identity/cloud: Settings shows local account, vault, trusted transport, and cloud policy status; remote/cloud login unavailable",
+        "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
+        "Unavailable in M14: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
@@ -500,6 +501,7 @@ function Assert-RuntimeShellSurfaceSource
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
+        "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
         "Installer writes/install",
@@ -507,13 +509,16 @@ function Assert-RuntimeShellSurfaceSource
         "Personal login",
         "Enterprise login",
         "Account linking",
-        "Cloud storage",
+        "Real cloud storage",
         "Encrypted secret storage",
         "Encrypted identity transport",
         "Security key login",
         "Credential transport",
         "Token storage",
         "Enterprise policy",
+        "Cloud sync",
+        "Automatic cloud upload/download",
+        "AI cloud access",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
         if (-not $source.Contains($requiredText)) {
@@ -1290,6 +1295,61 @@ function Assert-X64Artifacts
         $m13Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m13InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m13.json" -f $BuildProfile.ToLowerInvariant())
         $m13Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m13InventoryPath -Encoding Ascii
+
+        $m14Inventory = $m13Inventory.PSObject.Copy()
+        $m14Inventory.milestone = "M14 Cloud Storage Broker Foundation"
+        $m14Inventory.activeProductServices = @(
+            $m13Inventory.activeProductServices +
+            @("cloud storage broker foundation")
+        ) | Select-Object -Unique
+        $m14Inventory.unavailableFeatures = @(
+            $m13Inventory.unavailableFeatures +
+            @(
+                "Real public cloud storage",
+                "Cloud sync",
+                "Automatic cloud upload",
+                "Automatic cloud download",
+                "Offline cloud cache",
+                "Cloud token persistence",
+                "Encrypted cloud transport",
+                "AI cloud access",
+                "App direct cloud authority"
+            )
+        ) | Select-Object -Unique
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudStorageBrokerStatus -NotePropertyValue "Product foundation active"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudStorageMode -NotePropertyValue "unavailable/planned; policy-only foundation"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderDescriptorStatus -NotePropertyValue "signed local fixture verified"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderSignatureStatus -NotePropertyValue "verified"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderAntiRollbackStatus -NotePropertyValue "rollback/older sequence denied"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudAccountStatus -NotePropertyValue "unavailable/planned"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudAssociationStatus -NotePropertyValue "unavailable/planned"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudTokenStorageStatus -NotePropertyValue "denied while vault remains Mode B"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudEncryptedTransportStatus -NotePropertyValue "unavailable/non-product"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudSyncStatus -NotePropertyValue "unavailable"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudUploadStatus -NotePropertyValue "denied"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudDownloadStatus -NotePropertyValue "denied"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudOfflineCacheStatus -NotePropertyValue "planned/unavailable"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudAiAccessStatus -NotePropertyValue "unavailable"
+        $m14Inventory | Add-Member -Force -NotePropertyName settingsCloudPanelVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName fileManagerCloudStatusVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName shellCloudStatusVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName shellCloudStatusCommand -NotePropertyValue "pkginfo read-only cloud storage policy/status; no mutation authority"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudMutationDenied -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudUploadDenied -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudDownloadDenied -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudSyncDenied -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noAmbientCloudAuthorityVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noAmbientFilesystemAuthorityVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noAmbientNetworkAuthorityVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noAmbientIdentityAuthorityVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noAmbientSecretAuthorityVerified -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noM13WorkStarted -NotePropertyValue $false
+        $m14Inventory | Add-Member -Force -NotePropertyName noM14WorkStarted -NotePropertyValue $false
+        $m14Inventory | Add-Member -Force -NotePropertyName noM15WorkStarted -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m14Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m14InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m14.json" -f $BuildProfile.ToLowerInvariant())
+        $m14Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m14InventoryPath -Encoding Ascii
     }
 }
 
