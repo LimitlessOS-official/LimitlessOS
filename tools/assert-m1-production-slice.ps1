@@ -16,6 +16,7 @@ $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
 $m1ShellBuiltins = @("apps", "help", "hwval", "info", "lock", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
+$m15ProductGuiApps = @("Terminal", "File Manager", "Settings", "Installer")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
 $m4UnavailableFeatures = @(
@@ -488,23 +489,32 @@ function Assert-RuntimeShellSurfaceSource
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
-        "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
-        "Product services: Settings shows service/session status; installer writes disabled",
+        "Product GUI: Terminal, File Manager, Settings, Installer through brokered desktop input/display",
+        "Product GUI: unavailable on BIOS checksum fallback",
+        "Product services: Settings shows service/session status; installer planning writes disabled",
+        "Product services: BIOS service/session stubs active; installer UX unavailable",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
-        "Product identity/cloud: Settings shows local account, vault, trusted transport, and cloud policy status; remote/cloud login unavailable",
+        "Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable",
         "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
-        "Unavailable in M14: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai",
+        "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled",
+        "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
+        "Unavailable in M15: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
-        "GUI desktop: Terminal File Manager Settings",
+        "GUI desktop: Terminal File Manager Settings Installer",
+        "GUI desktop: unavailable on BIOS checksum fallback",
         "Service/session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
+        "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
+        "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
-        "Installer writes/install",
+        "Real internal install/write",
+        "Formatting",
+        "Boot entry changes",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Personal login",
         "Enterprise login",
@@ -519,6 +529,7 @@ function Assert-RuntimeShellSurfaceSource
         "Cloud sync",
         "Automatic cloud upload/download",
         "AI cloud access",
+        "AI-assisted setup",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
         if (-not $source.Contains($requiredText)) {
@@ -1345,11 +1356,77 @@ function Assert-X64Artifacts
         $m14Inventory | Add-Member -Force -NotePropertyName noAmbientSecretAuthorityVerified -NotePropertyValue $true
         $m14Inventory | Add-Member -Force -NotePropertyName noM13WorkStarted -NotePropertyValue $false
         $m14Inventory | Add-Member -Force -NotePropertyName noM14WorkStarted -NotePropertyValue $false
-        $m14Inventory | Add-Member -Force -NotePropertyName noM15WorkStarted -NotePropertyValue $true
+        $m14Inventory | Add-Member -Force -NotePropertyName noM15WorkStarted -NotePropertyValue $false
         $m14Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
         $m14Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m14InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m14.json" -f $BuildProfile.ToLowerInvariant())
         $m14Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m14InventoryPath -Encoding Ascii
+
+        $m15Inventory = $m14Inventory.PSObject.Copy()
+        $m15Inventory.milestone = "M15 Installer UX v2"
+        $m15Inventory.productGuiApps = $m15ProductGuiApps
+        $m15Inventory.activeProductServices = @(
+            $m14Inventory.activeProductServices +
+            @("installer UX planning surface")
+        ) | Select-Object -Unique
+        $m15Inventory.unavailableFeatures = @(
+            $m14Inventory.unavailableFeatures +
+            @(
+                "Real internal install/write",
+                "Formatting",
+                "Boot entry changes",
+                "AI-assisted setup",
+                "Cloud storage enablement",
+                "Package install/apply UX",
+                "Personal account setup",
+                "Enterprise account setup",
+                "Security-key login setup",
+                "Browser component",
+                "Gaming stack",
+                "Developer toolchain"
+            )
+        ) | Select-Object -Unique
+        $m15Inventory | Add-Member -Force -NotePropertyName installerUxStatus -NotePropertyValue "Product planning and dry-run UI; no real internal install/write"
+        $m15Inventory | Add-Member -Force -NotePropertyName installerWelcomeVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerBeginnerModeVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerAdvancedModeVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerHardwareSummaryVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerRecommendationVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerComponentSelectionVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerAccountPageVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerCloudPageVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerAiPageVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerPlanGenerated -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerDryRunVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName installerWritesPlanned -NotePropertyValue 0
+        $m15Inventory | Add-Member -Force -NotePropertyName installerFormatsPlanned -NotePropertyValue 0
+        $m15Inventory | Add-Member -Force -NotePropertyName installerBootEntryChangesPlanned -NotePropertyValue 0
+        $m15Inventory | Add-Member -Force -NotePropertyName installerPackageOperationsPlanned -NotePropertyValue 0
+        $m15Inventory | Add-Member -Force -NotePropertyName installerRealInstallApproved -NotePropertyValue $false
+        $m15Inventory | Add-Member -Force -NotePropertyName unavailableComponents -NotePropertyValue @(
+            "AI assistant",
+            "AI-assisted setup",
+            "Cloud storage sync",
+            "Personal account login",
+            "Enterprise account login",
+            "Security-key login",
+            "Package install/apply UX",
+            "App store",
+            "Browser",
+            "Gaming stack",
+            "Developer toolchain"
+        )
+        $m15Inventory | Add-Member -Force -NotePropertyName selectedProfileFixture -NotePropertyValue "General use"
+        $m15Inventory | Add-Member -Force -NotePropertyName noAmbientInstallerAuthorityVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noAmbientStorageAuthorityVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noAmbientFirmwareAuthorityVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noAmbientPackageAuthorityVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noAmbientIdentityCloudSecretAuthorityVerified -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noM16WorkStarted -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m15Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m15InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m15.json" -f $BuildProfile.ToLowerInvariant())
+        $m15Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m15InventoryPath -Encoding Ascii
     }
 }
 

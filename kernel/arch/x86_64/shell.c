@@ -10,6 +10,7 @@
 #include "fs_x64.h"
 #include "identity_transport_x64.h"
 #include "input_x64.h"
+#include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #include "package_signing_x64.h"
@@ -187,9 +188,54 @@ static u32 shell64_write_login_status_line(u32 console_capability_handle, u32 ow
 static u32 shell64_write_identity_status_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "Product identity/cloud: Settings shows local account, vault, trusted transport, and cloud policy status; remote/cloud login unavailable\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "Product identity: unavailable on BIOS checksum fallback\n");
+#endif
+}
+
+static u32 shell64_write_gui_status_line(u32 console_capability_handle, u32 owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return shell64_write_text(console_capability_handle, owner_id, "Product GUI: Terminal, File Manager, Settings, Installer through brokered desktop input/display\n");
+#else
+    return shell64_write_text(console_capability_handle, owner_id, "Product GUI: unavailable on BIOS checksum fallback\n");
+#endif
+}
+
+static u32 shell64_write_service_status_line(u32 console_capability_handle, u32 owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer planning writes disabled\n");
+#else
+    return shell64_write_text(console_capability_handle, owner_id, "Product services: BIOS service/session stubs active; installer UX unavailable\n");
+#endif
+}
+
+static u32 shell64_write_installer_status_line(u32 console_capability_handle, u32 owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return shell64_write_text(console_capability_handle, owner_id, "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled\n");
+#else
+    return shell64_write_text(console_capability_handle, owner_id, "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only\n");
+#endif
+}
+
+static u32 shell64_write_apps_gui_line(u32 console_capability_handle, u32 owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings Installer\n");
+#else
+    return shell64_write_text(console_capability_handle, owner_id, "GUI desktop: unavailable on BIOS checksum fallback\n");
+#endif
+}
+
+static u32 shell64_write_apps_installer_line(u32 console_capability_handle, u32 owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return shell64_write_text(console_capability_handle, owner_id, "Installer UX: launcher/Settings; dry-run planning only; writes disabled\n");
+#else
+    return shell64_write_text(console_capability_handle, owner_id, "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only\n");
 #endif
 }
 
@@ -367,9 +413,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "account association: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage broker: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "cloud sync: unavailable\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M14; scoped capability required\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M15; scoped capability required\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M14; scoped install required\n");
+        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M15; scoped install required\n");
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
@@ -417,9 +463,17 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud auto-upload/download: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud AI access: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud app direct authority: denied\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M14; scoped capability required\n");
+    installer_ux64_init();
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer ux: planning and dry-run only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer selected profile: general-use\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer writes planned: 0\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer formats planned: 0\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer boot entries planned: 0\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer real install approved: false\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer unavailable components: personal enterprise security-key cloud-sync ai-assisted-setup package-install browser gaming developer-toolchain\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M15; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M14; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M15; scoped install required\n");
     return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network/cloud/fs/identity/secret\n");
 }
 
@@ -996,10 +1050,11 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; MSI evidence pending\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings\n");
+    (void)shell64_write_apps_gui_line(console_capability_handle, owner_id);
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Identity/account/vault/transport status: Settings; local only; no secret storage\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Cloud storage status: Settings/File Manager; unavailable/planned; no sync\n");
+    (void)shell64_write_apps_installer_line(console_capability_handle, owner_id);
     if (shell64_login_available() != 0u)
     {
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: use lock; first-run user stored on NVMe\n");
@@ -1009,12 +1064,12 @@ static u32 shell64_list_apps(
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
     }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M14:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M15:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nAccount linking\nReal cloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Security key login\nCredential transport\nToken storage\nEnterprise policy\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nAI cloud access\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Installer writes/install\nPackage install/update actions\nApp store\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nAI cloud access\nAI-assisted setup\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Real internal install/write\nFormatting\nBoot entry changes\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
         console_capability_handle,
         owner_id,
@@ -1353,15 +1408,16 @@ u32 shell64_execute_line(
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer writes disabled\n");
+        (void)shell64_write_gui_status_line(console_capability_handle, owner_id);
+        (void)shell64_write_service_status_line(console_capability_handle, owner_id);
         (void)shell64_write_login_status_line(console_capability_handle, owner_id);
         (void)shell64_write_identity_status_line(console_capability_handle, owner_id);
         (void)shell64_write_text(console_capability_handle, owner_id, "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable\n");
+        (void)shell64_write_installer_status_line(console_capability_handle, owner_id);
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M14: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai\n");
+            "Unavailable in M15: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai, ai-assisted-setup, real-install\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))

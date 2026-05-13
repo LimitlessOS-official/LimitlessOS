@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M14 is `Cloud Storage Broker Foundation`.
+M15 is `Installer UX v2`.
 
-M14 preserves M10 local login, M11 identity/vault behavior, M12 signed identity-provider descriptor verification, and M13 account association, then adds Product cloud-storage broker policy/status. UEFI Product verifies a signed deterministic local cloud-provider descriptor fixture and records cloud-storage policy state, but it does not enable real public cloud storage: cloud account association, token storage, encrypted cloud transport, sync, automatic upload/download, offline cache, AI cloud access, and app-direct cloud authority remain unavailable, planned, or denied. M14 does not add cloud login, cloud sync, token persistence, account linking, remote login, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
+M15 preserves M10 local login, M11 identity/vault behavior, M12 signed identity-provider descriptor verification, M13 account association, and M14 cloud-storage broker policy/status, then adds a Product installer planning UX. UEFI Product exposes an Installer GUI app through the brokered desktop and records welcome, beginner, advanced, hardware summary, recommendation, component selection, account, cloud, AI, plan review, and dry-run validation surfaces. M15 performs no real internal install/write, formatting, NVRAM boot-entry change, Windows ESP/NTFS/MSR/Recovery modification, package install/apply action, cloud enablement, or AI-assisted setup.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 457696
-- BIOS kernel sectors: 894 / 1024
-- BIOS reserve: 130
+- BIOS kernel bytes: 457984
+- BIOS kernel sectors: 895 / 1024
+- BIOS reserve: 129
 - BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 571616
+- UEFI kernel bytes: 577824
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,525,536
+- UEFI byte reserve: 1,519,328
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -55,6 +55,7 @@ Product behavior:
 - truthful `help`, `apps`, and `ls apps` output
 - brokered DHCP/DNS/TCP/HTTP network status through the `net` shell builtin when virtio-net or e1000e hardware is present
 - Terminal, File Manager, and Settings GUI apps opened through real click interaction
+- Installer GUI app opened through the brokered desktop launcher
 - Product service lifecycle/status query surface
 - exactly one authenticated local console session with input, display, filesystem, network-status, and installer-dry-run authority scoped to that session
 - brokered persistent file workflow
@@ -63,6 +64,7 @@ Product behavior:
 - UEFI-only signed update-index verification with rollback denial
 - read-only package trust visibility through Settings and `pkginfo`
 - read-only hardware validation visibility through `hwval`
+- read-only installer UX planning through the Installer app, Settings status, `pkginfo`, and verifier telemetry
 - read-only identity/vault status through Settings
 - read-only signed identity-provider descriptor and transport-safety status through Settings and `pkginfo`
 - read-only account association status through Settings and `pkginfo`
@@ -208,7 +210,7 @@ M6 service/session behavior:
 
 - design note: `docs/service-session-m6.md`
 - service lifecycle states are modeled as declared, admitted, launching, running, degraded, stopping, stopped, crashed, restarting, and denied
-- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, and cloud-storage broker foundation
+- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, cloud-storage broker foundation, and installer UX planning
 - Settings is the Product-safe status surface for service/session information
 - controlled restart verification is limited to the scoped settings/system-info provider path
 - stale capabilities from the old generation are denied
@@ -217,6 +219,7 @@ M6 service/session behavior:
 - M12 adds signed local identity-provider descriptor verification and read-only identity transport status without adding remote login, account association, encrypted credential transport, or token persistence
 - M13 records local account association as active and labels personal, enterprise, cloud, security-key, credential, token, and enterprise-policy paths unavailable without adding account linking or remote login
 - M14 records cloud-storage policy state and labels real cloud storage, sync, upload/download, token storage, encrypted transport, offline cache, AI cloud access, and app-direct cloud authority unavailable or denied
+- M15 records installer planning state and labels real internal install/write, formatting, boot-entry changes, package install/apply, cloud enablement, and AI-assisted setup unavailable or denied
 - wrong-session input, display, and filesystem delivery are denied
 - raw input, direct framebuffer, ambient filesystem, and ambient network access remain denied
 
@@ -250,6 +253,7 @@ Product GUI apps:
 - Terminal
 - File Manager
 - Settings
+- Installer
 
 Product GUI authority model:
 
@@ -268,7 +272,9 @@ Unavailable or not product-path in Product:
 - ASK, not AI and no consent-gated assistant path
 - ECHO
 - shell aliases SAY, SHOW, LIST, MAKE, PUT, SWAP, SHIFT
-- installer write/install authority
+- real internal install/write authority
+- formatting authority
+- boot-entry authority
 - package install/update actions
 - app store
 - auto-install
@@ -438,6 +444,12 @@ M14 evidence pack:
 - records Product cloud-storage broker verification plus all preserved M13 verification commands
 - proves signed local cloud-provider descriptor acceptance, missing/invalid/wrong-key/tampered/rollback/unsupported/malformed descriptor denials, Settings/File Manager/pkginfo read-only status, upload/download/sync denial, automatic upload/download unavailability, AI cloud access unavailability, app-direct cloud authority denial, and no ambient cloud/filesystem/network/identity/secret authority
 
+M15 evidence pack:
+
+- generated by `.\tools\archive-m15-evidence.ps1 -IncludeExperimental`
+- records Product installer UX verification plus all preserved M14 verification commands
+- proves Installer GUI entry, welcome/beginner/advanced/hardware/recommendation/component/account/cloud/AI/plan/dry-run surfaces, zero planned writes/formats/boot-entry/package operations, forbidden target denial, write/format/boot-entry/package/cloud/AI action denial, and no ambient installer/storage/firmware/package/identity-cloud-secret authority
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -457,15 +469,16 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - Product BIOS reserve is back above the 128-sector warning threshold after the BIOS/UEFI kernel split.
 - Product UEFI now uses the 2 MiB file-size contract; BIOS remains on the 1024-sector loader contract.
 - UEFI remains governed by `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness. UEFI is not blocked by the BIOS 1024-sector ceiling.
-- GUI/window manager/desktop are Product only for the M4 surface: Terminal, File Manager, Settings, brokered input, focused keyboard routing, and compositor-owned display.
+- GUI/window manager/desktop are Product for Terminal, File Manager, Settings, Installer, brokered input, focused keyboard routing, and compositor-owned display.
 - Network is Product only as a brokered hardware-gated status path. There is no socket API, packet API, or ambient network authority.
-- Installer dry-run is Product safety tooling, but installer write/install authority is unavailable.
+- Installer UX planning and dry-run are Product, but real internal install/write, formatting, and boot-entry authority remain unavailable.
 - M7.1 signed package admission has separate negative fixture coverage, but package-manager UI, app store, auto-install, live public update fetching, and trusted-time expiry enforcement remain unavailable.
 - M6 has a local console session model, not full multiuser login/authentication.
 - M11 has a local identity model and vault foundation only; personal login, enterprise login, cloud association, cloud storage, encrypted secret storage, and token storage remain unavailable.
 - M12 has an identity transport foundation only; encrypted account transport, credential transport, token persistence, remote login, and trusted-time expiry enforcement remain unavailable.
 - M13 has an account association status foundation only; local association is active, but personal/enterprise/cloud association, account linking, security-key login, enterprise policy, token persistence, and remote account authority remain unavailable.
 - M14 has a cloud-storage broker foundation only; real public cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority remain unavailable or denied.
+- M15 has installer UX planning only; destructive install actions remain disabled by default and not Product-approved.
 - There is no real AI assistant path.
 - Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.

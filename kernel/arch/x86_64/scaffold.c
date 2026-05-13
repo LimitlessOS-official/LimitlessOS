@@ -14,6 +14,7 @@
 #include "interrupts_x64.h"
 #include "identity_x64.h"
 #include "identity_transport_x64.h"
+#include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #include "paging_x64.h"
@@ -4509,6 +4510,7 @@ static void log_desktop_surface(void)
     write_labeled_dec_u32(" drs-desktop-terminal ", scaffold_bool_u32(display64_desktop_terminal_count()));
     write_labeled_dec_u32(" drs-desktop-fileman ", scaffold_bool_u32(display64_desktop_fileman_count()));
     write_labeled_dec_u32(" drs-desktop-settings ", scaffold_bool_u32(display64_desktop_settings_count()));
+    write_labeled_dec_u32(" drs-desktop-installer ", scaffold_bool_u32(display64_gui_installer_opened()));
     write_line("");
 }
 
@@ -4524,6 +4526,7 @@ static void log_gui_interactive_surface(void)
     write_labeled_dec_u32(" drs-gui-taskbar-focus ", display64_gui_taskbar_focus());
     write_labeled_dec_u32(" drs-gui-fileman-opened ", display64_gui_fileman_opened());
     write_labeled_dec_u32(" drs-gui-settings-opened ", display64_gui_settings_opened());
+    write_labeled_dec_u32(" drs-gui-installer-opened ", display64_gui_installer_opened());
     write_labeled_dec_u32(" drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
     write_labeled_dec_u32(" drs-gui-no-ambient-input ", display64_gui_no_ambient_input());
     write_labeled_dec_u32(" drs-gui-no-ambient-display ", display64_gui_no_ambient_display());
@@ -4769,6 +4772,65 @@ static void log_cloud_storage_surface(void)
     write_string(cloud_storage64_ai_access_status());
     write_string(" app-direct ");
     write_line(cloud_storage64_app_direct_status());
+#endif
+}
+
+static void log_installer_ux_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    installer_ux64_init();
+    write_labeled_dec_u32("[x64] drs-installer-ux drs-installer-ux-product ", installer_ux64_product());
+    write_labeled_dec_u32(" drs-installer-welcome ", scaffold_bool_u32(display64_installer_welcome_count()));
+    write_labeled_dec_u32(" drs-installer-beginner-mode ", scaffold_bool_u32(display64_installer_beginner_count()));
+    write_labeled_dec_u32(" drs-installer-advanced-mode ", scaffold_bool_u32(display64_installer_advanced_count()));
+    write_labeled_dec_u32(" drs-installer-hardware-summary ", scaffold_bool_u32(display64_installer_hardware_count()));
+    write_labeled_dec_u32(" drs-installer-recommendation ", scaffold_bool_u32(display64_installer_recommendation_count()));
+    write_labeled_dec_u32(" drs-installer-component-selection ", scaffold_bool_u32(display64_installer_component_count()));
+    write_labeled_dec_u32(" drs-installer-unavailable-components-labeled ", installer_ux64_unavailable_components_labeled());
+    write_labeled_dec_u32(" drs-installer-account-page ", scaffold_bool_u32(display64_installer_account_count()));
+    write_labeled_dec_u32(" drs-installer-personal-unavailable ", installer_ux64_personal_unavailable());
+    write_labeled_dec_u32(" drs-installer-enterprise-unavailable ", installer_ux64_enterprise_unavailable());
+    write_labeled_dec_u32(" drs-installer-cloud-page ", scaffold_bool_u32(display64_installer_cloud_count()));
+    write_labeled_dec_u32(" drs-installer-cloud-sync-unavailable ", installer_ux64_cloud_sync_unavailable());
+    write_labeled_dec_u32(" drs-installer-ai-page ", scaffold_bool_u32(display64_installer_ai_count()));
+    write_labeled_dec_u32(" drs-installer-ai-setup-unavailable ", installer_ux64_ai_setup_unavailable());
+    write_labeled_dec_u32(" drs-installer-plan-generated ", scaffold_bool_u32(display64_installer_plan_count()));
+    write_labeled_dec_u32(" drs-installer-dryrun-no-writes ", installer_ux64_dryrun_no_writes());
+    write_labeled_dec_u32(" drs-installer-forbidden-target-denied ", installer_ux64_forbidden_target_denied());
+    write_labeled_dec_u32(" drs-installer-write-action-denied ", installer_ux64_write_action_denied());
+    write_labeled_dec_u32(" drs-installer-format-action-denied ", installer_ux64_format_action_denied());
+    write_labeled_dec_u32(" drs-installer-boot-entry-denied ", installer_ux64_boot_entry_denied());
+    write_labeled_dec_u32(" drs-installer-package-install-denied ", installer_ux64_package_install_denied());
+    write_labeled_dec_u32(" drs-installer-cloud-enable-denied ", installer_ux64_cloud_enable_denied());
+    write_labeled_dec_u32(" drs-installer-ai-enable-denied ", installer_ux64_ai_enable_denied());
+    write_labeled_dec_u32(" drs-no-ambient-installer ", installer_ux64_no_ambient_installer());
+    write_labeled_dec_u32(" drs-no-ambient-installer-storage ", installer_ux64_no_ambient_storage());
+    write_labeled_dec_u32(" drs-no-ambient-installer-firmware ", installer_ux64_no_ambient_firmware());
+    write_labeled_dec_u32(" drs-no-ambient-installer-package ", installer_ux64_no_ambient_package());
+    write_labeled_dec_u32(" drs-no-ambient-installer-identity-cloud-secret ", installer_ux64_no_ambient_identity_cloud_secret());
+    write_labeled_dec_u32(" writes-planned ", installer_ux64_writes_planned());
+    write_labeled_dec_u32(" formats-planned ", installer_ux64_formats_planned());
+    write_labeled_dec_u32(" boot-entry-planned ", installer_ux64_boot_entries_planned());
+    write_labeled_dec_u32(" package-ops-planned ", installer_ux64_package_ops_planned());
+    write_labeled_dec_u32(" real-install-approved ", installer_ux64_real_install_approved());
+    write_string(" mode ");
+    write_string(installer_ux64_mode());
+    write_string(" profile ");
+    write_string(installer_ux64_selected_profile());
+    write_string(" recommendation ");
+    write_string(installer_ux64_recommendation_text());
+    write_string(" components ");
+    write_string(installer_ux64_component_status());
+    write_string(" account ");
+    write_string(installer_ux64_account_status());
+    write_string(" cloud ");
+    write_string(installer_ux64_cloud_status());
+    write_string(" ai ");
+    write_string(installer_ux64_ai_status());
+    write_string(" plan ");
+    write_string(installer_ux64_plan_status());
+    write_string(" dryrun ");
+    write_line(installer_ux64_dryrun_status());
 #endif
 }
 
@@ -11907,6 +11969,7 @@ static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
             || (display64_gui_taskbar_focus() == 0u)
             || (display64_gui_fileman_opened() == 0u)
             || (display64_gui_settings_opened() == 0u)
+            || (display64_gui_installer_opened() == 0u)
             || (display64_gui_unfocused_key_denied() == 0u))
         && (pit_get_ticks() < target_ticks))
     {
@@ -12142,6 +12205,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_identity_transport_surface();
     log_account_association_surface();
     log_cloud_storage_surface();
+    log_installer_ux_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

@@ -206,8 +206,14 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; MSI manual evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings through brokered desktop input/display$' -Message "M4 runtime help did not describe Product GUI status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer writes disabled$' -Message "M6 runtime help did not describe Product service/session status."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: unavailable on BIOS checksum fallback$' -Message "M15 BIOS fallback help did not label Product GUI as unavailable."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: BIOS service/session stubs active; installer UX unavailable$' -Message "M15 BIOS fallback help did not label service/session and installer status truthfully."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings, Installer through brokered desktop input/display$' -Message "M15 runtime help did not describe Product GUI and installer status."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer planning writes disabled$' -Message "M15 runtime help did not describe Product service/session and installer-planning status."
+    }
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product login: first-run setup, authenticated session, lock/unlock through brokered input$' -Message "M10 runtime help did not describe Product login/session lock."
     }
@@ -215,16 +221,22 @@ function Assert-X64M1RuntimeSurface
         Assert-OutputContains -Lines $persistentLines -Pattern '^UEFI login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS fallback help did not label login/session lock as unavailable."
     }
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity/cloud: Settings shows local account, vault, trusted transport, and cloud policy status; remote/cloud login unavailable$' -Message "M14 runtime help did not describe Product identity/account/vault/transport/cloud status."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable$' -Message "M15 runtime help did not describe Product identity/account/cloud/installer status."
     }
     elseif ($BootMedia -ne "disk") {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity/cloud: Settings shows local account, vault, trusted transport, and cloud policy status; remote/cloud login unavailable$' -Message "M14 UEFI runtime help did not describe identity/account/vault/transport/cloud visibility."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable$' -Message "M15 UEFI runtime help did not describe identity/account/cloud/installer visibility."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: unavailable on BIOS checksum fallback$' -Message "M11 BIOS fallback help did not label identity/vault as unavailable."
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable$' -Message "M14 runtime help did not describe Product cloud storage status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M14: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai$' -Message "M14 runtime help did not label unavailable account/cloud/transport/AI surfaces."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS fallback help did not label installer UX as unavailable."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled$' -Message "M15 runtime help did not describe Product installer UX status."
+    }
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M15: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai, ai-assisted-setup, real-install$' -Message "M15 runtime help did not label unavailable account/cloud/installer/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -235,10 +247,21 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net$' -Message "M3 apps output did not label Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only; MSI evidence pending$' -Message "M9 apps output did not label hardware validation visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: unavailable on BIOS checksum fallback$' -Message "M15 BIOS apps output did not label GUI as unavailable."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer$' -Message "M15 apps output did not label Product GUI apps."
+    }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/account/vault/transport status: Settings; local only; no secret storage$' -Message "M13 apps output did not label identity/account/vault/transport visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage status: Settings/File Manager; unavailable/planned; no sync$' -Message "M14 apps output did not label cloud storage status visibility."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS apps output did not label installer UX as unavailable."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: launcher/Settings; dry-run planning only; writes disabled$' -Message "M15 apps output did not label installer UX visibility."
+    }
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
     }
@@ -260,7 +283,10 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud sync$' -Message "M14 apps output did not label cloud sync unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Automatic cloud upload/download$' -Message "M14 apps output did not label automatic cloud upload/download unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI cloud access$' -Message "M14 apps output did not label AI cloud access unavailable."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^AI-assisted setup$' -Message "M15 apps output did not label AI-assisted setup unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Real internal install/write$' -Message "M15 apps output did not quarantine internal install/write authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Formatting$' -Message "M15 apps output did not quarantine formatting authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Boot entry changes$' -Message "M15 apps output did not quarantine boot-entry authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package install/update actions$' -Message "M8 apps output did not quarantine package install/update authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Auto-install$' -Message "M8 apps output did not quarantine auto-install."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Public update fetch$' -Message "M8 apps output did not quarantine public update fetch."
@@ -555,6 +581,7 @@ function Send-QemuKeyboardProbe
             $terminalIconY = $panelY + 52
             $fileIconY = $panelY + 88
             $settingsIconY = $panelY + 52
+            $installerIconY = $panelY + 88
             $newTerminalWidth = [Math]::Min(760, [Math]::Max(160, $frameWidth - 96))
             $dragStartX = 120
             $dragStartY = 110
@@ -594,6 +621,10 @@ function Send-QemuKeyboardProbe
                 & $sendMoveTo 22 $launcherY
                 & $sendClick
                 & $sendMoveTo 170 $settingsIconY
+                & $sendClick
+                & $sendMoveTo 22 $launcherY
+                & $sendClick
+                & $sendMoveTo 170 $installerIconY
                 & $sendClick
                 & $sendMoveTo 90 $launcherY
                 & $sendClick
@@ -2617,11 +2648,12 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product package trust: pkginfo and Settings are read-only; install/apply disabled|Pkg trust read-only; no install/apply' -Message "x64 ring-3 shell stream Product package trust help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: unavailable on BIOS checksum fallback|Product GUI: Terminal, File Manager, Settings, Installer through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI/installer help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product services: BIOS service/session stubs active; installer UX unavailable|Product services: Settings shows service/session status; installer planning writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable' -Message "x64 ring-3 shell stream Product cloud storage help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only|Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled' -Message "x64 ring-3 shell stream Product installer UX help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M15: ask \(not AI\), echo, aliases|Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -2711,7 +2743,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 UEFI font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 UEFI virtio-net brokered ARP proof was not observed."
         }
@@ -2729,7 +2761,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 Product font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }

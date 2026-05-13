@@ -7,6 +7,7 @@
 #include "cloud_storage_x64.h"
 #include "identity_x64.h"
 #include "identity_transport_x64.h"
+#include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "package_signing_x64.h"
 #include "pit.h"
@@ -162,8 +163,20 @@ static u32 g_display_identity_transport_settings_panel_count = 0u;
 static u32 g_display_account_settings_panel_count = 0u;
 static u32 g_display_cloud_settings_panel_count = 0u;
 static u32 g_display_cloud_fileman_status_count = 0u;
+static u32 g_display_installer_welcome_count = 0u;
+static u32 g_display_installer_beginner_count = 0u;
+static u32 g_display_installer_advanced_count = 0u;
+static u32 g_display_installer_hardware_count = 0u;
+static u32 g_display_installer_recommendation_count = 0u;
+static u32 g_display_installer_component_count = 0u;
+static u32 g_display_installer_account_count = 0u;
+static u32 g_display_installer_cloud_count = 0u;
+static u32 g_display_installer_ai_count = 0u;
+static u32 g_display_installer_plan_count = 0u;
+static u32 g_display_installer_dryrun_count = 0u;
 static u32 g_display_desktop_fileman_handle = 0u;
 static u32 g_display_desktop_settings_handle = 0u;
+static u32 g_display_desktop_installer_handle = 0u;
 static u32 g_display_desktop_launcher_open = 0u;
 static u32 g_display_gui_interactive = 0u;
 static u32 g_display_gui_click_hittest = 0u;
@@ -175,6 +188,7 @@ static u32 g_display_gui_close_completed = 0u;
 static u32 g_display_gui_taskbar_focus = 0u;
 static u32 g_display_gui_fileman_opened = 0u;
 static u32 g_display_gui_settings_opened = 0u;
+static u32 g_display_gui_installer_opened = 0u;
 static u32 g_display_gui_unfocused_key_denied = 0u;
 static u32 g_display_gui_unfocused_key_denial_count = 0u;
 static u32 g_display_gui_no_ambient_input = 0u;
@@ -2160,6 +2174,10 @@ static void display64_wm_destroy_window(u32 handle)
     {
         g_display_desktop_settings_handle = 0u;
     }
+    if (handle == g_display_desktop_installer_handle)
+    {
+        g_display_desktop_installer_handle = 0u;
+    }
     if (handle == g_display_wm_shell_handle)
     {
         g_display_wm_shell_handle = 0u;
@@ -2339,9 +2357,11 @@ static void display64_desktop_draw_launcher_panel(void)
     display64_compositor_fill_rect(28u, panel_y + 40u, 28u, 28u, 0x003C8FCEu);
     display64_compositor_fill_rect(28u, panel_y + 76u, 28u, 28u, 0x002DAA75u);
     display64_compositor_fill_rect(124u, panel_y + 40u, 28u, 28u, 0x00A9703Eu);
+    display64_compositor_fill_rect(124u, panel_y + 76u, 28u, 28u, 0x00D6A44Eu);
     (void)display64_draw_font_text(64u, panel_y + 46u, "Terminal", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(64u, panel_y + 82u, "Files", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(160u, panel_y + 46u, "Settings", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(160u, panel_y + 82u, "Installer", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_desktop_launcher_count == 0u)
     {
         ++g_display_desktop_launcher_count;
@@ -2413,7 +2433,7 @@ static void display64_desktop_draw_settings(u32 handle)
     services64_product_status_query();
     display64_draw_label_value(body_x, body_y + 148u, "Services ", services64_product_service_running(), 0x00B8C7D8u);
     display64_draw_label_value(body_x + 128u, body_y + 148u, "Session ", services64_session_id(), 0x00B8C7D8u);
-    (void)display64_draw_font_text(body_x, body_y + 166u, "Installer writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 166u, "Installer UX dry-run; writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_rect(body_x, body_y + 184u, 72u, 24u, 0x003C8FCEu);
     display64_compositor_draw_rect(body_x, body_y + 184u, 72u, 24u, 0x00F8FBFFu);
     (void)display64_draw_font_text(body_x + 18u, body_y + 188u, "Lock", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
@@ -2489,6 +2509,108 @@ static void display64_desktop_draw_settings(u32 handle)
     }
 }
 
+static void display64_desktop_draw_installer(u32 handle)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+    u32 body_x;
+    u32 body_y;
+
+    if (window == 0)
+    {
+        return;
+    }
+
+    display64_wm_present_window(handle);
+    body_x = window->x + 10u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    installer_ux64_init();
+    (void)display64_draw_font_text(body_x, body_y, "LimitlessOS Installer", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "Product UEFI dry-run safe", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 36u, "Internal writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_welcome_count == 0u)
+    {
+        ++g_display_installer_welcome_count;
+    }
+    (void)installer_ux64_welcome();
+
+    (void)display64_draw_font_text(body_x, body_y + 62u, "Beginner: recommended general use", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 80u, "Advanced: read-only planning controls", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_beginner_count == 0u)
+    {
+        ++g_display_installer_beginner_count;
+    }
+    if (g_display_installer_advanced_count == 0u)
+    {
+        ++g_display_installer_advanced_count;
+    }
+    (void)installer_ux64_beginner_mode();
+    (void)installer_ux64_advanced_mode();
+
+    (void)display64_draw_font_text(body_x, body_y + 106u, "Hardware: display/input/net/storage", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 124u, "Recommendation: General use", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_hardware_count == 0u)
+    {
+        ++g_display_installer_hardware_count;
+    }
+    if (g_display_installer_recommendation_count == 0u)
+    {
+        ++g_display_installer_recommendation_count;
+    }
+    (void)installer_ux64_hardware_summary();
+    (void)installer_ux64_recommendation();
+
+    (void)display64_draw_font_text(body_x, body_y + 150u, "Components: Product set selected", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 168u, "Unavailable items labeled planned", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_component_count == 0u)
+    {
+        ++g_display_installer_component_count;
+    }
+    (void)installer_ux64_component_selection();
+    (void)installer_ux64_unavailable_components_labeled();
+
+    (void)display64_draw_font_text(body_x, body_y + 194u, "Account: local available only", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 212u, "Personal/enterprise/key unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_account_count == 0u)
+    {
+        ++g_display_installer_account_count;
+    }
+    (void)installer_ux64_account_page();
+
+    (void)display64_draw_font_text(body_x, body_y + 238u, "Cloud: broker status only", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 256u, "No sync/upload/download/token storage", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_cloud_count == 0u)
+    {
+        ++g_display_installer_cloud_count;
+    }
+    (void)installer_ux64_cloud_page();
+
+    (void)display64_draw_font_text(body_x, body_y + 282u, "AI setup: planned; requires consent broker", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 300u, "No AI-assisted setup in M15", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_ai_count == 0u)
+    {
+        ++g_display_installer_ai_count;
+    }
+    (void)installer_ux64_ai_page();
+
+    (void)display64_draw_font_text(body_x, body_y + 326u, "Plan: writes 0 formats 0 boot entries 0", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 344u, "Dry-run validates no forbidden targets", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_plan_count == 0u)
+    {
+        ++g_display_installer_plan_count;
+    }
+    if (g_display_installer_dryrun_count == 0u)
+    {
+        ++g_display_installer_dryrun_count;
+    }
+    (void)installer_ux64_plan_generated();
+    (void)installer_ux64_dryrun_no_writes();
+#else
+    (void)display64_draw_font_text(body_x, body_y, "Installer UX unavailable", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS fallback keeps dry-run/write disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+#endif
+}
+
 static int display64_desktop_settings_lock_hit(const struct display64_window *window, u32 x, u32 y)
 {
     u32 body_x;
@@ -2525,6 +2647,11 @@ static void display64_desktop_present_window_content(u32 handle)
     if (handle == g_display_desktop_settings_handle)
     {
         display64_desktop_draw_settings(handle);
+        return;
+    }
+    if (handle == g_display_desktop_installer_handle)
+    {
+        display64_desktop_draw_installer(handle);
         return;
     }
 
@@ -2659,6 +2786,10 @@ static u32 display64_desktop_hit_launcher_icon(u32 x, u32 y)
     {
         return 3u;
     }
+    if (display64_point_in_rect(x, y, 120u, panel_y + 72u, 96u, 32u))
+    {
+        return 4u;
+    }
 
     return 0u;
 }
@@ -2720,6 +2851,25 @@ static void display64_desktop_open_settings(void)
     display64_wm_focus_and_route_console(g_display_desktop_settings_handle);
 }
 
+static void display64_desktop_open_installer(void)
+{
+    if (display64_wm_find_window(g_display_desktop_installer_handle) == 0)
+    {
+        u32 width = display64_min_u32(
+            520u,
+            (g_display_boot_info->framebuffer_width > 80u)
+                ? (g_display_boot_info->framebuffer_width - 80u)
+                : g_display_boot_info->framebuffer_width);
+        u32 height = display64_min_u32(
+            430u,
+            (g_display_boot_info->framebuffer_height > 150u)
+                ? (g_display_boot_info->framebuffer_height - 150u)
+                : g_display_boot_info->framebuffer_height);
+        g_display_desktop_installer_handle = display64_wm_create_window("Installer", 70u, 92u, width, height);
+    }
+    display64_wm_focus_and_route_console(g_display_desktop_installer_handle);
+}
+
 static void display64_desktop_open_launcher_icon(u32 icon)
 {
     if (icon == 1u)
@@ -2736,6 +2886,11 @@ static void display64_desktop_open_launcher_icon(u32 icon)
     {
         display64_desktop_open_settings();
         g_display_gui_settings_opened = 1u;
+    }
+    else if (icon == 4u)
+    {
+        display64_desktop_open_installer();
+        g_display_gui_installer_opened = 1u;
     }
     g_display_desktop_launcher_open = 0u;
     display64_desktop_redraw();
@@ -3143,8 +3298,20 @@ void display64_init(const struct boot_info *boot_info)
     g_display_account_settings_panel_count = 0u;
     g_display_cloud_settings_panel_count = 0u;
     g_display_cloud_fileman_status_count = 0u;
+    g_display_installer_welcome_count = 0u;
+    g_display_installer_beginner_count = 0u;
+    g_display_installer_advanced_count = 0u;
+    g_display_installer_hardware_count = 0u;
+    g_display_installer_recommendation_count = 0u;
+    g_display_installer_component_count = 0u;
+    g_display_installer_account_count = 0u;
+    g_display_installer_cloud_count = 0u;
+    g_display_installer_ai_count = 0u;
+    g_display_installer_plan_count = 0u;
+    g_display_installer_dryrun_count = 0u;
     g_display_desktop_fileman_handle = 0u;
     g_display_desktop_settings_handle = 0u;
+    g_display_desktop_installer_handle = 0u;
     g_display_desktop_launcher_open = 0u;
     g_display_gui_interactive = 0u;
     g_display_gui_click_hittest = 0u;
@@ -3156,6 +3323,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_gui_taskbar_focus = 0u;
     g_display_gui_fileman_opened = 0u;
     g_display_gui_settings_opened = 0u;
+    g_display_gui_installer_opened = 0u;
     g_display_gui_unfocused_key_denied = 0u;
     g_display_gui_unfocused_key_denial_count = 0u;
     g_display_gui_no_ambient_input = 0u;
@@ -3729,6 +3897,61 @@ u32 display64_cloud_fileman_status_count(void)
     return g_display_cloud_fileman_status_count;
 }
 
+u32 display64_installer_welcome_count(void)
+{
+    return g_display_installer_welcome_count;
+}
+
+u32 display64_installer_beginner_count(void)
+{
+    return g_display_installer_beginner_count;
+}
+
+u32 display64_installer_advanced_count(void)
+{
+    return g_display_installer_advanced_count;
+}
+
+u32 display64_installer_hardware_count(void)
+{
+    return g_display_installer_hardware_count;
+}
+
+u32 display64_installer_recommendation_count(void)
+{
+    return g_display_installer_recommendation_count;
+}
+
+u32 display64_installer_component_count(void)
+{
+    return g_display_installer_component_count;
+}
+
+u32 display64_installer_account_count(void)
+{
+    return g_display_installer_account_count;
+}
+
+u32 display64_installer_cloud_count(void)
+{
+    return g_display_installer_cloud_count;
+}
+
+u32 display64_installer_ai_count(void)
+{
+    return g_display_installer_ai_count;
+}
+
+u32 display64_installer_plan_count(void)
+{
+    return g_display_installer_plan_count;
+}
+
+u32 display64_installer_dryrun_count(void)
+{
+    return g_display_installer_dryrun_count;
+}
+
 u32 display64_gui_interactive(void)
 {
     return g_display_gui_interactive;
@@ -3777,6 +4000,11 @@ u32 display64_gui_fileman_opened(void)
 u32 display64_gui_settings_opened(void)
 {
     return g_display_gui_settings_opened;
+}
+
+u32 display64_gui_installer_opened(void)
+{
+    return g_display_gui_installer_opened;
 }
 
 u32 display64_gui_unfocused_key_denied(void)
