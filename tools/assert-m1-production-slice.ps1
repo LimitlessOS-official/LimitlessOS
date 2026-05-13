@@ -491,15 +491,15 @@ function Assert-RuntimeShellSurfaceSource
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
-        "Product identity: Settings shows local account and vault status; remote/cloud unavailable",
-        "Unavailable in M11: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, ai",
+        "Product identity: Settings shows local account, vault, and trusted transport status; remote/cloud unavailable",
+        "Unavailable in M12: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, encrypted-identity-transport, ai",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
-        "Identity/vault status: Settings; local only; no secret storage",
+        "Identity/vault/transport status: Settings; local only; no secret storage",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
         "Installer writes/install",
@@ -508,6 +508,7 @@ function Assert-RuntimeShellSurfaceSource
         "Enterprise login",
         "Cloud storage",
         "Encrypted secret storage",
+        "Encrypted identity transport",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
         if (-not $source.Contains($requiredText)) {
@@ -1193,6 +1194,52 @@ function Assert-X64Artifacts
         $m11Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m11InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m11.json" -f $BuildProfile.ToLowerInvariant())
         $m11Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m11InventoryPath -Encoding Ascii
+
+        $m12Inventory = $m11Inventory.PSObject.Copy()
+        $m12Inventory.milestone = "M12 Trusted Network Identity Transport"
+        $m12Inventory.activeProductServices = @(
+            $m11Inventory.activeProductServices +
+            @("identity transport broker descriptor verification")
+        )
+        $m12Inventory.unavailableFeatures = @(
+            $m11Inventory.unavailableFeatures +
+            @(
+                "Encrypted identity transport",
+                "Credential transport",
+                "Token persistence",
+                "Account association",
+                "Trusted-time expiry enforcement"
+            )
+        ) | Select-Object -Unique
+        $m12Inventory | Add-Member -Force -NotePropertyName identityProviderDescriptorStatus -NotePropertyValue "local signed fixture verified"
+        $m12Inventory | Add-Member -Force -NotePropertyName providerDescriptorSignatureStatus -NotePropertyValue "Ed25519 verified against embedded UEFI Product public key"
+        $m12Inventory | Add-Member -Force -NotePropertyName providerDescriptorAntiRollbackStatus -NotePropertyValue "older signed sequence denied"
+        $m12Inventory | Add-Member -Force -NotePropertyName trustedEndpointStatus -NotePropertyValue "descriptor-verified fixture endpoint only"
+        $m12Inventory | Add-Member -Force -NotePropertyName identityTransportMode -NotePropertyValue "Mode B endpoint trust foundation only"
+        $m12Inventory | Add-Member -Force -NotePropertyName encryptedTransportStatus -NotePropertyValue "unavailable/non-product"
+        $m12Inventory | Add-Member -Force -NotePropertyName credentialTransportStatus -NotePropertyValue "denied"
+        $m12Inventory | Add-Member -Force -NotePropertyName tokenStorageStatus -NotePropertyValue "denied while vault remains Mode B"
+        $m12Inventory | Add-Member -Force -NotePropertyName trustedTimeStatus -NotePropertyValue "unavailable/non-product; descriptor expiry not Product-enforced"
+        $m12Inventory | Add-Member -Force -NotePropertyName cloudAssociationStatus -NotePropertyValue "planned/unavailable"
+        $m12Inventory | Add-Member -Force -NotePropertyName remoteLoginStatus -NotePropertyValue "unavailable"
+        $m12Inventory | Add-Member -Force -NotePropertyName identityTransportSettingsPanelVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName identityTransportStatusReadonlyVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName identityTransportShellStatusVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName identityTransportShellStatusCommand -NotePropertyValue "pkginfo read-only identity transport status"
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorMissingSignatureDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorInvalidSignatureDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorWrongKeyDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorTamperDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorRollbackDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName descriptorUnsupportedVersionDenied -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName noAmbientIdTransportNetworkAuthorityVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName noAmbientIdTransportIdentityAuthorityVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName noAmbientIdTransportSecretAuthorityVerified -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName noM13WorkStarted -NotePropertyValue $true
+        $m12Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m12Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m12InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m12.json" -f $BuildProfile.ToLowerInvariant())
+        $m12Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m12InventoryPath -Encoding Ascii
     }
 }
 

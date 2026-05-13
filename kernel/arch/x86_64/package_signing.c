@@ -190,6 +190,16 @@ static u32 package_signing64_verify_detached(
         message_size);
 }
 
+u32 package_signing64_verify_signed_blob(
+    const u8 *signature,
+    const u8 *prefix,
+    u32 prefix_size,
+    const u8 *message,
+    u32 message_size)
+{
+    return package_signing64_verify_detached(signature, prefix, prefix_size, message, message_size);
+}
+
 static void package_signing64_put_u32le(u8 *bytes, u32 offset, u32 value)
 {
     bytes[offset] = (u8)(value & 0xFFu);

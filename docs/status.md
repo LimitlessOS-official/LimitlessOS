@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M11 is `Identity Foundation + Secrets Vault`.
+M12 is `Trusted Network Identity Transport`.
 
-M11 preserves the accepted M10 local login behavior and adds a Product identity/account model plus a secrets-vault foundation. Local is the only active account type. Personal and enterprise account types are modeled as planned/unavailable. Cloud association, cloud storage, security-key login, remote login, encrypted secret storage, and token storage remain unavailable/non-product. M11 does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
+M12 preserves M10 local login and M11 identity/vault behavior, then adds a Product identity-transport foundation. UEFI Product verifies a signed local identity-provider descriptor fixture, records trusted endpoint metadata, and denies plaintext credential transport, unverified endpoint credential transport, and token storage while the vault remains Mode B. Local is still the only active account type. Personal and enterprise account types, cloud association, cloud storage, encrypted account transport, security-key login, remote login, encrypted secret storage, and token storage remain unavailable/non-product. M12 does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 456992
+- BIOS kernel bytes: 457088
 - BIOS kernel sectors: 893 / 1024
 - BIOS reserve: 131
 - BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 551936
+- UEFI kernel bytes: 560352
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,545,216
+- UEFI byte reserve: 1,536,800
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -64,6 +64,7 @@ Product behavior:
 - read-only package trust visibility through Settings and `pkginfo`
 - read-only hardware validation visibility through `hwval`
 - read-only identity/vault status through Settings
+- read-only signed identity-provider descriptor and transport-safety status through Settings and `pkginfo`
 - capability denial checks
 - no ambient authority
 
@@ -99,6 +100,21 @@ M11 identity/vault behavior:
 - Settings identity panel: read-only status only
 - shell identity command: not added in M11; Settings is the Product identity status surface
 - denials: identity mutation without authority, secret read without vault authority, secret write without vault authority, token storage, cloud association, personal login, enterprise login, ambient identity, and ambient secret authority
+
+M12 identity transport behavior:
+
+- implementation: UEFI Product identity transport broker state and Settings/pkginfo read-only surfaces; BIOS fallback remains lean and does not expose UEFI-only identity transport as Product behavior
+- mode: Mode B endpoint trust foundation only
+- provider descriptor: signed deterministic local fixture, no public internet dependency
+- descriptor fields: provider id/type/display name, descriptor/protocol version, fixture endpoint, endpoint key id/fingerprint, supported auth methods, required transport security, token persistence policy, minimum OS version, sequence/generation, trusted-time/expiry metadata, signer key id, and signature
+- trusted endpoint status: descriptor-verified fixture endpoint only
+- encrypted identity transport: unavailable/non-product
+- plaintext credential transport: denied
+- credential transport to unverified endpoints: denied
+- token storage: denied while vault remains Mode B
+- account association: planned/unavailable until M13
+- trusted time: unavailable/non-product; descriptor expiry metadata is not Product-enforced without trusted time
+- denials: missing signature, invalid signature, wrong key, tamper, rollback, unsupported descriptor version, missing identity-network authority, plaintext credential transport, unverified endpoint credential transport, token storage, personal login, enterprise login, cloud association, ambient network, ambient identity, and ambient secret authority
 
 M7.1 package behavior:
 
@@ -159,6 +175,7 @@ M6 service/session behavior:
 - stale capabilities from the old generation are denied
 - M6 introduced one local console session; M10 authenticates that single local console user but still does not implement full multiuser account management
 - M11 associates the authenticated session with a local identity record and vault metadata foundation without adding remote identity, personal account login, enterprise account login, cloud storage, or token storage
+- M12 adds signed local identity-provider descriptor verification and read-only identity transport status without adding remote login, account association, encrypted credential transport, or token persistence
 - wrong-session input, display, and filesystem delivery are denied
 - raw input, direct framebuffer, ambient filesystem, and ambient network access remain denied
 
@@ -227,6 +244,8 @@ Unavailable or not product-path in Product:
 - remote login
 - encrypted-at-rest secret storage
 - token storage
+- encrypted identity transport
+- credential transport
 
 ## Experimental Profile
 
@@ -353,6 +372,12 @@ M11 evidence pack:
 - records Product identity/vault foundation verification plus all preserved M10 verification commands
 - proves local account active, personal/enterprise unavailable, Settings identity panel, read-only identity status, identity mutation denial, vault foundation, denied secret read/write, no plaintext token storage, cloud association unavailable, and no ambient identity or secret authority
 
+M12 evidence pack:
+
+- generated by `.\tools\archive-m12-evidence.ps1 -IncludeExperimental`
+- records Product identity transport verification plus all preserved M11 verification commands
+- proves signed local provider descriptor acceptance, missing/invalid/wrong-key/tampered/rollback/unsupported descriptor denials, scoped network requirement, plaintext credential denial, unverified endpoint denial, token-storage denial while vault is Mode B, Settings identity transport panel visibility, read-only status, trusted-time status, and no ambient identity-transport network/identity/secret authority
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -378,6 +403,7 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - M7.1 signed package admission has separate negative fixture coverage, but package-manager UI, app store, auto-install, live public update fetching, and trusted-time expiry enforcement remain unavailable.
 - M6 has a local console session model, not full multiuser login/authentication.
 - M11 has a local identity model and vault foundation only; personal login, enterprise login, cloud association, cloud storage, encrypted secret storage, and token storage remain unavailable.
+- M12 has an identity transport foundation only; encrypted account transport, credential transport, token persistence, account association, remote login, and trusted-time expiry enforcement remain unavailable.
 - There is no real AI assistant path.
 - Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.

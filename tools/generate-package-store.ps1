@@ -399,11 +399,41 @@ rollback_index = (
     "package-count=%d\n" % len(payload_results)
 ).encode("ascii")
 index_prefix = b"LimitlessOS-M7-update-index-v1\0"
+descriptor_prefix = b"LimitlessOS-M12-idprovider-v1\0"
+public_key_id = int.from_bytes(public_key[:4], "little")
+public_key_fingerprint = hashlib.sha256(public_key).hexdigest().upper()
+
+def make_identity_descriptor(sequence, descriptor_version=1, protocol_version=1):
+    return (
+        "limitlessos-identity-provider-v1\n"
+        "provider-id=personal.fixture.limitless\n"
+        "provider-type=personal\n"
+        "display-name=Limitless Personal Fixture\n"
+        "descriptor-version=%d\n"
+        "protocol-version=%d\n"
+        "endpoint=fixture://identity/personal\n"
+        "endpoint-public-key-id=IDP-FIXTURE-01\n"
+        "endpoint-public-key-fingerprint=5F1B9F1F67D6B9D3B7F0B8D0B155C9A9F6A2C46E0A477BB4450F21658CFD2B12\n"
+        "supported-auth=descriptor-only\n"
+        "required-transport-security=encrypted\n"
+        "account-association=unavailable\n"
+        "token-persistence=denied\n"
+        "minimum-os-version=M12\n"
+        "sequence=%d\n"
+        "trusted-time-required=0\n"
+        "expiry=not-enforceable-without-trusted-time\n"
+        "signer-key-id=0x%08X\n"
+        "signer-fingerprint=%s\n"
+    ) % (descriptor_version, protocol_version, sequence, public_key_id, public_key_fingerprint)
+
+identity_descriptor = make_identity_descriptor(12).encode("ascii")
+identity_descriptor_rollback = make_identity_descriptor(11).encode("ascii")
+identity_descriptor_unsupported = make_identity_descriptor(12, descriptor_version=99).encode("ascii")
 result = {
     "algorithm": "Ed25519",
     "publicKeyHex": public_key.hex(),
-    "publicKeyId": int.from_bytes(public_key[:4], "little"),
-    "publicKeyFingerprint": hashlib.sha256(public_key).hexdigest().upper(),
+    "publicKeyId": public_key_id,
+    "publicKeyFingerprint": public_key_fingerprint,
     "archiveSignatureHex": private_key.sign(b"LimitlessOS-M7-archive-v1\0" + archive).hex(),
     "wrongKeyArchiveSignatureHex": wrong_key.sign(b"LimitlessOS-M7-archive-v1\0" + archive).hex(),
     "updateIndexSequence": 7,
@@ -413,6 +443,15 @@ result = {
     "rollbackIndexSequence": 6,
     "rollbackIndexHex": rollback_index.hex(),
     "rollbackIndexSignatureHex": private_key.sign(index_prefix + rollback_index).hex(),
+    "identityProviderDescriptorSequence": 12,
+    "identityProviderDescriptorHex": identity_descriptor.hex(),
+    "identityProviderDescriptorSignatureHex": private_key.sign(descriptor_prefix + identity_descriptor).hex(),
+    "wrongKeyIdentityProviderDescriptorSignatureHex": wrong_key.sign(descriptor_prefix + identity_descriptor).hex(),
+    "identityProviderDescriptorRollbackSequence": 11,
+    "identityProviderDescriptorRollbackHex": identity_descriptor_rollback.hex(),
+    "identityProviderDescriptorRollbackSignatureHex": private_key.sign(descriptor_prefix + identity_descriptor_rollback).hex(),
+    "identityProviderDescriptorUnsupportedHex": identity_descriptor_unsupported.hex(),
+    "identityProviderDescriptorUnsupportedSignatureHex": private_key.sign(descriptor_prefix + identity_descriptor_unsupported).hex(),
     "payloads": payload_results,
 }
 with open(output_path, "w", encoding="ascii") as handle:
@@ -439,6 +478,11 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_SEQUENCE {0}u" -f ([uint32]$signOutput.rollbackIndexSequence)))
     $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_BYTES {0}u" -f (([string]$signOutput.updateIndexHex).Length / 2)))
     $sigLines.Add(("#define PACKAGE_STORE_UPDATE_INDEX_ROLLBACK_BYTES {0}u" -f (([string]$signOutput.rollbackIndexHex).Length / 2)))
+    $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_SEQUENCE {0}u" -f ([uint32]$signOutput.identityProviderDescriptorSequence)))
+    $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_ROLLBACK_SEQUENCE {0}u" -f ([uint32]$signOutput.identityProviderDescriptorRollbackSequence)))
+    $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorHex).Length / 2)))
+    $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_ROLLBACK_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorRollbackHex).Length / 2)))
+    $sigLines.Add(("#define IDENTITY_PROVIDER_DESCRIPTOR_UNSUPPORTED_BYTES {0}u" -f (([string]$signOutput.identityProviderDescriptorUnsupportedHex).Length / 2)))
     $sigLines.Add("")
     $sigLines.Add("static const u8 package_store_signature_public_key[32] = {")
     $publicKeyValues = Convert-HexToCBytes -Hex ([string]$signOutput.publicKeyHex)
@@ -478,6 +522,41 @@ with open(output_path, "w", encoding="ascii") as handle:
     $sigLines.Add("static const u8 package_store_update_index_rollback_signature[64] = {")
     $rollbackIndexSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.rollbackIndexSignatureHex)
     $sigLines.Add("    " + ($rollbackIndexSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor[IDENTITY_PROVIDER_DESCRIPTOR_BYTES] = {")
+    $identityDescriptorValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorHex)
+    $sigLines.Add("    " + ($identityDescriptorValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_signature[64] = {")
+    $identityDescriptorSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorSignatureHex)
+    $sigLines.Add("    " + ($identityDescriptorSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_wrong_key_signature[64] = {")
+    $identityDescriptorWrongKeySignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.wrongKeyIdentityProviderDescriptorSignatureHex)
+    $sigLines.Add("    " + ($identityDescriptorWrongKeySignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_rollback[IDENTITY_PROVIDER_DESCRIPTOR_ROLLBACK_BYTES] = {")
+    $identityDescriptorRollbackValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorRollbackHex)
+    $sigLines.Add("    " + ($identityDescriptorRollbackValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_rollback_signature[64] = {")
+    $identityDescriptorRollbackSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorRollbackSignatureHex)
+    $sigLines.Add("    " + ($identityDescriptorRollbackSignatureValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_unsupported[IDENTITY_PROVIDER_DESCRIPTOR_UNSUPPORTED_BYTES] = {")
+    $identityDescriptorUnsupportedValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorUnsupportedHex)
+    $sigLines.Add("    " + ($identityDescriptorUnsupportedValues -join ", "))
+    $sigLines.Add("};")
+    $sigLines.Add("")
+    $sigLines.Add("static const u8 identity_provider_descriptor_unsupported_signature[64] = {")
+    $identityDescriptorUnsupportedSignatureValues = Convert-HexToCBytes -Hex ([string]$signOutput.identityProviderDescriptorUnsupportedSignatureHex)
+    $sigLines.Add("    " + ($identityDescriptorUnsupportedSignatureValues -join ", "))
     $sigLines.Add("};")
     $sigLines.Add("")
     $sigLines.Add("struct package_store_payload_signature_generated { u32 slot; u32 size; u32 checksum; u8 signature[64]; };")

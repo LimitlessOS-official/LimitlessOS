@@ -69,6 +69,7 @@ u32 display64_desktop_fileman_count(void);
 u32 display64_desktop_settings_count(void);
 u32 display64_pkg_settings_panel_count(void);
 u32 display64_identity_settings_panel_count(void);
+u32 display64_identity_transport_settings_panel_count(void);
 u32 display64_gui_interactive(void);
 u32 display64_gui_click_hittest(void);
 u32 display64_gui_launcher_opened(void);

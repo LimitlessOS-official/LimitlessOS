@@ -11,6 +11,7 @@
 #include "input_x64.h"
 #include "interrupts_x64.h"
 #include "identity_x64.h"
+#include "identity_transport_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #include "paging_x64.h"
@@ -4601,6 +4602,56 @@ static void log_identity_surface(void)
     write_string(identity64_credential_record_type());
     write_string(" vault ");
     write_line(identity64_vault_binding_status());
+#endif
+}
+
+static void log_identity_transport_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    identity_transport64_init();
+    write_labeled_dec_u32("[x64] drs-idtransport drs-idtransport-product ", identity_transport64_product());
+    write_labeled_dec_u32(" drs-idtransport-provider-descriptor ", identity_transport64_provider_descriptor());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-verified ", identity_transport64_descriptor_verified());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-missing-sig-denied ", identity_transport64_descriptor_missing_sig_denied());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-invalid-sig-denied ", identity_transport64_descriptor_invalid_sig_denied());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-wrong-key-denied ", identity_transport64_descriptor_wrong_key_denied());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-tamper-denied ", identity_transport64_descriptor_tamper_denied());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-rollback-denied ", identity_transport64_descriptor_rollback_denied());
+    write_labeled_dec_u32(" drs-idtransport-descriptor-version-denied ", identity_transport64_descriptor_version_denied());
+    write_labeled_dec_u32(" drs-idtransport-network-scoped ", identity_transport64_network_scoped());
+    write_labeled_dec_u32(" drs-idtransport-no-network-cap-denied ", identity_transport64_no_network_cap_denied());
+    write_labeled_dec_u32(" drs-idtransport-plaintext-credential-denied ", identity_transport64_plaintext_credential_denied());
+    write_labeled_dec_u32(" drs-idtransport-unverified-endpoint-denied ", identity_transport64_unverified_endpoint_denied());
+    write_labeled_dec_u32(" drs-idtransport-token-storage-denied ", identity_transport64_token_storage_denied());
+    write_labeled_dec_u32(" drs-idtransport-personal-unavailable ", identity_transport64_personal_unavailable());
+    write_labeled_dec_u32(" drs-idtransport-enterprise-unavailable ", identity_transport64_enterprise_unavailable());
+    write_labeled_dec_u32(" drs-idtransport-cloud-association-unavailable ", identity_transport64_cloud_association_unavailable());
+    write_labeled_dec_u32(" drs-idtransport-settings-panel ", scaffold_bool_u32(display64_identity_transport_settings_panel_count()));
+    write_labeled_dec_u32(" drs-idtransport-status-readonly ", identity_transport64_status_readonly());
+    write_labeled_dec_u32(" drs-idtransport-trusted-time-status ", identity_transport64_trusted_time_status());
+    write_labeled_dec_u32(" drs-no-ambient-idtransport-network ", identity_transport64_no_ambient_network());
+    write_labeled_dec_u32(" drs-no-ambient-idtransport-identity ", identity_transport64_no_ambient_identity());
+    write_labeled_dec_u32(" drs-no-ambient-idtransport-secret ", identity_transport64_no_ambient_secret());
+    write_labeled_dec_u32(" drs-idtransport-encrypted-channel-unavailable ", identity_transport64_encrypted_channel_unavailable());
+    write_labeled_dec_u32(" drs-idtransport-credential-transport-unavailable ", identity_transport64_credential_transport_unavailable());
+    write_string(" mode ");
+    write_string(identity_transport64_mode());
+    write_string(" provider ");
+    write_string(identity_transport64_provider_id());
+    write_string(" provider-type ");
+    write_string(identity_transport64_provider_type());
+    write_string(" endpoint ");
+    write_string(identity_transport64_endpoint_status());
+    write_string(" online ");
+    write_string(identity_transport64_online_status());
+    write_string(" encrypted ");
+    write_string(identity_transport64_encrypted_transport_status());
+    write_string(" credential ");
+    write_string(identity_transport64_credential_transport_status());
+    write_string(" token-storage ");
+    write_string(identity_transport64_token_storage_status());
+    write_string(" trusted-time ");
+    write_line(identity_transport64_trusted_time_string());
 #endif
 }
 
@@ -11971,6 +12022,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_package_signing_surface();
     log_package_trust_status_surface();
     log_identity_surface();
+    log_identity_transport_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

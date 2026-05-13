@@ -7,6 +7,7 @@
 void package_signing64_init(void);
 u32 package_signing64_verify_archive(void);
 u32 package_signing64_verify_payload(u32 slot, const void *payload, u32 payload_size, u32 payload_checksum);
+u32 package_signing64_verify_signed_blob(const u8 *signature, const u8 *prefix, u32 prefix_size, const u8 *message, u32 message_size);
 u32 package_signing64_signed(void);
 u32 package_signing64_verified(void);
 u32 package_signing64_invalid_denied(void);
@@ -49,6 +50,15 @@ static inline u32 package_signing64_verify_payload(u32 slot, const void *payload
     (void)payload_size;
     (void)payload_checksum;
     return 1u;
+}
+static inline u32 package_signing64_verify_signed_blob(const u8 *signature, const u8 *prefix, u32 prefix_size, const u8 *message, u32 message_size)
+{
+    (void)signature;
+    (void)prefix;
+    (void)prefix_size;
+    (void)message;
+    (void)message_size;
+    return 0u;
 }
 static inline u32 package_signing64_signed(void) { return 0u; }
 static inline u32 package_signing64_verified(void) { return 0u; }

@@ -215,15 +215,15 @@ function Assert-X64M1RuntimeSurface
         Assert-OutputContains -Lines $persistentLines -Pattern '^UEFI login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS fallback help did not label login/session lock as unavailable."
     }
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account and vault status; remote/cloud unavailable$' -Message "M11 runtime help did not describe Product identity/vault status."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account, vault, and trusted transport status; remote/cloud unavailable$' -Message "M12 runtime help did not describe Product identity/vault/transport status."
     }
     elseif ($BootMedia -ne "disk") {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account and vault status; remote/cloud unavailable$' -Message "M11 UEFI runtime help did not describe identity/vault visibility."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account, vault, and trusted transport status; remote/cloud unavailable$' -Message "M12 UEFI runtime help did not describe identity/vault/transport visibility."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: unavailable on BIOS checksum fallback$' -Message "M11 BIOS fallback help did not label identity/vault as unavailable."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M11: ask \(not AI\), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, ai$' -Message "M11 runtime help did not label unavailable identity/cloud/AI surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M12: ask \(not AI\), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, encrypted-identity-transport, ai$' -Message "M12 runtime help did not label unavailable identity/cloud/transport/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -236,7 +236,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/vault status: Settings; local only; no secret storage$' -Message "M11 apps output did not label identity/vault visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/vault/transport status: Settings; local only; no secret storage$' -Message "M12 apps output did not label identity/vault/transport visibility."
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
     }
@@ -249,6 +249,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Enterprise login$' -Message "M11 apps output did not label enterprise login unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage$' -Message "M11 apps output did not label cloud storage unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Encrypted secret storage$' -Message "M11 apps output did not label encrypted secret storage unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Encrypted identity transport$' -Message "M12 apps output did not label encrypted identity transport unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package install/update actions$' -Message "M8 apps output did not quarantine package install/update authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Auto-install$' -Message "M8 apps output did not quarantine auto-install."
@@ -2609,7 +2610,7 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3912,6 +3913,7 @@ if ($Architecture -eq "x86_64") {
     if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 1 drs-login-rate-limited 1 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 .* user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-identity drs-identity-foundation 1 drs-identity-local-active 1 drs-identity-personal-unavailable 1 drs-identity-enterprise-unavailable 1 drs-identity-settings-panel 1 drs-identity-status-readonly 1 drs-identity-mutation-denied 1 drs-vault-foundation 1 drs-vault-secret-read-denied 1 drs-vault-secret-write-denied 1 drs-vault-no-plaintext-token 1 drs-cloud-association-unavailable 1 drs-no-ambient-identity 1 drs-no-ambient-secret 1 encrypted-vault 0 secret-storage 0 account-type local account-id local:limitless display limitless association local-active network offline-capable credential bcrypt-local vault metadata-only' -Message "x64 UEFI M11 identity/vault foundation proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-idtransport drs-idtransport-product 1 drs-idtransport-provider-descriptor 1 drs-idtransport-descriptor-verified 1 drs-idtransport-descriptor-missing-sig-denied 1 drs-idtransport-descriptor-invalid-sig-denied 1 drs-idtransport-descriptor-wrong-key-denied 1 drs-idtransport-descriptor-tamper-denied 1 drs-idtransport-descriptor-rollback-denied 1 drs-idtransport-descriptor-version-denied 1 drs-idtransport-network-scoped 1 drs-idtransport-no-network-cap-denied 1 drs-idtransport-plaintext-credential-denied 1 drs-idtransport-unverified-endpoint-denied 1 drs-idtransport-token-storage-denied 1 drs-idtransport-personal-unavailable 1 drs-idtransport-enterprise-unavailable 1 drs-idtransport-cloud-association-unavailable 1 drs-idtransport-settings-panel 1 drs-idtransport-status-readonly 1 drs-idtransport-trusted-time-status 1 drs-no-ambient-idtransport-network 1 drs-no-ambient-idtransport-identity 1 drs-no-ambient-idtransport-secret 1 drs-idtransport-encrypted-channel-unavailable 1 drs-idtransport-credential-transport-unavailable 1 mode mode-b-descriptor-foundation provider personal\.fixture\.limitless provider-type personal endpoint descriptor-verified online offline-fixture encrypted unavailable credential denied token-storage denied trusted-time unavailable' -Message "x64 UEFI M12 identity transport foundation proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ lock' -Message "x64 persistent shell did not accept the Product lock command."
         Assert-OutputContains -Lines $outputLines -Pattern '^session unlocked$' -Message "x64 persistent shell did not unlock the authenticated session."
     }

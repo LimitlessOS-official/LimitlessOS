@@ -6,6 +6,7 @@
 #include "display_x64.h"
 #include "e1000e_x64.h"
 #include "fs_x64.h"
+#include "identity_transport_x64.h"
 #include "input_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
@@ -184,7 +185,7 @@ static u32 shell64_write_login_status_line(u32 console_capability_handle, u32 ow
 static u32 shell64_write_identity_status_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "Product identity: Settings shows local account and vault status; remote/cloud unavailable\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product identity: Settings shows local account, vault, and trusted transport status; remote/cloud unavailable\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "Product identity: unavailable on BIOS checksum fallback\n");
 #endif
@@ -359,10 +360,11 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "signature verification: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M11; scoped capability required\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M11; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity transport: unavailable on BIOS fallback\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M12; scoped capability required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
+    return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M12; scoped install required\n");
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
@@ -385,9 +387,15 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M11; scoped capability required\n");
+    identity_transport64_init();
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity descriptor: signed local fixture verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity encrypted transport: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity credential transport: denied\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity token storage: denied\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity remote login: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M12; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M11; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M12; scoped install required\n");
     return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network\n");
 }
 
@@ -966,7 +974,7 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Identity/vault status: Settings; local only; no secret storage\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Identity/vault/transport status: Settings; local only; no secret storage\n");
     if (shell64_login_available() != 0u)
     {
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: use lock; first-run user stored on NVMe\n");
@@ -976,9 +984,9 @@ static u32 shell64_list_apps(
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
     }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M11:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M12:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nCloud storage\nEncrypted secret storage\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nCloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer writes/install\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
         console_capability_handle,
@@ -1325,7 +1333,7 @@ u32 shell64_execute_line(
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M11: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, ai\n");
+            "Unavailable in M12: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, encrypted-identity-transport, ai\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))

@@ -1,24 +1,25 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M11 Identity Foundation + Secrets Vault
+## Current Gate: M12 Trusted Network Identity Transport
 
-M1 cleanup-final through M10 local authentication are accepted. M11 adds a Product identity/account model and secrets-vault foundation while preserving M10 exactly: local login remains the only Product login flow, one local user remains the only active account, and no remote auth or cloud account login exists. M11 is not multiuser account management, not PAM/LDAP/remote auth, not cloud storage, not encrypted token storage, not an app store, not auto-update, not live public update fetching, and not real internal-disk install/write work.
+M1 cleanup-final through M11 identity/vault foundation are accepted. M12 adds a Product trusted identity-transport foundation while preserving M10 and M11 exactly: local login remains the only Product login flow, one local user remains the only active account, and no remote auth or cloud account login exists. M12 verifies signed local identity-provider descriptors and exposes endpoint-trust status, but it does not implement encrypted account transport, account association, token persistence, cloud storage, multiuser account management, PAM/LDAP/remote auth, app-store behavior, auto-update, live public update fetching, or real internal-disk install/write work.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- BIOS kernel: `KERNEL64-BIOS.BIN`, 456992 bytes, 893 / 1024 BIOS sectors, 131 reserve, checksum recorded in the generated artifact inventory
-- UEFI kernel: `KERNEL64.BIN`, 551936 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- BIOS kernel: `KERNEL64-BIOS.BIN`, 457088 bytes, 893 / 1024 BIOS sectors, 131 reserve, checksum recorded in the generated artifact inventory
+- UEFI kernel: `KERNEL64.BIN`, 560352 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
 - Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings
-- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider
+- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product identity: local account type active, local association active, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, no ambient identity authority
-- Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product in M11, no ambient secret authority
+- Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product, no ambient secret authority
+- Product identity transport: Mode B endpoint-trust foundation only; signed local provider descriptors are verified, rollback/unsupported/tampered descriptors are denied, encrypted identity transport is unavailable, credential transport is denied, token storage is denied, and account association remains unavailable
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault status in Settings, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport status in Settings and `pkginfo`, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -28,7 +29,7 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, personal account login, enterprise account login, cloud account association, cloud storage, security-key login, remote login, encrypted-at-rest secret storage, token storage, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
+- ASK, ECHO, aliases, personal account login, enterprise account login, cloud account association, cloud storage, security-key login, remote login, encrypted identity transport, credential transport, encrypted-at-rest secret storage, token storage, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
 
 M2 evidence:
 
@@ -143,7 +144,18 @@ M11 identity/vault acceptance:
 - Vault status is foundation metadata only; encrypted-at-rest secret storage is unavailable/non-product
 - No real secrets or tokens are stored
 - Identity mutation, secret read, secret write, token storage, cloud association, and ambient identity/secret authority are denied
-- No M12 work may start until M11 evidence is clean
+- M11 is accepted and is not expanded retroactively by M12
+
+M12 trusted identity-transport acceptance:
+
+- Evidence pack: generated by `tools\archive-m12-evidence.ps1 -IncludeExperimental`
+- Product identity transport mode is Mode B endpoint-trust foundation only
+- UEFI Product verifies a deterministic signed local identity-provider descriptor fixture
+- Missing-signature, invalid-signature, wrong-key, tampered, rollback, and unsupported-version descriptors are denied as distinct verifier-visible cases
+- Identity transport requires scoped network authority; no-network-cap, plaintext credential transport, unverified endpoint credential transport, and token storage attempts are denied
+- Settings and `pkginfo` show read-only identity transport status
+- Personal login, enterprise login, cloud association, remote login, encrypted account transport, and trusted-time expiry enforcement remain unavailable/non-product
+- No M13 work may start until M12 evidence is clean
 
 ## Roadmap Addendum: Account Association, Cloud Storage, and AI Policy
 
@@ -162,13 +174,13 @@ M11: Identity Foundation + Secrets Vault
 
 M12: Trusted Network Identity Transport
 
-- Add trusted endpoint verification.
-- Add trusted time status.
-- Add encrypted account transport.
-- Add token refresh transport.
-- Add offline/online state.
-- No plaintext account login.
-- No ambient network authority.
+- Add trusted endpoint verification. Current status: signed local descriptor verification is Product.
+- Add trusted time status. Current status: trusted-time status is reported, but expiry enforcement is unavailable without trusted time.
+- Add encrypted account transport. Current status: unavailable/non-product in M12 Mode B.
+- Add token refresh transport. Current status: unavailable/non-product because the vault remains Mode B and no tokens are stored.
+- Add offline/online state. Current status: local deterministic fixture reports offline/fixture status without a public-internet dependency.
+- No plaintext account login. Current status: plaintext credential transport is denied.
+- No ambient network authority. Current status: identity transport requires scoped network authority.
 
 M13: Account Association
 

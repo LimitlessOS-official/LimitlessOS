@@ -81,16 +81,21 @@ The M11 verifier requires:
 
 M11 explicitly records `encrypted-vault 0` and `secret-storage 0`.
 
+## M12 Follow-On Boundary
+
+M12 builds on this foundation by verifying signed identity-provider descriptor metadata and exposing read-only identity transport status. It does not change the M11 account model, does not activate personal or enterprise login, does not store tokens, and does not make encrypted secret storage Product.
+
 ## Non-Product Until Later Milestones
 
 - Personal login.
 - Enterprise login.
 - Remote authentication.
 - Security-key login.
-- Trusted network identity transport.
+- Account association.
 - Cloud storage.
 - Token refresh.
+- Encrypted identity transport.
 - Encrypted secret storage.
 - AI assistant behavior.
 
-Those surfaces are future roadmap work and must not appear as active Product behavior in M11.
+Those surfaces must not appear as active Product behavior in M11. M12 may report trusted identity transport foundation status, but it must still label encrypted transport, credential transport, token persistence, account association, and remote login unavailable until later milestones implement and verify them.
