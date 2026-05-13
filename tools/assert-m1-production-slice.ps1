@@ -491,17 +491,23 @@ function Assert-RuntimeShellSurfaceSource
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
-        "Unavailable in M10: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
+        "Product identity: Settings shows local account and vault status; remote/cloud unavailable",
+        "Unavailable in M11: ask (not AI), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, ai",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
+        "Identity/vault status: Settings; local only; no secret storage",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
         "Installer writes/install",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
+        "Personal login",
+        "Enterprise login",
+        "Cloud storage",
+        "Encrypted secret storage",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
         if (-not $source.Contains($requiredText)) {
@@ -1116,6 +1122,77 @@ function Assert-X64Artifacts
         $m10Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m10InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m10.json" -f $BuildProfile.ToLowerInvariant())
         $m10Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m10InventoryPath -Encoding Ascii
+
+        $m11Inventory = $m10Inventory.PSObject.Copy()
+        $m11Inventory.milestone = "M11 Identity Foundation + Secrets Vault"
+        $m11Inventory.activeProductServices = @(
+            $m10Inventory.activeProductServices +
+            @("local identity/status foundation", "secrets vault foundation metadata")
+        )
+        $m11Inventory.unavailableFeatures = @(
+            $m10Inventory.unavailableFeatures +
+            @(
+                "Personal account login",
+                "Enterprise account login",
+                "Cloud account association",
+                "Cloud storage",
+                "Security-key login",
+                "Remote login",
+                "Encrypted-at-rest secret storage",
+                "Secret/token mutation UI"
+            )
+        ) | Select-Object -Unique
+        $m11Inventory.unavailableServices = @(
+            "personal account login",
+            "enterprise account login",
+            "cloud account association",
+            "cloud storage",
+            "security-key login",
+            "remote login",
+            "encrypted-at-rest secret storage",
+            "secret/token mutation",
+            "multiuser account management UI",
+            "password change UI",
+            "PAM/LDAP/remote auth",
+            "installer write/format/boot-entry authority",
+            "auto-install",
+            "app store",
+            "live public update fetch",
+            "package install/apply actions",
+            "trusted-time expiry enforcement",
+            "AI assistant"
+        )
+        $m11Inventory | Add-Member -Force -NotePropertyName activeAccountType -NotePropertyValue "local"
+        $m11Inventory | Add-Member -Force -NotePropertyName supportedAccountTypes -NotePropertyValue @("local", "personal", "enterprise")
+        $m11Inventory | Add-Member -Force -NotePropertyName unavailableAccountTypes -NotePropertyValue @("personal", "enterprise")
+        $m11Inventory | Add-Member -Force -NotePropertyName localAccountActive -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName personalAccountStatus -NotePropertyValue "planned/unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName enterpriseAccountStatus -NotePropertyValue "planned/unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName cloudAccountAssociationStatus -NotePropertyValue "planned/unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName cloudStorageStatus -NotePropertyValue "planned/unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName securityKeyLoginStatus -NotePropertyValue "planned/unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName remoteLoginStatus -NotePropertyValue "unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName secretVaultStatus -NotePropertyValue "foundation metadata only; no secret/token storage"
+        $m11Inventory | Add-Member -Force -NotePropertyName encryptedVaultStatus -NotePropertyValue "unavailable/non-product"
+        $m11Inventory | Add-Member -Force -NotePropertyName realSecretsOrTokensStored -NotePropertyValue $false
+        $m11Inventory | Add-Member -Force -NotePropertyName identityPanelVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName identityShellStatusVerified -NotePropertyValue $false
+        $m11Inventory | Add-Member -Force -NotePropertyName identityShellStatusReason -NotePropertyValue "no shell identity command was added in M11; Settings provides the read-only Product identity surface"
+        $m11Inventory | Add-Member -Force -NotePropertyName identityStatusReadonlyVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName identityMutationDeniedVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName vaultFoundationVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName vaultSecretReadDeniedVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName vaultSecretWriteDeniedVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName noPlaintextTokenVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName cloudAssociationUnavailableVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName noAmbientIdentityAuthorityVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName noAmbientSecretAuthorityVerified -NotePropertyValue $true
+        $m11Inventory | Add-Member -Force -NotePropertyName identityModel -NotePropertyValue "single authenticated local account is active; personal and enterprise account records are modeled but unavailable"
+        $m11Inventory | Add-Member -Force -NotePropertyName vaultMode -NotePropertyValue "Mode B foundation only"
+        $m11Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m11Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m11InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m11.json" -f $BuildProfile.ToLowerInvariant())
+        $m11Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m11InventoryPath -Encoding Ascii
     }
 }
 

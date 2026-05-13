@@ -10,6 +10,7 @@
 #include "fs_x64.h"
 #include "input_x64.h"
 #include "interrupts_x64.h"
+#include "identity_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #include "paging_x64.h"
@@ -4564,6 +4565,43 @@ static void log_login_surface(void)
     write_string(auth64_home_namespace());
     write_string(" profile ");
     write_line(auth64_session_profile());
+}
+
+static void log_identity_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    identity64_init();
+    write_labeled_dec_u32("[x64] drs-identity drs-identity-foundation ", identity64_foundation());
+    write_labeled_dec_u32(" drs-identity-local-active ", identity64_local_active());
+    write_labeled_dec_u32(" drs-identity-personal-unavailable ", identity64_personal_unavailable());
+    write_labeled_dec_u32(" drs-identity-enterprise-unavailable ", identity64_enterprise_unavailable());
+    write_labeled_dec_u32(" drs-identity-settings-panel ", scaffold_bool_u32(display64_identity_settings_panel_count()));
+    write_labeled_dec_u32(" drs-identity-status-readonly ", identity64_status_readonly());
+    write_labeled_dec_u32(" drs-identity-mutation-denied ", identity64_mutation_denied());
+    write_labeled_dec_u32(" drs-vault-foundation ", identity64_vault_foundation());
+    write_labeled_dec_u32(" drs-vault-secret-read-denied ", identity64_vault_secret_read_denied());
+    write_labeled_dec_u32(" drs-vault-secret-write-denied ", identity64_vault_secret_write_denied());
+    write_labeled_dec_u32(" drs-vault-no-plaintext-token ", identity64_vault_no_plaintext_token());
+    write_labeled_dec_u32(" drs-cloud-association-unavailable ", identity64_cloud_association_unavailable());
+    write_labeled_dec_u32(" drs-no-ambient-identity ", identity64_no_ambient_identity());
+    write_labeled_dec_u32(" drs-no-ambient-secret ", identity64_no_ambient_secret());
+    write_labeled_dec_u32(" encrypted-vault ", identity64_encrypted_vault_available());
+    write_labeled_dec_u32(" secret-storage ", identity64_real_secret_storage_enabled());
+    write_string(" account-type ");
+    write_string(identity64_active_account_type());
+    write_string(" account-id ");
+    write_string(identity64_active_account_id());
+    write_string(" display ");
+    write_string(identity64_display_name());
+    write_string(" association ");
+    write_string(identity64_association_status());
+    write_string(" network ");
+    write_string(identity64_offline_online_status());
+    write_string(" credential ");
+    write_string(identity64_credential_record_type());
+    write_string(" vault ");
+    write_line(identity64_vault_binding_status());
+#endif
 }
 
 static void log_service_session_surface(void)
@@ -11932,6 +11970,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_service_session_surface();
     log_package_signing_surface();
     log_package_trust_status_surface();
+    log_identity_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

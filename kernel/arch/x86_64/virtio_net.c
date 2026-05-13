@@ -22,6 +22,9 @@
 #define VIRTIO_NET64_DHCP_BASE_BYTES \
     (VIRTIO_NET64_DHCP_FIXED_BYTES + VIRTIO_NET64_DHCP_COOKIE_BYTES)
 #define VIRTIO_NET64_POLL_BUDGET 5000000u
+#define VIRTIO_NET64_TX_POLL_TICKS 50u
+#define VIRTIO_NET64_RX_POLL_TICKS 150u
+#define VIRTIO_NET64_WAIT_SPIN_BUDGET 10000000u
 #define VIRTIO_NET64_RX_PROCESS_BUDGET 1024u
 
 #define VIRTIO_NET64_F_MAC 5u
@@ -193,6 +196,11 @@ static u64 virtio_net64_virtual_to_physical(const void *address)
 static void virtio_net64_fence(void)
 {
     __asm__ __volatile__("mfence" ::: "memory");
+}
+
+static u32 virtio_net64_ticks_elapsed(u32 start, u32 ticks)
+{
+    return ((u32)(pit_get_ticks() - start) >= ticks) ? 1u : 0u;
 }
 
 static void virtio_net64_zero(void *address, u32 byte_count)
@@ -541,6 +549,7 @@ static u32 virtio_net64_transmit_current_frame(u32 frame_bytes)
 {
     volatile struct virtio_net64_used *used = (volatile struct virtio_net64_used *)&g_virtio_net_tx_used;
     u32 start_idx = used->idx;
+    u32 start_ticks = pit_get_ticks();
     u32 payload_bytes = frame_bytes;
     u32 poll;
 
@@ -572,6 +581,10 @@ static u32 virtio_net64_transmit_current_frame(u32 frame_bytes)
         if (used->idx != start_idx)
         {
             return 1u;
+        }
+        if (virtio_net64_ticks_elapsed(start_ticks, VIRTIO_NET64_TX_POLL_TICKS) != 0u)
+        {
+            break;
         }
     }
 
@@ -623,6 +636,7 @@ static u32 virtio_net64_poll_rx_match(
 static void virtio_net64_wait_ticks(u32 ticks)
 {
     u32 target;
+    u32 guard = 0u;
 
     if (ticks == 0u)
     {
@@ -630,8 +644,9 @@ static void virtio_net64_wait_ticks(u32 ticks)
     }
 
     target = pit_get_ticks() + ticks;
-    while (pit_get_ticks() < target)
+    while ((pit_get_ticks() < target) && (guard < VIRTIO_NET64_WAIT_SPIN_BUDGET))
     {
+        ++guard;
     }
 }
 
@@ -763,6 +778,7 @@ static u32 virtio_net64_poll_rx_match_e1000e(
     u32 error_code)
 {
     u32 poll;
+    u32 start_ticks = pit_get_ticks();
 
     for (poll = 0u; poll < VIRTIO_NET64_POLL_BUDGET; ++poll)
     {
@@ -778,6 +794,10 @@ static u32 virtio_net64_poll_rx_match_e1000e(
                 return 1u;
             }
         }
+        if (virtio_net64_ticks_elapsed(start_ticks, VIRTIO_NET64_RX_POLL_TICKS) != 0u)
+        {
+            break;
+        }
     }
 
     if ((error_code != 0u) && (g_virtio_net_dhcp_error == 0u))
@@ -792,6 +812,7 @@ static u32 virtio_net64_poll_rx_match(
     u32 error_code)
 {
     volatile struct virtio_net64_used *used = (volatile struct virtio_net64_used *)&g_virtio_net_rx_used;
+    u32 start_ticks = pit_get_ticks();
     u32 poll;
     u32 processed = 0u;
 
@@ -828,6 +849,10 @@ static u32 virtio_net64_poll_rx_match(
         }
 
         if (processed >= VIRTIO_NET64_RX_PROCESS_BUDGET)
+        {
+            break;
+        }
+        if (virtio_net64_ticks_elapsed(start_ticks, VIRTIO_NET64_RX_POLL_TICKS) != 0u)
         {
             break;
         }

@@ -187,7 +187,8 @@ function Assert-X64M1RuntimeSurface
 {
     param(
         [string[]]$Lines,
-        [bool]$LoginExpected
+        [bool]$LoginExpected,
+        [string]$BootMedia
     )
 
     $persistentLines = @(Get-X64PersistentShellLines -Lines $Lines)
@@ -213,7 +214,16 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^UEFI login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS fallback help did not label login/session lock as unavailable."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M10: ask \(not AI\), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes$' -Message "M10 runtime help did not label unavailable surfaces."
+    if ($LoginExpected) {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account and vault status; remote/cloud unavailable$' -Message "M11 runtime help did not describe Product identity/vault status."
+    }
+    elseif ($BootMedia -ne "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: Settings shows local account and vault status; remote/cloud unavailable$' -Message "M11 UEFI runtime help did not describe identity/vault visibility."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: unavailable on BIOS checksum fallback$' -Message "M11 BIOS fallback help did not label identity/vault as unavailable."
+    }
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M11: ask \(not AI\), echo, aliases, personal-login, enterprise-login, cloud-storage, encrypted-secrets, ai$' -Message "M11 runtime help did not label unavailable identity/cloud/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -226,6 +236,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/vault status: Settings; local only; no secret storage$' -Message "M11 apps output did not label identity/vault visibility."
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
     }
@@ -234,6 +245,10 @@ function Assert-X64M1RuntimeSurface
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: safe tooling only; writes disabled$' -Message "M6 apps output did not label installer dry-run write-disable status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Personal login$' -Message "M11 apps output did not label personal login unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Enterprise login$' -Message "M11 apps output did not label enterprise login unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage$' -Message "M11 apps output did not label cloud storage unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Encrypted secret storage$' -Message "M11 apps output did not label encrypted secret storage unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package install/update actions$' -Message "M8 apps output did not quarantine package install/update authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Auto-install$' -Message "M8 apps output did not quarantine auto-install."
@@ -2594,7 +2609,7 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3896,6 +3911,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
     if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 1 drs-login-rate-limited 1 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 .* user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-identity drs-identity-foundation 1 drs-identity-local-active 1 drs-identity-personal-unavailable 1 drs-identity-enterprise-unavailable 1 drs-identity-settings-panel 1 drs-identity-status-readonly 1 drs-identity-mutation-denied 1 drs-vault-foundation 1 drs-vault-secret-read-denied 1 drs-vault-secret-write-denied 1 drs-vault-no-plaintext-token 1 drs-cloud-association-unavailable 1 drs-no-ambient-identity 1 drs-no-ambient-secret 1 encrypted-vault 0 secret-storage 0 account-type local account-id local:limitless display limitless association local-active network offline-capable credential bcrypt-local vault metadata-only' -Message "x64 UEFI M11 identity/vault foundation proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ lock' -Message "x64 persistent shell did not accept the Product lock command."
         Assert-OutputContains -Lines $outputLines -Pattern '^session unlocked$' -Message "x64 persistent shell did not unlock the authenticated session."
     }
@@ -3925,7 +3941,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."
     Assert-OutputContains -Lines $outputLines -Pattern '^ok$' -Message "x64 persistent shell did not print the written file contents."
     Assert-X64M6ServiceSessionSurface -Lines $outputLines
-    Assert-X64M1RuntimeSurface -Lines $outputLines -LoginExpected:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product"))
+    Assert-X64M1RuntimeSurface -Lines $outputLines -LoginExpected:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -BootMedia $BootMedia
 }
 
 $outputLines

@@ -413,11 +413,13 @@ function Build-X64Scaffold
         Where-Object { $_.Name -ne "uefi_app.c" }
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "network_disabled.c" })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "package_signing.c" })
+    $commonSources = @($commonSources | Where-Object { $_.Name -ne "identity.c" })
     $biosSources = @($commonSources | Where-Object {
             ($_.Name -ne "virtio_net.c") -and ($_.Name -ne "e1000e.c")
         })
     $biosSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\network_disabled.c")
     $uefiSources = @($commonSources)
+    $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\identity.c")
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\package_signing.c")
     $uefiSources += @(
         "fe.c",

@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ## Accepted Baseline
 
@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M10 is `User Authentication and Login`.
+M11 is `Identity Foundation + Secrets Vault`.
 
-M10 preserves the accepted M9 Product OS and adds a UEFI Product login gate, first-run single-user setup, bcrypt-hashed local user record in the brokered persistent NVMe namespace, and lock/unlock. It does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
+M11 preserves the accepted M10 local login behavior and adds a Product identity/account model plus a secrets-vault foundation. Local is the only active account type. Personal and enterprise account types are modeled as planned/unavailable. Cloud association, cloud storage, security-key login, remote login, encrypted secret storage, and token storage remain unavailable/non-product. M11 does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 456800
+- BIOS kernel bytes: 456992
 - BIOS kernel sectors: 893 / 1024
 - BIOS reserve: 131
 - BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 551072
+- UEFI kernel bytes: 551936
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,546,080
+- UEFI byte reserve: 1,545,216
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -63,6 +63,7 @@ Product behavior:
 - UEFI-only signed update-index verification with rollback denial
 - read-only package trust visibility through Settings and `pkginfo`
 - read-only hardware validation visibility through `hwval`
+- read-only identity/vault status through Settings
 - capability denial checks
 - no ambient authority
 
@@ -80,6 +81,24 @@ M10 login/authentication behavior:
 - session authority: granted only after authentication and scoped to the local console session
 - lock/unlock: preserves the session and windows, then resumes after the correct password
 - unavailable: multiuser account management, password-change UI, PAM/LDAP, and remote auth
+
+M11 identity/vault behavior:
+
+- implementation: UEFI Product identity/status service and Settings surface; BIOS fallback remains lean and truthfully omits UEFI-only identity services
+- active account type: local
+- supported account types in the model: local, personal, enterprise
+- unavailable account types: personal and enterprise
+- local association: active and bound to the authenticated local console session
+- cloud account association: planned/unavailable
+- cloud storage: planned/unavailable
+- security-key login: planned/unavailable
+- remote login: unavailable
+- secret vault status: foundation metadata only
+- encrypted-at-rest secret storage: unavailable/non-product in M11
+- real secrets/tokens stored: false
+- Settings identity panel: read-only status only
+- shell identity command: not added in M11; Settings is the Product identity status surface
+- denials: identity mutation without authority, secret read without vault authority, secret write without vault authority, token storage, cloud association, personal login, enterprise login, ambient identity, and ambient secret authority
 
 M7.1 package behavior:
 
@@ -139,6 +158,7 @@ M6 service/session behavior:
 - controlled restart verification is limited to the scoped settings/system-info provider path
 - stale capabilities from the old generation are denied
 - M6 introduced one local console session; M10 authenticates that single local console user but still does not implement full multiuser account management
+- M11 associates the authenticated session with a local identity record and vault metadata foundation without adding remote identity, personal account login, enterprise account login, cloud storage, or token storage
 - wrong-session input, display, and filesystem delivery are denied
 - raw input, direct framebuffer, ambient filesystem, and ambient network access remain denied
 
@@ -199,6 +219,14 @@ Unavailable or not product-path in Product:
 - password change UI
 - PAM/LDAP/remote auth
 - AI assistant behavior
+- personal account login
+- enterprise account login
+- cloud account association
+- cloud storage
+- security-key login
+- remote login
+- encrypted-at-rest secret storage
+- token storage
 
 ## Experimental Profile
 
@@ -300,6 +328,31 @@ M7.1 evidence pack:
 - includes the final M7.1 artifact inventory JSON, split-kernel budget, deterministic fixture status, live public update fetching status, and git status
 - live public update fetching remains unavailable/non-product and no auto-install path exists
 
+M8 evidence pack:
+
+- generated by `.\tools\archive-m8-evidence.ps1 -IncludeExperimental`
+- records Product package UX/trust-surface verification plus all preserved M7.1 fixture checks
+- includes read-only Settings and `pkginfo` package trust surfaces
+- install/apply actions, auto-install, public update fetching, and trusted-time expiry remain unavailable
+
+M9 evidence pack:
+
+- generated by `.\tools\archive-m9-evidence.ps1 -IncludeExperimental`
+- records Product hardware validation mode, MSI checklist, dry-run parser, and preserved M8 verification matrix
+- physical MSI Cyborg 15 A13VE evidence remains pending user-provided results
+
+M10 evidence pack:
+
+- generated by `.\tools\archive-m10-evidence.ps1 -IncludeExperimental`
+- records Product login gate, first-run setup, bcrypt `$2b$` user store, wrong-password denial, rate limiting, lock/unlock, and scoped session authority
+- BIOS fallback labels login/session lock unavailable
+
+M11 evidence pack:
+
+- generated by `.\tools\archive-m11-evidence.ps1 -IncludeExperimental`
+- records Product identity/vault foundation verification plus all preserved M10 verification commands
+- proves local account active, personal/enterprise unavailable, Settings identity panel, read-only identity status, identity mutation denial, vault foundation, denied secret read/write, no plaintext token storage, cloud association unavailable, and no ambient identity or secret authority
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -324,6 +377,7 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - Installer dry-run is Product safety tooling, but installer write/install authority is unavailable.
 - M7.1 signed package admission has separate negative fixture coverage, but package-manager UI, app store, auto-install, live public update fetching, and trusted-time expiry enforcement remain unavailable.
 - M6 has a local console session model, not full multiuser login/authentication.
+- M11 has a local identity model and vault foundation only; personal login, enterprise login, cloud association, cloud storage, encrypted secret storage, and token storage remain unavailable.
 - There is no real AI assistant path.
 - Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.
