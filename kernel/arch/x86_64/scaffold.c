@@ -1,5 +1,6 @@
 #include "arch_build.h"
 #include "apic_x64.h"
+#include "auth_x64.h"
 #include "block_x64.h"
 #include "boot_info.h"
 #include "capability_x64.h"
@@ -4537,6 +4538,32 @@ static void log_gui_interactive_surface(void)
     write_labeled_hex_u32(" display-token ", display64_gui_display_path_token());
     write_labeled_hex_u32(" fs-token ", display64_gui_fs_path_token());
     write_line("");
+}
+
+static void log_login_surface(void)
+{
+    write_labeled_dec_u32("[x64] drs-login drs-login-screen ", auth64_login_screen());
+    write_labeled_dec_u32(" drs-login-auth-success ", auth64_auth_success());
+    write_labeled_dec_u32(" drs-login-wrong-password-denied ", auth64_wrong_password_denied());
+    write_labeled_dec_u32(" drs-login-rate-limited ", auth64_rate_limited());
+    write_labeled_dec_u32(" drs-session-lock ", auth64_session_lock());
+    write_labeled_dec_u32(" drs-session-unlock ", auth64_session_unlock());
+    write_labeled_dec_u32(" drs-session-authority-scoped ", auth64_session_authority_scoped());
+    write_labeled_dec_u32(" first-run-setup ", auth64_first_run_setup());
+    write_labeled_dec_u32(" user-store-nvme ", auth64_user_store_nvme());
+    write_labeled_dec_u32(" user-store-persistent ", auth64_user_store_persistent());
+    write_labeled_dec_u32(" bcrypt-hash ", auth64_bcrypt_hash());
+    write_labeled_dec_u32(" login-display-only ", auth64_login_display_only());
+    write_labeled_dec_u32(" login-input-only ", auth64_login_input_only());
+    write_labeled_dec_u32(" desktop-blocked-pre-auth ", auth64_desktop_blocked_pre_auth());
+    write_labeled_dec_u32(" failures ", auth64_failure_count());
+    write_labeled_dec_u32(" lockout-seconds ", auth64_lockout_seconds());
+    write_string(" user ");
+    write_string(auth64_active_user());
+    write_string(" home ");
+    write_string(auth64_home_namespace());
+    write_string(" profile ");
+    write_line(auth64_session_profile());
 }
 
 static void log_service_session_surface(void)
@@ -11876,6 +11903,17 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     display64_font_probe();
 #endif
     log_font_surface();
+    log_block_surface();
+    log_pci_storage_surface();
+#if LIMITLESS_BUILD_PROFILE_PRODUCT && defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (auth64_run_login_gate() == 0u)
+    {
+        write_line("[x64] login gate failed");
+        cpu_halt_forever();
+    }
+    auth64_controlled_lock_probe();
+#endif
+    log_login_surface();
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_wm_probe();
 #endif
@@ -11885,7 +11923,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     if (display64_desktop_init_done() != 0u)
     {
         write_line("[x64] gui interactive input wait");
-        collect_gui_interactive_probe_input(2000u);
+        collect_gui_interactive_probe_input(6000u);
     }
 #endif
     log_desktop_surface();
@@ -11911,8 +11949,6 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         input64_mouse_buttons());
     log_apic_surface();
     log_xhci_surface();
-    log_block_surface();
-    log_pci_storage_surface();
     virtio_net64_init();
     log_virtio_net_surface();
     log_e1000_surface();

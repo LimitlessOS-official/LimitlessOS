@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
-$m1ShellBuiltins = @("apps", "help", "hwval", "info", "net", "pkginfo", "pwd")
+$m1ShellBuiltins = @("apps", "help", "hwval", "info", "lock", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
@@ -483,20 +483,22 @@ function Assert-RuntimeShellSurfaceSource
     $source = Get-Content -Path $shellPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
-        "Builtins: apps help hwval info net pkginfo pwd",
+        "Builtins: apps help hwval info lock net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
         "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display",
         "Product services: Settings shows service/session status; installer writes disabled",
-        "Unavailable in M9: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
+        "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
+        "Unavailable in M10: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings",
         "Service/session status: Settings",
+        "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
         "Installer writes/install",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
@@ -532,7 +534,7 @@ function Assert-RuntimeShellSurfaceSource
         }
     }
     foreach ($requiredProbeText in @(
-        "Builtins apps help hwval info net pkginfo pwd",
+        "Builtins apps help hwval info lock net pkginfo pwd",
         "Product apps product set",
         "Unavail ASK-not-AI ECHO aliases",
         "HELLO.TXT INDEX.TXT internal"
@@ -1086,6 +1088,34 @@ function Assert-X64Artifacts
         $m9Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m9InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m9.json" -f $BuildProfile.ToLowerInvariant())
         $m9Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m9InventoryPath -Encoding Ascii
+
+        $m10Inventory = $m9Inventory.PSObject.Copy()
+        $m10Inventory.milestone = "M10 User Authentication and Login"
+        $m10Inventory.activeProductServices = @(
+            $m9Inventory.activeProductServices +
+            @("local login/authentication gate", "session lock/unlock")
+        )
+        $m10Inventory.unavailableFeatures = @(
+            $m9Inventory.unavailableFeatures +
+            @("Multiuser account management UI", "Password change UI", "PAM/LDAP/remote auth")
+        ) | Select-Object -Unique
+        $m10Inventory.unavailableServices = @("multiuser account management UI", "password change UI", "PAM/LDAP/remote auth", "installer write/format/boot-entry authority", "auto-install", "app store", "live public update fetch", "package install/apply actions", "trusted-time expiry enforcement", "AI assistant")
+        $m10Inventory | Add-Member -Force -NotePropertyName loginScreenVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName firstRunSetupStatus -NotePropertyValue "creates one local user record in the brokered NVMe FAT namespace when missing"
+        $m10Inventory | Add-Member -Force -NotePropertyName localUserStore -NotePropertyValue "persistent NVMe namespace /USERDB.TXT"
+        $m10Inventory | Add-Member -Force -NotePropertyName passwordHashAlgorithm -NotePropertyValue 'bcrypt $2b$ cost 04 via crypt_blowfish'
+        $m10Inventory | Add-Member -Force -NotePropertyName loginAuthSuccessVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName wrongPasswordDeniedVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName rateLimitVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName sessionLockVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName sessionUnlockVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName sessionAuthorityScopedVerified -NotePropertyValue $true
+        $m10Inventory | Add-Member -Force -NotePropertyName fullMultiuserAuth -NotePropertyValue "single-user local auth only; no multiuser account management"
+        $m10Inventory | Add-Member -Force -NotePropertyName fullMultiuserAuthStatus -NotePropertyValue "unavailable/non-product"
+        $m10Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m10Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m10InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m10.json" -f $BuildProfile.ToLowerInvariant())
+        $m10Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m10InventoryPath -Encoding Ascii
     }
 }
 

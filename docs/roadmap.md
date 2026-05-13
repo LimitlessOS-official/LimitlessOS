@@ -1,22 +1,22 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M9 Bare-Metal Validation + MSI Dry-Run Evidence
+## Current Gate: M10 User Authentication and Login
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, M4.1 hardware-validation closure, M5 safe installer dry-run, M6 service/session authority, M7 signed package admission, M7.1 negative fixture closure, and M8 package trust visibility are accepted. M9 adds a read-only hardware validation mode and structured MSI dry-run evidence parser. It is not an app store, not auto-update, not live public update fetching, and not real internal-disk install/write work.
+M1 cleanup-final through M9 bare-metal validation are accepted. M10 adds a UEFI Product login gate, first-run single-user setup, bcrypt-hashed persistent user record, and session lock/unlock. It is not multiuser account management, not PAM/LDAP/remote auth, not an app store, not auto-update, not live public update fetching, and not real internal-disk install/write work.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- BIOS kernel: `KERNEL64-BIOS.BIN`, 450048 bytes, 879 / 1024 BIOS sectors, 145 reserve, checksum 0x3AD697C1
-- UEFI kernel: `KERNEL64.BIN`, 535552 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- BIOS kernel: `KERNEL64-BIOS.BIN`, 456800 bytes, 893 / 1024 BIOS sectors, 131 reserve, checksum recorded in the generated artifact inventory
+- UEFI kernel: `KERNEL64.BIN`, 551072 / 2097152 bytes, with the current checksum recorded in the generated artifact inventory and verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
 - Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
-- Product builtins: apps, help, hwval, info, net, pkginfo, pwd
+- Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings
 - Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider
-- Product session: one local console session; no full multiuser login/auth yet
+- Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -26,7 +26,7 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
+- ASK, ECHO, aliases, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI assistant behavior
 
 M2 evidence:
 
@@ -118,6 +118,17 @@ M9 bare-metal validation acceptance:
 - MSI checklist: `docs\hardware\msi-cyborg-15-a13ve.md`
 - Dry-run parser: `tools\parse-msi-dryrun-evidence.ps1`
 - Real MSI evidence status remains pending until user supplies physical boot and installer dry-run output
+
+M10 user-authentication acceptance:
+
+- Evidence pack: generated by `tools\archive-m10-evidence.ps1 -IncludeExperimental`
+- UEFI Product shows first-run setup when no user exists, then a login screen before desktop access
+- Local user record lives in `/USERDB.TXT` in the brokered persistent NVMe namespace
+- Passwords are stored as bcrypt `$2b$` hashes
+- Wrong-password denial, rate-limit telemetry, authenticated session authority, lock, and unlock are verifier-visible
+- Login receives only brokered input plus compositor display authority; desktop/session authority is granted only after authentication
+- BIOS remains a checksum-only fallback and labels login/session lock unavailable
+- Multiuser account management, password-change UI, PAM/LDAP, and remote auth remain unavailable/non-product
 - Internal NVMe writes remain disabled by default; real install remains unapproved
 - No M10 work may start until the M9 evidence archive is clean
 

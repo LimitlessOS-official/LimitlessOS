@@ -51,7 +51,7 @@ M6 creates exactly one local console session:
 - network grants: read-only network status
 - installer grants: dry-run read-only inventory
 
-This is not a full multiuser login or password/authentication system. That remains a future milestone.
+M10 layers a minimal UEFI Product login gate on top of this single session: one local console user is created on first run, authenticated before desktop access, and can lock/unlock the same session. This is still not full multiuser account management, password-change UI, PAM/LDAP, or remote authentication.
 
 ## Authority Rules
 

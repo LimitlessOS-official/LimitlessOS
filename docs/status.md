@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M9 is `Bare-Metal Validation + MSI Dry-Run Evidence`.
+M10 is `User Authentication and Login`.
 
-M9 preserves the accepted M8 Product OS and adds a read-only hardware validation surface plus structured MSI dry-run evidence parsing. It does not add real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
+M10 preserves the accepted M9 Product OS and adds a UEFI Product login gate, first-run single-user setup, bcrypt-hashed local user record in the brokered persistent NVMe namespace, and lock/unlock. It does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, live public update fetching, auto-install, app-store behavior, AI behavior, browser behavior, or real internal-disk install writes.
 
 ## Product Profile
 
@@ -31,14 +31,14 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 450048
-- BIOS kernel sectors: 879 / 1024
-- BIOS reserve: 145
-- BIOS checksum: 0x3AD697C1
+- BIOS kernel bytes: 456800
+- BIOS kernel sectors: 893 / 1024
+- BIOS reserve: 131
+- BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 535552
+- UEFI kernel bytes: 551072
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,561,600
+- UEFI byte reserve: 1,546,080
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
 - BIOS sector budget status: ok
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
@@ -46,13 +46,17 @@ Current Product artifacts:
 Product behavior:
 
 - x86_64 boot through disk, UEFI removable media, and UEFI ISO verification
+- UEFI Product login gate before desktop/session access
+- first-run setup for one local user when `/USERDB.TXT` is missing
+- bcrypt `$2b$` password hash persisted in brokered NVMe FAT storage
+- `lock` command and Settings lock path return to the login screen and resume the session after unlock
 - persistent ring-3 shell
 - Product desktop with brokered compositor/window-manager authority
 - truthful `help`, `apps`, and `ls apps` output
 - brokered DHCP/DNS/TCP/HTTP network status through the `net` shell builtin when virtio-net or e1000e hardware is present
 - Terminal, File Manager, and Settings GUI apps opened through real click interaction
 - Product service lifecycle/status query surface
-- exactly one local console session with input, display, filesystem, network-status, and installer-dry-run authority scoped to that session
+- exactly one authenticated local console session with input, display, filesystem, network-status, and installer-dry-run authority scoped to that session
 - brokered persistent file workflow
 - NVMe persistence verification path
 - UEFI-only Ed25519 package archive and payload admission
@@ -61,6 +65,21 @@ Product behavior:
 - read-only hardware validation visibility through `hwval`
 - capability denial checks
 - no ambient authority
+
+M10 login/authentication behavior:
+
+- implementation: UEFI Product kernel and service layer only
+- BIOS fallback: no login gate; runtime help labels UEFI login/session lock as unavailable
+- local user store: `/USERDB.TXT` in the brokered persistent NVMe namespace
+- password hash: bcrypt `$2b$` cost 04 using the public-domain `crypt_blowfish` verifier path
+- first run: creates one local user record before the login screen
+- login screen authority: brokered input plus compositor-owned display only
+- pre-auth desktop/terminal/launcher access: blocked
+- wrong password: denied visibly
+- rate limit: three consecutive failures trigger a displayed 30-second lockout
+- session authority: granted only after authentication and scoped to the local console session
+- lock/unlock: preserves the session and windows, then resumes after the correct password
+- unavailable: multiuser account management, password-change UI, PAM/LDAP, and remote auth
 
 M7.1 package behavior:
 
@@ -119,7 +138,7 @@ M6 service/session behavior:
 - Settings is the Product-safe status surface for service/session information
 - controlled restart verification is limited to the scoped settings/system-info provider path
 - stale capabilities from the old generation are denied
-- M6 has one local console session, not full multiuser login/authentication
+- M6 introduced one local console session; M10 authenticates that single local console user but still does not implement full multiuser account management
 - wrong-session input, display, and filesystem delivery are denied
 - raw input, direct framebuffer, ambient filesystem, and ambient network access remain denied
 
@@ -143,6 +162,7 @@ Product builtins:
 - help
 - hwval
 - info
+- lock (UEFI Product only; BIOS fallback reports unavailable)
 - net
 - pkginfo
 - pwd
@@ -175,6 +195,9 @@ Unavailable or not product-path in Product:
 - app store
 - auto-install
 - live public update fetch
+- multiuser account management UI
+- password change UI
+- PAM/LDAP/remote auth
 - AI assistant behavior
 
 ## Experimental Profile

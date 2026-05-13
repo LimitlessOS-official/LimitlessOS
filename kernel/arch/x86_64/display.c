@@ -1,6 +1,7 @@
 #include "display_x64.h"
 
 #include "arch_build.h"
+#include "auth_x64.h"
 #include "capability_x64.h"
 #include "launch_x64.h"
 #include "package_signing_x64.h"
@@ -1757,6 +1758,63 @@ void display64_font_probe(void)
     (void)display64_compositor_present();
 }
 
+void display64_login_screen_draw(const char *title, const char *message, u32 failures, u32 lockout_seconds)
+{
+    u32 panel_w;
+    u32 panel_h;
+    u32 panel_x;
+    u32 panel_y;
+    u32 field_w;
+
+    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    panel_w = display64_min_u32(520u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
+    panel_h = 312u;
+    panel_x = (g_display_boot_info->framebuffer_width > panel_w) ? ((g_display_boot_info->framebuffer_width - panel_w) / 2u) : 0u;
+    panel_y = (g_display_boot_info->framebuffer_height > panel_h) ? ((g_display_boot_info->framebuffer_height - panel_h) / 2u) : 0u;
+    field_w = (panel_w > 96u) ? (panel_w - 96u) : panel_w;
+
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, 0x00060D14u);
+    display64_compositor_fill_rect(panel_x, panel_y, panel_w, panel_h, 0x00101A24u);
+    display64_compositor_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x0046D9A6u);
+    (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 70u, "M10 local console authentication", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 102u, title, DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 126u, message, DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 164u, "Username", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(panel_x + 34u, panel_y + 184u, field_w, 28u, 0x000B111Au);
+    display64_compositor_draw_rect(panel_x + 34u, panel_y + 184u, field_w, 28u, 0x0061748Au);
+    (void)display64_draw_font_text(panel_x + 44u, panel_y + 190u, "limitless", DISPLAY64_FONT_NORMAL, 0x00D9EAF6u, DISPLAY64_FONT_TRANSPARENT);
+
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 224u, "Password", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(panel_x + 34u, panel_y + 244u, field_w, 28u, 0x000B111Au);
+    display64_compositor_draw_rect(panel_x + 34u, panel_y + 244u, field_w, 28u, 0x0061748Au);
+    (void)display64_draw_font_text(panel_x + 44u, panel_y + 250u, "********", DISPLAY64_FONT_NORMAL, 0x00D9EAF6u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(panel_x + panel_w - 132u, panel_y + 244u, 96u, 28u, 0x003C8FCEu);
+    display64_compositor_draw_rect(panel_x + panel_w - 132u, panel_y + 244u, 96u, 28u, 0x00F8FBFFu);
+    (void)display64_draw_font_text(panel_x + panel_w - 104u, panel_y + 250u, "Login", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+
+    if (failures != 0u)
+    {
+        display64_draw_label_value(panel_x + 34u, panel_y + 286u, "Failed attempts ", failures, 0x00F0A060u);
+    }
+    if (lockout_seconds != 0u)
+    {
+        display64_draw_label_value(panel_x + 260u, panel_y + 286u, "Lockout ", lockout_seconds, 0x00F0A060u);
+    }
+
+    (void)display64_compositor_present();
+}
+
+void display64_login_setup_screen(void)
+{
+    display64_login_screen_draw("First-run setup", "Create the initial local user", 0u, 0u);
+}
+
 static struct display64_window *display64_wm_find_window(u32 handle)
 {
     u32 index;
@@ -2337,20 +2395,23 @@ static void display64_desktop_draw_settings(u32 handle)
     display64_draw_label_value(body_x, body_y + 148u, "Services ", services64_product_service_running(), 0x00B8C7D8u);
     display64_draw_label_value(body_x + 128u, body_y + 148u, "Session ", services64_session_id(), 0x00B8C7D8u);
     (void)display64_draw_font_text(body_x, body_y + 166u, "Installer writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 190u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(body_x, body_y + 184u, 72u, 24u, 0x003C8FCEu);
+    display64_compositor_draw_rect(body_x, body_y + 184u, 72u, 24u, 0x00F8FBFFu);
+    (void)display64_draw_font_text(body_x + 18u, body_y + 188u, "Lock", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 208u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        display64_draw_label_value(body_x, body_y + 226u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
+        (void)display64_draw_font_text(body_x, body_y + 234u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        display64_draw_label_value(body_x, body_y + 252u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 208u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        (void)display64_draw_font_text(body_x, body_y + 226u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 234u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 252u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
-    (void)display64_draw_font_text(body_x, body_y + 244u, "Index verified local fixture", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 262u, "No auto-install/public fetch", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 280u, "Install/apply disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 270u, "Index verified local fixture", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 288u, "No auto-install/public fetch", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 306u, "Install/apply disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_desktop_settings_count == 0u)
     {
         ++g_display_desktop_settings_count;
@@ -2359,6 +2420,21 @@ static void display64_desktop_draw_settings(u32 handle)
     {
         ++g_display_pkg_settings_panel_count;
     }
+}
+
+static int display64_desktop_settings_lock_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 body_x;
+    u32 body_y;
+
+    if (window == 0)
+    {
+        return 0;
+    }
+
+    body_x = window->x + 10u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
+    return display64_point_in_rect(x, y, body_x, body_y + 184u, 72u, 24u);
 }
 
 static void display64_desktop_draw_background(void)
@@ -2817,6 +2893,26 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                 u32 region = DISPLAY64_GUI_REGION_BODY;
                 g_display_desktop_launcher_open = 0u;
                 z_before = window->z;
+
+                if ((window->handle == g_display_desktop_settings_handle)
+                    && (display64_desktop_settings_lock_hit(window, x, y) != 0))
+                {
+                    display64_wm_focus_and_route_console(window->handle);
+                    display64_desktop_redraw();
+                    (void)auth64_lock_session();
+                    display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_BODY,
+                        window->handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        display64_wm_window_z(window->handle));
+                    g_display_wm_last_buttons = buttons;
+                    return 1u;
+                }
 
                 if (display64_point_in_rect(x, y, close_x, close_y, 14u, 14u))
                 {

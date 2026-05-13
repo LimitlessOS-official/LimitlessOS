@@ -26,6 +26,7 @@ $isoGenerator = Join-Path $root "tools\\generate-iso.ps1"
 $uefiFatGenerator = Join-Path $root "tools\\generate-uefi-fat-image.ps1"
 $nvmeImageGenerator = Join-Path $root "tools\\generate-nvme-image.ps1"
 $m1ProductionGate = Join-Path $root "tools\\assert-m1-production-slice.ps1"
+$cryptBlowfishDir = Join-Path $root "third_party\\crypt_blowfish"
 $packageStoreHeader = Join-Path $generatedDir "package_store_generated.h"
 $packageStoreSignatureHeader = Join-Path $generatedDir "package_store_signatures_generated.h"
 $archBuildHeader = Join-Path $generatedDir "arch_build.h"
@@ -388,6 +389,7 @@ function Build-X64Scaffold
         "-m64",
         "-march=x86-64",
         "-mno-red-zone",
+        "-mno-stack-arg-probe",
         "-Oz",
         "-ffreestanding",
         "-fno-pic",
@@ -425,6 +427,7 @@ function Build-X64Scaffold
         "sha512.c",
         "verify.c"
     ) | ForEach-Object { Get-Item (Join-Path $ed25519Dir $_) }
+    $uefiSources += Get-Item (Join-Path $cryptBlowfishDir "crypt_blowfish.c")
     $biosCFlags = @($cFlags + "-DLIMITLESS_X64_BIOS_KERNEL=1")
     $uefiCFlags = @($uefiOnlyCFlags + "-DLIMITLESS_X64_UEFI_KERNEL=1")
     $objectFiles = @($entryObj, $interruptsAsmObj)

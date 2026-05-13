@@ -51,6 +51,8 @@ void display64_font_probe(void);
 u32 display64_font_init_done(void);
 u32 display64_font_glyph_count(void);
 u32 display64_font_render_count(void);
+void display64_login_setup_screen(void);
+void display64_login_screen_draw(const char *title, const char *message, u32 failures, u32 lockout_seconds);
 void display64_wm_probe(void);
 u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy);
 u32 display64_wm_process_keyboard_event(u8 value);

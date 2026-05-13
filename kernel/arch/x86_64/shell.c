@@ -1,6 +1,7 @@
 #include "shell_x64.h"
 
 #include "apic_x64.h"
+#include "auth_x64.h"
 #include "console_x64.h"
 #include "display_x64.h"
 #include "e1000e_x64.h"
@@ -153,6 +154,31 @@ static u32 shell64_write_text(u32 console_capability_handle, u32 owner_id, const
         owner_id,
         (const u8 *)text,
         shell64_length(text));
+}
+
+static u32 shell64_login_available(void)
+{
+    return (auth64_login_screen() != 0u) && (auth64_auth_success() != 0u);
+}
+
+static u32 shell64_write_builtins_line(u32 console_capability_handle, u32 owner_id)
+{
+    if (shell64_login_available() != 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info lock net pkginfo pwd\n");
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info net pkginfo pwd\n");
+}
+
+static u32 shell64_write_login_status_line(u32 console_capability_handle, u32 owner_id)
+{
+    if (shell64_login_available() != 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "Product login: first-run setup, authenticated session, lock/unlock through brokered input\n");
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, "UEFI login/session lock: unavailable on BIOS checksum fallback\n");
 }
 
 static u32 shell64_format_decimal_u8(char *buffer, u32 value)
@@ -325,9 +351,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M9; scoped capability required\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M10; scoped capability required\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M9; scoped install required\n");
+        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M10; scoped install required\n");
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
@@ -350,9 +376,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M9; scoped capability required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M10; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M9; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M10; scoped install required\n");
     return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network\n");
 }
 
@@ -755,6 +781,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: pkginfo - show read-only package trust status\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "lock"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: lock - lock the authenticated local session\n");
+    }
+
     if (shell64_token_equals(token_start, token_length, "pwd"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: pwd\n");
@@ -806,6 +837,7 @@ static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
         || shell64_token_equals(token_start, token_length, "help")
         || shell64_token_equals(token_start, token_length, "hwval")
         || shell64_token_equals(token_start, token_length, "info")
+        || shell64_token_equals(token_start, token_length, "lock")
         || shell64_token_equals(token_start, token_length, "net")
         || shell64_token_equals(token_start, token_length, "pkginfo")
         || shell64_token_equals(token_start, token_length, "pwd");
@@ -925,8 +957,16 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "GUI desktop: Terminal File Manager Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
+    if (shell64_login_available() != 0u)
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: use lock; first-run user stored on NVMe\n");
+    }
+    else
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
+    }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M9:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M10:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer writes/install\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
@@ -1262,17 +1302,18 @@ u32 shell64_execute_line(
         {
             return shell64_print_usage(console_capability_handle, owner_id, first_start, first_length);
         }
-        (void)shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info net pkginfo pwd\n");
+        (void)shell64_write_builtins_line(console_capability_handle, owner_id);
         (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move rename stat touch write\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product GUI: Terminal, File Manager, Settings through brokered desktop input/display\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer writes disabled\n");
+        (void)shell64_write_login_status_line(console_capability_handle, owner_id);
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M9: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes\n");
+            "Unavailable in M10: ask (not AI), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
@@ -1298,6 +1339,15 @@ u32 shell64_execute_line(
     if (shell64_token_equals(command_start, command_length, "pkginfo"))
     {
         return shell64_print_package_status(console_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "lock"))
+    {
+        if (auth64_lock_session() != 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "session unlocked\n");
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "lock unavailable on this boot path\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "info"))

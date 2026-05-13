@@ -88,6 +88,91 @@ function Wait-ForLogPattern
     throw "NVMe two-boot verification failed: timed out waiting for log marker $Pattern."
 }
 
+function Send-AuthProbe
+{
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$DebugLogPath
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $connected = $false
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        try {
+            $client.Connect("127.0.0.1", $Port)
+            $connected = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    if (-not $connected) {
+        $client.Dispose()
+        throw "NVMe two-boot verification failed: could not connect to QMP auth port $Port."
+    }
+
+    try {
+        $stream = $client.GetStream()
+        $writer = [System.IO.StreamWriter]::new($stream)
+        $writer.NewLine = "`n"
+        $writer.AutoFlush = $true
+        $writer.WriteLine('{"execute":"qmp_capabilities"}')
+
+        $sendKey = {
+            param([string]$Key)
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":true,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds 95
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":false,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds 160
+            if ($Key -eq "ret") {
+                Start-Sleep -Milliseconds 1300
+            }
+        }
+        $sendTextLine = {
+            param([string]$Text)
+            foreach ($character in $Text.ToCharArray()) {
+                $key = switch ($character) {
+                    ' ' { "spc"; break }
+                    '.' { "dot"; break }
+                    default { ([string]$character).ToLowerInvariant(); break }
+                }
+                & $sendKey $key
+            }
+            & $sendKey "ret"
+        }
+
+        $deadline = [DateTime]::UtcNow.AddSeconds(80)
+        $setupSent = $false
+        $loginSent = $false
+        while (([DateTime]::UtcNow -lt $deadline) -and (-not $loginSent)) {
+            $logText = ""
+            if (Test-Path $DebugLogPath) {
+                $logText = Get-Content -Path $DebugLogPath -Raw -ErrorAction SilentlyContinue
+            }
+            if ((-not $setupSent) -and ($logText -match '\[x64\] first-run setup input wait')) {
+                & $sendTextLine "limitless"
+                & $sendTextLine "limitless"
+                $setupSent = $true
+                Start-Sleep -Milliseconds 1200
+                continue
+            }
+            if ($logText -match '\[x64\] login input wait') {
+                & $sendTextLine "limitless"
+                & $sendTextLine "limitless"
+                $loginSent = $true
+                break
+            }
+            Start-Sleep -Milliseconds 120
+        }
+        if (-not $loginSent) {
+            throw "NVMe two-boot verification failed: login prompt was not observed."
+        }
+    }
+    finally {
+        $client.Dispose()
+    }
+}
+
 function Ensure-NvmeGptImage
 {
     param([Parameter(Mandatory = $true)][string]$Root)
@@ -128,6 +213,7 @@ function Start-NvmeTwoBoot
     $logPath = Join-Path $Root ("build\{0}-debug.log" -f $logStem)
     $serialLogPath = Join-Path $Root ("build\{0}-serial.log" -f $logStem)
     $stderrLogPath = Join-Path $Root ("build\{0}-stderr.log" -f $logStem)
+    $qmpPort = Get-Random -Minimum 49001 -Maximum 53000
 
     foreach ($path in @($logPath, $serialLogPath, $stderrLogPath)) {
         if (Test-Path $path) {
@@ -140,6 +226,7 @@ function Start-NvmeTwoBoot
         "-monitor", "none",
         "-no-reboot",
         "-no-shutdown",
+        "-qmp", "tcp:127.0.0.1:$qmpPort,server=on,wait=off",
         "-serial", "file:$serialLogPath",
         "-debugcon", "file:$logPath",
         "-global", "isa-debugcon.iobase=0xe9",
@@ -157,6 +244,8 @@ function Start-NvmeTwoBoot
         }
         $arguments += @(
             "-device", "qemu-xhci,id=xhci",
+            "-device", "usb-kbd,bus=xhci.0",
+            "-device", "usb-mouse,bus=xhci.0",
             "-drive", "if=none,id=usbstick,format=raw,file=$MediaPath",
             "-device", "usb-storage,bus=xhci.0,drive=usbstick,removable=true,bootindex=1",
             "-drive", "if=none,id=ahciuefi,media=cdrom,format=raw,readonly=on,file=$uefiAhciIsoPath",
@@ -165,6 +254,9 @@ function Start-NvmeTwoBoot
     }
     else {
         $arguments += @(
+            "-device", "qemu-xhci,id=xhci",
+            "-device", "usb-kbd,bus=xhci.0",
+            "-device", "usb-mouse,bus=xhci.0",
             "-drive", "if=none,id=cdrom,media=cdrom,file=$MediaPath",
             "-device", "ide-cd,drive=cdrom,bootindex=1"
         )
@@ -175,7 +267,8 @@ function Start-NvmeTwoBoot
 
     try {
         Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] PIT at 100 Hz' -TimeoutMilliseconds 45000
-        Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] drs-nvme-rw' -TimeoutMilliseconds 90000
+        Send-AuthProbe -Port $qmpPort -DebugLogPath $logPath
+        Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] drs-nvme-rw' -TimeoutMilliseconds 180000
         Start-Sleep -Seconds 4
     }
     finally {

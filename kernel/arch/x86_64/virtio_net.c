@@ -2,6 +2,7 @@
 
 #include "e1000e_x64.h"
 #include "paging_x64.h"
+#include "pit.h"
 
 #define VIRTIO_NET64_MAP_VIRTUAL_BASE 0xFFFFFFFF901A0000ull
 #define VIRTIO_NET64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
@@ -21,6 +22,7 @@
 #define VIRTIO_NET64_DHCP_BASE_BYTES \
     (VIRTIO_NET64_DHCP_FIXED_BYTES + VIRTIO_NET64_DHCP_COOKIE_BYTES)
 #define VIRTIO_NET64_POLL_BUDGET 5000000u
+#define VIRTIO_NET64_RX_PROCESS_BUDGET 1024u
 
 #define VIRTIO_NET64_F_MAC 5u
 #define VIRTIO_NET64_F_VERSION_1 32u
@@ -34,6 +36,8 @@
 #define VIRTIO_NET64_DNS_SOURCE_PORT 53530u
 #define VIRTIO_NET64_HTTP_SOURCE_PORT 49153u
 #define VIRTIO_NET64_HTTP_INITIAL_SEQ 0x4C4F5348u
+#define VIRTIO_NET64_DNS_RETRY_COUNT 5u
+#define VIRTIO_NET64_DNS_RETRY_WAIT_TICKS 3u
 #define VIRTIO_NET64_TCP_STAGE_NONE 0u
 #define VIRTIO_NET64_TCP_STAGE_SYNACK 1u
 #define VIRTIO_NET64_TCP_STAGE_RESPONSE 2u
@@ -616,6 +620,21 @@ static u32 virtio_net64_poll_rx_match(
     u32 (*parser)(const u8 *bytes, u32 byte_count),
     u32 error_code);
 
+static void virtio_net64_wait_ticks(u32 ticks)
+{
+    u32 target;
+
+    if (ticks == 0u)
+    {
+        return;
+    }
+
+    target = pit_get_ticks() + ticks;
+    while (pit_get_ticks() < target)
+    {
+    }
+}
+
 static u32 virtio_net64_parse_arp_reply(const u8 *bytes, u32 byte_count)
 {
     const u8 *frame;
@@ -774,6 +793,7 @@ static u32 virtio_net64_poll_rx_match(
 {
     volatile struct virtio_net64_used *used = (volatile struct virtio_net64_used *)&g_virtio_net_rx_used;
     u32 poll;
+    u32 processed = 0u;
 
     if (g_virtio_net_backend == VIRTIO_NET64_BACKEND_E1000E)
     {
@@ -787,7 +807,8 @@ static u32 virtio_net64_poll_rx_match(
             virtio_net64_notify_queue(0u, g_virtio_net_rx_notify_off);
         }
 
-        while (g_virtio_net_rx_seen != used->idx)
+        while ((g_virtio_net_rx_seen != used->idx)
+            && (processed < VIRTIO_NET64_RX_PROCESS_BUDGET))
         {
             u32 slot = g_virtio_net_rx_seen % VIRTIO_NET64_QUEUE_SIZE;
             u32 id = used->ring[slot].id;
@@ -795,6 +816,7 @@ static u32 virtio_net64_poll_rx_match(
             u32 matched = 0u;
 
             ++g_virtio_net_rx_seen;
+            ++processed;
             if (id < VIRTIO_NET64_QUEUE_SIZE)
             {
                 g_virtio_net_rx = 1u;
@@ -803,6 +825,11 @@ static u32 virtio_net64_poll_rx_match(
                 if (matched != 0u)
                     return 1u;
             }
+        }
+
+        if (processed >= VIRTIO_NET64_RX_PROCESS_BUDGET)
+        {
+            break;
         }
     }
 
@@ -1372,7 +1399,7 @@ static void virtio_net64_run_dns(void)
         virtio_net64_copy_mac(g_virtio_net_dns_mac, g_virtio_net_arp_mac);
     }
 
-    for (attempt = 0u; attempt < 3u; ++attempt)
+    for (attempt = 0u; attempt < VIRTIO_NET64_DNS_RETRY_COUNT; ++attempt)
     {
         g_virtio_net_dns_response = 0u;
         g_virtio_net_dns_rcode = 0u;
@@ -1381,9 +1408,8 @@ static void virtio_net64_run_dns(void)
         g_virtio_net_dns_query = virtio_net64_transmit_current_frame(virtio_net64_build_dns_query());
         if (g_virtio_net_dns_query == 0u)
         {
-            g_virtio_net_dns_unavailable = 1u;
-            g_virtio_net_dns_error = 3u;
-            return;
+            virtio_net64_wait_ticks(VIRTIO_NET64_DNS_RETRY_WAIT_TICKS);
+            continue;
         }
 
         if ((virtio_net64_poll_rx_match(virtio_net64_parse_dns_response, 0u) != 0u)
@@ -1392,6 +1418,15 @@ static void virtio_net64_run_dns(void)
         {
             break;
         }
+
+        virtio_net64_wait_ticks(VIRTIO_NET64_DNS_RETRY_WAIT_TICKS);
+    }
+
+    if (g_virtio_net_dns_query == 0u)
+    {
+        g_virtio_net_dns_unavailable = 1u;
+        g_virtio_net_dns_error = 3u;
+        return;
     }
 
     if (g_virtio_net_dns_response == 0u)

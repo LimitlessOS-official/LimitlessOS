@@ -185,21 +185,35 @@ function Get-X64PersistentShellLines
 
 function Assert-X64M1RuntimeSurface
 {
-    param([string[]]$Lines)
+    param(
+        [string[]]$Lines,
+        [bool]$LoginExpected
+    )
 
     $persistentLines = @(Get-X64PersistentShellLines -Lines $Lines)
     if ($persistentLines.Count -eq 0) {
         throw "QEMU verification failed: x64 persistent shell transcript was not found for M1 runtime surface validation."
     }
 
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info net pkginfo pwd$' -Message "M9 runtime help did not label shell builtins."
+    if ($LoginExpected) {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info lock net pkginfo pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
+    }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; MSI manual evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings through brokered desktop input/display$' -Message "M4 runtime help did not describe Product GUI status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer writes disabled$' -Message "M6 runtime help did not describe Product service/session status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M9: ask \(not AI\), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes$' -Message "M9 runtime help did not label unavailable surfaces."
+    if ($LoginExpected) {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product login: first-run setup, authenticated session, lock/unlock through brokered input$' -Message "M10 runtime help did not describe Product login/session lock."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^UEFI login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS fallback help did not label login/session lock as unavailable."
+    }
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M10: ask \(not AI\), echo, aliases, app-store, auto-install, public-update-fetch, ai, internal install writes$' -Message "M10 runtime help did not label unavailable surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -212,6 +226,12 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings$' -Message "M4 apps output did not label Product GUI apps."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
+    if ($LoginExpected) {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS apps output did not label login/session lock as unavailable."
+    }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: safe tooling only; writes disabled$' -Message "M6 apps output did not label installer dry-run write-disable status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Installer writes/install$' -Message "M6 apps output did not quarantine installer write/install authority."
@@ -355,7 +375,8 @@ function Send-QemuKeyboardProbe
         [int]$LineDelayMilliseconds,
         [string]$DebugLogPath = "",
         [string]$FramebufferLogPath = "",
-        [bool]$GuiProbeEnabled = $false
+        [bool]$GuiProbeEnabled = $false,
+        [bool]$LoginProbeEnabled = $false
     )
 
     $client = [System.Net.Sockets.TcpClient]::new()
@@ -382,8 +403,15 @@ function Send-QemuKeyboardProbe
         $writer = [System.IO.StreamWriter]::new($stream)
         $writer.NewLine = "`n"
         $writer.AutoFlush = $true
+        $qmpDrainBuffer = New-Object byte[] 4096
+        $drainQmp = {
+            while ($stream.DataAvailable) {
+                [void]$stream.Read($qmpDrainBuffer, 0, $qmpDrainBuffer.Length)
+            }
+        }
 
         $writer.WriteLine('{"execute":"qmp_capabilities"}')
+        & $drainQmp
 
         $deadline = [DateTime]::UtcNow.AddMilliseconds($DurationMilliseconds)
         $keyHoldMilliseconds = [Math]::Max(80, [int]($KeyDelayMilliseconds / 2))
@@ -415,6 +443,7 @@ function Send-QemuKeyboardProbe
                 if ($dy -gt 80) { $dy = 80 }
                 if ($dy -lt -80) { $dy = -80 }
                 $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"rel","data":{{"axis":"x","value":{0}}}}},{{"type":"rel","data":{{"axis":"y","value":{1}}}}}]}}}}' -f $dx, $dy))
+                & $drainQmp
                 $cursor.X += $dx
                 $cursor.Y += $dy
                 Start-Sleep -Milliseconds 55
@@ -422,19 +451,69 @@ function Send-QemuKeyboardProbe
         }
         $sendClick = {
             $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
+            & $drainQmp
             Start-Sleep -Milliseconds 120
             $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
+            & $drainQmp
             Start-Sleep -Milliseconds 220
         }
         $sendKey = {
             param([string]$Key)
 
             $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":true,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            & $drainQmp
             Start-Sleep -Milliseconds $keyHoldMilliseconds
             $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":false,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            & $drainQmp
             Start-Sleep -Milliseconds $KeyDelayMilliseconds
             if ($Key -eq "ret") {
                 Start-Sleep -Milliseconds $LineDelayMilliseconds
+            }
+        }
+        $sendTextLine = {
+            param([string]$Text)
+
+            foreach ($character in $Text.ToCharArray()) {
+                $key = switch ($character) {
+                    ' ' { "spc"; break }
+                    '.' { "dot"; break }
+                    '-' { "minus"; break }
+                    default { ([string]$character).ToLowerInvariant(); break }
+                }
+                & $sendKey $key
+            }
+            & $sendKey "ret"
+        }
+
+        if ($LoginProbeEnabled) {
+            & $sendMoveTo 560 420
+            Start-Sleep -Milliseconds 300
+            $authDeadline = [DateTime]::UtcNow.AddSeconds(75)
+            $setupSent = $false
+            $loginSent = $false
+            while (([DateTime]::UtcNow -lt $authDeadline) -and (-not $loginSent)) {
+                $logText = ""
+                if (($DebugLogPath.Length -gt 0) -and (Test-Path $DebugLogPath)) {
+                    $logText = Get-Content -Path $DebugLogPath -Raw -ErrorAction SilentlyContinue
+                }
+                if ((-not $setupSent) -and ($logText -match '\[x64\] first-run setup input wait')) {
+                    & $sendTextLine "limitless"
+                    & $sendTextLine "limitless"
+                    $setupSent = $true
+                    Start-Sleep -Milliseconds 1200
+                    continue
+                }
+                if ($logText -match '\[x64\] login input wait') {
+                    & $sendTextLine "limitless"
+                    & $sendTextLine "limitless"
+                    $loginSent = $true
+                    Start-Sleep -Milliseconds 1200
+                    break
+                }
+                Start-Sleep -Milliseconds 120
+            }
+            if (-not $loginSent) {
+                throw "QEMU verification failed: login prompt was not observed."
             }
         }
 
@@ -474,10 +553,12 @@ function Send-QemuKeyboardProbe
                 & $sendClick
                 & $sendMoveTo $dragStartX $dragStartY
                 $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
+                & $drainQmp
                 Start-Sleep -Milliseconds 160
                 & $sendMoveTo $dragEndX $dragEndY
                 Start-Sleep -Milliseconds 160
                 $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
+                & $drainQmp
                 Start-Sleep -Milliseconds 260
                 & $sendMoveTo 22 $launcherY
                 & $sendClick
@@ -501,6 +582,12 @@ function Send-QemuKeyboardProbe
         else {
             & $sendMoveTo 560 420
             Start-Sleep -Milliseconds 300
+            & $sendKey "ret"
+            Start-Sleep -Milliseconds 100
+        }
+
+        if ($DebugLogPath.Length -gt 0) {
+            Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
 
         $keys = @(
@@ -517,7 +604,15 @@ function Send-QemuKeyboardProbe
             "s", "t", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
             "n", "e", "t", "ret",
             "p", "k", "g", "i", "n", "f", "o", "ret",
-            "h", "w", "v", "a", "l", "ret",
+            "h", "w", "v", "a", "l", "ret"
+        )
+        if ($LoginProbeEnabled) {
+            $keys += @(
+                "l", "o", "c", "k", "ret",
+                "l", "i", "m", "i", "t", "l", "e", "s", "s", "ret"
+            )
+        }
+        $keys += @(
             "w", "r", "i", "t", "e", "spc", "w", "dot", "t", "x", "t", "spc", "o", "k", "ret",
             "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret",
             "e", "x", "i", "t", "ret"
@@ -715,7 +810,8 @@ try {
         $probeMilliseconds = if ($BootMedia -eq "disk") { 52000 } else { 56000 }
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 1600 }
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:($BootMedia -ne "disk")
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:($BootMedia -ne "disk") -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product"))
+        Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
     }
     Start-Sleep -Seconds $bootWaitSeconds
 }
@@ -2491,13 +2587,14 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ cat README\.TXT' -Message "x64 ring-3 input-backed prompt was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user input cli probe attempts 4 exits 4 result 0x49434C31 recorded 0x49434C31 expected 0x49434C31 command-bytes 14 read-bytes 32 prompt-bytes 14 console-writes 8 console-bytes 123 console-denials 0 input-reads 1 input-bytes 14 input-denials 0 input-eof 0 rip 0x00000000410003C0 rsp 0x0000000040020000 cs 0x0000000000000033 ss 0x000000000000002B' -Message "x64 ring-3 input/console/filesystem CLI proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help' -Message "x64 ring-3 shell stream help command was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help hwval info net pkginfo pwd|Builtins apps help hwval info net pkginfo pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help hwval info (lock )?net pkginfo pwd|Builtins apps help hwval info lock net pkginfo pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product package trust: pkginfo and Settings are read-only; install/apply disabled|Pkg trust read-only; no install/apply' -Message "x64 ring-3 shell stream Product package trust help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: Terminal, File Manager, Settings through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product services: Settings shows service/session status; installer writes disabled' -Message "x64 ring-3 shell stream Product service/session help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M9: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3773,7 +3870,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern $uefiDriverReadStatusLoadFullPattern -Message "x64 UEFI AHCI drs-load-full disk-sourced utility set proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] syscall input keyboard ps2-status 0x[0-9A-F]+ irq [0-9]+ polls [1-9][0-9]* scancodes [1-9][0-9]* bytes [0-9]+ pending [0-9]+ drops 0 last-scancode 0x[0-9A-F]+ last-byte 0x[0-9A-F]+' -Message "x64 UEFI PS/2 keyboard input telemetry proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user shell stream probe attempts 5 exits 5 result 0x53484C31 recorded 0x53484C31 expected 0x53484C31' -Message "x64 UEFI kernel shell stream proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] brokered keyboard read cap 0x[0-9A-F]+ result 1 first-byte 0x[0-9A-F]+ pending-before [1-9][0-9]* pending-after [0-9]+ keyboard-reads 1 keyboard-read-bytes 1' -Message "x64 UEFI brokered keyboard read syscall proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] brokered keyboard read cap 0x[0-9A-F]+ result 1 first-byte 0x[0-9A-F]+ pending-before [1-9][0-9]* pending-after [0-9]+ keyboard-reads [1-9][0-9]* keyboard-read-bytes [1-9][0-9]*' -Message "x64 UEFI brokered keyboard read syscall proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user second-page probe attempts 6 exits 6 result 0x32504752 recorded 0x32504752 expected 0x32504752' -Message "x64 UEFI kernel second-page userspace proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user second-page probe attempts 6 exits 6 result 0x32504752 recorded 0x32504752 expected 0x32504752 .* display-pixels [1-9][0-9]* display-draws [1-9][0-9]* display-denials 0 display-unavailable 0 display-token 0x[0-9A-F]+ display-available 1 display-text-writes [1-9][0-9]* display-text-bytes [1-9][0-9]* display-clears [1-9][0-9]* display-console-writes [1-9][0-9]* display-console-bytes [1-9][0-9]* display-console-line-clears [1-9][0-9]* display-console-wraps [0-9]+ display-console-scrolls [1-9][0-9]*' -Message "x64 UEFI brokered display text/scroll proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] bootstrap halt' -Message "x64 UEFI kernel did not reach the normal scaffold halt."
@@ -3797,6 +3894,11 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '^internal writes: disabled by default$' -Message "x64 hwval did not report internal writes disabled."
     Assert-OutputContains -Lines $outputLines -Pattern '^real install approved: false$' -Message "x64 hwval did not report real install as unapproved."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
+    if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 1 drs-login-rate-limited 1 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 .* user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ lock' -Message "x64 persistent shell did not accept the Product lock command."
+        Assert-OutputContains -Lines $outputLines -Pattern '^session unlocked$' -Message "x64 persistent shell did not unlock the authenticated session."
+    }
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $outputLines -Pattern '^no network$' -Message "x64 persistent shell did not report clean network unavailability on disk/BIOS media."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg unavailable bios-checksum-only 1' -Message "x64 BIOS package-signing surface did not report checksum-only fallback."
@@ -3823,7 +3925,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."
     Assert-OutputContains -Lines $outputLines -Pattern '^ok$' -Message "x64 persistent shell did not print the written file contents."
     Assert-X64M6ServiceSessionSurface -Lines $outputLines
-    Assert-X64M1RuntimeSurface -Lines $outputLines
+    Assert-X64M1RuntimeSurface -Lines $outputLines -LoginExpected:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product"))
 }
 
 $outputLines

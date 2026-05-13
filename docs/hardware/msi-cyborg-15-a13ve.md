@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M9 physical validation pending user evidence.
+Status: M10 physical validation pending user evidence.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,6 +24,9 @@ This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on a
 
 - [ ] Boot from USB using the UEFI entry.
 - [ ] Record Secure Boot state.
+- [ ] If first-run setup appears, create the initial local user.
+- [ ] Confirm login screen appears before the desktop.
+- [ ] Log in with the created local user.
 - [ ] Confirm desktop appears.
 - [ ] Confirm display resolution.
 - [ ] Confirm cursor moves.
@@ -34,6 +37,7 @@ This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on a
 - [ ] Run `apps`.
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
+- [ ] Run `lock`, then unlock with the correct password and confirm the existing session resumes.
 - [ ] Confirm `help`, `apps`, `pkginfo`, and `hwval` remain truthful.
 - [ ] Run Product apps in Terminal: `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, `write`.
 - [ ] Confirm window title-bar drag moves a window.
@@ -94,6 +98,8 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 - `apps` result:
 - `pkginfo` result:
 - `hwval` result:
+- Login/setup result:
+- Lock/unlock result:
 - File Manager result:
 - Settings result:
 - Network status:
@@ -110,4 +116,4 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 
 ## Pass Criteria
 
-M9 hardware validation passes only when the checklist above is completed with no unsafe partition access, no untruthful Product surface, no ambient authority exception, and no internal install/write/format/NVRAM action. If any item fails, record the exact failing step and keep real internal install blocked.
+M10 hardware validation passes only when the checklist above is completed with working login/lock behavior, no unsafe partition access, no untruthful Product surface, no ambient authority exception, and no internal install/write/format/NVRAM action. If any item fails, record the exact failing step and keep real internal install blocked.

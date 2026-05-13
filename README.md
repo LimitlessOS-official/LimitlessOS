@@ -2,9 +2,9 @@
 
 LimitlessOS is a clean-room operating system concept and bootstrap codebase focused on security, efficiency, stability, and clear AI safety boundaries.
 
-## Current status: M9 bare-metal validation
+## Current status: M10 user authentication and login
 
-M1 cleanup-final, M2 quarantine, M3 Product networking, M4 QEMU/QMP interactive GUI promotion, M4.1 hardware-validation closure, M5 safe installer dry-run, M6 service/session authority, M7 signed package admission, M7.1 supply-chain negative fixture closure, and M8 package trust visibility are accepted. M9 adds a read-only bare-metal validation surface and MSI dry-run evidence format. It does not add real internal install, formatting, NVRAM boot-entry changes, package install/apply UX, app-store behavior, public update fetching, trusted-time expiry enforcement, or AI behavior.
+M1 cleanup-final through M9 bare-metal validation are accepted. M10 adds a real UEFI Product login gate, first-run single-user setup, a bcrypt-hashed local user record in the brokered NVMe namespace, and session lock/unlock. It does not add multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install, package install/apply UX, public update fetching, trusted-time expiry enforcement, or AI behavior.
 
 Use the Product profile for the serious bootable slice:
 
@@ -12,17 +12,17 @@ Use the Product profile for the serious bootable slice:
 .\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
 ```
 
-Product currently builds two x86_64 kernels. `KERNEL64-BIOS.BIN` is the BIOS fallback kernel and remains under the BIOS loader contract at `450048` bytes, `879 / 1024` sectors, and `145` reserve sectors. `KERNEL64.BIN` is the full UEFI Product kernel and is governed by the M3 file contract at `535552 / 2097152` bytes with `1561600` bytes of UEFI byte reserve. UEFI verifies `BOOTMAN.TXT` byte count and checksum instead of applying BIOS sector arithmetic.
+Product currently builds two x86_64 kernels. `KERNEL64-BIOS.BIN` is the BIOS fallback kernel and remains under the BIOS loader contract at `456800` bytes, `893 / 1024` sectors, and `131` reserve sectors. `KERNEL64.BIN` is the full UEFI Product kernel and is governed by the M3 file contract at `551072 / 2097152` bytes with `1546080` bytes of UEFI byte reserve. UEFI verifies `BOOTMAN.TXT` byte count and checksum instead of applying BIOS sector arithmetic.
 
-Product currently boots to a persistent ring-3 shell and Product desktop, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, exposes `net` for brokered network status, exposes `pkginfo` for read-only package trust status, exposes `hwval` for read-only hardware validation status, records Product service/session/package/hardware-validation status through verifier telemetry, and verifies signed package/update metadata in the UEFI Product kernel. The BIOS Product kernel intentionally keeps the checksum-only bootstrap path and does not carry Ed25519 package admission.
+Product UEFI now blocks the desktop behind first-run setup or login, creates one local user record at `/USERDB.TXT` in the brokered persistent NVMe namespace when missing, stores the password as a bcrypt `$2b$` hash, and supports lock/unlock without destroying the session. Product also boots to a persistent ring-3 shell and Product desktop after authentication, exposes only the Product apps/builtins/GUI apps, verifies disk/UEFI/ISO boot paths, proves reboot-surviving NVMe persistence through scoped write/commit authority, exposes `net`, `pkginfo`, and `hwval`, records Product service/session/package/hardware-validation/login status through verifier telemetry, and verifies signed package/update metadata in the UEFI Product kernel. The BIOS Product kernel intentionally remains a checksum-only fallback and labels login/session lock as unavailable.
 
 Product apps are: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE.
 
-Product builtins are: apps, help, hwval, info, net, pkginfo, pwd.
+Product UEFI builtins are: apps, help, hwval, info, lock, net, pkginfo, pwd. BIOS fallback builtins omit `lock` and report UEFI login/session lock as unavailable.
 
 Product GUI apps are: Terminal, File Manager, Settings.
 
-Product services now have an explicit M6 status model: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run tooling, and settings/system-info provider. M6 creates one local console session; it is not a full multiuser login/auth system.
+Product services now have an explicit M6 status model: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run tooling, and settings/system-info provider. M10 authenticates one local console user before creating/resuming the desktop session; it is still not a full multiuser account-management system.
 
 Product networking is hardware-gated: UEFI/ISO paths with virtio-net or e1000e prove DHCP, DNS, TCP, and HTTP; BIOS/disk paths report cleanly unavailable. There is still no socket API and no ambient network access.
 
@@ -36,9 +36,11 @@ M8 package trust visibility: the UEFI Product kernel embeds only the public Ed25
 
 M9 bare-metal validation: `hwval` reports read-only Product validation status, including boot path, framebuffer availability, input backends, xHCI/PS2/APIC/ECAM/NVMe/AHCI/network/package/installer status, and explicitly reports internal writes, format authority, NVRAM authority, and real install approval as disabled or false. MSI Cyborg 15 A13VE validation is tracked in `docs/hardware/msi-cyborg-15-a13ve.md`, and dry-run output can be parsed with `tools\parse-msi-dryrun-evidence.ps1`. Real internal install remains blocked until user-provided dry-run output is reviewed.
 
+M10 login/authentication: UEFI Product shows a login or first-run setup screen through the compositor before the desktop is accessible. The login screen receives only brokered input and compositor-owned display authority. Successful authentication grants the session-scoped input/display/window/filesystem/network-status/installer-dry-run authorities; wrong passwords are denied, three consecutive failures trigger a displayed 30-second lockout, and `lock` returns to the login screen before resuming the existing session after the correct password.
+
 M5 installer safety is documented in `docs/installer/m5-safe-installer.md`. The installer dry-run lists GPT partitions, type GUIDs, labels, filesystem signatures, and safe/forbidden/unknown classification. Fixture verification proves dry-run no-writes, Windows ESP/NTFS/MSR/Recovery refusal, unknown FAT32/GPT refusal, dedicated LimitlessOS target acceptance, scoped write/format authority requirements, boot-entry authority separation, confirmation-token enforcement, and forbidden-partition unchanged checks. Real MSI internal NVMe writes remain disabled by default and are not product-approved until dry-run output is reviewed.
 
-Unavailable or non-product in Product: ASK, ECHO, aliases, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, and AI assistant behavior. These must not be presented as finished Product behavior.
+Unavailable or non-product in Product: ASK, ECHO, aliases, multiuser account management, password-change UI, PAM/LDAP/remote auth, installer write/install authority, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, and AI assistant behavior. These must not be presented as finished Product behavior.
 
 Use the Experimental profile only for proof surfaces:
 
@@ -48,7 +50,7 @@ Use the Experimental profile only for proof surfaces:
 
 Experimental may initialize proof-only surfaces beyond the M4 Product GUI and broad hardware proof telemetry. Those surfaces are not Product unless separately promoted with runtime behavior, docs, and verification that agree.
 
-Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`; M6 evidence is generated by `tools\archive-m6-evidence.ps1`; M7 evidence is generated by `tools\archive-m7-evidence.ps1`; M7.1 evidence is generated by `tools\archive-m7-1-evidence.ps1`; M8 evidence is generated by `tools\archive-m8-evidence.ps1`; M9 evidence is generated by `tools\archive-m9-evidence.ps1`.
+Authoritative current status and evidence are in `docs/status.md`. The accepted M4 evidence pack is `dist/m4-evidence-20260511-190105/m4-evidence.json`; the M4.1 closure archive is `dist/m4-1-evidence-20260511-192857/m4-1-evidence.json`; the M5 evidence pack is `dist/m5-evidence-20260511-194236/m5-evidence.json`; M6 evidence is generated by `tools\archive-m6-evidence.ps1`; M7 evidence is generated by `tools\archive-m7-evidence.ps1`; M7.1 evidence is generated by `tools\archive-m7-1-evidence.ps1`; M8 evidence is generated by `tools\archive-m8-evidence.ps1`; M9 evidence is generated by `tools\archive-m9-evidence.ps1`; M10 evidence is generated by `tools\archive-m10-evidence.ps1`.
 
 This first milestone provides:
 
