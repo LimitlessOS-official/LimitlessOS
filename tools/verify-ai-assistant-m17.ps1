@@ -100,8 +100,8 @@ if ($assistantLine -notmatch ' default-caps 0 actions-executed 0 request-id 17 a
     throw "M17 AI Assistant verifier failed: Assistant Mode B context/consent/audit detail did not match the Product read-only contract."
 }
 
-Assert-Line -Lines $outputLines -Pattern '^Product AI assistant: launcher/Settings/pkginfo show read-only consent flow; inference unavailable$' -Message "M17 AI Assistant verifier failed: help output did not describe read-only Assistant Mode B."
-Assert-Line -Lines $outputLines -Pattern '^AI Assistant: launcher/Settings/pkginfo; read-only consent flow; inference unavailable$' -Message "M17 AI Assistant verifier failed: apps output did not expose Assistant truthfully."
+Assert-Line -Lines $outputLines -Pattern '^Product AI assistant: launcher/Settings/pkginfo show (read-only consent flow|consent-scoped action templates); inference unavailable$' -Message "M17 AI Assistant verifier failed: help output did not describe read-only Assistant Mode B."
+Assert-Line -Lines $outputLines -Pattern '^AI Assistant: launcher/Settings/pkginfo; (read-only consent flow|consent-scoped action templates); inference unavailable$' -Message "M17 AI Assistant verifier failed: apps output did not expose Assistant truthfully."
 Assert-Line -Lines $outputLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer Assistant$' -Message "M17 AI Assistant verifier failed: Assistant was not listed in Product GUI apps."
 Assert-Line -Lines $outputLines -Pattern '^ai assistant: host active; inference unavailable$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose Assistant host status."
 Assert-Line -Lines $outputLines -Pattern '^ai backend mode: Mode B host and consent foundation only$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose Mode B backend status."

@@ -79,4 +79,4 @@ These are unavailable or denied in M17:
 - cloud storage access
 - internal install/write
 
-M18 action mode must not start until M17 evidence is archived and clean.
+M18 now builds on M17 with a small consent-scoped action broker foundation. The M17 read-only context flow remains Product and unchanged; M18 action templates remain separate, predefined, audited, and still do not add inference, model transport, generated answers, or autonomy.

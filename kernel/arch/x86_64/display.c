@@ -2481,10 +2481,11 @@ static void display64_desktop_draw_settings(u32 handle)
     }
     (void)cloud_storage64_settings_readonly();
     ai_policy64_init();
+    ai_policy64_action_probe();
     (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant host active; inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 456u, "Consent-scoped read-only context", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 474u, "No fs/net/settings/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant Mode B; inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 456u, "Action templates require consent", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 474u, "No ambient fs/net/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_ai_settings_panel_count == 0u)
     {
         ++g_display_ai_settings_panel_count;
@@ -2643,14 +2644,15 @@ static void display64_desktop_draw_assistant(u32 handle)
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     ai_policy64_init();
+    ai_policy64_action_probe();
     (void)display64_draw_font_text(body_x, body_y, "Limitless Assistant", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 20u, "Mode B: inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 44u, "Context requests require consent", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 64u, "Allowed: scoped read-only status", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 88u, "Denied: broad fs, secret, cloud", DISPLAY64_FONT_NORMAL, 0x00F0A060u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 112u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 136u, "Actions, writes, automation unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 160u, "Audit: request, decision, result", DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 20u, "Mode B: predefined action templates", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 44u, "Inference backend unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 68u, "Actions require explicit consent", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 92u, "Templates: note, dry-run, settings, pkg", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 116u, "Denied: package, settings, cloud, secret", DISPLAY64_FONT_NORMAL, 0x00F0A060u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 140u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 164u, "Audit: request, consent, grant, result", DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
     (void)ai_policy64_audit_query();
 #else
     (void)display64_draw_font_text(body_x, body_y, "Assistant unavailable", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);

@@ -436,7 +436,7 @@ function Assert-NoUnlabeledPlaceholders
 
             foreach ($match in Select-String -Path $item.FullName -Pattern $blockedPattern -AllMatches) {
                 $lineText = $match.Line.Trim()
-                if ($lineText -match 'drs-ai-no-fake-response|ai_policy64_no_fake_response|assistantNoFakeResponseVerified') {
+                if ($lineText -match 'drs-ai-no-fake-response|ai_policy64_no_fake_response|assistantNoFakeResponseVerified|drs-ai-action-no-fake-response|ai_policy64_action_no_fake_response|assistantActionNoFakeResponseVerified') {
                     continue
                 }
                 $violations += ("{0}:{1}: {2}" -f (Get-RepoRelativePath $item.FullName), $match.LineNumber, $lineText)
@@ -503,9 +503,9 @@ function Assert-RuntimeShellSurfaceSource
         "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
         "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled",
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
-        "Product AI assistant: launcher/Settings/pkginfo show read-only consent flow; inference unavailable",
+        "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable",
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
-        "Unavailable in M17: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install",
+        "Unavailable in M18: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
@@ -516,7 +516,7 @@ function Assert-RuntimeShellSurfaceSource
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
         "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
-        "AI Assistant: launcher/Settings/pkginfo; read-only consent flow; inference unavailable",
+        "AI Assistant: launcher/Settings/pkginfo; consent-scoped action templates; inference unavailable",
         "AI policy: unavailable on BIOS checksum fallback; no actions",
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
@@ -539,7 +539,7 @@ function Assert-RuntimeShellSurfaceSource
         "Automatic cloud upload/download",
         "AI cloud access",
         "AI assistant",
-        "AI actions",
+        "AI autonomous actions",
         "AI automation",
         "Cloud AI",
         "AI-assisted setup",
@@ -1551,11 +1551,72 @@ function Assert-X64Artifacts
         $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiPackageAuthorityVerified -NotePropertyValue $true
         $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiSecretAuthorityVerified -NotePropertyValue $true
         $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiCloudAuthorityVerified -NotePropertyValue $true
-        $m17Inventory | Add-Member -Force -NotePropertyName noM18WorkStarted -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noM18WorkStarted -NotePropertyValue $false
         $m17Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
         $m17Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m17InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m17.json" -f $BuildProfile.ToLowerInvariant())
         $m17Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m17InventoryPath -Encoding Ascii
+
+        $m18Inventory = $m17Inventory.PSObject.Copy()
+        $m18Inventory.milestone = "M18 AI Consent-Scoped Action Mode"
+        $m18Inventory.activeProductServices = @(
+            $m17Inventory.activeProductServices +
+            @("AI action broker foundation with consent-scoped predefined templates")
+        ) | Select-Object -Unique
+        $m18Inventory.unavailableFeatures = @(
+            $m17Inventory.unavailableFeatures +
+            @(
+                "AI inference backend",
+                "AI-generated answers",
+                "AI model transport",
+                "AI autonomous actions",
+                "AI broad automation",
+                "AI package install/update",
+                "AI settings mutation",
+                "AI cloud enablement",
+                "AI secret/token access",
+                "AI cloud storage access",
+                "AI internal install/write",
+                "AI self-update"
+            )
+        ) | Where-Object { $_ -ne "AI action mode" -and $_ -ne "AI file writes" } | Select-Object -Unique
+        $m18Inventory.aiAssistantStatus = "Product Assistant host active; inference unavailable; consent-scoped action templates available"
+        $m18Inventory.assistantActionsStatus = "consent-scoped predefined templates only"
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantActionMode -NotePropertyValue "Mode B deterministic action templates"
+        $m18Inventory.assistantBackendMode = "Mode B action broker foundation only"
+        $m18Inventory.assistantInferenceStatus = "unavailable; no model call and no scripted response"
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantActionBrokerStatus -NotePropertyValue "Product active; validates, consents, scopes, executes approved templates, audits, and revokes grants"
+        $m18Inventory | Add-Member -Force -NotePropertyName allowedActionTemplates -NotePropertyValue @("assistant-note-write", "installer-dryrun", "open-settings-panel", "package-trust-status")
+        $m18Inventory | Add-Member -Force -NotePropertyName forbiddenActionTemplates -NotePropertyValue @("package-install", "package-update", "settings-mutation", "cloud-enable", "secret-token", "model-transport", "self-modification", "internal-install-write")
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantNoteWriteVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantNoteWriteScope -NotePropertyValue "/HOME/ASSIST/NOTE.TXT only"
+        $m18Inventory | Add-Member -Force -NotePropertyName installerDryRunActionVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName settingsOpenActionVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName packageTrustStatusActionVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName deniedActionNoEffectVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName staleGrantDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName wrongSessionGrantDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName arbitraryFileWriteDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName pathTraversalDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName packageInstallDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName settingsMutationDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName cloudEnableDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName selfModificationDenied -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName actionAuditVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantActionNoModelCallVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName assistantActionNoFakeResponseVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiFilesystemAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiInstallerAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiSettingsAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiPackageAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiCloudAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiSecretAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noAmbientAiNetworkAuthorityVerified -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName noM19WorkStarted -NotePropertyValue $true
+        $m18Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m18Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m18InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m18.json" -f $BuildProfile.ToLowerInvariant())
+        $m18Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m18InventoryPath -Encoding Ascii
     }
 }
 

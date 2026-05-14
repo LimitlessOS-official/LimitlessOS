@@ -1,19 +1,19 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M17 AI Assistant Read-Only Mode
+## Current Gate: M18 AI Consent-Scoped Action Mode
 
-M1 cleanup-final through M16 AI policy broker foundation are accepted. M17 adds the first Product Assistant surface while preserving the no-action AI boundary: the Assistant app can open after login, request scoped read-only context through consent, receive only approved bounded status context, and record audit telemetry. Inference backend, model transport, generated answers, automation, task execution, cloud AI, and every AI action path remain unavailable.
+M1 cleanup-final through M17 AI Assistant read-only mode are accepted. M18 adds the first Product AI action broker foundation while preserving the no-inference/no-autonomy boundary: the Assistant app can request one of four predefined action templates, require explicit consent, receive only an action-bound/session-bound scoped capability, execute only within that scope, expire the grant, and record audit telemetry. Inference backend, model transport, generated answers, broad automation, task execution, cloud AI, package install/update, settings mutation, secret/token access, and internal install/write remain unavailable.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
 - BIOS kernel: `KERNEL64-BIOS.BIN`, 458400 bytes, 896 / 1024 BIOS sectors, 128 reserve
-- UEFI kernel: `KERNEL64.BIN`, 585536 / 2097152 bytes, checksum recorded in generated inventory/evidence, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- UEFI kernel: `KERNEL64.BIN`, 587904 / 2097152 bytes, checksum recorded in generated inventory/evidence, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
 - Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings, Installer, Assistant
-- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status
+- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status, Assistant action broker foundation
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product identity/account association: local account type active, local association active/offline-capable, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, security-key login planned/unavailable, no ambient identity or account authority
 - Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product, no ambient secret authority
@@ -21,7 +21,7 @@ Product profile:
 - Product account association: Mode B policy/status only; local association is active, personal/enterprise/cloud association remains unavailable, account mutation/unlink/token/cloud/enterprise-policy paths are denied, and remote account identity grants no OS authority
 - Product cloud storage: foundation/status only; signed local provider descriptor verifies, but real cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority are unavailable or denied
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, read-only Assistant host/context/audit status, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, read-only Assistant host/context/audit status, consent-scoped Assistant action templates for note write, installer dry-run, Settings panel open, and package trust status, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -31,7 +31,7 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI inference backend, AI-generated answers, AI actions, AI automation, cloud AI, model integration, chat inference, task execution
+- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI inference backend, AI-generated answers, autonomous AI actions, broad AI automation, cloud AI, model integration, chat inference, task execution
 
 M2 evidence:
 
@@ -281,7 +281,7 @@ M16: AI Policy Broker Foundation
 - Add an action request schema. Current status: Product request metadata is represented and verifier-visible.
 - Add an audit log. Current status: request/decision/result audit telemetry is immutable/queryable and visible read-only.
 - Add an AI settings skeleton. Current status: Settings/pkginfo show read-only AI policy state.
-- No AI actions yet. Current status: actions, automation, model integration, chat inference, task execution, cloud AI, and direct resource access are unavailable or denied; the Assistant host/context surface is Product in M17.
+- No AI actions yet in M16. Current status: M18 adds only predefined consent-scoped action templates; automation, model integration, chat inference, task execution, cloud AI, and direct resource access remain unavailable or denied.
 
 M17: AI Assistant Read-Only Mode
 
@@ -298,12 +298,13 @@ M17: AI Assistant Read-Only Mode
 
 M18: AI Consent-Scoped Action Mode
 
-- Actions run only through explicit scoped capabilities.
-- Support allow-once, allow-session, folder-scoped, read-only, and dry-run consent modes.
-- Denial paths and audit are required.
-- No self-modification.
-- No unsigned package installs.
-- No hidden autonomy.
+- Add predefined action templates. Current status: `assistant-note-write`, `installer-dryrun`, `open-settings-panel`, and `package-trust-status` are Product.
+- Actions run only through explicit scoped capabilities. Current status: grants are session-bound, action-bound, target-bound, and expired after completion.
+- Support consent choices. Current status: write actions use allow-once; read-only status and dry-run actions are bounded and audited.
+- Denial paths and audit are required. Current status: denied actions execute nothing; stale/wrong-session/path-traversal/arbitrary-write/package/settings/cloud/secret/model/self-modification paths are denied.
+- No self-modification. Current status: Assistant self-modification remains denied through Product package policy.
+- No unsigned package installs. Current status: AI package install/update is denied; signed package policy remains separate.
+- No hidden autonomy. Current status: autonomy, inference backend, model calls, generated answers, cloud memory, and broad automation remain unavailable.
 
 ## Phase 0: Bootstrap
 

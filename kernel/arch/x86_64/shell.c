@@ -225,7 +225,7 @@ static u32 shell64_write_installer_status_line(u32 console_capability_handle, u3
 static u32 shell64_write_ai_status_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "Product AI assistant: launcher/Settings/pkginfo show read-only consent flow; inference unavailable\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable\n");
 #endif
@@ -252,7 +252,7 @@ static u32 shell64_write_apps_installer_line(u32 console_capability_handle, u32 
 static u32 shell64_write_apps_ai_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "AI Assistant: launcher/Settings/pkginfo; read-only consent flow; inference unavailable\n");
+    return shell64_write_text(console_capability_handle, owner_id, "AI Assistant: launcher/Settings/pkginfo; consent-scoped action templates; inference unavailable\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "AI policy: unavailable on BIOS checksum fallback; no actions\n");
 #endif
@@ -436,9 +436,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "ai actions: unavailable\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "ai assistant: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "ai inference: unavailable\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M16; scoped capability required\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled; scoped capability required\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M16; scoped install required\n");
+        return shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled; scoped install required\n");
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "package system: enabled on UEFI Product\n");
@@ -510,7 +510,16 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "ai package integrity: signed Product component\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai self-modification: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai cloud memory: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "ai actions: unavailable\n");
+    ai_policy64_action_probe();
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai actions: consent-scoped templates only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action broker: Mode B deterministic templates\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action templates: assistant-note-write installer-dryrun open-settings-panel package-trust-status\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai forbidden actions: package-install package-update settings-mutation cloud-enable secret-token model-transport self-modification\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai note action: /HOME/ASSIST/NOTE.TXT committed readback verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action consent: allow once required for write; read-only session allowed for status\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action grant: scoped session-bound action-bound target-bound expired\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action audit: request consent grant result revocation recorded\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai autonomous actions: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai audit: immutable queryable settings-visible\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai filesystem access: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai network access: denied\n");
@@ -519,9 +528,9 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "ai secret access: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai cloud access: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai automation: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled in M16; scoped capability required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled in M16; scoped install required\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled; scoped install required\n");
     return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network/cloud/fs/identity/secret/ai\n");
 }
 
@@ -1113,11 +1122,11 @@ static u32 shell64_list_apps(
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
     }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M17:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M18:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nAccount linking\nReal cloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Security key login\nCredential transport\nToken storage\nEnterprise policy\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nAI cloud access\nAI inference backend\nAI actions\nAI automation\nCloud AI\nAI-assisted setup\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nAI cloud access\nAI inference backend\nAI autonomous actions\nAI automation\nCloud AI\nAI-assisted setup\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Real internal install/write\nFormatting\nBoot entry changes\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
         console_capability_handle,
@@ -1467,7 +1476,7 @@ u32 shell64_execute_line(
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M17: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
+            "Unavailable in M18: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))

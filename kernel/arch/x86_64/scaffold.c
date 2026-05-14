@@ -4961,6 +4961,63 @@ static void log_ai_assistant_surface(void)
 #endif
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void log_ai_action_surface(void)
+{
+    ai_policy64_action_probe();
+    write_labeled_dec_u32("[x64] drs-ai-action drs-ai-action-mode-product ", ai_policy64_action_mode_product());
+    write_labeled_dec_u32(" drs-ai-action-request-created ", ai_policy64_action_request_created());
+    write_labeled_dec_u32(" drs-ai-action-consent-required ", ai_policy64_action_consent_required());
+    write_labeled_dec_u32(" drs-ai-action-denied-no-effect ", ai_policy64_action_denied_no_effect());
+    write_labeled_dec_u32(" drs-ai-action-approved-scoped-cap ", ai_policy64_action_approved_scoped_cap());
+    write_labeled_dec_u32(" drs-ai-action-note-write ", ai_policy64_action_note_write());
+    write_labeled_dec_u32(" drs-ai-action-note-commit ", ai_policy64_action_note_commit());
+    write_labeled_dec_u32(" drs-ai-action-note-readback ", ai_policy64_action_note_readback());
+    write_labeled_dec_u32(" drs-ai-action-arbitrary-write-denied ", ai_policy64_action_arbitrary_write_denied());
+    write_labeled_dec_u32(" drs-ai-action-path-traversal-denied ", ai_policy64_action_path_traversal_denied());
+    write_labeled_dec_u32(" drs-ai-action-stale-grant-denied ", ai_policy64_action_stale_grant_denied());
+    write_labeled_dec_u32(" drs-ai-action-wrong-session-denied ", ai_policy64_action_wrong_session_denied());
+    write_labeled_dec_u32(" drs-ai-action-installer-dryrun ", ai_policy64_action_installer_dryrun());
+    write_labeled_dec_u32(" drs-ai-action-installer-dryrun-no-writes ", ai_policy64_action_installer_dryrun_no_writes());
+    write_labeled_dec_u32(" drs-ai-action-open-settings ", ai_policy64_action_open_settings());
+    write_labeled_dec_u32(" drs-ai-action-package-status ", ai_policy64_action_package_status());
+    write_labeled_dec_u32(" drs-ai-action-settings-mutation-denied ", ai_policy64_action_settings_mutation_denied());
+    write_labeled_dec_u32(" drs-ai-action-package-install-denied ", ai_policy64_action_package_install_denied());
+    write_labeled_dec_u32(" drs-ai-action-update-apply-denied ", ai_policy64_action_update_apply_denied());
+    write_labeled_dec_u32(" drs-ai-action-cloud-enable-denied ", ai_policy64_action_cloud_enable_denied());
+    write_labeled_dec_u32(" drs-ai-action-secret-denied ", ai_policy64_action_secret_denied());
+    write_labeled_dec_u32(" drs-ai-action-self-modification-denied ", ai_policy64_action_self_modification_denied());
+    write_labeled_dec_u32(" drs-ai-action-audit-recorded ", ai_policy64_action_audit_recorded());
+    write_labeled_dec_u32(" drs-ai-action-no-autonomy ", ai_policy64_action_no_autonomy());
+    write_labeled_dec_u32(" drs-ai-action-no-model-call ", ai_policy64_action_no_model_call());
+    write_labeled_dec_u32(" drs-ai-action-no-fake-response ", ai_policy64_action_no_fake_response());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-fs ", ai_policy64_no_ambient_action_filesystem());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-installer ", ai_policy64_no_ambient_action_installer());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-settings ", ai_policy64_no_ambient_action_settings());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-package ", ai_policy64_no_ambient_action_package());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-cloud ", ai_policy64_no_ambient_action_cloud());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-secret ", ai_policy64_no_ambient_action_secret());
+    write_labeled_dec_u32(" drs-no-ambient-ai-action-network ", ai_policy64_no_ambient_action_network());
+    write_labeled_dec_u32(" action-id ", 18u);
+    write_labeled_dec_u32(" note-bytes ", ai_policy64_action_note_bytes());
+    write_labeled_dec_u32(" audit-records ", ai_policy64_action_audit_record_count());
+    write_string(" mode ");
+    write_string(ai_policy64_action_mode_string());
+    write_string(" templates ");
+    write_string(ai_policy64_action_allowed_templates());
+    write_string(" forbidden ");
+    write_string(ai_policy64_action_forbidden_templates());
+    write_string(" note-path ");
+    write_string(ai_policy64_action_note_path());
+    write_string(" consent ");
+    write_string(ai_policy64_action_consent_string());
+    write_string(" grant ");
+    write_string(ai_policy64_action_grant_status());
+    write_string(" result ");
+    write_line(ai_policy64_action_result_status());
+}
+#endif
+
 static void log_service_session_surface(void)
 {
     services64_product_status_query();
@@ -12375,6 +12432,9 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     run_user_entry_input_cli_probe();
     run_user_entry_shell_stream_probe();
     log_nvme_rw_surface();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    log_ai_action_surface();
+#endif
     run_user_entry_second_page_probe();
     run_drs_load_probe();
     run_drs_load_full_probe();

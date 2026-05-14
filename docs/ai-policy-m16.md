@@ -53,4 +53,4 @@ These remain unavailable/non-product:
 - AI secret access
 - AI cloud access
 
-M17 builds on this policy layer by adding an Assistant host and read-only consent/context flow. M17 still does not add action mode, automation, cloud memory, model transport, or generated answers.
+M17 builds on this policy layer by adding an Assistant host and read-only consent/context flow. M18 then adds only predefined consent-scoped action templates through the same brokered consent/audit model. M18 still does not add automation, cloud memory, model transport, generated answers, package install/update, settings mutation, secret/token access, or autonomous behavior.
