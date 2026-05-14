@@ -94,7 +94,7 @@ if ($installerLine -notmatch ' writes-planned 0 formats-planned 0 boot-entry-pla
     throw "M15 installer UX verifier failed: install-plan status did not match the zero-write Product contract."
 }
 
-Assert-Line -Lines $outputLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer$' -Message "M15 installer UX verifier failed: apps output did not expose the Installer GUI entry."
+Assert-Line -Lines $outputLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer( Assistant)?$' -Message "M15 installer UX verifier failed: apps output did not expose the Installer GUI entry."
 Assert-Line -Lines $outputLines -Pattern '^Installer UX: launcher/Settings; dry-run planning only; writes disabled$' -Message "M15 installer UX verifier failed: apps output did not describe dry-run installer planning."
 Assert-Line -Lines $outputLines -Pattern '^Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled$' -Message "M15 installer UX verifier failed: help output did not describe installer UX."
 Assert-Line -Lines $outputLines -Pattern '^AI-assisted setup$' -Message "M15 installer UX verifier failed: AI-assisted setup was not labeled unavailable."

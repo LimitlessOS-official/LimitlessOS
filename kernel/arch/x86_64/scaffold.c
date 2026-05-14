@@ -4512,6 +4512,7 @@ static void log_desktop_surface(void)
     write_labeled_dec_u32(" drs-desktop-fileman ", scaffold_bool_u32(display64_desktop_fileman_count()));
     write_labeled_dec_u32(" drs-desktop-settings ", scaffold_bool_u32(display64_desktop_settings_count()));
     write_labeled_dec_u32(" drs-desktop-installer ", scaffold_bool_u32(display64_gui_installer_opened()));
+    write_labeled_dec_u32(" drs-desktop-assistant ", scaffold_bool_u32(display64_gui_assistant_opened()));
     write_line("");
 }
 
@@ -4545,6 +4546,7 @@ static void log_gui_interactive_surface(void)
     write_labeled_hex_u32(" input-token ", display64_gui_input_path_token());
     write_labeled_hex_u32(" display-token ", display64_gui_display_path_token());
     write_labeled_hex_u32(" fs-token ", display64_gui_fs_path_token());
+    write_labeled_dec_u32(" assistant-opened ", display64_gui_assistant_opened());
     write_line("");
 }
 
@@ -4882,6 +4884,80 @@ static void log_ai_policy_surface(void)
     write_string(ai_policy64_automation_status());
     write_string(" cloud-ai ");
     write_line(ai_policy64_cloud_status());
+#endif
+}
+
+static void log_ai_assistant_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ai_policy64_init();
+    write_labeled_dec_u32("[x64] drs-ai-assistant drs-ai-assistant-product ", ai_policy64_assistant_product());
+    write_labeled_dec_u32(" drs-ai-assistant-app-opened ", scaffold_bool_u32(display64_gui_assistant_opened()));
+    write_labeled_dec_u32(" drs-ai-assistant-blocked-preauth ", ai_policy64_assistant_blocked_preauth());
+    write_labeled_dec_u32(" drs-ai-assistant-backend-mode ", ai_policy64_assistant_backend_mode());
+    write_labeled_dec_u32(" drs-ai-assistant-zero-default-caps ", ai_policy64_assistant_zero_default_caps());
+    write_labeled_dec_u32(" drs-ai-context-request ", ai_policy64_context_request());
+    write_labeled_dec_u32(" drs-ai-context-consent-required ", ai_policy64_context_consent_required());
+    write_labeled_dec_u32(" drs-ai-context-denied-no-data ", ai_policy64_context_denied_no_data());
+    write_labeled_dec_u32(" drs-ai-context-allowed-scoped-read ", ai_policy64_context_allowed_scoped_read());
+    write_labeled_dec_u32(" drs-ai-context-invalid-scope-denied ", ai_policy64_context_invalid_scope_denied());
+    write_labeled_dec_u32(" drs-ai-context-broad-fs-denied ", ai_policy64_context_broad_fs_denied());
+    write_labeled_dec_u32(" drs-ai-context-secret-denied ", ai_policy64_context_secret_denied());
+    write_labeled_dec_u32(" drs-ai-context-cloud-denied ", ai_policy64_context_cloud_denied());
+    write_labeled_dec_u32(" drs-ai-file-write-denied ", ai_policy64_file_write_denied());
+    write_labeled_dec_u32(" drs-ai-settings-mutation-denied ", ai_policy64_settings_mutation_denied());
+    write_labeled_dec_u32(" drs-ai-package-mutation-denied ", ai_policy64_package_mutation_denied());
+    write_labeled_dec_u32(" drs-ai-network-denied-or-scoped ", ai_policy64_network_denied_or_scoped());
+    write_labeled_dec_u32(" drs-ai-stale-grant-denied ", ai_policy64_stale_grant_denied());
+    write_labeled_dec_u32(" drs-ai-wrong-session-denied ", ai_policy64_wrong_session_denied());
+    write_labeled_dec_u32(" drs-ai-audit-query ", ai_policy64_audit_query());
+    write_labeled_dec_u32(" drs-ai-settings-panel ", scaffold_bool_u32(display64_ai_settings_panel_count()));
+    write_labeled_dec_u32(" drs-ai-actions-unavailable ", ai_policy64_actions_unavailable());
+    write_labeled_dec_u32(" drs-ai-automation-unavailable ", ai_policy64_automation_unavailable());
+    write_labeled_dec_u32(" drs-ai-cloud-memory-unavailable ", ai_policy64_cloud_memory_unavailable());
+    write_labeled_dec_u32(" drs-ai-self-modification-denied ", ai_policy64_self_modification_denied());
+    write_labeled_dec_u32(" drs-ai-package-integrity ", ai_policy64_package_integrity());
+    write_labeled_dec_u32(" drs-no-ambient-ai-fs ", ai_policy64_no_filesystem_access());
+    write_labeled_dec_u32(" drs-no-ambient-ai-network ", ai_policy64_no_network_access());
+    write_labeled_dec_u32(" drs-no-ambient-ai-settings ", ai_policy64_no_settings_access());
+    write_labeled_dec_u32(" drs-no-ambient-ai-package ", ai_policy64_no_package_access());
+    write_labeled_dec_u32(" drs-no-ambient-ai-secret ", ai_policy64_no_secret_access());
+    write_labeled_dec_u32(" drs-no-ambient-ai-cloud ", ai_policy64_no_cloud_access());
+    write_labeled_dec_u32(" drs-ai-inference-unavailable ", ai_policy64_inference_unavailable());
+    write_labeled_dec_u32(" drs-ai-no-model-call ", ai_policy64_no_model_call());
+    write_labeled_dec_u32(" drs-ai-no-fake-response ", ai_policy64_no_fake_response());
+    write_labeled_dec_u32(" default-caps ", ai_policy64_default_capabilities());
+    write_labeled_dec_u32(" actions-executed ", ai_policy64_actions_executed());
+    write_labeled_dec_u32(" request-id ", 17u);
+    write_labeled_dec_u32(" allowed-bytes ", ai_policy64_context_allowed_bytes());
+    write_labeled_dec_u32(" denied-bytes ", ai_policy64_context_denied_bytes());
+    write_labeled_dec_u32(" audit-records ", ai_policy64_audit_record_count());
+    write_string(" backend ");
+    write_string(ai_policy64_backend_mode_string());
+    write_string(" inference ");
+    write_string(ai_policy64_inference_status());
+    write_string(" context ");
+    write_string(ai_policy64_context_type());
+    write_string(" resource ");
+    write_string(ai_policy64_context_resource());
+    write_string(" scope ");
+    write_string(ai_policy64_context_scope());
+    write_string(" reason ");
+    write_string(ai_policy64_context_reason());
+    write_string(" capability ");
+    write_string(ai_policy64_context_capability());
+    write_string(" decision ");
+    write_string(ai_policy64_context_decision());
+    write_string(" result ");
+    write_string(ai_policy64_context_result());
+    write_string(" egress ");
+    write_string(ai_policy64_data_egress_status());
+    write_string(" package ");
+    write_string(ai_policy64_package_integrity_status());
+    write_string(" selfmod ");
+    write_string(ai_policy64_self_modification_status());
+    write_string(" cloud-memory ");
+    write_line(ai_policy64_cloud_memory_status());
 #endif
 }
 
@@ -12021,6 +12097,7 @@ static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
             || (display64_gui_fileman_opened() == 0u)
             || (display64_gui_settings_opened() == 0u)
             || (display64_gui_installer_opened() == 0u)
+            || (display64_gui_assistant_opened() == 0u)
             || (display64_gui_unfocused_key_denied() == 0u))
         && (pit_get_ticks() < target_ticks))
     {
@@ -12258,6 +12335,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_cloud_storage_surface();
     log_installer_ux_surface();
     log_ai_policy_surface();
+    log_ai_assistant_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

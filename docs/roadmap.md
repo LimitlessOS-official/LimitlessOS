@@ -1,19 +1,19 @@
 # LimitlessOS Roadmap
 
-## Current Gate: M16 AI Policy Broker Foundation
+## Current Gate: M17 AI Assistant Read-Only Mode
 
-M1 cleanup-final through M15 installer UX v2 are accepted. M16 adds the Product AI policy broker foundation while preserving the no-action AI boundary: the system can represent an AI principal, action request, required consent decision, scope validation, denial result, and audit record, but no AI assistant, model integration, automation, task execution, cloud AI, or AI action path exists.
+M1 cleanup-final through M16 AI policy broker foundation are accepted. M17 adds the first Product Assistant surface while preserving the no-action AI boundary: the Assistant app can open after login, request scoped read-only context through consent, receive only approved bounded status context, and record audit telemetry. Inference backend, model transport, generated answers, automation, task execution, cloud AI, and every AI action path remain unavailable.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- BIOS kernel: `KERNEL64-BIOS.BIN`, 458304 bytes, 896 / 1024 BIOS sectors, 128 reserve, checksum `0x7643E696`
-- UEFI kernel: `KERNEL64.BIN`, 579328 / 2097152 bytes, checksum `0xB408D367`, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- BIOS kernel: `KERNEL64-BIOS.BIN`, 458400 bytes, 896 / 1024 BIOS sectors, 128 reserve
+- UEFI kernel: `KERNEL64.BIN`, 585536 / 2097152 bytes, checksum recorded in generated inventory/evidence, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
 - Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
-- Product GUI apps: Terminal, File Manager, Settings, Installer
-- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation
+- Product GUI apps: Terminal, File Manager, Settings, Installer, Assistant
+- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product identity/account association: local account type active, local association active/offline-capable, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, security-key login planned/unavailable, no ambient identity or account authority
 - Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product, no ambient secret authority
@@ -21,7 +21,7 @@ Product profile:
 - Product account association: Mode B policy/status only; local association is active, personal/enterprise/cloud association remains unavailable, account mutation/unlink/token/cloud/enterprise-policy paths are denied, and remote account identity grants no OS authority
 - Product cloud storage: foundation/status only; signed local provider descriptor verifies, but real cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority are unavailable or denied
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, read-only Assistant host/context/audit status, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -31,7 +31,7 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI assistant behavior, AI actions, AI automation, cloud AI, model integration, chat UI, task execution
+- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI inference backend, AI-generated answers, AI actions, AI automation, cloud AI, model integration, chat inference, task execution
 
 M2 evidence:
 
@@ -203,7 +203,18 @@ M16 AI policy broker foundation acceptance:
 - Audit records are immutable, queryable, and visible through Settings/pkginfo status
 - AI assistant, model integration, automation, task execution, cloud AI, and all AI actions remain unavailable
 - No ambient AI, filesystem, network, settings, package, secret, or cloud authority exists
-- No M17 work may start until M16 evidence is clean
+- Accepted; M17 may build only on the zero-default-capability/no-action boundary
+
+M17 AI Assistant read-only acceptance:
+
+- Evidence pack: generated by `tools\archive-m17-evidence.ps1 -IncludeExperimental`
+- Assistant app is Product and opens only after login through the brokered GUI path
+- Assistant backend mode is Mode B: host, consent prompt, read-only context grant, denial, and audit are Product; inference backend and model transport remain unavailable
+- Read-only context requests require consent; denied requests receive no data; allowed requests receive only bounded scoped status context
+- Broad filesystem scope, secret read, cloud read, file write, settings mutation, package mutation, stale grants, wrong-session grants, and unscoped network/model access are denied or unavailable
+- Assistant is treated as a signed Product component, package integrity is checked, and self-modification is denied
+- No model call occurs and no scripted answer is presented as AI output
+- No M18 work may start until M17 evidence is clean
 
 ## Roadmap Addendum: Account Association, Cloud Storage, and AI Policy
 
@@ -270,9 +281,16 @@ M16: AI Policy Broker Foundation
 - Add an action request schema. Current status: Product request metadata is represented and verifier-visible.
 - Add an audit log. Current status: request/decision/result audit telemetry is immutable/queryable and visible read-only.
 - Add an AI settings skeleton. Current status: Settings/pkginfo show read-only AI policy state.
-- No AI actions yet. Current status: actions, assistant behavior, automation, model integration, chat UI, task execution, cloud AI, and direct resource access are unavailable or denied.
+- No AI actions yet. Current status: actions, automation, model integration, chat inference, task execution, cloud AI, and direct resource access are unavailable or denied; the Assistant host/context surface is Product in M17.
 
 M17: AI Assistant Read-Only Mode
+
+- Add an Assistant GUI app. Current status: Product app after login.
+- Add read-only context request flow. Current status: consent-scoped status context only.
+- Add consent prompt. Current status: allow-once/read-only-session/deny choices are verifier-visible.
+- Add audit records for Assistant context requests. Current status: Settings/pkginfo queryable.
+- No AI actions, automation, cloud memory, file writes, settings changes, package updates, or secret/cloud access. Current status: unavailable or denied.
+- No model backend yet. Current status: Mode B, inference unavailable.
 
 - Add explanations, summaries, and suggestions.
 - Read access is allowed only by explicit scoped permission.

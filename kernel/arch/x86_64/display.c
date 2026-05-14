@@ -60,7 +60,7 @@
 #define DISPLAY64_STATUS_BAR_HEIGHT 24u
 #define DISPLAY64_DESKTOP_TASKBAR_HEIGHT 32u
 #define DISPLAY64_DESKTOP_LAUNCHER_WIDTH 228u
-#define DISPLAY64_DESKTOP_LAUNCHER_HEIGHT 132u
+#define DISPLAY64_DESKTOP_LAUNCHER_HEIGHT 168u
 #define DISPLAY64_DESKTOP_LAUNCHER_BUTTON_X 8u
 #define DISPLAY64_DESKTOP_LAUNCHER_BUTTON_WIDTH 28u
 #define DISPLAY64_DESKTOP_LAUNCHER_BUTTON_HEIGHT 24u
@@ -82,6 +82,7 @@
 #define DISPLAY64_GUI_REGION_LAUNCHER_TERMINAL 8u
 #define DISPLAY64_GUI_REGION_LAUNCHER_FILEMAN 9u
 #define DISPLAY64_GUI_REGION_LAUNCHER_SETTINGS 10u
+#define DISPLAY64_GUI_REGION_LAUNCHER_ASSISTANT 11u
 #define DISPLAY64_GUI_INPUT_PATH_TOKEN 0x494E5054u
 #define DISPLAY64_GUI_DISPLAY_PATH_TOKEN 0x44495350u
 #define DISPLAY64_GUI_FS_PATH_TOKEN 0x46535041u
@@ -158,6 +159,7 @@ static u32 g_display_desktop_launcher_count = 0u;
 static u32 g_display_desktop_terminal_count = 0u;
 static u32 g_display_desktop_fileman_count = 0u;
 static u32 g_display_desktop_settings_count = 0u;
+static u32 g_display_desktop_assistant_count = 0u;
 static u32 g_display_pkg_settings_panel_count = 0u;
 static u32 g_display_identity_settings_panel_count = 0u;
 static u32 g_display_identity_transport_settings_panel_count = 0u;
@@ -179,6 +181,7 @@ static u32 g_display_installer_dryrun_count = 0u;
 static u32 g_display_desktop_fileman_handle = 0u;
 static u32 g_display_desktop_settings_handle = 0u;
 static u32 g_display_desktop_installer_handle = 0u;
+static u32 g_display_desktop_assistant_handle = 0u;
 static u32 g_display_desktop_launcher_open = 0u;
 static u32 g_display_gui_interactive = 0u;
 static u32 g_display_gui_click_hittest = 0u;
@@ -191,6 +194,7 @@ static u32 g_display_gui_taskbar_focus = 0u;
 static u32 g_display_gui_fileman_opened = 0u;
 static u32 g_display_gui_settings_opened = 0u;
 static u32 g_display_gui_installer_opened = 0u;
+static u32 g_display_gui_assistant_opened = 0u;
 static u32 g_display_gui_unfocused_key_denied = 0u;
 static u32 g_display_gui_unfocused_key_denial_count = 0u;
 static u32 g_display_gui_no_ambient_input = 0u;
@@ -2360,10 +2364,12 @@ static void display64_desktop_draw_launcher_panel(void)
     display64_compositor_fill_rect(28u, panel_y + 76u, 28u, 28u, 0x002DAA75u);
     display64_compositor_fill_rect(124u, panel_y + 40u, 28u, 28u, 0x00A9703Eu);
     display64_compositor_fill_rect(124u, panel_y + 76u, 28u, 28u, 0x00D6A44Eu);
+    display64_compositor_fill_rect(28u, panel_y + 112u, 28u, 28u, 0x004B72D8u);
     (void)display64_draw_font_text(64u, panel_y + 46u, "Terminal", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(64u, panel_y + 82u, "Files", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(160u, panel_y + 46u, "Settings", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(160u, panel_y + 82u, "Installer", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(64u, panel_y + 118u, "Assistant", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_desktop_launcher_count == 0u)
     {
         ++g_display_desktop_launcher_count;
@@ -2476,21 +2482,22 @@ static void display64_desktop_draw_settings(u32 handle)
     (void)cloud_storage64_settings_readonly();
     ai_policy64_init();
     (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 438u, "Request, deny, audit only", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 456u, "No fs/net/settings/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant host active; inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 456u, "Consent-scoped read-only context", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 474u, "No fs/net/settings/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_ai_settings_panel_count == 0u)
     {
         ++g_display_ai_settings_panel_count;
     }
     (void)ai_policy64_settings_readonly();
-    (void)display64_draw_font_text(body_x, body_y + 474u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 492u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 492u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 510u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 492u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 510u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
 #else
     (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
@@ -2620,6 +2627,41 @@ static void display64_desktop_draw_installer(u32 handle)
 #endif
 }
 
+static void display64_desktop_draw_assistant(u32 handle)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+    u32 body_x;
+    u32 body_y;
+
+    if (window == 0)
+    {
+        return;
+    }
+
+    display64_wm_present_window(handle);
+    body_x = window->x + 10u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ai_policy64_init();
+    (void)display64_draw_font_text(body_x, body_y, "Limitless Assistant", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 20u, "Mode B: inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 44u, "Context requests require consent", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 64u, "Allowed: scoped read-only status", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 88u, "Denied: broad fs, secret, cloud", DISPLAY64_FONT_NORMAL, 0x00F0A060u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 112u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 136u, "Actions, writes, automation unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 160u, "Audit: request, decision, result", DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
+    (void)ai_policy64_audit_query();
+#else
+    (void)display64_draw_font_text(body_x, body_y, "Assistant unavailable", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+#endif
+    if (g_display_desktop_assistant_count == 0u)
+    {
+        ++g_display_desktop_assistant_count;
+    }
+}
+
 static int display64_desktop_settings_lock_hit(const struct display64_window *window, u32 x, u32 y)
 {
     u32 body_x;
@@ -2661,6 +2703,11 @@ static void display64_desktop_present_window_content(u32 handle)
     if (handle == g_display_desktop_installer_handle)
     {
         display64_desktop_draw_installer(handle);
+        return;
+    }
+    if (handle == g_display_desktop_assistant_handle)
+    {
+        display64_desktop_draw_assistant(handle);
         return;
     }
 
@@ -2799,6 +2846,10 @@ static u32 display64_desktop_hit_launcher_icon(u32 x, u32 y)
     {
         return 4u;
     }
+    if (display64_point_in_rect(x, y, 24u, panel_y + 108u, 192u, 32u))
+    {
+        return 5u;
+    }
 
     return 0u;
 }
@@ -2879,6 +2930,25 @@ static void display64_desktop_open_installer(void)
     display64_wm_focus_and_route_console(g_display_desktop_installer_handle);
 }
 
+static void display64_desktop_open_assistant(void)
+{
+    if (display64_wm_find_window(g_display_desktop_assistant_handle) == 0)
+    {
+        u32 width = display64_min_u32(
+            500u,
+            (g_display_boot_info->framebuffer_width > 96u)
+                ? (g_display_boot_info->framebuffer_width - 96u)
+                : g_display_boot_info->framebuffer_width);
+        u32 height = display64_min_u32(
+            300u,
+            (g_display_boot_info->framebuffer_height > 150u)
+                ? (g_display_boot_info->framebuffer_height - 150u)
+                : g_display_boot_info->framebuffer_height);
+        g_display_desktop_assistant_handle = display64_wm_create_window("Assistant", 96u, 118u, width, height);
+    }
+    display64_wm_focus_and_route_console(g_display_desktop_assistant_handle);
+}
+
 static void display64_desktop_open_launcher_icon(u32 icon)
 {
     if (icon == 1u)
@@ -2900,6 +2970,11 @@ static void display64_desktop_open_launcher_icon(u32 icon)
     {
         display64_desktop_open_installer();
         g_display_gui_installer_opened = 1u;
+    }
+    else if (icon == 5u)
+    {
+        display64_desktop_open_assistant();
+        g_display_gui_assistant_opened = 1u;
     }
     g_display_desktop_launcher_open = 0u;
     display64_desktop_redraw();
@@ -3087,6 +3162,14 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                 else if (icon == 3u)
                 {
                     region = DISPLAY64_GUI_REGION_LAUNCHER_SETTINGS;
+                }
+                else if (icon == 4u)
+                {
+                    region = DISPLAY64_GUI_REGION_LAUNCHER_PANEL;
+                }
+                else if (icon == 5u)
+                {
+                    region = DISPLAY64_GUI_REGION_LAUNCHER_ASSISTANT;
                 }
                 display64_desktop_open_launcher_icon(icon);
                 display64_gui_record_event(
@@ -3301,6 +3384,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_desktop_terminal_count = 0u;
     g_display_desktop_fileman_count = 0u;
     g_display_desktop_settings_count = 0u;
+    g_display_desktop_assistant_count = 0u;
     g_display_pkg_settings_panel_count = 0u;
     g_display_identity_settings_panel_count = 0u;
     g_display_identity_transport_settings_panel_count = 0u;
@@ -3322,6 +3406,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_desktop_fileman_handle = 0u;
     g_display_desktop_settings_handle = 0u;
     g_display_desktop_installer_handle = 0u;
+    g_display_desktop_assistant_handle = 0u;
     g_display_desktop_launcher_open = 0u;
     g_display_gui_interactive = 0u;
     g_display_gui_click_hittest = 0u;
@@ -3334,6 +3419,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_gui_fileman_opened = 0u;
     g_display_gui_settings_opened = 0u;
     g_display_gui_installer_opened = 0u;
+    g_display_gui_assistant_opened = 0u;
     g_display_gui_unfocused_key_denied = 0u;
     g_display_gui_unfocused_key_denial_count = 0u;
     g_display_gui_no_ambient_input = 0u;
@@ -3877,6 +3963,11 @@ u32 display64_desktop_settings_count(void)
     return g_display_desktop_settings_count;
 }
 
+u32 display64_desktop_assistant_count(void)
+{
+    return g_display_desktop_assistant_count;
+}
+
 u32 display64_pkg_settings_panel_count(void)
 {
     return g_display_pkg_settings_panel_count;
@@ -4020,6 +4111,11 @@ u32 display64_gui_settings_opened(void)
 u32 display64_gui_installer_opened(void)
 {
     return g_display_gui_installer_opened;
+}
+
+u32 display64_gui_assistant_opened(void)
+{
+    return g_display_gui_assistant_opened;
 }
 
 u32 display64_gui_unfocused_key_denied(void)

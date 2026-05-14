@@ -81,8 +81,8 @@ if ($aiLine -notmatch ' default-caps 0 actions-executed 0 audit-records [1-9][0-
     throw "M16 AI policy verifier failed: AI request/deny/audit detail did not match the no-action Product contract."
 }
 
-Assert-Line -Lines $outputLines -Pattern '^Product AI policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable$' -Message "M16 AI policy verifier failed: help output did not describe request/deny/audit-only AI policy."
-Assert-Line -Lines $outputLines -Pattern '^AI policy: Settings/pkginfo; request-deny-audit only; no actions$' -Message "M16 AI policy verifier failed: apps output did not label AI policy as no-action."
+Assert-Line -Lines $outputLines -Pattern '^Product AI (policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable|assistant: launcher/Settings/pkginfo show read-only consent flow; inference unavailable)$' -Message "M16 AI policy verifier failed: help output did not describe request/deny/audit-only AI policy."
+Assert-Line -Lines $outputLines -Pattern '^(AI policy: Settings/pkginfo; request-deny-audit only; no actions|AI Assistant: launcher/Settings/pkginfo; read-only consent flow; inference unavailable)$' -Message "M16 AI policy verifier failed: apps output did not label AI policy as no-action."
 Assert-Line -Lines $outputLines -Pattern '^ai policy broker: foundation active$' -Message "M16 AI policy verifier failed: pkginfo did not expose AI policy broker status."
 Assert-Line -Lines $outputLines -Pattern '^ai principal: request-only no default capabilities$' -Message "M16 AI policy verifier failed: pkginfo did not expose the request-only principal."
 Assert-Line -Lines $outputLines -Pattern '^ai action request: modeled$' -Message "M16 AI policy verifier failed: pkginfo did not expose the action request model."
@@ -95,7 +95,7 @@ Assert-Line -Lines $outputLines -Pattern '^ai settings access: denied$' -Message
 Assert-Line -Lines $outputLines -Pattern '^ai package access: denied$' -Message "M16 AI policy verifier failed: AI package denial was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai secret access: denied$' -Message "M16 AI policy verifier failed: AI secret denial was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai cloud access: denied$' -Message "M16 AI policy verifier failed: AI cloud denial was not visible."
-Assert-Line -Lines $outputLines -Pattern '^ai assistant: unavailable$' -Message "M16 AI policy verifier failed: AI assistant was not labeled unavailable."
+Assert-Line -Lines $outputLines -Pattern '^ai assistant: (unavailable|host active; inference unavailable)$' -Message "M16 AI policy verifier failed: AI assistant status was not labeled truthfully."
 Assert-Line -Lines $outputLines -Pattern '^ai automation: unavailable$' -Message "M16 AI policy verifier failed: AI automation was not labeled unavailable."
 Assert-Line -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret/ai$' -Message "M16 AI policy verifier failed: no-ambient AI authority status was not visible."
 

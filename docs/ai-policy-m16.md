@@ -1,6 +1,6 @@
 # M16 AI Policy Broker Foundation
 
-M16 adds the Product AI policy foundation only. It does not add an AI assistant, model integration, chat UI, automation, cloud AI, system control, or task execution.
+M16 adds the Product AI policy foundation only. It does not add an Assistant app, model integration, chat inference, automation, cloud AI, system control, or task execution.
 
 ## Product Behavior
 
@@ -37,12 +37,14 @@ The audit log is represented as immutable/queryable policy telemetry in M16. It 
 
 These remain unavailable/non-product:
 
-- AI assistant behavior
+- Assistant app behavior in M16
+- AI inference backend
+- generated answers
 - AI actions
 - AI automation
 - cloud AI
 - model integration
-- chat UI
+- chat inference
 - task execution
 - AI filesystem access
 - AI network access
@@ -51,4 +53,4 @@ These remain unavailable/non-product:
 - AI secret access
 - AI cloud access
 
-M17 must not start until M16 evidence is archived and clean.
+M17 builds on this policy layer by adding an Assistant host and read-only consent/context flow. M17 still does not add action mode, automation, cloud memory, model transport, or generated answers.

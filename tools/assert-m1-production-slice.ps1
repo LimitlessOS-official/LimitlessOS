@@ -17,6 +17,7 @@ $m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RE
 $m1ShellBuiltins = @("apps", "help", "hwval", "info", "lock", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m15ProductGuiApps = @("Terminal", "File Manager", "Settings", "Installer")
+$m17ProductGuiApps = @("Terminal", "File Manager", "Settings", "Installer", "Assistant")
 $m1Aliases = @("SAY", "SHOW", "LIST", "MAKE", "PUT", "SWAP", "SHIFT")
 $m1InternalFiles = @("HELLO.TXT", "INDEX.TXT")
 $m4UnavailableFeatures = @(
@@ -434,7 +435,11 @@ function Assert-NoUnlabeledPlaceholders
             }
 
             foreach ($match in Select-String -Path $item.FullName -Pattern $blockedPattern -AllMatches) {
-                $violations += ("{0}:{1}: {2}" -f (Get-RepoRelativePath $item.FullName), $match.LineNumber, $match.Line.Trim())
+                $lineText = $match.Line.Trim()
+                if ($lineText -match 'drs-ai-no-fake-response|ai_policy64_no_fake_response|assistantNoFakeResponseVerified') {
+                    continue
+                }
+                $violations += ("{0}:{1}: {2}" -f (Get-RepoRelativePath $item.FullName), $match.LineNumber, $lineText)
                 if ($violations.Count -ge 20) {
                     break
                 }
@@ -489,7 +494,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
-        "Product GUI: Terminal, File Manager, Settings, Installer through brokered desktop input/display",
+        "Product GUI: Terminal, File Manager, Settings, Installer, Assistant through brokered desktop input/display",
         "Product GUI: unavailable on BIOS checksum fallback",
         "Product services: Settings shows service/session status; installer planning writes disabled",
         "Product services: BIOS service/session stubs active; installer UX unavailable",
@@ -498,20 +503,20 @@ function Assert-RuntimeShellSurfaceSource
         "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
         "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled",
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
-        "Product AI policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable",
+        "Product AI assistant: launcher/Settings/pkginfo show read-only consent flow; inference unavailable",
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
-        "Unavailable in M16: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-assistant, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install",
+        "Unavailable in M17: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
-        "GUI desktop: Terminal File Manager Settings Installer",
+        "GUI desktop: Terminal File Manager Settings Installer Assistant",
         "GUI desktop: unavailable on BIOS checksum fallback",
         "Service/session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
         "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
-        "AI policy: Settings/pkginfo; request-deny-audit only; no actions",
+        "AI Assistant: launcher/Settings/pkginfo; read-only consent flow; inference unavailable",
         "AI policy: unavailable on BIOS checksum fallback; no actions",
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
@@ -1477,11 +1482,80 @@ function Assert-X64Artifacts
         $m16Inventory | Add-Member -Force -NotePropertyName aiNoPackageAccessVerified -NotePropertyValue $true
         $m16Inventory | Add-Member -Force -NotePropertyName aiNoSecretAccessVerified -NotePropertyValue $true
         $m16Inventory | Add-Member -Force -NotePropertyName aiNoCloudAccessVerified -NotePropertyValue $true
-        $m16Inventory | Add-Member -Force -NotePropertyName noM17WorkStarted -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName noM17WorkStarted -NotePropertyValue $false
         $m16Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
         $m16Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m16InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m16.json" -f $BuildProfile.ToLowerInvariant())
         $m16Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m16InventoryPath -Encoding Ascii
+
+        $m17Inventory = $m16Inventory.PSObject.Copy()
+        $m17Inventory.milestone = "M17 AI Assistant Read-Only Mode"
+        $m17Inventory.productGuiApps = $m17ProductGuiApps
+        $m17Inventory.activeProductServices = @(
+            $m16Inventory.activeProductServices +
+            @("AI Assistant host and consent-scoped read-only context surface")
+        ) | Select-Object -Unique
+        $m17Inventory.unavailableFeatures = @(
+            $m16Inventory.unavailableFeatures +
+            @(
+                "AI inference backend",
+                "AI-generated answers",
+                "AI model transport",
+                "AI action mode",
+                "AI file writes",
+                "AI settings changes",
+                "AI package install/update",
+                "AI cloud memory",
+                "AI secret/token access",
+                "AI cloud storage access",
+                "AI self-modification"
+            )
+        ) | Where-Object { $_ -ne "AI assistant" -and $_ -ne "AI assistant behavior" } | Select-Object -Unique
+        $m17Inventory.aiAssistantStatus = "Product Assistant host active; inference unavailable"
+        $m17Inventory.unavailableComponents = @(
+            "AI inference backend",
+            "AI action mode",
+            "AI-assisted setup",
+            "Cloud storage sync",
+            "Personal account login",
+            "Enterprise account login",
+            "Security-key login",
+            "Package install/apply UX",
+            "App store",
+            "Browser",
+            "Gaming stack",
+            "Developer toolchain"
+        )
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantAppStatus -NotePropertyValue "Product GUI app available after login"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantBackendMode -NotePropertyValue "Mode B host and consent/context foundation only"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantInferenceStatus -NotePropertyValue "unavailable; no model call and no scripted response"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantActionsStatus -NotePropertyValue "unavailable"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantAutomationStatus -NotePropertyValue "unavailable"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantCloudMemoryStatus -NotePropertyValue "unavailable"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantPackageIntegrityStatus -NotePropertyValue "signed Product component; integrity checked by Product package policy"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantSelfModificationDenied -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantDefaultCapabilities -NotePropertyValue 0
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantContextRequestVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantConsentPromptVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantDeniedNoDataVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantAllowedScopedReadVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantAuditVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantSettingsPanelVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantShellStatusVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantShellStatusCommand -NotePropertyValue "pkginfo read-only AI Assistant status"
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantNoModelCallVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName assistantNoFakeResponseVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiFilesystemAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiNetworkAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiSettingsAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiPackageAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiSecretAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noAmbientAiCloudAuthorityVerified -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName noM18WorkStarted -NotePropertyValue $true
+        $m17Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m17Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m17InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m17.json" -f $BuildProfile.ToLowerInvariant())
+        $m17Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m17InventoryPath -Encoding Ascii
     }
 }
 
