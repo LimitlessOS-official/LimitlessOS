@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M10 physical validation pending user evidence.
+Status: M18.1 physical validation pending user evidence.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,6 +24,11 @@ This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on a
 
 - [ ] Boot from USB using the UEFI entry.
 - [ ] Record Secure Boot state.
+- [ ] Confirm the UEFI loader does not freeze at linked kernel placement.
+- [ ] Confirm the UEFI loader reaches ExitBootServices or prints an intentional `boot cannot continue` fail-fast diagnostic.
+- [ ] If a fail-fast diagnostic appears, record allocation name, requested address, page count, EFI status, conflict type, fallback attempt status, and selected fallback base.
+- [ ] Confirm the boot reaches `LimitlessOS x86_64 scaffold`.
+- [ ] Confirm the boot reaches `[x64] long mode active`.
 - [ ] If first-run setup appears, create the initial local user.
 - [ ] Confirm login screen appears before the desktop.
 - [ ] Log in with the created local user.
@@ -88,6 +93,9 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 - ISO filename/checksum:
 - BIOS Product bytes/sectors/reserve/checksum:
 - UEFI Product bytes/reserve/checksum:
+- Linked kernel placement line:
+- Boot handoff table line:
+- ExitBootServices or fail-fast diagnostic:
 - Input backend used:
 - Display resolution:
 - Mouse/touchpad result:
@@ -116,4 +124,4 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 
 ## Pass Criteria
 
-M10 hardware validation passes only when the checklist above is completed with working login/lock behavior, no unsafe partition access, no untruthful Product surface, no ambient authority exception, and no internal install/write/format/NVRAM action. If any item fails, record the exact failing step and keep real internal install blocked.
+M18.1 hardware validation passes only when the checklist above is completed with a real UEFI handoff into the x64 kernel, working login/lock behavior, no unsafe partition access, no untruthful Product surface, no ambient authority exception, and no internal install/write/format/NVRAM action. If any item fails, record the exact failing step and keep real internal install blocked.

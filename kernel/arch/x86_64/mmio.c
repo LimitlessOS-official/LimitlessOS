@@ -3496,14 +3496,7 @@ static u32 mmio64_mix_token(u32 token, u32 value)
 
 static u64 mmio64_lower_half_alias(const void *address)
 {
-    u64 value = (u64)address;
-
-    if (value >= MMIO64_KERNEL_VIRTUAL_BASE)
-    {
-        return value - MMIO64_KERNEL_VIRTUAL_BASE;
-    }
-
-    return value;
+    return paging64_kernel_physical_alias(address);
 }
 
 static u32 mmio64_checksum_bytes(const u8 *bytes, u32 byte_count)

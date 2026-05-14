@@ -11,6 +11,8 @@
 #define PAGING64_RUNTIME_PROTECTION_USER_ACCESSIBLE 0x00000020u
 #define PAGING64_RUNTIME_PROTECTION_WRITABLE 0x00000040u
 
+void paging64_configure_kernel_physical_base(u32 kernel_load_address);
+u64 paging64_kernel_physical_alias(const void *address);
 u32 paging64_install_runtime_mapping(u32 virtual_base, const void *source, u32 mapped_bytes);
 u32 paging64_install_user_runtime_mapping(u32 virtual_base, const void *source, u32 mapped_bytes);
 u32 paging64_install_user_stack_mapping(u32 stack_top, u32 stack_bytes);

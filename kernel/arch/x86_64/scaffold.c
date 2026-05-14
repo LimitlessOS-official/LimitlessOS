@@ -3011,19 +3011,19 @@ static void log_runtime_mapping(void)
 
 static u64 lower_half_alias_address(const void *mapped_address)
 {
-    u64 address = (u64)(const void *)mapped_address;
-
-    if (address >= LIMITLESS_X64_KERNEL_VIRTUAL_BASE)
-    {
-        return address - LIMITLESS_X64_KERNEL_VIRTUAL_BASE;
-    }
-
-    return address;
+    return paging64_kernel_physical_alias(mapped_address);
 }
 
 static u64 higher_half_alias_address(const void *mapped_address)
 {
-    return LIMITLESS_X64_KERNEL_VIRTUAL_BASE + lower_half_alias_address(mapped_address);
+    u64 address = (u64)(const void *)mapped_address;
+
+    if (address >= LIMITLESS_X64_KERNEL_VIRTUAL_BASE)
+    {
+        return address;
+    }
+
+    return LIMITLESS_X64_KERNEL_VIRTUAL_BASE + address;
 }
 
 static void log_higher_half_alias(void)
@@ -12231,6 +12231,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         }
     }
 
+    paging64_configure_kernel_physical_base(boot_info->kernel_load_address);
     log_boot_memory(boot_info);
     log_build_profile_surface();
     services64_init();

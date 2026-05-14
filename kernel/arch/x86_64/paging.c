@@ -3,6 +3,20 @@
 #include "x64.h"
 
 #define PAGING64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
+#define PAGING64_KERNEL_LINKED_OFFSET 0x00010000ull
+#define PAGING64_BOOT_TABLE_BASE_FALLBACK 0x00001000ull
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+#define PAGING64_PML4_OFFSET 0x00000000ull
+#define PAGING64_PDPT_OFFSET 0x00001000ull
+#define PAGING64_KERNEL_PD_OFFSET 0x0000D000ull
+#define PAGING64_HIGH_PDPT_OFFSET 0x00003000ull
+#define PAGING64_RUNTIME_PD_OFFSET 0x00004000ull
+#define PAGING64_RUNTIME_PT_OFFSET 0x00005000ull
+#define PAGING64_USER_RUNTIME_PT_OFFSET 0x00006000ull
+#define PAGING64_USER_STACK_OFFSET 0x00007000ull
+#define PAGING64_KERNEL_MMIO_PT_OFFSET 0x0000B000ull
+#define PAGING64_APIC_MMIO_PT_OFFSET 0x0000C000ull
+#else
 #define PAGING64_PML4_PHYSICAL 0x00001000ull
 #define PAGING64_PDPT_PHYSICAL 0x00002000ull
 #define PAGING64_KERNEL_PD_PHYSICAL 0x00003000ull
@@ -13,6 +27,7 @@
 #define PAGING64_USER_STACK_PHYSICAL 0x00008000ull
 #define PAGING64_KERNEL_MMIO_PT_PHYSICAL 0x0000C000ull
 #define PAGING64_APIC_MMIO_PT_PHYSICAL 0x0000D000ull
+#endif
 #define PAGING64_ENTRY_COUNT 512u
 #define PAGING64_PAGE_BYTES 0x00001000u
 #define PAGING64_PHYSICAL_ADDRESS_MASK 0x000FFFFFFFFFF000ull
@@ -61,14 +76,52 @@ static u32 g_kernel_mmio_mapping_pt_index = 0u;
 static u64 g_kernel_mmio_mapping_entry_flags = 0ull;
 static u32 g_kernel_mmio_mapping_nx_enabled = 0u;
 static u32 g_kernel_mmio_pt_initialized = 0u;
+static u64 g_paging64_kernel_physical_base = 0ull;
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static u64 paging64_active_root_physical(void)
+{
+    u64 root = read_cr3_64() & PAGING64_PAGE_MASK;
+
+    return (root != 0ull) ? root : PAGING64_BOOT_TABLE_BASE_FALLBACK;
+}
+
+#define PAGING64_PML4_PHYSICAL (paging64_active_root_physical() + PAGING64_PML4_OFFSET)
+#define PAGING64_PDPT_PHYSICAL (paging64_active_root_physical() + PAGING64_PDPT_OFFSET)
+#define PAGING64_KERNEL_PD_PHYSICAL (paging64_active_root_physical() + PAGING64_KERNEL_PD_OFFSET)
+#define PAGING64_HIGH_PDPT_PHYSICAL (paging64_active_root_physical() + PAGING64_HIGH_PDPT_OFFSET)
+#define PAGING64_RUNTIME_PD_PHYSICAL (paging64_active_root_physical() + PAGING64_RUNTIME_PD_OFFSET)
+#define PAGING64_RUNTIME_PT_PHYSICAL (paging64_active_root_physical() + PAGING64_RUNTIME_PT_OFFSET)
+#define PAGING64_USER_RUNTIME_PT_PHYSICAL (paging64_active_root_physical() + PAGING64_USER_RUNTIME_PT_OFFSET)
+#define PAGING64_USER_STACK_PHYSICAL (paging64_active_root_physical() + PAGING64_USER_STACK_OFFSET)
+#define PAGING64_KERNEL_MMIO_PT_PHYSICAL (paging64_active_root_physical() + PAGING64_KERNEL_MMIO_PT_OFFSET)
+#define PAGING64_APIC_MMIO_PT_PHYSICAL (paging64_active_root_physical() + PAGING64_APIC_MMIO_PT_OFFSET)
+#endif
 
 static u64 paging64_lower_half_alias(const void *address)
+{
+    return paging64_kernel_physical_alias(address);
+}
+
+void paging64_configure_kernel_physical_base(u32 kernel_load_address)
+{
+    if (kernel_load_address >= PAGING64_KERNEL_LINKED_OFFSET)
+    {
+        g_paging64_kernel_physical_base =
+            ((u64)kernel_load_address) - PAGING64_KERNEL_LINKED_OFFSET;
+        return;
+    }
+
+    g_paging64_kernel_physical_base = 0ull;
+}
+
+u64 paging64_kernel_physical_alias(const void *address)
 {
     u64 value = (u64)address;
 
     if (value >= PAGING64_KERNEL_VIRTUAL_BASE)
     {
-        return value - PAGING64_KERNEL_VIRTUAL_BASE;
+        return g_paging64_kernel_physical_base + (value - PAGING64_KERNEL_VIRTUAL_BASE);
     }
 
     return value;
