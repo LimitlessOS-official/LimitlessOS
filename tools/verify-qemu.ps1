@@ -236,7 +236,13 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled$' -Message "M15 runtime help did not describe Product installer UX status."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M15: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai, ai-assisted-setup, real-install$' -Message "M15 runtime help did not label unavailable account/cloud/installer/AI surfaces."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable$' -Message "M16 BIOS fallback help did not label AI policy as unavailable."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product AI policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable$' -Message "M16 runtime help did not describe Product AI policy status."
+    }
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M16: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-assistant, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install$' -Message "M16 runtime help did not label unavailable account/cloud/installer/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -262,6 +268,12 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: launcher/Settings; dry-run planning only; writes disabled$' -Message "M15 apps output did not label installer UX visibility."
     }
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^AI policy: unavailable on BIOS checksum fallback; no actions$' -Message "M16 BIOS apps output did not label AI policy as unavailable."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^AI policy: Settings/pkginfo; request-deny-audit only; no actions$' -Message "M16 apps output did not label AI policy visibility."
+    }
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
     }
@@ -283,6 +295,10 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud sync$' -Message "M14 apps output did not label cloud sync unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Automatic cloud upload/download$' -Message "M14 apps output did not label automatic cloud upload/download unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI cloud access$' -Message "M14 apps output did not label AI cloud access unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^AI assistant$' -Message "M16 apps output did not label AI assistant unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^AI actions$' -Message "M16 apps output did not label AI actions unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^AI automation$' -Message "M16 apps output did not label AI automation unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud AI$' -Message "M16 apps output did not label cloud AI unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI-assisted setup$' -Message "M15 apps output did not label AI-assisted setup unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Real internal install/write$' -Message "M15 apps output did not quarantine internal install/write authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Formatting$' -Message "M15 apps output did not quarantine formatting authority."
@@ -2653,7 +2669,7 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable' -Message "x64 ring-3 shell stream Product cloud storage help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only|Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled' -Message "x64 ring-3 shell stream Product installer UX help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M15: ask \(not AI\), echo, aliases|Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M16: ask \(not AI\), echo, aliases|Unavailable in M15: ask \(not AI\), echo, aliases|Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -3967,6 +3983,9 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg unavailable bios-checksum-only 1' -Message "x64 BIOS package-signing surface did not report checksum-only fallback."
         Assert-OutputContains -Lines $outputLines -Pattern '^package system: BIOS checksum-only fallback$' -Message "x64 BIOS pkginfo did not report checksum-only fallback."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud storage broker: unavailable on BIOS fallback$' -Message "x64 BIOS pkginfo did not report cloud storage as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai policy broker: unavailable on BIOS fallback$' -Message "x64 BIOS pkginfo did not report AI policy as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai actions: unavailable$' -Message "x64 BIOS pkginfo did not report AI actions unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai assistant: unavailable$' -Message "x64 BIOS pkginfo did not report AI assistant unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg-status unavailable bios-checksum-only 1 .*drs-pkg-status-no-auto-install-visible 1 .*drs-pkg-status-public-fetch-unavailable 1 .*drs-pkg-status-trusted-time-unavailable 1 .*drs-pkg-install-action-unavailable 1 .*drs-pkg-update-apply-unavailable 1' -Message "x64 BIOS package trust UX fallback proof was not observed."
     }
     else {
@@ -3998,9 +4017,24 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud auto-upload/download: unavailable$' -Message "x64 UEFI pkginfo did not report cloud automatic upload/download unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud AI access: unavailable$' -Message "x64 UEFI pkginfo did not report cloud AI access unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud app direct authority: denied$' -Message "x64 UEFI pkginfo did not report app direct cloud authority denied."
-        Assert-OutputContains -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret$' -Message "x64 UEFI pkginfo did not report no ambient install/update/network/cloud/fs/identity/secret authority."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai policy broker: foundation active$' -Message "x64 UEFI pkginfo did not report M16 AI policy broker active."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai principal: request-only no default capabilities$' -Message "x64 UEFI pkginfo did not report the request-only AI principal."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai action request: modeled$' -Message "x64 UEFI pkginfo did not report AI action requests as modeled."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai consent: required no auto-approve$' -Message "x64 UEFI pkginfo did not report consent as required."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai actions: unavailable$' -Message "x64 UEFI pkginfo did not report AI actions unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai audit: immutable queryable settings-visible$' -Message "x64 UEFI pkginfo did not report the AI audit log surface."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai filesystem access: denied$' -Message "x64 UEFI pkginfo did not report AI filesystem denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai network access: denied$' -Message "x64 UEFI pkginfo did not report AI network denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai settings access: denied$' -Message "x64 UEFI pkginfo did not report AI settings denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai package access: denied$' -Message "x64 UEFI pkginfo did not report AI package denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai secret access: denied$' -Message "x64 UEFI pkginfo did not report AI secret denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai cloud access: denied$' -Message "x64 UEFI pkginfo did not report AI cloud denial."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai assistant: unavailable$' -Message "x64 UEFI pkginfo did not report AI assistant unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai automation: unavailable$' -Message "x64 UEFI pkginfo did not report AI automation unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret/ai$' -Message "x64 UEFI pkginfo did not report no ambient install/update/network/cloud/fs/identity/secret/ai authority."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg drs-pkg-signed 1 drs-pkg-verified 1 drs-pkg-invalid-denied 1 drs-pkg-missing-sig-denied 1 drs-pkg-wrong-key-denied 1 drs-pkg-manifest-tamper-denied 1 drs-pkg-payload-tamper-denied 1 drs-pkg-checksum-mismatch-denied 1 drs-pkg-unsupported-version-denied 1 drs-pkg-duplicate-denied 1 drs-pkg-downgrade-denied 1 drs-pkg-wrong-owner-denied 1 drs-pkg-stale-token-denied 1 drs-pkg-cap-policy-denied 1 drs-pkg-malformed-denied 1 drs-pkg-oversized-denied 1 drs-pkg-install-no-cap-denied 1 drs-pkg-install-scoped 1 drs-pkg-update-check 1 drs-pkg-update-index-verified 1 drs-pkg-update-index-unsigned-denied 1 drs-pkg-update-index-tamper-denied 1 drs-pkg-update-index-wrong-key-denied 1 drs-pkg-update-index-rollback-denied 1 drs-pkg-update-index-replay-handled 1 drs-pkg-update-no-network-cap-denied 1 drs-pkg-update-apply-no-install-cap-denied 1 drs-pkg-update-no-ambient 1 drs-pkg-update-no-auto-install 1' -Message "x64 UEFI M7.1 signed package/update negative fixture proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pkg-status drs-pkg-settings-panel 1 drs-pkg-settings-readonly 1 drs-pkg-status-visible 1 drs-pkg-status-signer-visible 1 drs-pkg-status-capabilities-visible 1 drs-pkg-status-update-index-visible 1 drs-pkg-status-no-auto-install-visible 1 drs-pkg-status-public-fetch-unavailable 1 drs-pkg-status-trusted-time-unavailable 1 drs-pkg-status-no-ambient-install 1 drs-pkg-status-no-ambient-update 1 drs-pkg-status-no-ambient-network 1 drs-pkg-settings-write-denied 1 drs-pkg-install-action-unavailable 1 drs-pkg-update-apply-unavailable 1 signer-key 0x[0-9A-F]+ signed-packages [1-9][0-9]* settings-panels [1-9][0-9]*' -Message "x64 UEFI M8 package trust UX/status proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-ai drs-ai-principal 1 drs-ai-request-created 1 drs-ai-consent-required 1 drs-ai-denied-no-consent 1 drs-ai-scope-validated 1 drs-ai-invalid-scope-denied 1 drs-ai-audit-recorded 1 drs-ai-settings-panel 1 drs-ai-settings-readonly 1 drs-ai-no-ambient-authority 1 drs-ai-no-filesystem-access 1 drs-ai-no-network-access 1 drs-ai-no-settings-access 1 drs-ai-no-package-access 1 drs-ai-no-secret-access 1 drs-ai-no-cloud-access 1 .* default-caps 0 actions-executed 0 audit-records [1-9][0-9]* mode request-deny-audit-only principal request-only-no-default-capabilities action read-file resource /README\.TXT capability fs-read scope file decision deny result denied-no-consent assistant unavailable automation unavailable cloud-ai unavailable' -Message "x64 UEFI M16 AI policy request/deny/audit proof was not observed."
     }
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ write w\.txt ok' -Message "x64 persistent shell did not accept a live write command with explicit text."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ cat w\.txt' -Message "x64 persistent shell did not accept a live cat command for the written file."

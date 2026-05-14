@@ -1,5 +1,6 @@
 #include "arch_build.h"
 #include "account_association_x64.h"
+#include "ai_policy_x64.h"
 #include "apic_x64.h"
 #include "auth_x64.h"
 #include "block_x64.h"
@@ -4831,6 +4832,56 @@ static void log_installer_ux_surface(void)
     write_string(installer_ux64_plan_status());
     write_string(" dryrun ");
     write_line(installer_ux64_dryrun_status());
+#endif
+}
+
+static void log_ai_policy_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ai_policy64_init();
+    write_labeled_dec_u32("[x64] drs-ai drs-ai-principal ", ai_policy64_principal());
+    write_labeled_dec_u32(" drs-ai-request-created ", ai_policy64_request_created());
+    write_labeled_dec_u32(" drs-ai-consent-required ", ai_policy64_consent_required());
+    write_labeled_dec_u32(" drs-ai-denied-no-consent ", ai_policy64_denied_no_consent());
+    write_labeled_dec_u32(" drs-ai-scope-validated ", ai_policy64_scope_validated());
+    write_labeled_dec_u32(" drs-ai-invalid-scope-denied ", ai_policy64_invalid_scope_denied());
+    write_labeled_dec_u32(" drs-ai-audit-recorded ", ai_policy64_audit_recorded());
+    write_labeled_dec_u32(" drs-ai-settings-panel ", scaffold_bool_u32(display64_ai_settings_panel_count()));
+    write_labeled_dec_u32(" drs-ai-settings-readonly ", ai_policy64_settings_readonly());
+    write_labeled_dec_u32(" drs-ai-no-ambient-authority ", ai_policy64_no_ambient_authority());
+    write_labeled_dec_u32(" drs-ai-no-filesystem-access ", ai_policy64_no_filesystem_access());
+    write_labeled_dec_u32(" drs-ai-no-network-access ", ai_policy64_no_network_access());
+    write_labeled_dec_u32(" drs-ai-no-settings-access ", ai_policy64_no_settings_access());
+    write_labeled_dec_u32(" drs-ai-no-package-access ", ai_policy64_no_package_access());
+    write_labeled_dec_u32(" drs-ai-no-secret-access ", ai_policy64_no_secret_access());
+    write_labeled_dec_u32(" drs-ai-no-cloud-access ", ai_policy64_no_cloud_access());
+    write_labeled_dec_u32(" principal-id ", ai_policy64_principal_id());
+    write_labeled_dec_u32(" request-id ", ai_policy64_request_id());
+    write_labeled_dec_u32(" default-caps ", ai_policy64_default_capabilities());
+    write_labeled_dec_u32(" actions-executed ", ai_policy64_actions_executed());
+    write_labeled_dec_u32(" audit-records ", ai_policy64_audit_record_count());
+    write_string(" mode ");
+    write_string(ai_policy64_status());
+    write_string(" principal ");
+    write_string(ai_policy64_principal_status());
+    write_string(" action ");
+    write_string(ai_policy64_request_action());
+    write_string(" resource ");
+    write_string(ai_policy64_request_resource());
+    write_string(" capability ");
+    write_string(ai_policy64_request_capability());
+    write_string(" scope ");
+    write_string(ai_policy64_request_scope());
+    write_string(" decision ");
+    write_string(ai_policy64_decision());
+    write_string(" result ");
+    write_string(ai_policy64_result());
+    write_string(" assistant ");
+    write_string(ai_policy64_assistant_status());
+    write_string(" automation ");
+    write_string(ai_policy64_automation_status());
+    write_string(" cloud-ai ");
+    write_line(ai_policy64_cloud_status());
 #endif
 }
 
@@ -12206,6 +12257,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_account_association_surface();
     log_cloud_storage_surface();
     log_installer_ux_surface();
+    log_ai_policy_surface();
     log_hardware_validation_surface();
     (void)display64_write_mouse_diagnostics(
         input64_ps2_mouse_init_done(),

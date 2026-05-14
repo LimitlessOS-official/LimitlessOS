@@ -1,6 +1,7 @@
 #include "display_x64.h"
 
 #include "arch_build.h"
+#include "ai_policy_x64.h"
 #include "auth_x64.h"
 #include "account_association_x64.h"
 #include "capability_x64.h"
@@ -163,6 +164,7 @@ static u32 g_display_identity_transport_settings_panel_count = 0u;
 static u32 g_display_account_settings_panel_count = 0u;
 static u32 g_display_cloud_settings_panel_count = 0u;
 static u32 g_display_cloud_fileman_status_count = 0u;
+static u32 g_display_ai_settings_panel_count = 0u;
 static u32 g_display_installer_welcome_count = 0u;
 static u32 g_display_installer_beginner_count = 0u;
 static u32 g_display_installer_advanced_count = 0u;
@@ -2472,16 +2474,23 @@ static void display64_desktop_draw_settings(u32 handle)
         ++g_display_cloud_settings_panel_count;
     }
     (void)cloud_storage64_settings_readonly();
-    (void)display64_draw_font_text(body_x, body_y + 420u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    ai_policy64_init();
+    (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 438u, "Request, deny, audit only", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 456u, "No fs/net/settings/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_ai_settings_panel_count == 0u)
+    {
+        ++g_display_ai_settings_panel_count;
+    }
+    (void)ai_policy64_settings_readonly();
+    (void)display64_draw_font_text(body_x, body_y + 474u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 438u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        display64_draw_label_value(body_x, body_y + 456u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
+        (void)display64_draw_font_text(body_x, body_y + 492u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 438u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        (void)display64_draw_font_text(body_x, body_y + 456u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 492u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
     }
 #else
     (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
@@ -3298,6 +3307,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_account_settings_panel_count = 0u;
     g_display_cloud_settings_panel_count = 0u;
     g_display_cloud_fileman_status_count = 0u;
+    g_display_ai_settings_panel_count = 0u;
     g_display_installer_welcome_count = 0u;
     g_display_installer_beginner_count = 0u;
     g_display_installer_advanced_count = 0u;
@@ -3895,6 +3905,11 @@ u32 display64_cloud_settings_panel_count(void)
 u32 display64_cloud_fileman_status_count(void)
 {
     return g_display_cloud_fileman_status_count;
+}
+
+u32 display64_ai_settings_panel_count(void)
+{
+    return g_display_ai_settings_panel_count;
 }
 
 u32 display64_installer_welcome_count(void)

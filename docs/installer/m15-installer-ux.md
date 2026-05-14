@@ -21,7 +21,7 @@ M15 promotes installer planning into a Product GUI surface without enabling real
 - Enterprise account setup.
 - Security-key login setup.
 - Cloud storage sync or enablement.
-- AI-assisted setup.
+- AI-assisted setup. M16 adds request/deny/audit policy only; it still does not add AI setup actions.
 - Package install/apply UX.
 - App store behavior.
 - Browser, gaming stack, and developer toolchain installation.
@@ -77,4 +77,4 @@ Archive M15 evidence with:
 .\tools\archive-m15-evidence.ps1 -IncludeExperimental
 ```
 
-M16 must not start until the M15 evidence archive is clean.
+M16 is the next accepted planning dependency for future AI setup safety, but M15 itself remains a zero-write installer planning milestone.

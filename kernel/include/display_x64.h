@@ -73,6 +73,7 @@ u32 display64_identity_transport_settings_panel_count(void);
 u32 display64_account_settings_panel_count(void);
 u32 display64_cloud_settings_panel_count(void);
 u32 display64_cloud_fileman_status_count(void);
+u32 display64_ai_settings_panel_count(void);
 u32 display64_installer_welcome_count(void);
 u32 display64_installer_beginner_count(void);
 u32 display64_installer_advanced_count(void);

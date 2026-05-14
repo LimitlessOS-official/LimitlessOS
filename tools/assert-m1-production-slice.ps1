@@ -498,7 +498,9 @@ function Assert-RuntimeShellSurfaceSource
         "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
         "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled",
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
-        "Unavailable in M15: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai, ai-assisted-setup, real-install",
+        "Product AI policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable",
+        "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
+        "Unavailable in M16: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-assistant, ai-actions, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
@@ -509,6 +511,8 @@ function Assert-RuntimeShellSurfaceSource
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
         "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
+        "AI policy: Settings/pkginfo; request-deny-audit only; no actions",
+        "AI policy: unavailable on BIOS checksum fallback; no actions",
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
@@ -529,6 +533,10 @@ function Assert-RuntimeShellSurfaceSource
         "Cloud sync",
         "Automatic cloud upload/download",
         "AI cloud access",
+        "AI assistant",
+        "AI actions",
+        "AI automation",
+        "Cloud AI",
         "AI-assisted setup",
         "Internal files hidden from app output: HELLO.TXT INDEX.TXT"
     )) {
@@ -1422,11 +1430,58 @@ function Assert-X64Artifacts
         $m15Inventory | Add-Member -Force -NotePropertyName noAmbientFirmwareAuthorityVerified -NotePropertyValue $true
         $m15Inventory | Add-Member -Force -NotePropertyName noAmbientPackageAuthorityVerified -NotePropertyValue $true
         $m15Inventory | Add-Member -Force -NotePropertyName noAmbientIdentityCloudSecretAuthorityVerified -NotePropertyValue $true
-        $m15Inventory | Add-Member -Force -NotePropertyName noM16WorkStarted -NotePropertyValue $true
+        $m15Inventory | Add-Member -Force -NotePropertyName noM16WorkStarted -NotePropertyValue $false
         $m15Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
         $m15Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
         $m15InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m15.json" -f $BuildProfile.ToLowerInvariant())
         $m15Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m15InventoryPath -Encoding Ascii
+
+        $m16Inventory = $m15Inventory.PSObject.Copy()
+        $m16Inventory.milestone = "M16 AI Policy Broker Foundation"
+        $m16Inventory.activeProductServices = @(
+            $m15Inventory.activeProductServices +
+            @("AI policy broker foundation")
+        ) | Select-Object -Unique
+        $m16Inventory.unavailableFeatures = @(
+            $m15Inventory.unavailableFeatures +
+            @(
+                "AI assistant behavior",
+                "AI actions",
+                "AI automation",
+                "Cloud AI",
+                "Model integration",
+                "Chat UI",
+                "Task execution"
+            )
+        ) | Select-Object -Unique
+        $m16Inventory | Add-Member -Force -NotePropertyName aiPolicyBrokerStatus -NotePropertyValue "Product request/deny/audit foundation; no AI actions"
+        $m16Inventory | Add-Member -Force -NotePropertyName aiPrincipalStatus -NotePropertyValue "system AI principal exists with no default capabilities and request-only authority"
+        $m16Inventory | Add-Member -Force -NotePropertyName aiActionRequestModelVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiConsentRequiredVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiDeniedNoConsentVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiScopeValidationVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiInvalidScopeDeniedVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiAuditLogVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiSettingsPanelVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiSettingsPanelReadonly -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiActionsAvailable -NotePropertyValue $false
+        $m16Inventory | Add-Member -Force -NotePropertyName aiAssistantStatus -NotePropertyValue "unavailable"
+        $m16Inventory | Add-Member -Force -NotePropertyName aiAutomationStatus -NotePropertyValue "unavailable"
+        $m16Inventory | Add-Member -Force -NotePropertyName aiCloudStatus -NotePropertyValue "unavailable"
+        $m16Inventory | Add-Member -Force -NotePropertyName aiDefaultCapabilities -NotePropertyValue 0
+        $m16Inventory | Add-Member -Force -NotePropertyName aiActionsExecuted -NotePropertyValue 0
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoAmbientAuthorityVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoFilesystemAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoNetworkAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoSettingsAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoPackageAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoSecretAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName aiNoCloudAccessVerified -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName noM17WorkStarted -NotePropertyValue $true
+        $m16Inventory | Add-Member -Force -NotePropertyName gitCommit -NotePropertyValue (Get-GitCommit)
+        $m16Inventory | Add-Member -Force -NotePropertyName gitStatus -NotePropertyValue (Get-GitStatusSummary)
+        $m16InventoryPath = Join-Path $distDir ("limitlessos-x86_64.{0}.m16.json" -f $BuildProfile.ToLowerInvariant())
+        $m16Inventory | ConvertTo-Json -Depth 12 | Set-Content -Path $m16InventoryPath -Encoding Ascii
     }
 }
 
