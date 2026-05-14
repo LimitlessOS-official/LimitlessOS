@@ -700,7 +700,7 @@ $lines.Add("#endif")
 
 Set-Content -Path $outputFullPath -Value $lines -Encoding ASCII
 Write-Host "Generated bootstrap package archive: $outputFullPath"
-if ($null -ne $payloadOverride) {
+foreach ($payloadOverride in $payloadOverrides.Values) {
     Write-Host ("  payload slot {0}: {1} bytes checksum 0x{2:X8} from {3}" -f `
         $payloadOverride.Slot, `
         $payloadOverride.Size, `
