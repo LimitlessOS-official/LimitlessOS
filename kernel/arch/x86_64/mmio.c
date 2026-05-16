@@ -4,8 +4,10 @@
 #include "launch_x64.h"
 #include "paging_x64.h"
 #include "pci_x64.h"
+#include "pit.h"
 #include "principal_x64.h"
 #include "runtime_image_x64.h"
+#include "serial.h"
 #include "services.h"
 #include "services_x64.h"
 
@@ -111,6 +113,8 @@ enum
     MMIO64_NVME_ADMIN_QUEUE_PAGE_BYTES = 4096u,
     MMIO64_NVME_IDENTIFY_BYTES = 4096u,
     MMIO64_NVME_POLL_BUDGET = 1000000u,
+    MMIO64_NVME_READY_TIMEOUT_TICKS = 50u,
+    MMIO64_NVME_READY_SPIN_BUDGET = 100000000u,
     MMIO64_NVME_REG_CAP_LOW = 0x00u,
     MMIO64_NVME_REG_CAP_HIGH = 0x04u,
     MMIO64_NVME_REG_CC = 0x14u,
@@ -13280,6 +13284,35 @@ static void mmio64_nvme_copy_identify_string(
     destination[out_index] = '\0';
 }
 
+static u32 mmio64_nvme_wait_csts_ready(
+    volatile u32 *registers,
+    u32 want_ready,
+    const char *timeout_label)
+{
+    u32 start_ticks = pit_get_ticks();
+    u32 poll;
+
+    for (poll = 0u; poll < MMIO64_NVME_READY_SPIN_BUDGET; ++poll)
+    {
+        u32 ready = ((mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CSTS)
+            & MMIO64_NVME_CSTS_READY) != 0u) ? 1u : 0u;
+        if (ready == want_ready)
+        {
+            return 1u;
+        }
+        if ((pit_get_ticks() - start_ticks) >= MMIO64_NVME_READY_TIMEOUT_TICKS)
+        {
+            break;
+        }
+        __asm__ __volatile__("pause");
+    }
+
+    serial_write_string("[x64] NVMe CSTS.RDY timeout ");
+    serial_write_string(timeout_label);
+    serial_write_string("\n");
+    return 0u;
+}
+
 static u32 mmio64_nvme_wait_completion(
     volatile u32 *completion_queue,
     u32 entry,
@@ -13507,16 +13540,7 @@ u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id)
                 command & ~MMIO64_NVME_CC_ENABLE);
         }
 
-        for (poll = 0u; poll < MMIO64_NVME_POLL_BUDGET; ++poll)
-        {
-            if ((mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CSTS)
-                    & MMIO64_NVME_CSTS_READY) == 0u)
-            {
-                break;
-            }
-        }
-
-        if (poll == MMIO64_NVME_POLL_BUDGET)
+        if (mmio64_nvme_wait_csts_ready(registers, 0u, "disable") == 0u)
         {
             error = 6u;
         }
@@ -13558,16 +13582,7 @@ u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id)
                     | MMIO64_NVME_CC_IOSQES_64
                     | MMIO64_NVME_CC_IOCQES_16);
 
-            for (poll = 0u; poll < MMIO64_NVME_POLL_BUDGET; ++poll)
-            {
-                if ((mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CSTS)
-                        & MMIO64_NVME_CSTS_READY) != 0u)
-                {
-                    break;
-                }
-            }
-
-            if (poll == MMIO64_NVME_POLL_BUDGET)
+            if (mmio64_nvme_wait_csts_ready(registers, 1u, "enable") == 0u)
             {
                 error = 7u;
             }

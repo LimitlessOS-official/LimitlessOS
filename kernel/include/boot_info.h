@@ -41,6 +41,12 @@ struct boot_info
     u32 framebuffer_pixels_per_scanline;
     u32 framebuffer_format;
     u32 framebuffer_firmware_token;
+    u64 memory_map_base;
+    u64 memory_map_bytes;
+    u32 memory_map_descriptor_size;
+    u32 memory_map_descriptor_version;
+    u32 memory_map_descriptor_count;
+    u32 memory_map_firmware_token;
     u64 acpi_rsdp;
     u64 pci_ecam_base;
     u32 pci_ecam_flags;

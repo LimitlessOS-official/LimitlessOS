@@ -51,9 +51,12 @@
 #define LIMITLESS_UEFI_BOOT_KERNEL_PD_OFFSET 0x000000000000D000ull
 #define LIMITLESS_UEFI_BOOT_KERNEL_PT_OFFSET 0x000000000000E000ull
 #define LIMITLESS_UEFI_LARGE_PAGE_BYTES 0x0000000000200000ull
+#define LIMITLESS_UEFI_BOOT_MEMORY_MAP_PAGES ((LIMITLESS_UEFI_MEMORY_MAP_BYTES + LIMITLESS_UEFI_PAGE_BYTES - 1u) / LIMITLESS_UEFI_PAGE_BYTES)
+#define LIMITLESS_UEFI_SERIAL_TX_POLL_LIMIT 1024u
 #define LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES (LIMITLESS_UEFI_BOOT_IDENTITY_BYTES / LIMITLESS_UEFI_LARGE_PAGE_BYTES)
 #define LIMITLESS_UEFI_KERNEL_LINKED_WINDOW_PAGES (LIMITLESS_UEFI_BOOT_IDENTITY_BYTES / LIMITLESS_UEFI_PAGE_BYTES)
 #define LIMITLESS_UEFI_PAGE_BYTES 0x0000000000001000ull
+#define LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES (LIMITLESS_UEFI_KERNEL_LINKED_OFFSET / LIMITLESS_UEFI_PAGE_BYTES)
 #define LIMITLESS_UEFI_PAGE_ENTRIES 512u
 #define LIMITLESS_UEFI_PAGE_PRESENT 0x0000000000000001ull
 #define LIMITLESS_UEFI_PAGE_WRITABLE 0x0000000000000002ull
@@ -143,6 +146,7 @@ struct uefi_memory_map_summary
     u32 descriptors;
     u32 descriptor_size;
     u32 descriptor_version;
+    u32 memory_map_bytes;
     u64 map_key;
     u64 total_pages;
     u64 conventional_pages;
@@ -215,6 +219,7 @@ struct uefi_boot_handoff
     u32 fixed_available;
     u32 fallback_attempted;
     u32 fallback_used;
+    u32 memory_map_allocated;
     u32 conflict_type;
     u64 requested_base;
     u64 physical_base;
@@ -230,10 +235,12 @@ struct uefi_boot_handoff
     u64 framebuffer_pd;
     u64 kernel_pd;
     u64 kernel_pt;
+    u64 memory_map_base;
     u64 boot_info_base;
     u64 identity_map_bytes;
     u64 linked_entry;
     u64 fallback_base;
+    efi_status_t memory_map_status;
     efi_status_t fixed_status;
     efi_status_t status;
 };
@@ -361,6 +368,7 @@ struct acpi_madt_interrupt_source_override
 
 static u8 g_loader_kernel_buffer[LIMITLESS_UEFI_LOADER_BUFFER_BYTES] __attribute__((aligned(4096)));
 static u8 g_memory_map_buffer[LIMITLESS_UEFI_MEMORY_MAP_BYTES] __attribute__((aligned(8)));
+static u32 g_serial_debug_available = 0u;
 static const u8 g_kernel_entry_trampoline[] = {
     0xFAu, 0xFCu,
     0x0Fu, 0x20u, 0xC0u,
@@ -373,7 +381,7 @@ static const u8 g_kernel_entry_trampoline[] = {
     0xDBu, 0xE3u,
     0x48u, 0xB8u, 0x00u, 0x10u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
     0x0Fu, 0x22u, 0xD8u,
-    0x48u, 0xBFu, 0x00u, 0x90u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x48u, 0xB9u, 0x00u, 0x90u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
     0x48u, 0xB8u, 0x00u, 0x00u, 0x01u, 0x80u, 0xFFu, 0xFFu, 0xFFu, 0xFFu,
     0xFFu, 0xE0u,
     0xF4u, 0xEBu, 0xFDu
@@ -386,6 +394,9 @@ static void debug_write_char(char character)
 
 static void serial_init(void)
 {
+    u8 line_status = 0u;
+
+    g_serial_debug_available = 0u;
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0x00u), "Nd"((u16)0x03F9u));
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0x80u), "Nd"((u16)0x03FBu));
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0x01u), "Nd"((u16)0x03F8u));
@@ -393,18 +404,31 @@ static void serial_init(void)
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0x03u), "Nd"((u16)0x03FBu));
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0xC7u), "Nd"((u16)0x03FAu));
     __asm__ __volatile__("outb %0, %1" : : "a"((u8)0x0Bu), "Nd"((u16)0x03FCu));
+    __asm__ __volatile__("inb %1, %0" : "=a"(line_status) : "Nd"((u16)0x03FDu));
+    g_serial_debug_available = ((line_status != 0xFFu) && ((line_status & 0x20u) != 0u)) ? 1u : 0u;
 }
 
 static void serial_write_char(char character)
 {
     u8 ready = 0u;
+    u32 attempts;
 
-    while ((ready & 0x20u) == 0u)
+    if (g_serial_debug_available == 0u)
     {
-        __asm__ __volatile__("inb %1, %0" : "=a"(ready) : "Nd"((u16)0x03FDu));
+        return;
     }
 
-    __asm__ __volatile__("outb %0, %1" : : "a"((u8)character), "Nd"((u16)0x03F8u));
+    for (attempts = 0u; attempts < LIMITLESS_UEFI_SERIAL_TX_POLL_LIMIT; ++attempts)
+    {
+        __asm__ __volatile__("inb %1, %0" : "=a"(ready) : "Nd"((u16)0x03FDu));
+        if ((ready & 0x20u) != 0u)
+        {
+            __asm__ __volatile__("outb %0, %1" : : "a"((u8)character), "Nd"((u16)0x03F8u));
+            return;
+        }
+    }
+
+    g_serial_debug_available = 0u;
 }
 
 static void debug_write_string(const char *text)
@@ -1810,6 +1834,7 @@ static void init_memory_map_summary(struct uefi_memory_map_summary *summary)
     summary->descriptors = 0u;
     summary->descriptor_size = 0u;
     summary->descriptor_version = 0u;
+    summary->memory_map_bytes = 0u;
     summary->map_key = 0u;
     summary->total_pages = 0u;
     summary->conventional_pages = 0u;
@@ -1849,6 +1874,8 @@ static u32 capture_memory_map_summary(
     summary->descriptor_size = (u32)descriptor_size;
     summary->descriptor_version = descriptor_version;
     summary->map_key = map_key;
+    summary->memory_map_bytes =
+        (memory_map_size <= 0xFFFFFFFFull) ? (u32)memory_map_size : 0u;
 
     if (summary->status == EFI_SUCCESS &&
         descriptor_size >= sizeof(struct efi_memory_descriptor) &&
@@ -1898,6 +1925,8 @@ static void write_memory_map_summary_line(
     append_dec_u64(line, sizeof(line), &length, (summary != NULL) ? summary->largest_conventional_pages : 0u);
     append_string(line, sizeof(line), &length, " status ");
     append_hex_u64(line, sizeof(line), &length, (summary != NULL) ? summary->status : LIMITLESS_EFI_LOCAL_ERROR);
+    append_string(line, sizeof(line), &length, " bytes ");
+    append_dec_u32(line, sizeof(line), &length, (summary != NULL) ? summary->memory_map_bytes : 0u);
     append_char(line, sizeof(line), &length, '\n');
     write_line(system_table, line);
 }
@@ -2524,6 +2553,7 @@ static void init_boot_handoff(struct uefi_boot_handoff *handoff)
     handoff->fixed_available = 0u;
     handoff->fallback_attempted = 0u;
     handoff->fallback_used = 0u;
+    handoff->memory_map_allocated = 0u;
     handoff->conflict_type = EFI_MEMORY_TYPE_UNKNOWN;
     handoff->requested_base = LIMITLESS_UEFI_BOOT_HANDOFF_BASE;
     handoff->physical_base = 0u;
@@ -2539,10 +2569,12 @@ static void init_boot_handoff(struct uefi_boot_handoff *handoff)
     handoff->framebuffer_pd = LIMITLESS_UEFI_BOOT_FRAMEBUFFER_PD_ADDRESS;
     handoff->kernel_pd = 0u;
     handoff->kernel_pt = 0u;
+    handoff->memory_map_base = 0u;
     handoff->boot_info_base = LIMITLESS_UEFI_BOOT_INFO_ADDRESS;
     handoff->identity_map_bytes = LIMITLESS_UEFI_BOOT_IDENTITY_BYTES;
     handoff->linked_entry = LIMITLESS_UEFI_KERNEL_LINKED_ENTRY;
     handoff->fallback_base = 0u;
+    handoff->memory_map_status = LIMITLESS_EFI_LOCAL_ERROR;
     handoff->fixed_status = LIMITLESS_EFI_LOCAL_ERROR;
     handoff->status = LIMITLESS_EFI_LOCAL_ERROR;
 }
@@ -2630,6 +2662,7 @@ static void write_boot_handoff_line(
             volatile u64 *identity_pd;
             volatile u64 *high_pdpt;
             volatile u64 *kernel_pd;
+            volatile u64 *kernel_pt;
             volatile u64 *framebuffer_pd;
             struct boot_info *boot_info;
             u8 *trampoline;
@@ -2637,7 +2670,9 @@ static void write_boot_handoff_line(
             u32 identity_ready = 1u;
             u32 kernel_map_ready = 1u;
             u32 kernel_page;
+            u32 kernel_pt_index;
             u64 kernel_window_base = 0ull;
+            u64 memory_map_selected_base = 0ull;
 
             handoff->physical_base = physical_base;
             handoff->pml4 = physical_base;
@@ -2659,12 +2694,43 @@ static void write_boot_handoff_line(
             identity_pd = (volatile u64 *)(u64)handoff->pd;
             high_pdpt = (volatile u64 *)(u64)handoff->high_pdpt;
             kernel_pd = (volatile u64 *)(u64)handoff->kernel_pd;
+            kernel_pt = (volatile u64 *)(u64)handoff->kernel_pt;
             framebuffer_pd = (volatile u64 *)(u64)handoff->framebuffer_pd;
             boot_info = (struct boot_info *)(void *)handoff->boot_info_base;
             trampoline = (u8 *)(void *)handoff->trampoline;
 
             handoff->allocated = 1u;
             zero_bytes((u8 *)(void *)handoff->physical_base, LIMITLESS_UEFI_BOOT_HANDOFF_PAGES * 4096u);
+
+            if (uefi_select_conventional_range(
+                    system_table,
+                    LIMITLESS_UEFI_BOOT_MEMORY_MAP_PAGES,
+                    LIMITLESS_UEFI_PAGE_BYTES,
+                    LIMITLESS_UEFI_LOW_ALLOCATION_LIMIT,
+                    LIMITLESS_UEFI_PAGE_BYTES,
+                    (linked_placement->allocation_base != 0ull) ?
+                        linked_placement->allocation_base : linked_placement->physical_base,
+                    (linked_placement->allocation_pages != 0u) ?
+                        linked_placement->allocation_pages : linked_placement->pages,
+                    &memory_map_selected_base) != 0u)
+            {
+                efi_physical_address_t memory_map_base = memory_map_selected_base;
+
+                handoff->memory_map_status = system_table->boot_services->allocate_pages(
+                    EFI_ALLOCATE_ADDRESS,
+                    EFI_MEMORY_TYPE_LOADER_DATA,
+                    LIMITLESS_UEFI_BOOT_MEMORY_MAP_PAGES,
+                    &memory_map_base);
+                if (handoff->memory_map_status == EFI_SUCCESS &&
+                    memory_map_base == memory_map_selected_base)
+                {
+                    handoff->memory_map_base = memory_map_base;
+                    handoff->memory_map_allocated = 1u;
+                    zero_bytes(
+                        (u8 *)(void *)handoff->memory_map_base,
+                        LIMITLESS_UEFI_BOOT_MEMORY_MAP_PAGES * LIMITLESS_UEFI_PAGE_BYTES);
+                }
+            }
 
             pml4[0] = handoff->pdpt | LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE;
             pml4[LIMITLESS_UEFI_HIGH_HALF_PML4_INDEX] =
@@ -2698,6 +2764,32 @@ static void write_boot_handoff_line(
                             LIMITLESS_UEFI_PAGE_WRITABLE |
                             LIMITLESS_UEFI_PAGE_LARGE;
                     }
+
+                    if (kernel_window_base != 0ull)
+                    {
+                        identity_pd[0] = handoff->kernel_pt |
+                            LIMITLESS_UEFI_PAGE_PRESENT |
+                            LIMITLESS_UEFI_PAGE_WRITABLE;
+                        for (kernel_pt_index = 0u; kernel_pt_index < LIMITLESS_UEFI_PAGE_ENTRIES; ++kernel_pt_index)
+                        {
+                            u64 low_virtual_page = (u64)kernel_pt_index * LIMITLESS_UEFI_PAGE_BYTES;
+                            u64 low_alias_physical =
+                                (kernel_pt_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES) ?
+                                    low_virtual_page :
+                                    (kernel_window_base + low_virtual_page);
+                            kernel_pt[kernel_pt_index] = low_alias_physical |
+                                LIMITLESS_UEFI_PAGE_PRESENT |
+                                LIMITLESS_UEFI_PAGE_WRITABLE;
+                        }
+                        for (identity_index = 1u; identity_index < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES; ++identity_index)
+                        {
+                            identity_pd[identity_index] =
+                                (kernel_window_base + ((u64)identity_index * LIMITLESS_UEFI_LARGE_PAGE_BYTES)) |
+                                LIMITLESS_UEFI_PAGE_PRESENT |
+                                LIMITLESS_UEFI_PAGE_WRITABLE |
+                                LIMITLESS_UEFI_PAGE_LARGE;
+                        }
+                    }
                 }
             }
             map_framebuffer_handoff(pdpt, identity_pd, framebuffer_pd, handoff->framebuffer_pd, framebuffer);
@@ -2722,6 +2814,12 @@ static void write_boot_handoff_line(
                 (framebuffer != NULL && framebuffer->mapped != 0u) ? framebuffer->pixel_format : 0u;
             boot_info->framebuffer_firmware_token =
                 (framebuffer != NULL && framebuffer->mapped != 0u) ? framebuffer->draw_token : 0u;
+            boot_info->memory_map_base = handoff->memory_map_base;
+            boot_info->memory_map_bytes = 0ull;
+            boot_info->memory_map_descriptor_size = 0u;
+            boot_info->memory_map_descriptor_version = 0u;
+            boot_info->memory_map_descriptor_count = 0u;
+            boot_info->memory_map_firmware_token = 0u;
             boot_info->acpi_rsdp = (acpi != NULL) ? acpi->rsdp : 0ull;
             boot_info->pci_ecam_base = (acpi != NULL && acpi->mcfg_found != 0u) ? acpi->ecam_base : 0ull;
             boot_info->pci_ecam_flags = (acpi != NULL) ? acpi->flags : 0u;
@@ -2761,13 +2859,55 @@ static void write_boot_handoff_line(
                 handoff->trampoline_ready = 1u;
             }
 
-            for (identity_index = 0u; identity_index < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES; ++identity_index)
+            if (kernel_window_base == 0ull)
             {
-                u64 expected_identity = ((u64)identity_index * LIMITLESS_UEFI_LARGE_PAGE_BYTES) |
-                    LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE | LIMITLESS_UEFI_PAGE_LARGE;
-                if (identity_pd[identity_index] != expected_identity)
+                for (identity_index = 0u; identity_index < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES; ++identity_index)
+                {
+                    u64 expected_identity = ((u64)identity_index * LIMITLESS_UEFI_LARGE_PAGE_BYTES) |
+                        LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE | LIMITLESS_UEFI_PAGE_LARGE;
+                    if (identity_pd[identity_index] != expected_identity)
+                    {
+                        identity_ready = 0u;
+                    }
+                }
+            }
+            else
+            {
+                u64 expected_first_entry = handoff->kernel_pt |
+                    LIMITLESS_UEFI_PAGE_PRESENT |
+                    LIMITLESS_UEFI_PAGE_WRITABLE;
+                if (identity_pd[0] != expected_first_entry)
                 {
                     identity_ready = 0u;
+                }
+                for (kernel_pt_index = 0u;
+                     kernel_pt_index < LIMITLESS_UEFI_PAGE_ENTRIES && identity_ready != 0u;
+                     ++kernel_pt_index)
+                {
+                    u64 low_virtual_page = (u64)kernel_pt_index * LIMITLESS_UEFI_PAGE_BYTES;
+                    u64 expected_low_alias =
+                        (kernel_pt_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES) ?
+                            low_virtual_page :
+                            (kernel_window_base + low_virtual_page);
+                    expected_low_alias |= LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE;
+                    if (kernel_pt[kernel_pt_index] != expected_low_alias)
+                    {
+                        identity_ready = 0u;
+                    }
+                }
+                for (identity_index = 1u;
+                     identity_index < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES && identity_ready != 0u;
+                     ++identity_index)
+                {
+                    u64 expected_identity =
+                        (kernel_window_base + ((u64)identity_index * LIMITLESS_UEFI_LARGE_PAGE_BYTES)) |
+                        LIMITLESS_UEFI_PAGE_PRESENT |
+                        LIMITLESS_UEFI_PAGE_WRITABLE |
+                        LIMITLESS_UEFI_PAGE_LARGE;
+                    if (identity_pd[identity_index] != expected_identity)
+                    {
+                        identity_ready = 0u;
+                    }
                 }
             }
 
@@ -2897,8 +3037,47 @@ static void write_boot_handoff_line(
     append_dec_u32(line, sizeof(line), &length, (handoff != NULL) ? handoff->ready : 0u);
     append_string(line, sizeof(line), &length, " status ");
     append_hex_u64(line, sizeof(line), &length, (handoff != NULL) ? handoff->status : LIMITLESS_EFI_LOCAL_ERROR);
+    append_string(line, sizeof(line), &length, " memory-map ");
+    append_hex_u64(line, sizeof(line), &length, (handoff != NULL) ? handoff->memory_map_base : 0u);
+    append_string(line, sizeof(line), &length, " memory-map-allocated ");
+    append_dec_u32(line, sizeof(line), &length, (handoff != NULL) ? handoff->memory_map_allocated : 0u);
+    append_string(line, sizeof(line), &length, " memory-map-status ");
+    append_hex_u64(line, sizeof(line), &length, (handoff != NULL) ? handoff->memory_map_status : LIMITLESS_EFI_LOCAL_ERROR);
     append_char(line, sizeof(line), &length, '\n');
     write_line(system_table, line);
+}
+
+static void finalize_boot_info_memory_map(
+    struct uefi_boot_handoff *handoff,
+    const struct uefi_memory_map_summary *summary)
+{
+    struct boot_info *boot_info;
+    u8 *memory_map_copy;
+    u32 copy_bytes_count;
+
+    if (handoff == NULL ||
+        handoff->boot_info_base == 0ull ||
+        handoff->memory_map_base == 0ull ||
+        handoff->memory_map_allocated == 0u ||
+        summary == NULL ||
+        summary->status != EFI_SUCCESS ||
+        summary->memory_map_bytes == 0u ||
+        summary->memory_map_bytes > LIMITLESS_UEFI_MEMORY_MAP_BYTES ||
+        summary->descriptor_size < sizeof(struct efi_memory_descriptor))
+    {
+        return;
+    }
+
+    copy_bytes_count = summary->memory_map_bytes;
+    boot_info = (struct boot_info *)(void *)handoff->boot_info_base;
+    memory_map_copy = (u8 *)(void *)handoff->memory_map_base;
+    copy_bytes(memory_map_copy, g_memory_map_buffer, copy_bytes_count);
+    boot_info->memory_map_base = handoff->memory_map_base;
+    boot_info->memory_map_bytes = (u64)copy_bytes_count;
+    boot_info->memory_map_descriptor_size = summary->descriptor_size;
+    boot_info->memory_map_descriptor_version = summary->descriptor_version;
+    boot_info->memory_map_descriptor_count = summary->descriptors;
+    boot_info->memory_map_firmware_token = checksum_bytes(memory_map_copy, copy_bytes_count);
 }
 
 static void halt_after_firmware_exit(void)
@@ -3067,7 +3246,7 @@ static efi_status_t exit_boot_services_for_handoff(
     struct efi_system_table *system_table,
     const struct uefi_kernel_placement *placement,
     const struct uefi_linked_kernel_placement *linked_placement,
-    const struct uefi_boot_handoff *handoff)
+    struct uefi_boot_handoff *handoff)
 {
     struct uefi_memory_map_summary final_map;
     efi_status_t status = LIMITLESS_EFI_LOCAL_ERROR;
@@ -3101,6 +3280,7 @@ static efi_status_t exit_boot_services_for_handoff(
         status = system_table->boot_services->exit_boot_services(image_handle, final_map.map_key);
         if (status == EFI_SUCCESS)
         {
+            finalize_boot_info_memory_map(handoff, &final_map);
             debug_write_exit_boot_services_line(status, &final_map, placement);
             debug_write_kernel_entry_guard_line(linked_placement, handoff);
             jump_to_linked_kernel_entry(handoff);

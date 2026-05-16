@@ -43,11 +43,13 @@
 #define DISPLAY64_DIAG_RGB 0x00182214u
 #define DISPLAY64_DIAG_TEXT_RGB 0x00EAF7D7u
 #define DISPLAY64_MOUSE_DIAG_PANEL_WIDTH 336u
-#define DISPLAY64_MOUSE_DIAG_PANEL_HEIGHT 76u
+#define DISPLAY64_MOUSE_DIAG_PANEL_HEIGHT 144u
 #define DISPLAY64_MOUSE_DIAG_RGB 0x0014212Cu
 #define DISPLAY64_MOUSE_DIAG_TEXT_RGB 0x00D9F7FFu
-#define DISPLAY64_COMPOSITOR_MAX_SCANLINE 2048u
-#define DISPLAY64_COMPOSITOR_MAX_HEIGHT 1200u
+#define DISPLAY64_COMPOSITOR_BYTES_PER_PIXEL 4ull
+#define DISPLAY64_KERNEL_HIGH_BASE 0xFFFFFFFF80000000ull
+#define DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES 0x01000000ull
+#define DISPLAY64_PAGE_BYTES 4096ull
 #define DISPLAY64_COMPOSITOR_CURSOR_WIDTH 12u
 #define DISPLAY64_COMPOSITOR_CURSOR_HEIGHT 20u
 #define DISPLAY64_COMPOSITOR_CURSOR_RGB 0x00F8FBFFu
@@ -126,6 +128,10 @@ static u32 g_display_compositor_cursor_saved_y = 0u;
 static u32 g_display_compositor_cursor_saved_w = 0u;
 static u32 g_display_compositor_cursor_saved_h = 0u;
 static u32 g_display_compositor_cursor_saved_valid = 0u;
+static u32 g_display_compositor_cursor_drawn_valid = 0u;
+static u32 g_display_compositor_cursor_drawn_x = 0u;
+static u32 g_display_compositor_cursor_drawn_y = 0u;
+static u32 g_display_compositor_cursor_drawn_buttons = 0u;
 static u32 g_display_font_active = 0u;
 static u32 g_display_font_render_count = 0u;
 struct display64_window
@@ -209,8 +215,12 @@ static u32 g_display_gui_focus_after = 0u;
 static u32 g_display_gui_z_before = 0u;
 static u32 g_display_gui_z_after = 0u;
 static u32 g_display_gui_key_target_window = 0u;
-static u32 g_display_back_buffer[
-    DISPLAY64_COMPOSITOR_MAX_SCANLINE * DISPLAY64_COMPOSITOR_MAX_HEIGHT];
+static u32 *g_display_back_buffer = 0;
+static u64 g_display_back_buffer_pixels = 0ull;
+static u64 g_display_back_buffer_bytes = 0ull;
+static u64 g_display_back_buffer_next = 0ull;
+
+extern u8 __bss_end[];
 
 static const u8 g_display_alpha_font[26][DISPLAY64_FONT_HEIGHT] = {
     { 0x0Eu, 0x11u, 0x11u, 0x1Fu, 0x11u, 0x11u, 0x11u },
@@ -389,7 +399,7 @@ static volatile u32 *display64_physical_framebuffer(void)
 
 static volatile u32 *display64_draw_buffer(void)
 {
-    if (g_display_compositor_active != 0u)
+    if ((g_display_compositor_active != 0u) && (g_display_back_buffer != 0))
     {
         return (volatile u32 *)g_display_back_buffer;
     }
@@ -398,20 +408,108 @@ static volatile u32 *display64_draw_buffer(void)
 }
 
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
-static u32 display64_compositor_capacity_ok(void)
+static u32 display64_compositor_required_back_buffer(u64 *pixels_out, u64 *bytes_out)
 {
     u64 pixels;
+    u64 bytes;
+
+    if (pixels_out != 0)
+    {
+        *pixels_out = 0ull;
+    }
+    if (bytes_out != 0)
+    {
+        *bytes_out = 0ull;
+    }
 
     if (!display64_has_framebuffer()
-        || (g_display_boot_info->framebuffer_pixels_per_scanline > DISPLAY64_COMPOSITOR_MAX_SCANLINE)
-        || (g_display_boot_info->framebuffer_height > DISPLAY64_COMPOSITOR_MAX_HEIGHT))
+        || (g_display_boot_info->framebuffer_pixels_per_scanline == 0u)
+        || (g_display_boot_info->framebuffer_height == 0u))
     {
         return 0u;
     }
 
     pixels = (u64)g_display_boot_info->framebuffer_pixels_per_scanline
         * (u64)g_display_boot_info->framebuffer_height;
-    return (pixels <= (u64)(DISPLAY64_COMPOSITOR_MAX_SCANLINE * DISPLAY64_COMPOSITOR_MAX_HEIGHT)) ? 1u : 0u;
+    if ((pixels == 0ull)
+        || ((pixels / (u64)g_display_boot_info->framebuffer_pixels_per_scanline)
+            != (u64)g_display_boot_info->framebuffer_height))
+    {
+        return 0u;
+    }
+
+    bytes = pixels * DISPLAY64_COMPOSITOR_BYTES_PER_PIXEL;
+    if ((bytes / DISPLAY64_COMPOSITOR_BYTES_PER_PIXEL) != pixels)
+    {
+        return 0u;
+    }
+
+    if (bytes > g_display_boot_info->framebuffer_bytes)
+    {
+        return 0u;
+    }
+
+    if (pixels_out != 0)
+    {
+        *pixels_out = pixels;
+    }
+    if (bytes_out != 0)
+    {
+        *bytes_out = bytes;
+    }
+
+    return 1u;
+}
+
+static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
+{
+    u64 start;
+    u64 end;
+    u64 limit;
+
+    g_display_back_buffer = 0;
+    g_display_back_buffer_pixels = 0ull;
+    g_display_back_buffer_bytes = 0ull;
+    g_display_back_buffer_next = 0ull;
+
+    if ((pixels == 0ull) || (bytes == 0ull) || (g_display_boot_info == 0))
+    {
+        return 0u;
+    }
+
+    if (g_display_back_buffer_next == 0ull)
+    {
+        g_display_back_buffer_next = ((u64)__bss_end + (DISPLAY64_PAGE_BYTES - 1ull))
+            & ~(DISPLAY64_PAGE_BYTES - 1ull);
+        if (g_display_back_buffer_next < DISPLAY64_KERNEL_HIGH_BASE)
+        {
+            g_display_back_buffer_next += DISPLAY64_KERNEL_HIGH_BASE;
+        }
+    }
+
+    start = g_display_back_buffer_next;
+    end = (start + bytes + (DISPLAY64_PAGE_BYTES - 1ull)) & ~(DISPLAY64_PAGE_BYTES - 1ull);
+    if ((end <= start) || (end < bytes))
+    {
+        return 0u;
+    }
+
+    limit = DISPLAY64_KERNEL_HIGH_BASE + (u64)g_display_boot_info->identity_map_bytes;
+    if ((limit <= DISPLAY64_KERNEL_HIGH_BASE)
+        || (limit > (DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES)))
+    {
+        limit = DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES;
+    }
+    if (end > limit)
+    {
+        return 0u;
+    }
+
+    g_display_back_buffer = (u32 *)(u64)start;
+    g_display_back_buffer_pixels = pixels;
+    g_display_back_buffer_bytes = bytes;
+    g_display_back_buffer_next = end;
+    return 1u;
 }
 #endif
 
@@ -638,6 +736,9 @@ static void display64_compositor_restore_cursor_saved(void)
                 g_display_compositor_cursor_saved[(row * DISPLAY64_COMPOSITOR_CURSOR_WIDTH) + column];
         }
     }
+
+    g_display_compositor_cursor_saved_valid = 0u;
+    g_display_compositor_cursor_drawn_valid = 0u;
 }
 
 static void display64_compositor_save_cursor_underlay(void)
@@ -737,6 +838,10 @@ static void display64_compositor_draw_cursor(void)
     }
 
     ++g_display_compositor_cursor_count;
+    g_display_compositor_cursor_drawn_valid = 1u;
+    g_display_compositor_cursor_drawn_x = g_display_compositor_cursor_x;
+    g_display_compositor_cursor_drawn_y = g_display_compositor_cursor_y;
+    g_display_compositor_cursor_drawn_buttons = g_display_compositor_cursor_buttons;
 }
 
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
@@ -744,17 +849,23 @@ static void display64_compositor_init_back_buffer(void)
 {
     volatile u32 *framebuffer;
     u64 pixels;
+    u64 bytes;
     u64 index;
 
     g_display_compositor_active = 0u;
-    if (display64_compositor_capacity_ok() == 0u)
+    g_display_back_buffer = 0;
+    g_display_back_buffer_pixels = 0ull;
+    g_display_back_buffer_bytes = 0ull;
+    if (display64_compositor_required_back_buffer(&pixels, &bytes) == 0u)
+    {
+        return;
+    }
+    if (display64_compositor_allocate_back_buffer(pixels, bytes) == 0u)
     {
         return;
     }
 
     framebuffer = display64_physical_framebuffer();
-    pixels = (u64)g_display_boot_info->framebuffer_pixels_per_scanline
-        * (u64)g_display_boot_info->framebuffer_height;
     for (index = 0ull; index < pixels; ++index)
     {
         g_display_back_buffer[index] = framebuffer[index];
@@ -958,6 +1069,77 @@ static u32 display64_draw_glyph(u8 character, u32 x, u32 y, u32 pixel, u32 *toke
     }
 
     return drawn;
+}
+
+u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const char *text)
+{
+    const struct boot_info *previous_boot_info = g_display_boot_info;
+    u32 previous_compositor_active = g_display_compositor_active;
+    volatile u32 *framebuffer;
+    u32 text_pixel;
+    u32 panel_pixel;
+    u32 panel_x = 8u;
+    u32 panel_y = 8u;
+    u32 panel_w;
+    u32 panel_h = 28u;
+    u32 row;
+    u32 column;
+    u32 cursor_x;
+    u32 drawn = 0u;
+    u32 token = 2166136261u;
+
+    g_display_boot_info = boot_info;
+    g_display_compositor_active = 0u;
+    if (!display64_has_framebuffer())
+    {
+        g_display_boot_info = previous_boot_info;
+        g_display_compositor_active = previous_compositor_active;
+        return 0u;
+    }
+
+    if (text == 0)
+    {
+        text = "";
+    }
+
+    panel_w = display64_min_u32(680u, g_display_boot_info->framebuffer_width);
+    if (panel_w > 16u)
+    {
+        panel_w -= 8u;
+    }
+    if ((panel_y + panel_h) > g_display_boot_info->framebuffer_height)
+    {
+        panel_y = 0u;
+        panel_h = display64_min_u32(panel_h, g_display_boot_info->framebuffer_height);
+    }
+
+    framebuffer = display64_physical_framebuffer();
+    panel_pixel = display64_make_pixel(0x0012212Cu);
+    text_pixel = display64_make_pixel(0x0046D9A6u);
+    for (row = 0u; row < panel_h; ++row)
+    {
+        for (column = 0u; column < panel_w; ++column)
+        {
+            u64 index = 0ull;
+            if (display64_pixel_index(panel_x + column, panel_y + row, &index) != 0)
+            {
+                framebuffer[index] = panel_pixel;
+            }
+        }
+    }
+
+    cursor_x = panel_x + 8u;
+    while ((*text != '\0')
+        && ((cursor_x + (DISPLAY64_FONT_WIDTH * DISPLAY64_FONT_SCALE)) < (panel_x + panel_w)))
+    {
+        drawn += display64_draw_glyph((u8)*text, cursor_x, panel_y + 7u, text_pixel, &token);
+        cursor_x += DISPLAY64_FONT_ADVANCE;
+        ++text;
+    }
+
+    g_display_boot_info = previous_boot_info;
+    g_display_compositor_active = previous_compositor_active;
+    return (drawn != 0u && token != 0u) ? drawn : 0u;
 }
 
 static u32 display64_console_viewport_width(void)
@@ -1208,6 +1390,67 @@ static u32 display64_text_limit_x(u32 clear_console_lines)
     return display64_has_framebuffer() ? g_display_boot_info->framebuffer_width : g_display_console_x;
 }
 
+static u32 display64_text_backspace(u32 clear_console_lines, u32 *token)
+{
+    u32 drawn = 0u;
+    u32 cell_width = DISPLAY64_FONT_ADVANCE;
+    u32 cell_height = DISPLAY64_LINE_ADVANCE;
+
+    if (!display64_has_framebuffer())
+    {
+        return 0u;
+    }
+
+    if (g_display_text_x > g_display_console_x)
+    {
+        g_display_text_x -= DISPLAY64_FONT_ADVANCE;
+    }
+    else if ((clear_console_lines != 0u) && (g_display_text_y > g_display_console_y))
+    {
+        u32 viewport_width = display64_console_viewport_width();
+        g_display_text_y -= DISPLAY64_LINE_ADVANCE;
+        if (viewport_width > DISPLAY64_FONT_ADVANCE)
+        {
+            g_display_text_x = g_display_console_x
+                + ((viewport_width - DISPLAY64_FONT_ADVANCE) / DISPLAY64_FONT_ADVANCE)
+                    * DISPLAY64_FONT_ADVANCE;
+        }
+    }
+
+    if (g_display_text_x >= display64_text_limit_x(clear_console_lines))
+    {
+        cell_width = 0u;
+    }
+    else if ((g_display_text_x + cell_width) > display64_text_limit_x(clear_console_lines))
+    {
+        cell_width = display64_text_limit_x(clear_console_lines) - g_display_text_x;
+    }
+    if (g_display_text_y >= display64_console_viewport_bottom())
+    {
+        cell_height = 0u;
+    }
+    else if ((g_display_text_y + cell_height) > display64_console_viewport_bottom())
+    {
+        cell_height = display64_console_viewport_bottom() - g_display_text_y;
+    }
+    if ((cell_width != 0u) && (cell_height != 0u))
+    {
+        drawn = display64_clear_rect(
+            g_display_text_x,
+            g_display_text_y,
+            cell_width,
+            cell_height,
+            DISPLAY64_PANEL_RGB,
+            token);
+        if (drawn != 0u)
+        {
+            g_display_console_line_dirty = 1u;
+        }
+    }
+
+    return drawn;
+}
+
 static u32 display64_render_text_bytes(
     const u8 *bytes,
     u32 byte_count,
@@ -1241,6 +1484,12 @@ static u32 display64_render_text_bytes(
             {
                 g_display_console_line_dirty = 0u;
             }
+            continue;
+        }
+
+        if ((character == (u8)'\b') || (character == 0x7Fu))
+        {
+            drawn += display64_text_backspace(clear_console_lines, token);
             continue;
         }
 
@@ -1398,15 +1647,24 @@ u32 display64_compositor_present(void)
         return 0u;
     }
 
-    display64_compositor_restore_cursor_saved();
     if (g_display_compositor_dirty == 0u)
     {
+        if ((g_display_compositor_cursor_drawn_valid != 0u)
+            && (g_display_compositor_cursor_drawn_x == g_display_compositor_cursor_x)
+            && (g_display_compositor_cursor_drawn_y == g_display_compositor_cursor_y)
+            && (g_display_compositor_cursor_drawn_buttons == g_display_compositor_cursor_buttons))
+        {
+            return 0u;
+        }
+
+        display64_compositor_restore_cursor_saved();
         display64_compositor_save_cursor_underlay();
         display64_compositor_draw_cursor();
         ++g_display_compositor_present_count;
         return 1u;
     }
 
+    display64_compositor_restore_cursor_saved();
     x = g_display_compositor_dirty_x;
     y = g_display_compositor_dirty_y;
     width = display64_min_u32(g_display_compositor_dirty_w, g_display_boot_info->framebuffer_width - x);
@@ -1739,16 +1997,25 @@ u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons)
         return 0u;
     }
 
+    display64_compositor_clamp_cursor(&cursor_x, &cursor_y);
+    buttons &= 0x7u;
+    if ((g_display_compositor_cursor_drawn_valid != 0u)
+        && (cursor_x == g_display_compositor_cursor_drawn_x)
+        && (cursor_y == g_display_compositor_cursor_drawn_y)
+        && (buttons == g_display_compositor_cursor_drawn_buttons))
+    {
+        return 0u;
+    }
+
     old_x = g_display_compositor_cursor_x;
     old_y = g_display_compositor_cursor_y;
     display64_compositor_cursor_rect(old_x, old_y, &old_w, &old_h);
     display64_compositor_union_rect(old_x, old_y, old_w, old_h, &union_x, &union_y, &union_w, &union_h);
 
     display64_compositor_restore_cursor_saved();
-    display64_compositor_clamp_cursor(&cursor_x, &cursor_y);
     g_display_compositor_cursor_x = cursor_x;
     g_display_compositor_cursor_y = cursor_y;
-    g_display_compositor_cursor_buttons = buttons & 0x7u;
+    g_display_compositor_cursor_buttons = buttons;
     display64_compositor_cursor_rect(g_display_compositor_cursor_x, g_display_compositor_cursor_y, &new_w, &new_h);
     display64_compositor_union_rect(
         g_display_compositor_cursor_x,
@@ -1760,15 +2027,13 @@ u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons)
         &union_w,
         &union_h);
 
-    display64_compositor_save_cursor_underlay();
-    display64_compositor_draw_cursor();
-
     if ((union_w != 0u) && (union_h != 0u))
     {
         display64_compositor_present_back_buffer_rect(union_x, union_y, union_w, union_h);
-        display64_compositor_draw_cursor();
     }
 
+    display64_compositor_save_cursor_underlay();
+    display64_compositor_draw_cursor();
     ++g_display_compositor_present_count;
     return 1u;
 }
@@ -3355,6 +3620,9 @@ void display64_init(const struct boot_info *boot_info)
     g_display_console_w = DISPLAY64_CONSOLE_VIEWPORT_WIDTH;
     g_display_console_h = DISPLAY64_CONSOLE_VIEWPORT_HEIGHT;
     g_display_compositor_active = 0u;
+    g_display_back_buffer = 0;
+    g_display_back_buffer_pixels = 0ull;
+    g_display_back_buffer_bytes = 0ull;
     g_display_compositor_present_count = 0u;
     g_display_compositor_cursor_count = 0u;
     g_display_compositor_cursor_x = 32u;
@@ -3366,6 +3634,10 @@ void display64_init(const struct boot_info *boot_info)
     g_display_compositor_cursor_saved_y = 0u;
     g_display_compositor_cursor_saved_w = 0u;
     g_display_compositor_cursor_saved_h = 0u;
+    g_display_compositor_cursor_drawn_valid = 0u;
+    g_display_compositor_cursor_drawn_x = 0u;
+    g_display_compositor_cursor_drawn_y = 0u;
+    g_display_compositor_cursor_drawn_buttons = 0u;
     g_display_font_active = 0u;
     g_display_font_render_count = 0u;
     g_display_wm_active = 0u;
@@ -3608,6 +3880,10 @@ u32 display64_write_boot_diagnostics(
     u32 xhci_usb2_ports,
     u32 xhci_hid_device,
     u32 xhci_error,
+    u32 usb_uhci_count,
+    u32 usb_ohci_count,
+    u32 usb_ehci_count,
+    u32 usb_xhci_count,
     u32 ps2_present,
     u32 ps2_enabled,
     u32 ps2_scanning,
@@ -3653,6 +3929,15 @@ u32 display64_write_boot_diagnostics(
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_usb2_ports);
     cursor = display64_diag_append_text(text, cursor, sizeof(text), " ERR ");
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_error);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "HCI U/O/E/X ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), usb_uhci_count);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '/');
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), usb_ohci_count);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '/');
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), usb_ehci_count);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '/');
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), usb_xhci_count);
     cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
     cursor = display64_diag_append_text(text, cursor, sizeof(text), "PS2 ");
     cursor = display64_diag_append_bool(text, cursor, sizeof(text), ps2_present);
@@ -3716,9 +4001,24 @@ u32 display64_write_mouse_diagnostics(
     u32 pending_count,
     u32 x_position,
     u32 y_position,
-    u32 buttons)
+    u32 buttons,
+    u32 ps2_raw_byte,
+    u32 ps2_bad_starts,
+    u32 xhci_keyboard_endpoint,
+    u32 xhci_keyboard_pending,
+    u32 xhci_keyboard_reports,
+    u32 xhci_mouse_endpoint,
+    u32 xhci_mouse_pending,
+    u32 xhci_mouse_reports,
+    u32 xhci_live_enabled,
+    u32 i2c_keyboard_found,
+    u32 i2c_keyboard_reports,
+    u32 i2c_keyboard_error,
+    u32 i2c_pointer_found,
+    u32 i2c_pointer_reports,
+    u32 i2c_pointer_error)
 {
-    char text[192];
+    char text[384];
     u32 cursor = 0u;
     u32 token = 2166136261u;
     u32 panel_width;
@@ -3771,6 +4071,41 @@ u32 display64_write_mouse_diagnostics(
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), y_position);
     cursor = display64_diag_append_text(text, cursor, sizeof(text), " BTN ");
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), buttons);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "RAW ");
+    cursor = display64_diag_append_hex_u32(text, cursor, sizeof(text), ps2_raw_byte);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " BAD ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), ps2_bad_starts);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "USB KEP ");
+    cursor = display64_diag_append_bool(text, cursor, sizeof(text), xhci_keyboard_endpoint);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " KP ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_keyboard_pending);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " KR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_keyboard_reports);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "USB MEP ");
+    cursor = display64_diag_append_bool(text, cursor, sizeof(text), xhci_mouse_endpoint);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " MP ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_mouse_pending);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " MR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), xhci_mouse_reports);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " LIVE ");
+    cursor = display64_diag_append_bool(text, cursor, sizeof(text), xhci_live_enabled);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "I2C KBD ");
+    cursor = display64_diag_append_bool(text, cursor, sizeof(text), i2c_keyboard_found);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " IR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_keyboard_reports);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " ERR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_keyboard_error);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "I2C PTR ");
+    cursor = display64_diag_append_bool(text, cursor, sizeof(text), i2c_pointer_found);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " PR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_pointer_reports);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " ERR ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_pointer_error);
     cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
 
     drawn = display64_clear_rect(

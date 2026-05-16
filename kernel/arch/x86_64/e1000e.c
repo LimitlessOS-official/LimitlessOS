@@ -3,7 +3,6 @@
 #include "paging_x64.h"
 
 #define E1000E64_MAP_VIRTUAL_BASE 0xFFFFFFFF901C0000ull
-#define E1000E64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
 #define E1000E64_PAGE_BYTES 4096u
 #define E1000E64_MAP_PAGES 32u
 #define E1000E64_QUEUE_SIZE 8u
@@ -99,14 +98,7 @@ static u8 g_e1000e_tx_data[E1000E64_QUEUE_SIZE][E1000E64_BUFFER_BYTES] __attribu
 
 static u64 e1000e64_virtual_to_physical(const void *address)
 {
-    u64 value = (u64)address;
-
-    if (value >= E1000E64_KERNEL_VIRTUAL_BASE)
-    {
-        return value - E1000E64_KERNEL_VIRTUAL_BASE;
-    }
-
-    return value;
+    return paging64_kernel_physical_alias(address);
 }
 
 static void e1000e64_fence(void)

@@ -10,7 +10,7 @@ extern kernel_main64_scaffold
 _start:
     cli
     cld
-    mov rsi, rdi
+    mov rsi, rcx
     lea rdi, [__bss_start]
     lea rcx, [__bss_end]
     sub rcx, rdi

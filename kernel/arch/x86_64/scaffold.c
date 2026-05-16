@@ -11,6 +11,7 @@
 #include "display_x64.h"
 #include "e1000e_x64.h"
 #include "fs_x64.h"
+#include "i2c_hid_x64.h"
 #include "input_x64.h"
 #include "interrupts_x64.h"
 #include "identity_x64.h"
@@ -27,6 +28,7 @@
 #include "process_x64.h"
 #include "ramfs.h"
 #include "runtime_image_x64.h"
+#include "serial.h"
 #include "services.h"
 #include "services_x64.h"
 #include "syscall_x64.h"
@@ -41,6 +43,9 @@
 #define LIMITLESS_X64_ACTIVE_VIRTUAL_BASE 0xFFFFFFFF80010000ull
 #define LIMITLESS_X64_PAGE_LEVELS 4u
 #define LIMITLESS_X64_COMPAT32_LANE 1u
+#define SCAFFOLD_TIMER_WAIT_SPIN_BUDGET 500000000u
+#define SCAFFOLD_KEYBOARD_WAIT_SPIN_BUDGET 100000u
+#define SCAFFOLD_MOUSE_WAIT_SPIN_BUDGET 100000u
 
 enum
 {
@@ -93,6 +98,147 @@ static void collect_keyboard_probe_input(u32 target_pending, u32 max_wait_ticks)
 static void debug_write_char(char character)
 {
     outb(0x00E9u, (u8)character);
+    serial_write_char(character);
+}
+
+static void scaffold_cpu_pause(void)
+{
+    __asm__ __volatile__("pause");
+}
+
+static void kernel_stage_debug_write(const char *text)
+{
+    if (text == 0)
+    {
+        return;
+    }
+
+    while (*text != '\0')
+    {
+        debug_write_char(*text);
+        ++text;
+    }
+}
+
+static void kernel_stage_marker(const struct boot_info *boot_info, const char *stage)
+{
+    kernel_stage_debug_write("[x64] stage ");
+    kernel_stage_debug_write(stage);
+    debug_write_char('\n');
+    (void)display64_write_early_kernel_line(boot_info, stage);
+}
+
+static u32 kernel_entry_splash_pixel(const struct boot_info *boot_info, u32 rgb)
+{
+    u32 red = (rgb >> 16) & 0xFFu;
+    u32 green = (rgb >> 8) & 0xFFu;
+    u32 blue = rgb & 0xFFu;
+
+    if ((boot_info != 0)
+        && (boot_info->framebuffer_format == LIMITLESS_BOOT_FRAMEBUFFER_FORMAT_BGR))
+    {
+        return (red << 16) | (green << 8) | blue;
+    }
+
+    return (blue << 16) | (green << 8) | red;
+}
+
+static void kernel_entry_draw_raw_splash(const struct boot_info *boot_info)
+{
+    volatile u32 *framebuffer;
+    u32 row;
+    u32 column;
+    u32 x;
+    u32 y;
+    u32 panel_x = 12u;
+    u32 panel_y = 42u;
+    u32 panel_w = 96u;
+    u32 panel_h = 52u;
+    u32 bg_pixel;
+    u32 mark_pixel;
+    static const u8 glyph_l[7] = {
+        0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x1Fu
+    };
+
+    if (boot_info == 0 ||
+        boot_info->magic != LIMITLESS_BOOT_INFO_MAGIC ||
+        (boot_info->bootstrap_flags & LIMITLESS_BOOT_FLAG_FRAMEBUFFER) == 0u ||
+        boot_info->framebuffer_base == 0ull ||
+        boot_info->framebuffer_bytes < 4ull ||
+        boot_info->framebuffer_width == 0u ||
+        boot_info->framebuffer_height == 0u ||
+        boot_info->framebuffer_pixels_per_scanline < boot_info->framebuffer_width)
+    {
+        return;
+    }
+
+    if (panel_x >= boot_info->framebuffer_width || panel_y >= boot_info->framebuffer_height)
+    {
+        return;
+    }
+
+    if ((panel_x + panel_w) > boot_info->framebuffer_width)
+    {
+        panel_w = boot_info->framebuffer_width - panel_x;
+    }
+    if ((panel_y + panel_h) > boot_info->framebuffer_height)
+    {
+        panel_h = boot_info->framebuffer_height - panel_y;
+    }
+    if (panel_w == 0u || panel_h == 0u)
+    {
+        return;
+    }
+
+    framebuffer = (volatile u32 *)(u64)boot_info->framebuffer_base;
+    bg_pixel = kernel_entry_splash_pixel(boot_info, 0x0012212Cu);
+    mark_pixel = kernel_entry_splash_pixel(boot_info, 0x0046D9A6u);
+    for (row = 0u; row < panel_h; ++row)
+    {
+        for (column = 0u; column < panel_w; ++column)
+        {
+            u64 pixel_index = ((u64)(panel_y + row) * (u64)boot_info->framebuffer_pixels_per_scanline)
+                + (u64)(panel_x + column);
+            if (((pixel_index + 1ull) * 4ull) > boot_info->framebuffer_bytes)
+            {
+                continue;
+            }
+            framebuffer[pixel_index] = bg_pixel;
+        }
+    }
+
+    for (row = 0u; row < 7u; ++row)
+    {
+        for (column = 0u; column < 5u; ++column)
+        {
+            u32 scale_y;
+            u32 scale_x;
+
+            if ((glyph_l[row] & (u8)(1u << (4u - column))) == 0u)
+            {
+                continue;
+            }
+
+            for (scale_y = 0u; scale_y < 5u; ++scale_y)
+            {
+                for (scale_x = 0u; scale_x < 5u; ++scale_x)
+                {
+                    u64 pixel_index;
+                    x = panel_x + 18u + (column * 6u) + scale_x;
+                    y = panel_y + 10u + (row * 6u) + scale_y;
+                    if (x >= boot_info->framebuffer_width || y >= boot_info->framebuffer_height)
+                    {
+                        continue;
+                    }
+                    pixel_index = ((u64)y * (u64)boot_info->framebuffer_pixels_per_scanline) + (u64)x;
+                    if (((pixel_index + 1ull) * 4ull) <= boot_info->framebuffer_bytes)
+                    {
+                        framebuffer[pixel_index] = mark_pixel;
+                    }
+                }
+            }
+        }
+    }
 }
 
 static void console_scroll_if_needed(void)
@@ -2354,6 +2500,9 @@ static void run_live_keyboard_console(void)
     interrupts64_enable();
     for (;;)
     {
+        input64_poll_keyboard();
+        input64_poll_mouse();
+
         u32 byte_count = (u32)syscall64_invoke(
             X64_SYSCALL_INPUT_READ_KEYBOARD,
             input_capability,
@@ -2500,7 +2649,17 @@ static void log_boot_memory(const struct boot_info *boot_info)
     write_dec_u32(boot_info->conventional_memory_kb);
     write_string(" KiB extended ");
     write_dec_u32(boot_info->extended_memory_kb);
-    write_line(" KiB");
+    write_string(" KiB memory-map ");
+    write_hex_u64(boot_info->memory_map_base);
+    write_string(" bytes ");
+    write_dec_u32((u32)boot_info->memory_map_bytes);
+    write_string(" descriptors ");
+    write_dec_u32(boot_info->memory_map_descriptor_count);
+    write_string(" desc-size ");
+    write_dec_u32(boot_info->memory_map_descriptor_size);
+    write_string(" token ");
+    write_hex_u32(boot_info->memory_map_firmware_token);
+    write_line("");
 }
 
 static void log_bootstrap_state(const struct boot_info *boot_info)
@@ -10042,6 +10201,22 @@ static void log_xhci_surface(void)
     write_line("");
 }
 
+static void log_usb_hci_surface(void)
+{
+    write_string("[x64] drs-usb-hci");
+    write_labeled_dec_u32(" drs-usb-hci-uhci ", pci64_usb_uhci_count());
+    write_labeled_dec_u32(" drs-usb-hci-ohci ", pci64_usb_ohci_count());
+    write_labeled_dec_u32(" drs-usb-hci-ehci ", pci64_usb_ehci_count());
+    write_labeled_dec_u32(" drs-usb-hci-xhci ", pci64_usb_xhci_count());
+    write_labeled_dec_u32(
+        " drs-usb-hci-legacy-present ",
+        scaffold_bool_u32(pci64_usb_uhci_count() + pci64_usb_ohci_count() + pci64_usb_ehci_count()));
+    write_labeled_dec_u32(" drs-usb-hci-xhci-native-input ", xhci64_hid_device());
+    write_labeled_dec_u32(" drs-usb-hci-legacy-config-detect-only ", 1u);
+    write_labeled_dec_u32(" drs-usb-hci-no-legacy-mmio-touch ", 1u);
+    write_line("");
+}
+
 static u64 pack_mac48(const u8 *mac)
 {
     u64 value = 0ull;
@@ -12096,53 +12271,75 @@ static void log_native_fault_surface(void)
 
 static void wait_for_timer_ticks(u32 target_ticks)
 {
-    while (pit_get_ticks() < target_ticks)
+    u32 guard = 0u;
+
+    while ((pit_get_ticks() < target_ticks)
+        && (guard < SCAFFOLD_TIMER_WAIT_SPIN_BUDGET))
     {
-        cpu_halt();
+        scaffold_cpu_pause();
+        ++guard;
+    }
+    if (pit_get_ticks() < target_ticks)
+    {
+        serial_write_string("[x64] bounded timer wait expired\n");
     }
 }
 
 static void collect_keyboard_probe_input(u32 target_pending, u32 max_wait_ticks)
 {
     u32 target_ticks = pit_get_ticks() + max_wait_ticks;
+    u32 guard = 0u;
 
     interrupts64_enable();
     while ((input64_keyboard_pending_count() < target_pending)
-        && (pit_get_ticks() < target_ticks))
+        && (pit_get_ticks() < target_ticks)
+        && (guard < SCAFFOLD_KEYBOARD_WAIT_SPIN_BUDGET))
     {
         input64_poll_keyboard();
         xhci64_poll_keyboard();
-        input64_poll_mouse();
-        xhci64_poll_mouse();
-        cpu_halt();
+        scaffold_cpu_pause();
+        ++guard;
     }
     interrupts64_disable();
     input64_poll_keyboard();
     xhci64_poll_keyboard();
-    input64_poll_mouse();
-    xhci64_poll_mouse();
 }
 
 static void collect_mouse_probe_input(u32 target_packets, u32 max_wait_ticks)
 {
     u32 target_ticks = pit_get_ticks() + max_wait_ticks;
+    u32 guard = 0u;
 
+    if (xhci64_live_polling_supported() == 0u)
+    {
+        serial_write_string("[x64] mouse probe skipped on hardware path\n");
+        return;
+    }
+
+    xhci64_set_live_polling_enabled(1u);
     interrupts64_enable();
     while ((input64_mouse_packet_count() < target_packets)
-        && (pit_get_ticks() < target_ticks))
+        && (pit_get_ticks() < target_ticks)
+        && (guard < SCAFFOLD_MOUSE_WAIT_SPIN_BUDGET))
     {
-        input64_poll_mouse();
+        if ((guard & 0x3Fu) == 0u)
+        {
+            input64_poll_mouse();
+        }
         xhci64_poll_mouse();
-        cpu_halt();
+        scaffold_cpu_pause();
+        ++guard;
     }
     interrupts64_disable();
     input64_poll_mouse();
     xhci64_poll_mouse();
+    xhci64_set_live_polling_enabled(0u);
 }
 
 static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
 {
     u32 target_ticks = pit_get_ticks() + max_wait_ticks;
+    u32 guard = 0u;
 
     interrupts64_enable();
     while (((display64_gui_launcher_opened() == 0u)
@@ -12156,13 +12353,15 @@ static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
             || (display64_gui_installer_opened() == 0u)
             || (display64_gui_assistant_opened() == 0u)
             || (display64_gui_unfocused_key_denied() == 0u))
-        && (pit_get_ticks() < target_ticks))
+        && (pit_get_ticks() < target_ticks)
+        && (guard < SCAFFOLD_TIMER_WAIT_SPIN_BUDGET))
     {
         input64_poll_keyboard();
         xhci64_poll_keyboard();
         input64_poll_mouse();
         xhci64_poll_mouse();
-        cpu_halt();
+        scaffold_cpu_pause();
+        ++guard;
     }
     interrupts64_disable();
     input64_poll_keyboard();
@@ -12220,6 +12419,9 @@ static void log_build_profile_surface(void)
 
 void kernel_main64_scaffold(const struct boot_info *boot_info)
 {
+    serial_init();
+    kernel_entry_draw_raw_splash(boot_info);
+    kernel_stage_marker(boot_info, "KERNEL ENTRY FB ALIVE");
     write_line(g_x64_scaffold_name);
 
     if (!boot_info_is_valid_x64(boot_info))
@@ -12232,13 +12434,35 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     }
 
     paging64_configure_kernel_physical_base(boot_info->kernel_load_address);
+    serial_write_string("[x64] stage paging active\n");
     log_boot_memory(boot_info);
     log_build_profile_surface();
     services64_init();
     descriptors64_init();
+    kernel_stage_marker(boot_info, "GDT OK");
     log_bootstrap_state(boot_info);
     write_line("[x64] long mode active");
     log_framebuffer_handoff(boot_info);
+    write_line("");
+    write_line("[x64] initializing interrupts");
+    interrupts64_init();
+    kernel_stage_marker(boot_info, "IDT OK");
+    write_line("[x64] IDT online");
+    kernel_stage_marker(boot_info, "APIC INIT");
+    apic64_init(boot_info);
+    kernel_stage_marker(boot_info, "APIC OK");
+    if (apic64_enabled() != 0u)
+    {
+        write_line("[x64] APIC ready");
+    }
+    else
+    {
+        pic_initialize(0xF8u, 0xEFu);
+        write_line("[x64] PIC ready");
+    }
+    kernel_stage_marker(boot_info, "PIC MASK");
+    pit_initialize(100u);
+    write_line("[x64] PIT at 100 Hz");
     syscall64_init(boot_info);
     syscall64_native_init();
     log_descriptor_surface();
@@ -12259,36 +12483,27 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     write_string("[x64] paging levels ");
     write_dec_u32(g_x64_scaffold_report.page_levels);
     write_line("");
-    write_line("[x64] initializing interrupts");
-    interrupts64_init();
-    write_line("[x64] IDT online");
     interrupts64_trigger_probe();
     interrupts64_trigger_breakpoint_proof();
     interrupts64_trigger_invalid_opcode_proof();
     interrupts64_trigger_page_fault_proof();
     interrupts64_trigger_syscall_probe(1u);
     run_user_entry_transfer_probe();
-    apic64_init(boot_info);
-    if (apic64_enabled() != 0u)
-    {
-        write_line("[x64] APIC ready");
-    }
-    else
-    {
-        pic_initialize(0xF8u, 0xEFu);
-        write_line("[x64] PIC ready");
-    }
-    pit_initialize(100u);
-    write_line("[x64] PIT at 100 Hz");
+    kernel_stage_marker(boot_info, "XHCI PROBE");
     xhci64_init();
-    xhci64_poll_keyboard();
-    xhci64_poll_mouse();
+    kernel_stage_marker(boot_info, "XHCI OK");
+    xhci64_set_live_polling_enabled(0u);
+    kernel_stage_marker(boot_info, "BOOT DIAG");
     (void)display64_write_boot_diagnostics(
         xhci64_found(),
         xhci64_legacy_handoff(),
         xhci64_usb2_ports(),
         xhci64_hid_device(),
         xhci64_error(),
+        pci64_usb_uhci_count(),
+        pci64_usb_ohci_count(),
+        pci64_usb_ehci_count(),
+        pci64_usb_xhci_count(),
         input64_ps2_present(),
         input64_ps2_enabled(),
         input64_ps2_scanning_enabled(),
@@ -12299,22 +12514,65 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         input64_keyboard_pending_count(),
         input64_keyboard_last_scancode(),
         pci64_lpss_i2c_hid_found());
+    kernel_stage_marker(boot_info, "BOOT DIAG OK");
+    kernel_stage_marker(boot_info, "NVME PROBE");
+    log_pci_storage_surface();
+    kernel_stage_marker(boot_info, "NVME OK");
+    display64_init(boot_info);
+    input64_set_mouse_bounds(display64_width(), display64_height());
+    kernel_stage_marker(boot_info, "FB INIT");
+    kernel_stage_marker(boot_info, "I2C HID INIT");
+    i2c_hid64_init();
+    kernel_stage_marker(boot_info, "I2C HID OK");
+    kernel_stage_marker(boot_info, "INPUT PROBE");
     write_line("[x64] input devices ready");
+    kernel_stage_marker(boot_info, "USER PREEMPT");
     run_user_entry_preempt_probe();
+    kernel_stage_marker(boot_info, "USER PREEMPT OK");
+    kernel_stage_marker(boot_info, "USER SWITCH");
     run_user_entry_switch_probe();
+    kernel_stage_marker(boot_info, "USER SWITCH OK");
+    kernel_stage_marker(boot_info, "USER RUNQUEUE");
     run_user_entry_runqueue_probe();
+    kernel_stage_marker(boot_info, "USER RUNQUEUE OK");
     interrupts64_enable();
+    kernel_stage_marker(boot_info, "TIMER WAIT");
     wait_for_timer_ticks(30u);
     interrupts64_disable();
+    kernel_stage_marker(boot_info, "TIMER OK");
     input64_poll_keyboard();
-    collect_keyboard_probe_input(127u, 360u);
-    collect_mouse_probe_input(1u, 120u);
+    kernel_stage_marker(boot_info, "KEYBOARD WAIT");
+    collect_keyboard_probe_input(1u, 20u);
+    if (input64_keyboard_pending_count() == 0u)
+    {
+        serial_write_string("[x64] keyboard probe optional: no key observed\n");
+        kernel_stage_marker(boot_info, "KEYBOARD OPTIONAL");
+    }
+    else
+    {
+        kernel_stage_marker(boot_info, "KEYBOARD OK");
+    }
+    kernel_stage_marker(boot_info, "MOUSE WAIT");
+    collect_mouse_probe_input(1u, 20u);
+    if (input64_mouse_packet_count() == 0u)
+    {
+        serial_write_string("[x64] mouse probe optional: no packet observed\n");
+        kernel_stage_marker(boot_info, "MOUSE OPTIONAL");
+    }
+    else
+    {
+        kernel_stage_marker(boot_info, "MOUSE OK");
+    }
     (void)display64_write_boot_diagnostics(
         xhci64_found(),
         xhci64_legacy_handoff(),
         xhci64_usb2_ports(),
         xhci64_hid_device(),
         xhci64_error(),
+        pci64_usb_uhci_count(),
+        pci64_usb_ohci_count(),
+        pci64_usb_ehci_count(),
+        pci64_usb_xhci_count(),
         input64_ps2_present(),
         input64_ps2_enabled(),
         input64_ps2_scanning_enabled(),
@@ -12338,7 +12596,22 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         input64_mouse_pending_count(),
         input64_mouse_x(),
         input64_mouse_y(),
-        input64_mouse_buttons());
+        input64_mouse_buttons(),
+        input64_ps2_mouse_raw_byte(),
+        input64_ps2_mouse_bad_start_count(),
+        xhci64_keyboard_endpoint_present(),
+        xhci64_keyboard_transfer_pending(),
+        xhci64_report_count(),
+        xhci64_mouse_endpoint_present(),
+        xhci64_mouse_transfer_pending(),
+        xhci64_mouse_reports(),
+        xhci64_live_polling_enabled(),
+        i2c_hid64_device_found(),
+        i2c_hid64_report_count(),
+        i2c_hid64_error(),
+        i2c_hid64_pointer_found(),
+        i2c_hid64_pointer_report_count(),
+        i2c_hid64_pointer_error());
     log_interrupt_probes();
     write_string("[x64] timer ticks ");
     write_dec_u32(pit_get_ticks());
@@ -12350,6 +12623,11 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_service_surface();
     log_input_keyboard_surface();
     log_mouse_surface();
+    log_block_surface();
+    kernel_stage_marker(boot_info, "INPUT OK");
+    kernel_stage_marker(boot_info, "XHCI LIVE");
+    xhci64_set_live_polling_enabled(1u);
+    kernel_stage_marker(boot_info, "XHCI LIVE OK");
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_compositor_probe(input64_mouse_x(), input64_mouse_y(), input64_mouse_buttons());
 #endif
@@ -12358,14 +12636,16 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     display64_font_probe();
 #endif
     log_font_surface();
-    log_block_surface();
-    log_pci_storage_surface();
 #if LIMITLESS_BUILD_PROFILE_PRODUCT && defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "LOGIN");
+    input64_clear_keyboard_pending();
+    serial_write_string("[x64] pre-login keyboard probe buffer cleared\n");
     if (auth64_run_login_gate() == 0u)
     {
         write_line("[x64] login gate failed");
         cpu_halt_forever();
     }
+    kernel_stage_marker(boot_info, "LOGIN OK");
     auth64_controlled_lock_probe();
 #endif
     log_login_surface();
@@ -12408,8 +12688,24 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         input64_mouse_pending_count(),
         input64_mouse_x(),
         input64_mouse_y(),
-        input64_mouse_buttons());
+        input64_mouse_buttons(),
+        input64_ps2_mouse_raw_byte(),
+        input64_ps2_mouse_bad_start_count(),
+        xhci64_keyboard_endpoint_present(),
+        xhci64_keyboard_transfer_pending(),
+        xhci64_report_count(),
+        xhci64_mouse_endpoint_present(),
+        xhci64_mouse_transfer_pending(),
+        xhci64_mouse_reports(),
+        xhci64_live_polling_enabled(),
+        i2c_hid64_device_found(),
+        i2c_hid64_report_count(),
+        i2c_hid64_error(),
+        i2c_hid64_pointer_found(),
+        i2c_hid64_pointer_report_count(),
+        i2c_hid64_pointer_error());
     log_apic_surface();
+    log_usb_hci_surface();
     log_xhci_surface();
     virtio_net64_init();
     log_virtio_net_surface();
@@ -12448,6 +12744,8 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     write_string("[x64] plan ");
     write_line(g_x64_scaffold_plan);
     write_line("[x64] compat32 lane planned");
+    kernel_stage_marker(boot_info, "SHELL");
+    write_line("[x64] shell ready");
     write_line("[x64] bootstrap halt");
     if (run_persistent_ring3_shell() == 0)
     {

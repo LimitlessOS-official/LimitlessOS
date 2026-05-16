@@ -6,6 +6,7 @@
 #include "mmio_x64.h"
 #include "paging_x64.h"
 #include "principal_x64.h"
+#include "serial.h"
 #include "services.h"
 #include "services_x64.h"
 #include "virtio_net_x64.h"
@@ -64,14 +65,21 @@ enum
     PCI_INTEL_E1000E_I218V2 = 0x15A3u,
     PCI_INTEL_E1000E_82579LM = 0x1502u,
     PCI_INTEL_E1000E_82579V = 0x1503u,
-    PCI_INTEL_LPSS_I2C_TGL = 0xA0E8u,
-    PCI_INTEL_LPSS_I2C_ADL_RPL = 0x51E8u,
+    PCI_INTEL_LPSS_I2C_TGL_FIRST = 0xA0E8u,
+    PCI_INTEL_LPSS_I2C_TGL_LAST = 0xA0EFu,
+    PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST = 0x51E8u,
+    PCI_INTEL_LPSS_I2C_ADL_RPL_LAST = 0x51EFu,
+    PCI_INTEL_LPSS_I2C_ICL_FIRST = 0x34E8u,
+    PCI_INTEL_LPSS_I2C_ICL_LAST = 0x34EFu,
+    PCI_INTEL_LPSS_I2C_ADL_N_FIRST = 0x54E8u,
+    PCI_INTEL_LPSS_I2C_ADL_N_LAST = 0x54EFu,
     PCI_VIRTIO_CAP_COMMON_CFG = 1u,
     PCI_VIRTIO_CAP_NOTIFY_CFG = 2u,
     PCI_VIRTIO_CAP_DEVICE_CFG = 4u,
     PCI_AHCI_MMIO_SPAN_HINT = 0x00002000u,
     PCI_NVME_MMIO_SPAN_HINT = 0x00004000u,
     PCI_XHCI_MMIO_SPAN_HINT = 0x00010000u,
+    PCI_LPSS_I2C_MMIO_SPAN_HINT = 0x00001000u,
     PCI_VIRTIO_NET_MMIO_SPAN_HINT = 0x00004000u,
     PCI_E1000E_MMIO_SPAN_HINT = 0x00020000u,
     PCI_ECAM_INVALID_BUS = 0xFFFFFFFFu,
@@ -148,6 +156,13 @@ static u32 g_lpss_i2c_count = 0u;
 static u32 g_first_lpss_i2c_address = 0xFFFFFFFFu;
 static u32 g_first_lpss_i2c_vendor_device = 0u;
 static u32 g_first_lpss_i2c_class = 0u;
+static u32 g_first_lpss_i2c_bar0 = 0u;
+static u32 g_first_lpss_i2c_bar1 = 0u;
+static u32 g_first_lpss_i2c_base_low = 0u;
+static u32 g_first_lpss_i2c_base_high = 0u;
+static u32 g_first_lpss_i2c_span_hint = 0u;
+static u32 g_first_lpss_i2c_mmio_flags = 0u;
+static u32 g_first_lpss_i2c_mmio_token = 0u;
 static u32 g_inventory_token = 2166136261u;
 static u32 g_query_count = 0u;
 static u32 g_denial_count = 0u;
@@ -442,8 +457,14 @@ static u32 pci64_is_e1000e_device(u32 device_id)
 
 static u32 pci64_is_lpss_i2c_device(u32 device_id)
 {
-    return (device_id == PCI_INTEL_LPSS_I2C_TGL)
-        || (device_id == PCI_INTEL_LPSS_I2C_ADL_RPL);
+    return ((device_id >= PCI_INTEL_LPSS_I2C_TGL_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_TGL_LAST))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_ADL_RPL_LAST))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_ICL_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_ICL_LAST))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_N_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_ADL_N_LAST));
 }
 
 static void pci64_note_e1000e(
@@ -589,6 +610,8 @@ static void pci64_note_function(u32 bus, u32 device, u32 function)
             g_first_lpss_i2c_address = (bus << 16) | (device << 8) | function;
             g_first_lpss_i2c_vendor_device = vendor_device;
             g_first_lpss_i2c_class = class_register;
+            g_first_lpss_i2c_bar0 = pci64_bar_raw(bus, device, function, 0u);
+            g_first_lpss_i2c_bar1 = pci64_bar_raw(bus, device, function, 1u);
         }
     }
 }
@@ -831,6 +854,62 @@ static void pci64_update_xhci_mmio_plan(void)
         g_first_xhci_mmio_span_hint,
         g_first_xhci_mmio_flags,
         g_first_xhci_mmio_token);
+}
+
+static void pci64_update_lpss_i2c_mmio_plan(void)
+{
+    u32 flags = PCI64_LPSS_I2C_MMIO_FLAG_CONFIG_ONLY_DETECT;
+    u32 base_low = 0u;
+    u32 base_high = 0u;
+    u32 token = 2166136261u;
+
+    if (g_first_lpss_i2c_address != 0xFFFFFFFFu)
+    {
+        flags |= PCI64_LPSS_I2C_MMIO_FLAG_PRESENT;
+
+        if ((g_first_lpss_i2c_bar0 & PCI_BAR_IO_SPACE) == 0u)
+        {
+            flags |= PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR;
+
+            if ((g_first_lpss_i2c_bar0 & PCI_BAR_MEMORY_TYPE_MASK)
+                == PCI_BAR_MEMORY_TYPE_64BIT)
+            {
+                flags |= PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR;
+                base_high = g_first_lpss_i2c_bar1;
+            }
+
+            base_low = g_first_lpss_i2c_bar0 & PCI_BAR_MEMORY_BASE_MASK;
+            if ((base_low != 0u) || (base_high != 0u))
+            {
+                flags |= PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO;
+            }
+
+            if ((base_low & 0xFFFu) == 0u)
+            {
+                flags |= PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED;
+            }
+        }
+    }
+
+    token = pci64_mix_token(token, g_first_lpss_i2c_address);
+    token = pci64_mix_token(token, g_first_lpss_i2c_vendor_device);
+    token = pci64_mix_token(token, g_first_lpss_i2c_class);
+    token = pci64_mix_token(token, g_first_lpss_i2c_bar0);
+    token = pci64_mix_token(token, g_first_lpss_i2c_bar1);
+    token = pci64_mix_token(token, base_low);
+    token = pci64_mix_token(token, base_high);
+    token = pci64_mix_token(token, PCI_LPSS_I2C_MMIO_SPAN_HINT);
+    token = pci64_mix_token(token, flags);
+    token = (token != 0u) ? token : 1u;
+
+    g_first_lpss_i2c_base_low = base_low;
+    g_first_lpss_i2c_base_high = base_high;
+    g_first_lpss_i2c_span_hint =
+        ((flags & PCI64_LPSS_I2C_MMIO_FLAG_PRESENT) != 0u)
+            ? PCI_LPSS_I2C_MMIO_SPAN_HINT
+            : 0u;
+    g_first_lpss_i2c_mmio_flags = flags;
+    g_first_lpss_i2c_mmio_token = token;
 }
 
 static void pci64_update_virtio_net_mmio_plan(void)
@@ -1112,6 +1191,13 @@ void pci64_init(const struct boot_info *boot_info)
     g_first_lpss_i2c_address = 0xFFFFFFFFu;
     g_first_lpss_i2c_vendor_device = 0u;
     g_first_lpss_i2c_class = 0u;
+    g_first_lpss_i2c_bar0 = 0u;
+    g_first_lpss_i2c_bar1 = 0u;
+    g_first_lpss_i2c_base_low = 0u;
+    g_first_lpss_i2c_base_high = 0u;
+    g_first_lpss_i2c_span_hint = 0u;
+    g_first_lpss_i2c_mmio_flags = 0u;
+    g_first_lpss_i2c_mmio_token = 0u;
     g_inventory_token = 2166136261u;
     g_query_count = 0u;
     g_denial_count = 0u;
@@ -1148,8 +1234,10 @@ void pci64_init(const struct boot_info *boot_info)
     pci64_update_ahci_mmio_plan();
     pci64_update_nvme_mmio_plan();
     pci64_update_xhci_mmio_plan();
+    pci64_update_lpss_i2c_mmio_plan();
     pci64_update_virtio_net_mmio_plan();
     pci64_update_e1000e_mmio_plan();
+    serial_write_string("[x64] I2C detect config-only complete\n");
 }
 
 u32 pci64_device_count(u32 hardware_capability_handle, u32 owner_id)
@@ -1315,6 +1403,41 @@ u32 pci64_lpss_i2c_vendor_device(void)
 u32 pci64_lpss_i2c_class(void)
 {
     return g_first_lpss_i2c_class;
+}
+
+u32 pci64_lpss_i2c_bar0(void)
+{
+    return g_first_lpss_i2c_bar0;
+}
+
+u32 pci64_lpss_i2c_bar1(void)
+{
+    return g_first_lpss_i2c_bar1;
+}
+
+u32 pci64_lpss_i2c_base_low(void)
+{
+    return g_first_lpss_i2c_base_low;
+}
+
+u32 pci64_lpss_i2c_base_high(void)
+{
+    return g_first_lpss_i2c_base_high;
+}
+
+u32 pci64_lpss_i2c_span_hint(void)
+{
+    return g_first_lpss_i2c_span_hint;
+}
+
+u32 pci64_lpss_i2c_mmio_flags(void)
+{
+    return g_first_lpss_i2c_mmio_flags;
+}
+
+u32 pci64_lpss_i2c_mmio_token(void)
+{
+    return g_first_lpss_i2c_mmio_token;
 }
 
 u32 pci64_usb_uhci_count(void)

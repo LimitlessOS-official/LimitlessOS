@@ -4,6 +4,7 @@
 
 #define PAGING64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
 #define PAGING64_KERNEL_LINKED_OFFSET 0x00010000ull
+#define PAGING64_KERNEL_LINKED_LOW_LIMIT 0x01000000ull
 #define PAGING64_BOOT_TABLE_BASE_FALLBACK 0x00001000ull
 #ifdef LIMITLESS_X64_UEFI_KERNEL
 #define PAGING64_PML4_OFFSET 0x00000000ull
@@ -122,6 +123,12 @@ u64 paging64_kernel_physical_alias(const void *address)
     if (value >= PAGING64_KERNEL_VIRTUAL_BASE)
     {
         return g_paging64_kernel_physical_base + (value - PAGING64_KERNEL_VIRTUAL_BASE);
+    }
+    if ((g_paging64_kernel_physical_base != 0ull)
+        && (value >= PAGING64_KERNEL_LINKED_OFFSET)
+        && (value < PAGING64_KERNEL_LINKED_LOW_LIMIT))
+    {
+        return g_paging64_kernel_physical_base + value;
     }
 
     return value;

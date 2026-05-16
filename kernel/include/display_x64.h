@@ -7,6 +7,7 @@
 #define DISPLAY64_INVALID_RESULT 0xFFFFFFFFu
 
 void display64_init(const struct boot_info *boot_info);
+u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const char *text);
 u32 display64_draw_marker(u32 display_capability_handle, u32 x, u32 y, u32 rgb, u32 owner_id);
 u32 display64_clear_text_panel(u32 display_capability_handle, u32 owner_id);
 u32 display64_write_text(u32 display_capability_handle, u64 input_address, u32 byte_count, u32 owner_id);
@@ -18,6 +19,10 @@ u32 display64_write_boot_diagnostics(
     u32 xhci_usb2_ports,
     u32 xhci_hid_device,
     u32 xhci_error,
+    u32 usb_uhci_count,
+    u32 usb_ohci_count,
+    u32 usb_ehci_count,
+    u32 usb_xhci_count,
     u32 ps2_present,
     u32 ps2_enabled,
     u32 ps2_scanning,
@@ -41,7 +46,22 @@ u32 display64_write_mouse_diagnostics(
     u32 pending_count,
     u32 x,
     u32 y,
-    u32 buttons);
+    u32 buttons,
+    u32 ps2_raw_byte,
+    u32 ps2_bad_starts,
+    u32 xhci_keyboard_endpoint,
+    u32 xhci_keyboard_pending,
+    u32 xhci_keyboard_reports,
+    u32 xhci_mouse_endpoint,
+    u32 xhci_mouse_pending,
+    u32 xhci_mouse_reports,
+    u32 xhci_live_enabled,
+    u32 i2c_keyboard_found,
+    u32 i2c_keyboard_reports,
+    u32 i2c_keyboard_error,
+    u32 i2c_pointer_found,
+    u32 i2c_pointer_reports,
+    u32 i2c_pointer_error);
 void display64_compositor_probe(u32 cursor_x, u32 cursor_y, u32 buttons);
 u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons);
 u32 display64_compositor_init_done(void);

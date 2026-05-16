@@ -3,10 +3,13 @@
 #include "arch_build.h"
 #include "capability_x64.h"
 #include "display_x64.h"
+#include "i2c_hid_x64.h"
 #include "launch_x64.h"
+#include "serial.h"
 #include "services.h"
 #include "services_x64.h"
 #include "x64.h"
+#include "xhci_x64.h"
 
 #define INPUT64_MAX_READ_BYTES 128u
 #define INPUT64_KEYBOARD_QUEUE_CAPACITY 256u
@@ -145,6 +148,38 @@ static u32 g_ps2_mouse_enable_command = 0u;
 static u32 g_ps2_mouse_ack = 0u;
 static u8 g_ps2_mouse_packet[3];
 static u32 g_ps2_mouse_phase = 0u;
+static u32 g_ps2_mouse_last_raw_byte = 0u;
+static u32 g_ps2_mouse_bad_start_count = 0u;
+static u32 g_ps2_mouse_raw_log_count = 0u;
+static u32 g_mouse_diag_valid = 0u;
+static u32 g_mouse_diag_init_done = 0u;
+static u32 g_mouse_diag_aux_enabled = 0u;
+static u32 g_mouse_diag_config_read = 0u;
+static u32 g_mouse_diag_config_write = 0u;
+static u32 g_mouse_diag_irq12_configured = 0u;
+static u32 g_mouse_diag_enable_command = 0u;
+static u32 g_mouse_diag_ack = 0u;
+static u32 g_mouse_diag_irq_count = 0u;
+static u32 g_mouse_diag_packet_count = 0u;
+static u32 g_mouse_diag_pending_count = 0u;
+static u32 g_mouse_diag_x = 0u;
+static u32 g_mouse_diag_y = 0u;
+static u32 g_mouse_diag_buttons = 0u;
+static u32 g_mouse_diag_raw_byte = 0u;
+static u32 g_mouse_diag_bad_starts = 0u;
+static u32 g_mouse_diag_xhci_keyboard_endpoint = 0u;
+static u32 g_mouse_diag_xhci_keyboard_pending = 0u;
+static u32 g_mouse_diag_xhci_keyboard_reports = 0u;
+static u32 g_mouse_diag_xhci_mouse_endpoint = 0u;
+static u32 g_mouse_diag_xhci_mouse_pending = 0u;
+static u32 g_mouse_diag_xhci_mouse_reports = 0u;
+static u32 g_mouse_diag_xhci_live_enabled = 0u;
+static u32 g_mouse_diag_i2c_keyboard_found = 0u;
+static u32 g_mouse_diag_i2c_keyboard_reports = 0u;
+static u32 g_mouse_diag_i2c_keyboard_error = 0u;
+static u32 g_mouse_diag_i2c_pointer_found = 0u;
+static u32 g_mouse_diag_i2c_pointer_reports = 0u;
+static u32 g_mouse_diag_i2c_pointer_error = 0u;
 
 static void input64_copy(void *destination, const void *source, u32 byte_count)
 {
@@ -260,6 +295,11 @@ static void input64_keyboard_clear_pending(void)
     g_keyboard_break_prefix = 0u;
 }
 
+void input64_clear_keyboard_pending(void)
+{
+    input64_keyboard_clear_pending();
+}
+
 static void input64_keyboard_enqueue_byte(u8 value)
 {
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
@@ -307,6 +347,29 @@ static void input64_keyboard_enqueue_delete_sequence(void)
 static s32 input64_sign_extend_byte(u8 value)
 {
     return ((value & 0x80u) != 0u) ? (s32)((u32)value | 0xFFFFFF00u) : (s32)value;
+}
+
+static s32 input64_ps2_mouse_delta(u8 flags, u8 value, u8 sign_bit)
+{
+    return ((flags & sign_bit) != 0u) ? (s32)((u32)value | 0xFFFFFF00u) : (s32)value;
+}
+
+static void input64_serial_hex_nibble(u8 value)
+{
+    value &= 0x0Fu;
+    if (value < 10u)
+    {
+        serial_write_char((char)((u8)'0' + value));
+        return;
+    }
+
+    serial_write_char((char)((u8)'A' + (value - 10u)));
+}
+
+static void input64_serial_hex_byte(u8 value)
+{
+    input64_serial_hex_nibble((u8)(value >> 4));
+    input64_serial_hex_nibble(value);
 }
 
 static u32 input64_mouse_clamp_axis(s32 value, u32 limit)
@@ -359,10 +422,91 @@ static void input64_mouse_reset(void)
     g_ps2_mouse_packet[1] = 0u;
     g_ps2_mouse_packet[2] = 0u;
     g_ps2_mouse_phase = 0u;
+    g_ps2_mouse_last_raw_byte = 0u;
+    g_ps2_mouse_bad_start_count = 0u;
+    g_ps2_mouse_raw_log_count = 0u;
+    g_mouse_diag_valid = 0u;
 }
 
 static void input64_mouse_publish_diagnostics(void)
 {
+    u32 xhci_keyboard_endpoint = xhci64_keyboard_endpoint_present();
+    u32 xhci_keyboard_pending = xhci64_keyboard_transfer_pending();
+    u32 xhci_keyboard_reports = xhci64_report_count();
+    u32 xhci_mouse_endpoint = xhci64_mouse_endpoint_present();
+    u32 xhci_mouse_pending = xhci64_mouse_transfer_pending();
+    u32 xhci_mouse_reports = xhci64_mouse_reports();
+    u32 xhci_live_enabled = xhci64_live_polling_enabled();
+    u32 i2c_keyboard_found = i2c_hid64_device_found();
+    u32 i2c_keyboard_reports = i2c_hid64_report_count();
+    u32 i2c_keyboard_error = i2c_hid64_error();
+    u32 i2c_pointer_found = i2c_hid64_pointer_found();
+    u32 i2c_pointer_reports = i2c_hid64_pointer_report_count();
+    u32 i2c_pointer_error = i2c_hid64_pointer_error();
+
+    if ((g_mouse_diag_valid != 0u)
+        && (g_mouse_diag_init_done == g_mouse_enabled)
+        && (g_mouse_diag_aux_enabled == g_ps2_mouse_aux_enabled)
+        && (g_mouse_diag_config_read == g_ps2_mouse_config_read)
+        && (g_mouse_diag_config_write == g_ps2_mouse_config_write)
+        && (g_mouse_diag_irq12_configured == g_ps2_mouse_irq12_configured)
+        && (g_mouse_diag_enable_command == g_ps2_mouse_enable_command)
+        && (g_mouse_diag_ack == g_ps2_mouse_ack)
+        && (g_mouse_diag_irq_count == g_mouse_irq_count)
+        && (g_mouse_diag_packet_count == g_mouse_packet_count)
+        && (g_mouse_diag_pending_count == g_mouse_pending)
+        && (g_mouse_diag_x == g_mouse_x)
+        && (g_mouse_diag_y == g_mouse_y)
+        && (g_mouse_diag_buttons == g_mouse_buttons)
+        && (g_mouse_diag_raw_byte == g_ps2_mouse_last_raw_byte)
+        && (g_mouse_diag_bad_starts == g_ps2_mouse_bad_start_count)
+        && (g_mouse_diag_xhci_keyboard_endpoint == xhci_keyboard_endpoint)
+        && (g_mouse_diag_xhci_keyboard_pending == xhci_keyboard_pending)
+        && (g_mouse_diag_xhci_keyboard_reports == xhci_keyboard_reports)
+        && (g_mouse_diag_xhci_mouse_endpoint == xhci_mouse_endpoint)
+        && (g_mouse_diag_xhci_mouse_pending == xhci_mouse_pending)
+        && (g_mouse_diag_xhci_mouse_reports == xhci_mouse_reports)
+        && (g_mouse_diag_xhci_live_enabled == xhci_live_enabled)
+        && (g_mouse_diag_i2c_keyboard_found == i2c_keyboard_found)
+        && (g_mouse_diag_i2c_keyboard_reports == i2c_keyboard_reports)
+        && (g_mouse_diag_i2c_keyboard_error == i2c_keyboard_error)
+        && (g_mouse_diag_i2c_pointer_found == i2c_pointer_found)
+        && (g_mouse_diag_i2c_pointer_reports == i2c_pointer_reports)
+        && (g_mouse_diag_i2c_pointer_error == i2c_pointer_error))
+    {
+        return;
+    }
+
+    g_mouse_diag_valid = 1u;
+    g_mouse_diag_init_done = g_mouse_enabled;
+    g_mouse_diag_aux_enabled = g_ps2_mouse_aux_enabled;
+    g_mouse_diag_config_read = g_ps2_mouse_config_read;
+    g_mouse_diag_config_write = g_ps2_mouse_config_write;
+    g_mouse_diag_irq12_configured = g_ps2_mouse_irq12_configured;
+    g_mouse_diag_enable_command = g_ps2_mouse_enable_command;
+    g_mouse_diag_ack = g_ps2_mouse_ack;
+    g_mouse_diag_irq_count = g_mouse_irq_count;
+    g_mouse_diag_packet_count = g_mouse_packet_count;
+    g_mouse_diag_pending_count = g_mouse_pending;
+    g_mouse_diag_x = g_mouse_x;
+    g_mouse_diag_y = g_mouse_y;
+    g_mouse_diag_buttons = g_mouse_buttons;
+    g_mouse_diag_raw_byte = g_ps2_mouse_last_raw_byte;
+    g_mouse_diag_bad_starts = g_ps2_mouse_bad_start_count;
+    g_mouse_diag_xhci_keyboard_endpoint = xhci_keyboard_endpoint;
+    g_mouse_diag_xhci_keyboard_pending = xhci_keyboard_pending;
+    g_mouse_diag_xhci_keyboard_reports = xhci_keyboard_reports;
+    g_mouse_diag_xhci_mouse_endpoint = xhci_mouse_endpoint;
+    g_mouse_diag_xhci_mouse_pending = xhci_mouse_pending;
+    g_mouse_diag_xhci_mouse_reports = xhci_mouse_reports;
+    g_mouse_diag_xhci_live_enabled = xhci_live_enabled;
+    g_mouse_diag_i2c_keyboard_found = i2c_keyboard_found;
+    g_mouse_diag_i2c_keyboard_reports = i2c_keyboard_reports;
+    g_mouse_diag_i2c_keyboard_error = i2c_keyboard_error;
+    g_mouse_diag_i2c_pointer_found = i2c_pointer_found;
+    g_mouse_diag_i2c_pointer_reports = i2c_pointer_reports;
+    g_mouse_diag_i2c_pointer_error = i2c_pointer_error;
+
     (void)display64_write_mouse_diagnostics(
         g_mouse_enabled,
         g_ps2_mouse_aux_enabled,
@@ -376,15 +520,36 @@ static void input64_mouse_publish_diagnostics(void)
         g_mouse_pending,
         g_mouse_x,
         g_mouse_y,
-        g_mouse_buttons);
+        g_mouse_buttons,
+        g_ps2_mouse_last_raw_byte,
+        g_ps2_mouse_bad_start_count,
+        xhci_keyboard_endpoint,
+        xhci_keyboard_pending,
+        xhci_keyboard_reports,
+        xhci_mouse_endpoint,
+        xhci_mouse_pending,
+        xhci_mouse_reports,
+        xhci_live_enabled,
+        i2c_keyboard_found,
+        i2c_keyboard_reports,
+        i2c_keyboard_error,
+        i2c_pointer_found,
+        i2c_pointer_reports,
+        i2c_pointer_error);
 }
 
 static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 {
     struct input64_mouse_event event;
+    u32 next_buttons = buttons & 0x7u;
+
+    if ((dx == 0) && (dy == 0) && (next_buttons == g_mouse_buttons))
+    {
+        return;
+    }
 
     g_mouse_found = 1u;
-    g_mouse_buttons = buttons & 0x7u;
+    g_mouse_buttons = next_buttons;
     g_mouse_last_dx = dx;
     g_mouse_last_dy = dy;
     if ((dx != 0) || (dy != 0))
@@ -423,10 +588,22 @@ static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 
 static void input64_mouse_accept_ps2_byte(u8 value)
 {
+    g_ps2_mouse_last_raw_byte = (u32)value;
     if (g_ps2_mouse_phase == 0u)
     {
-        if ((value & 0x08u) == 0u)
+        if (((value & 0x08u) == 0u)
+            || ((value & 0xC0u) != 0u)
+            || (value == INPUT64_PS2_ACK)
+            || (value == INPUT64_PS2_DEVICE_SELF_TEST_OK))
         {
+            ++g_ps2_mouse_bad_start_count;
+            if (g_ps2_mouse_raw_log_count < 16u)
+            {
+                serial_write_string("[x64] ps2 mouse raw discard 0x");
+                input64_serial_hex_byte(value);
+                serial_write_string("\n");
+                ++g_ps2_mouse_raw_log_count;
+            }
             return;
         }
         g_ps2_mouse_packet[0] = value;
@@ -438,8 +615,14 @@ static void input64_mouse_accept_ps2_byte(u8 value)
     ++g_ps2_mouse_phase;
     if (g_ps2_mouse_phase >= 3u)
     {
-        s32 dx = input64_sign_extend_byte(g_ps2_mouse_packet[1]);
-        s32 dy = -input64_sign_extend_byte(g_ps2_mouse_packet[2]);
+        s32 dx = input64_ps2_mouse_delta(g_ps2_mouse_packet[0], g_ps2_mouse_packet[1], 0x10u);
+        s32 dy = -input64_ps2_mouse_delta(g_ps2_mouse_packet[0], g_ps2_mouse_packet[2], 0x20u);
+        if ((g_ps2_mouse_packet[0] & 0xC0u) != 0u)
+        {
+            ++g_ps2_mouse_bad_start_count;
+            g_ps2_mouse_phase = 0u;
+            return;
+        }
         input64_mouse_enqueue_delta(dx, dy, (u32)(g_ps2_mouse_packet[0] & 0x07u));
         g_ps2_mouse_phase = 0u;
     }
@@ -815,6 +998,34 @@ static void input64_keyboard_drain_controller(void)
     }
 }
 
+static void input64_mouse_drain_aux_controller(void)
+{
+    u32 drained = 0u;
+
+    while (drained < INPUT64_PS2_DRAIN_LIMIT)
+    {
+        u8 status = inb(INPUT64_PS2_STATUS_PORT);
+        u8 value;
+
+        g_ps2_status_snapshot = (u32)status;
+        if ((status & INPUT64_PS2_STATUS_OUTPUT_READY) == 0u)
+        {
+            return;
+        }
+
+        value = inb(INPUT64_PS2_DATA_PORT);
+        if ((status & INPUT64_PS2_STATUS_AUX_DATA) != 0u)
+        {
+            input64_mouse_accept_ps2_byte(value);
+        }
+        else
+        {
+            input64_keyboard_accept_scancode(value);
+        }
+        ++drained;
+    }
+}
+
 static void input64_keyboard_drain_raw(void)
 {
     u32 drained = 0u;
@@ -913,6 +1124,52 @@ static u32 input64_ps2_read_data(u8 *value)
     return 1u;
 }
 
+static u32 input64_ps2_read_device_data(u8 *value, u32 require_aux)
+{
+    u32 poll;
+
+    if (value == 0)
+    {
+        return 0u;
+    }
+
+    for (poll = 0u; poll < INPUT64_PS2_WAIT_LIMIT; ++poll)
+    {
+        u8 status = inb(INPUT64_PS2_STATUS_PORT);
+
+        g_ps2_status_snapshot = (u32)status;
+        if (status == 0xFFu)
+        {
+            return 0u;
+        }
+
+        if ((status & INPUT64_PS2_STATUS_OUTPUT_READY) == 0u)
+        {
+            continue;
+        }
+
+        *value = inb(INPUT64_PS2_DATA_PORT);
+        if (require_aux != 0u)
+        {
+            if ((status & INPUT64_PS2_STATUS_AUX_DATA) != 0u)
+            {
+                return 1u;
+            }
+            input64_keyboard_accept_scancode(*value);
+        }
+        else
+        {
+            if ((status & INPUT64_PS2_STATUS_AUX_DATA) == 0u)
+            {
+                return 1u;
+            }
+            input64_mouse_accept_ps2_byte(*value);
+        }
+    }
+
+    return 0u;
+}
+
 static u32 input64_ps2_read_config(u8 *config)
 {
     if (input64_ps2_write_command(INPUT64_PS2_COMMAND_READ_CONFIG) == 0u)
@@ -942,7 +1199,7 @@ static u32 input64_ps2_send_device_command(u8 command, u8 *ack)
         return 0u;
     }
 
-    if (input64_ps2_read_data(&response) == 0u)
+    if (input64_ps2_read_device_data(&response, 0u) == 0u)
     {
         return 0u;
     }
@@ -965,7 +1222,7 @@ static u32 input64_ps2_send_aux_command(u8 command, u8 *ack)
         return 0u;
     }
 
-    if (input64_ps2_read_data(&response) == 0u)
+    if (input64_ps2_read_device_data(&response, 1u) == 0u)
     {
         return 0u;
     }
@@ -1106,13 +1363,16 @@ void input64_poll_keyboard(void)
 {
     ++g_keyboard_poll_count;
     input64_keyboard_drain_controller();
-    input64_poll_mouse();
+    i2c_hid64_poll_keyboard();
+    xhci64_poll_keyboard();
 }
 
 void input64_poll_mouse(void)
 {
     ++g_mouse_poll_count;
     input64_keyboard_drain_controller();
+    i2c_hid64_poll_pointer();
+    xhci64_poll_mouse();
     input64_mouse_publish_diagnostics();
 }
 
@@ -1125,7 +1385,7 @@ void input64_handle_keyboard_interrupt(void)
 void input64_handle_mouse_interrupt(void)
 {
     ++g_mouse_irq_count;
-    input64_keyboard_drain_controller();
+    input64_mouse_drain_aux_controller();
     input64_mouse_publish_diagnostics();
 }
 
@@ -1747,4 +2007,14 @@ u32 input64_ps2_mouse_enable_command(void)
 u32 input64_ps2_mouse_ack(void)
 {
     return g_ps2_mouse_ack;
+}
+
+u32 input64_ps2_mouse_raw_byte(void)
+{
+    return g_ps2_mouse_last_raw_byte;
+}
+
+u32 input64_ps2_mouse_bad_start_count(void)
+{
+    return g_ps2_mouse_bad_start_count;
 }

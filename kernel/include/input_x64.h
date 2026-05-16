@@ -9,6 +9,7 @@
 #define INPUT64_KEYBOARD_SCANCODE_SET2 2u
 
 void input64_init(void);
+void input64_clear_keyboard_pending(void);
 void input64_set_keyboard_scancode_set(u32 scancode_set);
 u32 input64_keyboard_scancode_set(void);
 void input64_poll_keyboard(void);
@@ -78,5 +79,7 @@ u32 input64_ps2_mouse_config_write(void);
 u32 input64_ps2_mouse_irq12_configured(void);
 u32 input64_ps2_mouse_enable_command(void);
 u32 input64_ps2_mouse_ack(void);
+u32 input64_ps2_mouse_raw_byte(void);
+u32 input64_ps2_mouse_bad_start_count(void);
 
 #endif

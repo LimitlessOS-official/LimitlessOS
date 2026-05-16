@@ -6,6 +6,7 @@
 #include "descriptors_x64.h"
 #include "display_x64.h"
 #include "fs_x64.h"
+#include "i2c_hid_x64.h"
 #include "input_x64.h"
 #include "interrupts_x64.h"
 #include "launch_x64.h"
@@ -14,6 +15,7 @@
 #include "pit.h"
 #include "principal_x64.h"
 #include "process_x64.h"
+#include "serial.h"
 #include "services_x64.h"
 #include "shell_x64.h"
 #include "x64.h"
@@ -62,6 +64,10 @@ static void syscall64_refresh_input_diagnostics_if_changed(void)
         xhci64_usb2_ports(),
         xhci64_hid_device(),
         xhci64_error(),
+        pci64_usb_uhci_count(),
+        pci64_usb_ohci_count(),
+        pci64_usb_ehci_count(),
+        pci64_usb_xhci_count(),
         input64_ps2_present(),
         input64_ps2_enabled(),
         input64_ps2_scanning_enabled(),
@@ -93,8 +99,6 @@ void syscall64_init(const struct boot_info *boot_info)
     input64_init();
     input64_set_keyboard_scancode_set(input64_ps2_recommended_scancode_set());
     fs64_init();
-    display64_init(boot_info);
-    input64_set_mouse_bounds(display64_width(), display64_height());
 }
 
 static u32 syscall64_pack_low32(u64 packed)
@@ -7711,6 +7715,8 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
                 syscall64_pack_high32(arg2));
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD:
+            i2c_hid64_poll_keyboard();
+            i2c_hid64_poll_pointer();
             xhci64_poll_keyboard();
             xhci64_poll_mouse();
             {
@@ -7724,6 +7730,8 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
             }
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD_LINE:
+            i2c_hid64_poll_keyboard();
+            i2c_hid64_poll_pointer();
             xhci64_poll_keyboard();
             xhci64_poll_mouse();
             {

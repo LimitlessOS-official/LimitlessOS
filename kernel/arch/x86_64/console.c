@@ -69,6 +69,22 @@ static void console64_vga_write_char(char character)
         return;
     }
 
+    if ((character == '\b') || ((u8)character == 0x7Fu))
+    {
+        if (g_vga_column > 0u)
+        {
+            --g_vga_column;
+        }
+        else if (g_vga_row > 0u)
+        {
+            --g_vga_row;
+            g_vga_column = CONSOLE64_VGA_WIDTH - 1u;
+        }
+        g_console64_vga[g_vga_row * CONSOLE64_VGA_WIDTH + g_vga_column] =
+            (u16)' ' | ((u16)g_vga_color << 8);
+        return;
+    }
+
     g_console64_vga[g_vga_row * CONSOLE64_VGA_WIDTH + g_vga_column] =
         (u16)character | ((u16)g_vga_color << 8);
     ++g_vga_column;

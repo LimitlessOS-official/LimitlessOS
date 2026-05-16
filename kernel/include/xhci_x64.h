@@ -23,6 +23,8 @@ void xhci64_register_candidate(
     u32 flags,
     u32 token);
 void xhci64_init(void);
+void xhci64_set_live_polling_enabled(u32 enabled);
+u32 xhci64_live_polling_supported(void);
 void xhci64_poll_keyboard(void);
 void xhci64_poll_mouse(void);
 
@@ -43,13 +45,18 @@ u32 xhci64_addressed(void);
 u32 xhci64_config_read(void);
 u32 xhci64_hid_report_read(void);
 u32 xhci64_endpoint_configured(void);
+u32 xhci64_keyboard_endpoint_present(void);
+u32 xhci64_keyboard_transfer_pending(void);
 u32 xhci64_hid_device(void);
 u32 xhci64_input_live(void);
 u32 xhci64_report_count(void);
 u32 xhci64_report_bytes(void);
 u32 xhci64_mouse_device(void);
+u32 xhci64_mouse_endpoint_present(void);
+u32 xhci64_mouse_transfer_pending(void);
 u32 xhci64_mouse_reports(void);
 u32 xhci64_mouse_report_bytes(void);
+u32 xhci64_live_polling_enabled(void);
 u32 xhci64_extcaps_scanned(void);
 u32 xhci64_legacy_cap_found(void);
 u32 xhci64_legacy_handoff(void);

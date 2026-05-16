@@ -5,7 +5,6 @@
 #include "pit.h"
 
 #define VIRTIO_NET64_MAP_VIRTUAL_BASE 0xFFFFFFFF901A0000ull
-#define VIRTIO_NET64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
 #define VIRTIO_NET64_PAGE_BYTES 4096u
 #define VIRTIO_NET64_MAP_PAGES 16u
 #define VIRTIO_NET64_QUEUE_SIZE 8u
@@ -183,14 +182,7 @@ static u8 g_virtio_net_tx_data[VIRTIO_NET64_TX_BUFFER_BYTES] __attribute__((alig
 
 static u64 virtio_net64_virtual_to_physical(const void *address)
 {
-    u64 value = (u64)address;
-
-    if (value >= VIRTIO_NET64_KERNEL_VIRTUAL_BASE)
-    {
-        return value - VIRTIO_NET64_KERNEL_VIRTUAL_BASE;
-    }
-
-    return value;
+    return paging64_kernel_physical_alias(address);
 }
 
 static void virtio_net64_fence(void)

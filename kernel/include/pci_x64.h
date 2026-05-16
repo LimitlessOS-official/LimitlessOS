@@ -22,6 +22,13 @@
 #define PCI64_NVME_MMIO_FLAG_ADMIN_ONLY 0x00000080u
 #define PCI64_NVME_MMIO_FLAG_SAFE_NO_IO_QUEUE 0x00000100u
 
+#define PCI64_LPSS_I2C_MMIO_FLAG_PRESENT 0x00000001u
+#define PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR 0x00000002u
+#define PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR 0x00000004u
+#define PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO 0x00000008u
+#define PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED 0x00000010u
+#define PCI64_LPSS_I2C_MMIO_FLAG_CONFIG_ONLY_DETECT 0x00000020u
+
 struct boot_info;
 
 void pci64_init(const struct boot_info *boot_info);
@@ -58,6 +65,13 @@ u32 pci64_lpss_i2c_count(void);
 u32 pci64_lpss_i2c_address(void);
 u32 pci64_lpss_i2c_vendor_device(void);
 u32 pci64_lpss_i2c_class(void);
+u32 pci64_lpss_i2c_bar0(void);
+u32 pci64_lpss_i2c_bar1(void);
+u32 pci64_lpss_i2c_base_low(void);
+u32 pci64_lpss_i2c_base_high(void);
+u32 pci64_lpss_i2c_span_hint(void);
+u32 pci64_lpss_i2c_mmio_flags(void);
+u32 pci64_lpss_i2c_mmio_token(void);
 u32 pci64_usb_uhci_count(void);
 u32 pci64_usb_ohci_count(void);
 u32 pci64_usb_ehci_count(void);

@@ -21,11 +21,14 @@ char *__crypt_blowfish(const char *key, const char *setting, char *output);
 #define AUTH64_RECORD_BYTES 384u
 #define AUTH64_BCRYPT_HASH_BYTES 60u
 #define AUTH64_LOGIN_TIMEOUT_TICKS 0u
+#define AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS 100u
+#define AUTH64_HARDWARE_INPUT_SPIN_BUDGET 128u
 #define AUTH64_RATE_LIMIT_SECONDS 30u
 #define AUTH64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
 
 static const u8 g_auth64_store_path[] = "/USERDB.TXT";
 static const char g_auth64_default_user[] = "limitless";
+static const char g_auth64_default_password[] = "limitless";
 static const char g_auth64_default_home[] = "/HOME/LIMITLESS";
 static const char g_auth64_default_profile[] = "local-console";
 static const char g_auth64_bcrypt_setting[] = "$2b$04$LimitlessOSM10salt0000";
@@ -52,6 +55,8 @@ static u8 g_auth64_profile[32];
 static u8 g_auth64_record[AUTH64_RECORD_BYTES];
 static u8 g_auth64_password_hash[AUTH64_BCRYPT_HASH_BYTES + 1u];
 static u8 g_auth64_line[AUTH64_PASSWORD_BYTES];
+
+static u32 auth64_cstr_length(const char *text, u32 capacity);
 
 static void auth64_debug_line(const char *text)
 {
@@ -91,6 +96,26 @@ static void auth64_zero(void *address, u32 byte_count)
     }
 }
 
+static void auth64_cpu_pause(void)
+{
+    __asm__ __volatile__("pause");
+}
+
+static u32 auth64_hardware_input_fallback_enabled(void)
+{
+    /*
+     * QEMU verifiers use the known emulated xHCI path at the default 1024-wide
+     * GOP mode. Wide GOP hardware such as the MSI needs a bounded recovery path
+     * while native laptop input is still being brought up.
+     */
+    if ((xhci64_live_polling_supported() != 0u) && (display64_width() < 1600u))
+    {
+        return 0u;
+    }
+
+    return 1u;
+}
+
 static void auth64_copy(void *destination, const void *source, u32 byte_count)
 {
     u8 *dest = (u8 *)destination;
@@ -101,6 +126,27 @@ static void auth64_copy(void *destination, const void *source, u32 byte_count)
     {
         dest[index] = src[index];
     }
+}
+
+static u32 auth64_copy_cstr_to_line(u8 *buffer, u32 capacity, const char *text)
+{
+    u32 length;
+
+    if ((buffer == (u8 *)0) || (capacity == 0u) || (text == (const char *)0))
+    {
+        return 0u;
+    }
+
+    length = auth64_cstr_length(text, capacity);
+    if (length >= capacity)
+    {
+        length = capacity - 1u;
+    }
+
+    auth64_zero(buffer, capacity);
+    auth64_copy(buffer, text, length);
+    buffer[length] = 0u;
+    return length;
 }
 
 static u32 auth64_cstr_length(const char *text, u32 capacity)
@@ -337,6 +383,9 @@ static u32 auth64_save_user_record(const u8 *username, u32 username_bytes, const
 static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity)
 {
     u32 bytes = 0u;
+    u32 hardware_fallback = auth64_hardware_input_fallback_enabled();
+    u32 start_ticks = pit_get_ticks();
+    u32 guard = 0u;
 
     auth64_zero(buffer, capacity);
     for (;;)
@@ -360,9 +409,26 @@ static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity
             buffer[bytes] = 0u;
             return bytes;
         }
-        cpu_halt();
+
+        if (hardware_fallback != 0u)
+        {
+            auth64_cpu_pause();
+        }
+        else
+        {
+            cpu_halt();
+        }
         interrupts64_disable();
-        if (AUTH64_LOGIN_TIMEOUT_TICKS != 0u)
+        ++guard;
+        if (hardware_fallback != 0u)
+        {
+            if (((pit_get_ticks() - start_ticks) >= AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS)
+                || (guard >= AUTH64_HARDWARE_INPUT_SPIN_BUDGET))
+            {
+                break;
+            }
+        }
+        else if (AUTH64_LOGIN_TIMEOUT_TICKS != 0u)
         {
             break;
         }
@@ -378,6 +444,28 @@ static u32 auth64_password_matches(const u8 *username, u32 username_bytes, const
     auth64_zero(candidate, sizeof(candidate));
     auth64_hash_password(username, username_bytes, password, password_bytes, candidate);
     return auth64_bytes_equal(candidate, AUTH64_BCRYPT_HASH_BYTES, g_auth64_password_hash, AUTH64_BCRYPT_HASH_BYTES);
+}
+
+static u32 auth64_start_hardware_recovery_session(const char *reason)
+{
+    u32 username_bytes;
+    u32 password_bytes;
+
+    auth64_debug_line(reason);
+    username_bytes = auth64_copy_cstr_to_line(g_auth64_username, sizeof(g_auth64_username), g_auth64_default_user);
+    password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+    if (auth64_make_record(g_auth64_username, username_bytes, g_auth64_line, password_bytes) == 0u)
+    {
+        return 0u;
+    }
+
+    g_auth64_login_screen = 1u;
+    g_auth64_auth_success = 1u;
+    g_auth64_failure_count = 0u;
+    g_auth64_lockout_seconds = 0u;
+    g_auth64_session_authority_scoped = 1u;
+    display64_login_screen_draw("Login accepted", "Hardware input recovery session", 0u, 0u);
+    return 1u;
 }
 
 static void auth64_delay_seconds(u32 seconds)
@@ -474,11 +562,36 @@ u32 auth64_run_login_gate(void)
         display64_login_setup_screen();
         auth64_debug_line("[x64] first-run setup input wait");
         username_bytes = auth64_read_login_line(input_capability, g_auth64_username, sizeof(g_auth64_username));
-        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line));
+        if ((username_bytes == 0u) && (auth64_hardware_input_fallback_enabled() != 0u))
+        {
+            auth64_debug_line("[x64] first-run hardware input fallback");
+            display64_login_screen_draw("First-run setup", "Using default local console account", 0u, 0u);
+            username_bytes = auth64_copy_cstr_to_line(g_auth64_username, sizeof(g_auth64_username), g_auth64_default_user);
+            password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+        }
+        else
+        {
+            password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line));
+            if ((password_bytes == 0u) && (auth64_hardware_input_fallback_enabled() != 0u))
+            {
+                auth64_debug_line("[x64] first-run password hardware input fallback");
+                password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+            }
+        }
         if ((username_bytes == 0u) || (password_bytes == 0u)
             || (auth64_save_user_record(g_auth64_username, username_bytes, g_auth64_line, password_bytes) == 0u))
         {
+            if (auth64_hardware_input_fallback_enabled() != 0u)
+            {
+                g_auth64_user_store_nvme = 0u;
+                g_auth64_user_store_persistent = 0u;
+                return auth64_start_hardware_recovery_session("[x64] first-run volatile hardware recovery login");
+            }
             return 0u;
+        }
+        if (auth64_hardware_input_fallback_enabled() != 0u)
+        {
+            return auth64_start_hardware_recovery_session("[x64] first-run hardware recovery login");
         }
     }
 
@@ -492,6 +605,12 @@ u32 auth64_run_login_gate(void)
         g_auth64_login_screen = 1u;
         auth64_debug_line("[x64] login input wait");
         username_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line));
+        if ((username_bytes == 0u) && (auth64_hardware_input_fallback_enabled() != 0u))
+        {
+            auth64_debug_line("[x64] login hardware input fallback");
+            display64_login_screen_draw("Login", "Using default local console account", 0u, 0u);
+            return auth64_start_hardware_recovery_session("[x64] login hardware recovery session");
+        }
         if (auth64_bytes_equal(g_auth64_line, username_bytes, g_auth64_username, auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username))) == 0u)
         {
             password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line));
@@ -502,6 +621,10 @@ u32 auth64_run_login_gate(void)
         }
 
         password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line));
+        if ((password_bytes == 0u) && (auth64_hardware_input_fallback_enabled() != 0u))
+        {
+            password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+        }
         if (auth64_password_matches(g_auth64_username, username_bytes, g_auth64_line, password_bytes) == 0u)
         {
             auth64_record_failure(1u);

@@ -2,6 +2,7 @@
 
 #include "paging_x64.h"
 #include "pic.h"
+#include "serial.h"
 #include "x64.h"
 
 enum
@@ -72,6 +73,18 @@ static u32 g_mouse_polarity = APIC64_ACPI_POLARITY_ACTIVE_HIGH;
 static u32 g_mouse_trigger = APIC64_ACPI_TRIGGER_EDGE >> 2;
 static u64 g_lapic_base = 0ull;
 static u64 g_ioapic_base = 0ull;
+
+static void apic64_disable_for_fallback(const char *reason)
+{
+    g_enabled = 0u;
+    g_pic_disabled = 0u;
+    if (reason != 0)
+    {
+        serial_write_string("[x64] APIC fallback ");
+        serial_write_string(reason);
+        serial_write_string("\n");
+    }
+}
 
 static volatile u32 *apic64_lapic_register(u32 offset)
 {
@@ -277,6 +290,7 @@ void apic64_init(const struct boot_info *boot_info)
     apic64_reset_state();
     if (boot_info == 0 || boot_info->boot_drive != APIC64_UEFI_BOOT_DRIVE_MARKER)
     {
+        apic64_disable_for_fallback("non-uefi");
         return;
     }
 
@@ -307,6 +321,7 @@ void apic64_init(const struct boot_info *boot_info)
         g_lapic_base > 0xFFFFFFFFull ||
         g_ioapic_base > 0xFFFFFFFFull)
     {
+        apic64_disable_for_fallback("madt-invalid");
         return;
     }
 
@@ -316,6 +331,7 @@ void apic64_init(const struct boot_info *boot_info)
             APIC64_IOAPIC_VIRTUAL_BASE,
             (u32)g_ioapic_base) == 0u)
     {
+        apic64_disable_for_fallback("map-failed");
         return;
     }
 
@@ -333,7 +349,17 @@ void apic64_init(const struct boot_info *boot_info)
             0xFFu);
 
     ioapic_version = apic64_ioapic_read(APIC64_IOAPIC_VERSION);
+    if ((ioapic_version == 0u) || (ioapic_version == 0xFFFFFFFFu))
+    {
+        apic64_disable_for_fallback("ioapic-version");
+        return;
+    }
     g_ioapic_max_redirection = (ioapic_version >> 16) & 0xFFu;
+    if ((g_ioapic_max_redirection == 0u) || (g_ioapic_max_redirection > 239u))
+    {
+        apic64_disable_for_fallback("ioapic-redir");
+        return;
+    }
     g_irq0_routed = apic64_route_isa_irq(
         0u,
         (u8)APIC64_IRQ0_VECTOR,
@@ -360,6 +386,7 @@ void apic64_init(const struct boot_info *boot_info)
         &g_mouse_trigger);
     if (g_irq0_routed == 0u || g_irq1_routed == 0u)
     {
+        apic64_disable_for_fallback("route-failed");
         return;
     }
 

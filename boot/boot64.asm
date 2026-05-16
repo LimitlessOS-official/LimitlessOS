@@ -216,7 +216,7 @@ long_mode_entry:
     mov cr4, rax
     fninit
 
-    mov edi, BOOT_INFO_ADDR
+    mov ecx, BOOT_INFO_ADDR
     mov rax, KERNEL_HIGH_HALF_ADDR
     jmp rax
 
