@@ -4069,6 +4069,10 @@ u32 display64_write_mouse_diagnostics(
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), x_position);
     cursor = display64_diag_append_char(text, cursor, sizeof(text), ',');
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), y_position);
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), " BND ");
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), g_display_boot_info->framebuffer_width);
+    cursor = display64_diag_append_char(text, cursor, sizeof(text), ',');
+    cursor = display64_diag_append_u32(text, cursor, sizeof(text), g_display_boot_info->framebuffer_height);
     cursor = display64_diag_append_text(text, cursor, sizeof(text), " BTN ");
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), buttons);
     cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
@@ -4100,7 +4104,7 @@ u32 display64_write_mouse_diagnostics(
     cursor = display64_diag_append_text(text, cursor, sizeof(text), " ERR ");
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_keyboard_error);
     cursor = display64_diag_append_char(text, cursor, sizeof(text), '\n');
-    cursor = display64_diag_append_text(text, cursor, sizeof(text), "I2C PTR ");
+    cursor = display64_diag_append_text(text, cursor, sizeof(text), "I2C TOUCH ");
     cursor = display64_diag_append_bool(text, cursor, sizeof(text), i2c_pointer_found);
     cursor = display64_diag_append_text(text, cursor, sizeof(text), " PR ");
     cursor = display64_diag_append_u32(text, cursor, sizeof(text), i2c_pointer_reports);

@@ -5,6 +5,7 @@
 #include "display_x64.h"
 #include "i2c_hid_x64.h"
 #include "launch_x64.h"
+#include "pci_x64.h"
 #include "serial.h"
 #include "services.h"
 #include "services_x64.h"
@@ -24,6 +25,7 @@
 #define INPUT64_PS2_STATUS_AUX_DATA 0x20u
 #define INPUT64_PS2_DRAIN_LIMIT 32u
 #define INPUT64_PS2_WAIT_LIMIT 100000u
+#define INPUT64_PS2_MOUSE_ENABLE_RETRIES 5u
 #define INPUT64_PS2_ACK 0xFAu
 #define INPUT64_PS2_SELF_TEST_OK 0x55u
 #define INPUT64_PS2_FIRST_PORT_OK 0x00u
@@ -145,6 +147,7 @@ static u32 g_ps2_mouse_config_read = 0u;
 static u32 g_ps2_mouse_config_write = 0u;
 static u32 g_ps2_mouse_irq12_configured = 0u;
 static u32 g_ps2_mouse_enable_command = 0u;
+static u32 g_ps2_mouse_present = 0u;
 static u32 g_ps2_mouse_ack = 0u;
 static u8 g_ps2_mouse_packet[3];
 static u32 g_ps2_mouse_phase = 0u;
@@ -180,6 +183,9 @@ static u32 g_mouse_diag_i2c_keyboard_error = 0u;
 static u32 g_mouse_diag_i2c_pointer_found = 0u;
 static u32 g_mouse_diag_i2c_pointer_reports = 0u;
 static u32 g_mouse_diag_i2c_pointer_error = 0u;
+static u32 g_i2c_touchpad_contact_active = 0u;
+static u32 g_i2c_touchpad_last_x = 0u;
+static u32 g_i2c_touchpad_last_y = 0u;
 
 static void input64_copy(void *destination, const void *source, u32 byte_count)
 {
@@ -344,6 +350,13 @@ static void input64_keyboard_enqueue_delete_sequence(void)
     input64_keyboard_enqueue_sequence(sequence, 4u);
 }
 
+static u32 input64_native_pointer_present(void)
+{
+    return ((i2c_hid64_pointer_found() != 0u)
+        || (xhci64_mouse_endpoint_present() != 0u)
+        || (xhci64_mouse_reports() != 0u)) ? 1u : 0u;
+}
+
 static s32 input64_sign_extend_byte(u8 value)
 {
     return ((value & 0x80u) != 0u) ? (s32)((u32)value | 0xFFFFFF00u) : (s32)value;
@@ -417,6 +430,7 @@ static void input64_mouse_reset(void)
     g_ps2_mouse_config_write = 0u;
     g_ps2_mouse_irq12_configured = 0u;
     g_ps2_mouse_enable_command = 0u;
+    g_ps2_mouse_present = 0u;
     g_ps2_mouse_ack = 0u;
     g_ps2_mouse_packet[0] = 0u;
     g_ps2_mouse_packet[1] = 0u;
@@ -425,6 +439,9 @@ static void input64_mouse_reset(void)
     g_ps2_mouse_last_raw_byte = 0u;
     g_ps2_mouse_bad_start_count = 0u;
     g_ps2_mouse_raw_log_count = 0u;
+    g_i2c_touchpad_contact_active = 0u;
+    g_i2c_touchpad_last_x = 0u;
+    g_i2c_touchpad_last_y = 0u;
     g_mouse_diag_valid = 0u;
 }
 
@@ -988,7 +1005,11 @@ static void input64_keyboard_drain_controller(void)
 
         if ((status & INPUT64_PS2_STATUS_AUX_DATA) != 0u)
         {
-            input64_mouse_accept_ps2_byte(inb(INPUT64_PS2_DATA_PORT));
+            u8 value = inb(INPUT64_PS2_DATA_PORT);
+            if ((g_ps2_mouse_present != 0u) && (input64_native_pointer_present() == 0u))
+            {
+                input64_mouse_accept_ps2_byte(value);
+            }
         }
         else
         {
@@ -1001,6 +1022,14 @@ static void input64_keyboard_drain_controller(void)
 static void input64_mouse_drain_aux_controller(void)
 {
     u32 drained = 0u;
+    u32 accept_mouse_bytes;
+
+    if (g_ps2_mouse_present == 0u)
+    {
+        return;
+    }
+
+    accept_mouse_bytes = (input64_native_pointer_present() == 0u) ? 1u : 0u;
 
     while (drained < INPUT64_PS2_DRAIN_LIMIT)
     {
@@ -1014,13 +1043,14 @@ static void input64_mouse_drain_aux_controller(void)
         }
 
         value = inb(INPUT64_PS2_DATA_PORT);
-        if ((status & INPUT64_PS2_STATUS_AUX_DATA) != 0u)
+        /*
+         * This path is entered only from IRQ12. Some real 8042-compatible
+         * controllers deliver the interrupt while leaving the AUX status bit
+         * clear, so IRQ provenance is stronger than the status tag here.
+         */
+        if (accept_mouse_bytes != 0u)
         {
             input64_mouse_accept_ps2_byte(value);
-        }
-        else
-        {
-            input64_keyboard_accept_scancode(value);
         }
         ++drained;
     }
@@ -1208,27 +1238,111 @@ static u32 input64_ps2_send_device_command(u8 command, u8 *ack)
     return response == INPUT64_PS2_ACK ? 1u : 0u;
 }
 
-static u32 input64_ps2_send_aux_command(u8 command, u8 *ack)
+static u32 input64_ps2_read_mouse_ack_lenient(u8 *ack)
 {
-    u8 response = 0u;
+    u32 poll;
 
-    if (input64_ps2_write_command(INPUT64_PS2_COMMAND_WRITE_SECOND_PORT) == 0u)
+    if (ack == 0)
     {
         return 0u;
     }
 
-    if (input64_ps2_write_data(command) == 0u)
+    *ack = 0u;
+    for (poll = 0u; poll < INPUT64_PS2_WAIT_LIMIT; ++poll)
     {
-        return 0u;
+        u8 status = inb(INPUT64_PS2_STATUS_PORT);
+        u8 value;
+
+        g_ps2_status_snapshot = (u32)status;
+        if (status == 0xFFu)
+        {
+            return 0u;
+        }
+
+        if ((status & INPUT64_PS2_STATUS_OUTPUT_READY) == 0u)
+        {
+            continue;
+        }
+
+        value = inb(INPUT64_PS2_DATA_PORT);
+        if ((value == INPUT64_PS2_ACK) || (value == 0xFEu))
+        {
+            *ack = value;
+            return value == INPUT64_PS2_ACK ? 1u : 0u;
+        }
+
+        if ((status & INPUT64_PS2_STATUS_AUX_DATA) != 0u)
+        {
+            input64_mouse_accept_ps2_byte(value);
+        }
+        else
+        {
+            input64_keyboard_accept_scancode(value);
+        }
     }
 
-    if (input64_ps2_read_device_data(&response, 1u) == 0u)
+    return 0u;
+}
+
+static u32 input64_ps2_send_aux_enable_streaming_strict(u8 *ack)
+{
+    u32 attempt;
+
+    if (ack != 0)
     {
-        return 0u;
+        *ack = 0u;
     }
 
-    *ack = response;
-    return response == INPUT64_PS2_ACK ? 1u : 0u;
+    for (attempt = 0u; attempt < INPUT64_PS2_MOUSE_ENABLE_RETRIES; ++attempt)
+    {
+        u8 response = 0u;
+
+        if (input64_ps2_wait_input_clear() == 0u)
+        {
+            return 0u;
+        }
+        outb(INPUT64_PS2_STATUS_PORT, INPUT64_PS2_COMMAND_WRITE_SECOND_PORT);
+
+        if (input64_ps2_wait_input_clear() == 0u)
+        {
+            return 0u;
+        }
+        outb(INPUT64_PS2_DATA_PORT, INPUT64_PS2_DEVICE_ENABLE_SCANNING);
+
+        if (input64_ps2_read_mouse_ack_lenient(&response) != 0u)
+        {
+            if (ack != 0)
+            {
+                *ack = response;
+            }
+            return 1u;
+        }
+        if (ack != 0)
+        {
+            *ack = response;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 input64_lpss_i2c_pointer_controller_present(void)
+{
+    u32 index;
+
+    for (index = 0u; index < pci64_lpss_i2c_pointer_candidate_count(); ++index)
+    {
+        u32 flags = pci64_lpss_i2c_pointer_candidate_mmio_flags(index);
+        if ((pci64_lpss_i2c_pointer_candidate_address(index) != PCI64_INVALID_RESULT)
+            && ((flags & PCI64_LPSS_I2C_MMIO_FLAG_PRESENT) != 0u)
+            && ((flags & PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR) != 0u)
+            && ((flags & PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO) != 0u))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
 }
 
 static void input64_ps2_enable_controller(void)
@@ -1237,6 +1351,7 @@ static void input64_ps2_enable_controller(void)
     u8 config = 0u;
     u8 ack = 0u;
     u8 mouse_ack = 0u;
+    u32 i2c_pointer_controller = 0u;
 
     g_ps2_status_snapshot = (u32)status;
     g_ps2_present = (status != 0xFFu) ? 1u : 0u;
@@ -1247,14 +1362,47 @@ static void input64_ps2_enable_controller(void)
 
     g_ps2_enable_attempted = 1u;
 
-    (void)input64_ps2_write_command(INPUT64_PS2_COMMAND_DISABLE_FIRST_PORT);
-    (void)input64_ps2_write_command(INPUT64_PS2_COMMAND_DISABLE_SECOND_PORT);
     input64_keyboard_drain_raw();
-
-    if (input64_ps2_write_command(INPUT64_PS2_COMMAND_ENABLE_SECOND_PORT) != 0u)
+    i2c_pointer_controller = input64_lpss_i2c_pointer_controller_present();
+    if (i2c_pointer_controller != 0u)
     {
-        g_ps2_mouse_aux_enabled = 1u;
+        if (input64_ps2_read_config(&config) == 0u)
+        {
+            g_ps2_enable_status = g_ps2_status_snapshot;
+            input64_mouse_publish_diagnostics();
+            return;
+        }
+        g_ps2_mouse_config_read = 1u;
+
+        config &= (u8)~INPUT64_PS2_CONFIG_IRQ12;
+        config |= INPUT64_PS2_CONFIG_IRQ1 | INPUT64_PS2_CONFIG_TRANSLATION;
+        config &= (u8)~INPUT64_PS2_CONFIG_FIRST_PORT_CLOCK_DISABLE;
+        config |= INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE;
+        g_ps2_config_byte = (u32)config;
+        g_ps2_recommended_scancode_set = INPUT64_KEYBOARD_SCANCODE_SET1;
+        if (input64_ps2_write_config(config) == 0u)
+        {
+            g_ps2_enable_status = g_ps2_status_snapshot;
+            input64_mouse_publish_diagnostics();
+            return;
+        }
+        g_ps2_mouse_config_write = 1u;
+        g_ps2_mouse_irq12_configured = 0u;
+        g_ps2_mouse_aux_enabled = 0u;
+        g_ps2_mouse_enable_command = 0u;
+        g_ps2_mouse_present = 0u;
+        g_ps2_mouse_ack = 0u;
+        serial_write_string("[x64:input] ps2 aux mouse skipped; lpss i2c pointer controller present\n");
+        goto enable_first_port;
     }
+
+    if (input64_ps2_write_command(INPUT64_PS2_COMMAND_ENABLE_SECOND_PORT) == 0u)
+    {
+        g_ps2_enable_status = g_ps2_status_snapshot;
+        input64_mouse_publish_diagnostics();
+        return;
+    }
+    g_ps2_mouse_aux_enabled = 1u;
 
     if (input64_ps2_read_config(&config) == 0u)
     {
@@ -1264,7 +1412,8 @@ static void input64_ps2_enable_controller(void)
     }
     g_ps2_mouse_config_read = 1u;
 
-    config |= INPUT64_PS2_CONFIG_IRQ1 | INPUT64_PS2_CONFIG_IRQ12 | INPUT64_PS2_CONFIG_TRANSLATION;
+    config |= INPUT64_PS2_CONFIG_IRQ12;
+    config |= INPUT64_PS2_CONFIG_IRQ1 | INPUT64_PS2_CONFIG_TRANSLATION;
     config &= (u8)~INPUT64_PS2_CONFIG_FIRST_PORT_CLOCK_DISABLE;
     config &= (u8)~INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE;
     g_ps2_config_byte = (u32)config;
@@ -1280,22 +1429,29 @@ static void input64_ps2_enable_controller(void)
         (((config & INPUT64_PS2_CONFIG_IRQ12) != 0u)
             && ((config & INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE) == 0u)) ? 1u : 0u;
 
+    g_ps2_mouse_enable_command = 1u;
+    if (input64_ps2_send_aux_enable_streaming_strict(&mouse_ack) != 0u)
+    {
+        g_ps2_mouse_present = 1u;
+        g_mouse_enabled = 1u;
+        g_mouse_found = 1u;
+    }
+    else
+    {
+        config &= (u8)~INPUT64_PS2_CONFIG_IRQ12;
+        config |= INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE;
+        g_ps2_config_byte = (u32)config;
+        g_ps2_mouse_irq12_configured = 0u;
+        (void)input64_ps2_write_config(config);
+    }
+    g_ps2_mouse_ack = (u32)mouse_ack;
+
+enable_first_port:
     if (input64_ps2_write_command(INPUT64_PS2_COMMAND_ENABLE_FIRST_PORT) == 0u)
     {
         g_ps2_enable_status = g_ps2_status_snapshot;
         input64_mouse_publish_diagnostics();
         return;
-    }
-
-    if (g_ps2_mouse_aux_enabled != 0u)
-    {
-        if (input64_ps2_send_aux_command(INPUT64_PS2_DEVICE_ENABLE_SCANNING, &mouse_ack) != 0u)
-        {
-            g_mouse_enabled = 1u;
-            g_mouse_found = 1u;
-        }
-        g_ps2_mouse_enable_command = (mouse_ack == INPUT64_PS2_ACK) ? 1u : 0u;
-        g_ps2_mouse_ack = (u32)mouse_ack;
     }
 
     g_ps2_enable_status = (u32)inb(INPUT64_PS2_STATUS_PORT);
@@ -1384,6 +1540,11 @@ void input64_handle_keyboard_interrupt(void)
 
 void input64_handle_mouse_interrupt(void)
 {
+    if (g_ps2_mouse_present == 0u)
+    {
+        return;
+    }
+
     ++g_mouse_irq_count;
     input64_mouse_drain_aux_controller();
     input64_mouse_publish_diagnostics();
@@ -1437,6 +1598,40 @@ void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count)
         input64_sign_extend_byte(report[1]),
         input64_sign_extend_byte(report[2]),
         (u32)(report[0] & 0x07u));
+}
+
+void input64_accept_i2c_hid_touchpad_sample(u32 x, u32 y, u32 contact_active, u32 buttons)
+{
+    s32 dx;
+    s32 dy;
+
+    if (contact_active == 0u)
+    {
+        g_i2c_touchpad_contact_active = 0u;
+        if ((buttons & 0x7u) != g_mouse_buttons)
+        {
+            input64_mouse_enqueue_delta(0, 0, buttons);
+        }
+        return;
+    }
+
+    if (g_i2c_touchpad_contact_active == 0u)
+    {
+        g_i2c_touchpad_contact_active = 1u;
+        g_i2c_touchpad_last_x = x;
+        g_i2c_touchpad_last_y = y;
+        if ((buttons & 0x7u) != g_mouse_buttons)
+        {
+            input64_mouse_enqueue_delta(0, 0, buttons);
+        }
+        return;
+    }
+
+    dx = (s32)x - (s32)g_i2c_touchpad_last_x;
+    dy = (s32)y - (s32)g_i2c_touchpad_last_y;
+    g_i2c_touchpad_last_x = x;
+    g_i2c_touchpad_last_y = y;
+    input64_mouse_enqueue_delta(dx, dy, buttons);
 }
 
 void input64_set_mouse_bounds(u32 width, u32 height)

@@ -9,6 +9,7 @@
 #include "display_x64.h"
 #include "e1000e_x64.h"
 #include "fs_x64.h"
+#include "i2c_hid_x64.h"
 #include "identity_transport_x64.h"
 #include "input_x64.h"
 #include "installer_ux_x64.h"
@@ -559,6 +560,42 @@ static u32 shell64_write_yes_no_line(
     return shell64_write_status_line(console_capability_handle, owner_id, label, shell64_yes_no(value));
 }
 
+static const char *shell64_keyboard_backend_label(void)
+{
+    if (i2c_hid64_device_found() != 0u)
+    {
+        return "LPSS I2C HID";
+    }
+    if (input64_ps2_enabled() != 0u)
+    {
+        return "PS/2";
+    }
+    if (xhci64_input_live() != 0u)
+    {
+        return "xHCI HID";
+    }
+
+    return "pending";
+}
+
+static const char *shell64_mouse_backend_label(void)
+{
+    if (i2c_hid64_pointer_found() != 0u)
+    {
+        return "LPSS I2C HID touchpad";
+    }
+    if (input64_mouse_enabled() != 0u)
+    {
+        return "PS/2 mouse";
+    }
+    if (xhci64_mouse_device() != 0u)
+    {
+        return "xHCI HID mouse";
+    }
+
+    return "pending";
+}
+
 static u32 shell64_print_hardware_validation_status(u32 console_capability_handle, u32 owner_id)
 {
     u32 network_online = (virtio_net64_dhcp_ack() != 0u) ? 1u : 0u;
@@ -586,12 +623,12 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         console_capability_handle,
         owner_id,
         "keyboard backend: ",
-        (input64_ps2_enabled() != 0u) ? "PS/2" : ((xhci64_input_live() != 0u) ? "xHCI HID" : "pending"));
+        shell64_keyboard_backend_label());
     (void)shell64_write_status_line(
         console_capability_handle,
         owner_id,
         "mouse backend: ",
-        (input64_mouse_enabled() != 0u) ? "PS/2 mouse" : ((xhci64_mouse_device() != 0u) ? "xHCI HID mouse" : "pending"));
+        shell64_mouse_backend_label());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci found: ", xhci64_found());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci handoff: ", xhci64_legacy_handoff());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci hid keyboard: ", xhci64_hid_device());

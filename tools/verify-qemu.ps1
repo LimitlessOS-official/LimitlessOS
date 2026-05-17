@@ -485,21 +485,30 @@ function Send-QemuKeyboardProbe
         $keyHoldMilliseconds = [Math]::Max(80, [int]($KeyDelayMilliseconds / 2))
         $frameWidth = 1024
         $frameHeight = 768
-        if (($FramebufferLogPath.Length -gt 0) -and (Test-Path $FramebufferLogPath)) {
-            $frameLine = Get-Content $FramebufferLogPath -ErrorAction SilentlyContinue |
-                Where-Object { $_ -match 'framebuffer mode .* ([0-9]+)x([0-9]+)' } |
+        $frameSourcePaths = @($FramebufferLogPath, $DebugLogPath) |
+            Where-Object { ($_.Length -gt 0) -and (Test-Path $_) } |
+            Select-Object -Unique
+        foreach ($frameSourcePath in $frameSourcePaths) {
+            $frameLine = Get-Content $frameSourcePath -ErrorAction SilentlyContinue |
+                Where-Object {
+                    ($_ -match 'framebuffer mode .* ([0-9]+)x([0-9]+)') -or
+                    ($_ -match 'fb-geometry ([0-9]+)x([0-9]+)') -or
+                    ($_ -match 'framebuffer-width ([0-9]+) framebuffer-height ([0-9]+)')
+                } |
                 Select-Object -Last 1
-            if ($frameLine -and ($frameLine -match ' ([0-9]+)x([0-9]+) ')) {
-                $frameWidth = [int]$Matches[1]
-                $frameHeight = [int]$Matches[2]
+            if ($frameLine) {
+                if (($frameLine -match 'fb-geometry ([0-9]+)x([0-9]+)') -or ($frameLine -match 'framebuffer-width ([0-9]+) framebuffer-height ([0-9]+)') -or ($frameLine -match 'framebuffer mode .*? ([0-9]+)x([0-9]+)\s')) {
+                    $frameWidth = [int]$Matches[1]
+                    $frameHeight = [int]$Matches[2]
+                    break
+                }
             }
         }
 
-        # The guest initializes the brokered mouse cursor from its default
-        # 1024x768 bounds before the UEFI framebuffer bounds are known.  Keep
-        # the QMP-side relative mouse model aligned with that real runtime
+        # The guest initializes the brokered mouse cursor from the GOP bounds.
+        # Keep the QMP-side relative mouse model aligned with that runtime
         # state so GUI clicks prove the intended hit-test path.
-        $cursor = @{ X = 512; Y = 384 }
+        $cursor = @{ X = [int]($frameWidth / 2); Y = [int]($frameHeight / 2) }
         $sendMoveTo = {
             param([int]$X, [int]$Y)
 
@@ -510,12 +519,29 @@ function Send-QemuKeyboardProbe
                 if ($dx -lt -80) { $dx = -80 }
                 if ($dy -gt 80) { $dy = 80 }
                 if ($dy -lt -80) { $dy = -80 }
-                $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"rel","data":{{"axis":"x","value":{0}}}}},{{"type":"rel","data":{{"axis":"y","value":{1}}}}}]}}}}' -f $dx, $dy))
-                & $drainQmp
+                if ($dx -ne 0) {
+                    $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"rel","data":{{"axis":"x","value":{0}}}}}]}}}}' -f $dx))
+                    & $drainQmp
+                }
+                if ($dy -ne 0) {
+                    $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"rel","data":{{"axis":"y","value":{0}}}}}]}}}}' -f $dy))
+                    & $drainQmp
+                }
                 $cursor.X += $dx
                 $cursor.Y += $dy
                 Start-Sleep -Milliseconds 55
             }
+        }
+        $sendHome = {
+            for ($homeStep = 0; $homeStep -lt 20; $homeStep++) {
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"rel","data":{"axis":"x","value":-80}}]}}')
+                & $drainQmp
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"rel","data":{"axis":"y","value":-80}}]}}')
+                & $drainQmp
+                Start-Sleep -Milliseconds 55
+            }
+            $cursor.X = 0
+            $cursor.Y = 0
         }
         $sendClick = {
             $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
@@ -554,7 +580,6 @@ function Send-QemuKeyboardProbe
         }
 
         if ($LoginProbeEnabled) {
-            & $sendMoveTo 560 420
             Start-Sleep -Milliseconds 300
             $authDeadline = [DateTime]::UtcNow.AddSeconds(75)
             $setupSent = $false
@@ -586,7 +611,6 @@ function Send-QemuKeyboardProbe
         }
 
         if ($GuiProbeEnabled) {
-            & $sendMoveTo ([int]($frameWidth / 2) + 36) ([int]($frameHeight / 2) + 18)
             Start-Sleep -Milliseconds 300
             & $sendKey "a"
             & $sendKey "ret"
@@ -615,8 +639,39 @@ function Send-QemuKeyboardProbe
             else {
                 Start-Sleep -Milliseconds 5200
             }
-
+            foreach ($frameSourcePath in $frameSourcePaths) {
+                $frameLine = Get-Content $frameSourcePath -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        ($_ -match 'framebuffer mode .* ([0-9]+)x([0-9]+)') -or
+                        ($_ -match 'fb-geometry ([0-9]+)x([0-9]+)') -or
+                        ($_ -match 'framebuffer-width ([0-9]+) framebuffer-height ([0-9]+)')
+                    } |
+                    Select-Object -Last 1
+                if ($frameLine) {
+                    if (($frameLine -match 'fb-geometry ([0-9]+)x([0-9]+)') -or ($frameLine -match 'framebuffer-width ([0-9]+) framebuffer-height ([0-9]+)') -or ($frameLine -match 'framebuffer mode .*? ([0-9]+)x([0-9]+)\s')) {
+                        $frameWidth = [int]$Matches[1]
+                        $frameHeight = [int]$Matches[2]
+                        break
+                    }
+                }
+            }
+            $cursor.X = [int]($frameWidth / 2)
+            $cursor.Y = [int]($frameHeight / 2)
+            $taskbarY = $frameHeight - 24 - 32
+            $launcherY = $taskbarY + 16
+            $panelY = $taskbarY - 168 - 8
+            $terminalIconY = $panelY + 52
+            $fileIconY = $panelY + 88
+            $settingsIconY = $panelY + 52
+            $installerIconY = $panelY + 88
+            $assistantIconY = $panelY + 124
+            $newTerminalWidth = [Math]::Min(760, [Math]::Max(160, $frameWidth - 96))
+            $newTerminalX = 66 + ($dragEndX - $dragStartX)
+            $newTerminalY = 98 + ($dragEndY - $dragStartY)
+            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            $originalCloseX = 32 + $originalTerminalWidth - 15
             for ($guiAttempt = 0; $guiAttempt -lt 2; $guiAttempt++) {
+                & $sendHome
                 & $sendMoveTo 22 $launcherY
                 & $sendClick
                 & $sendMoveTo 70 $terminalIconY
@@ -834,7 +889,7 @@ if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
         $arguments += @(
             "-device", "qemu-xhci,id=xhci",
             "-device", "usb-kbd,bus=xhci.0",
-            "-device", "usb-mouse,bus=xhci.0",
+            "-device", "usb-mouse,id=usbmouse,bus=xhci.0",
             "-drive", "if=none,id=usbstick,format=raw,file=$mediaPath",
             "-device", "usb-storage,bus=xhci.0,drive=usbstick,removable=true,bootindex=1",
             "-drive", "if=none,id=ahciuefi,media=cdrom,format=raw,readonly=on,file=$uefiAhciIsoPath",
@@ -849,7 +904,7 @@ if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
         $arguments += @(
             "-device", "qemu-xhci,id=xhci",
             "-device", "usb-kbd,bus=xhci.0",
-            "-device", "usb-mouse,bus=xhci.0",
+            "-device", "usb-mouse,id=usbmouse,bus=xhci.0",
             "-drive", "if=none,id=isousbsidecar,format=raw,file=$isoUsbSidecarPath",
             "-device", "usb-storage,bus=xhci.0,drive=isousbsidecar,removable=true,bootindex=4",
             "-drive", "if=none,id=cdrom,media=cdrom,file=$mediaPath",

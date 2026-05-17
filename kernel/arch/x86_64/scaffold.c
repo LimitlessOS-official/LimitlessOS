@@ -4401,6 +4401,10 @@ static u64 scaffold_value_read(u8 selector)
     case SCAFFOLD_VALUE_MOUSE_PACKETS: return input64_mouse_packet_count();
     case SCAFFOLD_VALUE_MOUSE_PENDING: return input64_mouse_pending_count();
     case SCAFFOLD_VALUE_MOUSE_DROPS: return input64_mouse_drop_count();
+    case SCAFFOLD_VALUE_MOUSE_X: return input64_mouse_x();
+    case SCAFFOLD_VALUE_MOUSE_Y: return input64_mouse_y();
+    case SCAFFOLD_VALUE_MOUSE_LAST_DX: return input64_mouse_last_dx();
+    case SCAFFOLD_VALUE_MOUSE_LAST_DY: return input64_mouse_last_dy();
     case SCAFFOLD_VALUE_MOUSE_PS2_ENABLED: return input64_mouse_enabled();
     case SCAFFOLD_VALUE_MOUSE_USB_DEVICE: return xhci64_mouse_device();
     case SCAFFOLD_VALUE_COMPOSITOR_INIT: return display64_compositor_init_done();
@@ -4599,6 +4603,10 @@ static void log_mouse_surface(void)
         {"packets ", SCAFFOLD_VALUE_MOUSE_PACKETS, SCAFFOLD_TELEMETRY_DEC},
         {"pending ", SCAFFOLD_VALUE_MOUSE_PENDING, SCAFFOLD_TELEMETRY_DEC},
         {"drops ", SCAFFOLD_VALUE_MOUSE_DROPS, SCAFFOLD_TELEMETRY_DEC},
+        {"x ", SCAFFOLD_VALUE_MOUSE_X, SCAFFOLD_TELEMETRY_DEC},
+        {"y ", SCAFFOLD_VALUE_MOUSE_Y, SCAFFOLD_TELEMETRY_DEC},
+        {"last-dx ", SCAFFOLD_VALUE_MOUSE_LAST_DX, SCAFFOLD_TELEMETRY_HEX64},
+        {"last-dy ", SCAFFOLD_VALUE_MOUSE_LAST_DY, SCAFFOLD_TELEMETRY_HEX64},
         {"ps2-enabled ", SCAFFOLD_VALUE_MOUSE_PS2_ENABLED, SCAFFOLD_TELEMETRY_DEC},
         {"usb-device ", SCAFFOLD_VALUE_MOUSE_USB_DEVICE, SCAFFOLD_TELEMETRY_DEC}
     };
@@ -12401,6 +12409,14 @@ static int boot_info_is_valid_x64(const struct boot_info *boot_info)
     return 1;
 }
 
+static u32 scaffold_wide_panel_hardware_path(const struct boot_info *boot_info)
+{
+    return (boot_info_has_framebuffer(boot_info)
+        && (boot_info->framebuffer_width >= 1600u))
+        ? 1u
+        : 0u;
+}
+
 static void log_build_profile_surface(void)
 {
     write_string("[x64] build-profile ");
@@ -12431,6 +12447,13 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         {
             cpu_halt();
         }
+    }
+
+    if (boot_info_has_framebuffer(boot_info))
+    {
+        input64_set_mouse_bounds(
+            boot_info->framebuffer_width,
+            boot_info->framebuffer_height);
     }
 
     paging64_configure_kernel_physical_base(boot_info->kernel_load_address);
@@ -12490,7 +12513,19 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     interrupts64_trigger_syscall_probe(1u);
     run_user_entry_transfer_probe();
     kernel_stage_marker(boot_info, "XHCI PROBE");
-    xhci64_init();
+    if (scaffold_wide_panel_hardware_path(boot_info) != 0u)
+    {
+        /*
+         * The MSI laptop's internal keyboard/touchpad path is Intel Serial IO
+         * LPSS I2C HID. Keep the bare-metal input path focused there instead
+         * of spending early boot time on unrelated xHCI HID enumeration.
+         */
+        write_line("[x64] xhci native init skipped; internal pointer path is lpss i2c hid");
+    }
+    else
+    {
+        xhci64_init();
+    }
     kernel_stage_marker(boot_info, "XHCI OK");
     xhci64_set_live_polling_enabled(0u);
     kernel_stage_marker(boot_info, "BOOT DIAG");
@@ -12523,6 +12558,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     kernel_stage_marker(boot_info, "FB INIT");
     kernel_stage_marker(boot_info, "I2C HID INIT");
     i2c_hid64_init();
+    write_line("[x64] i2c hid native init complete");
     kernel_stage_marker(boot_info, "I2C HID OK");
     kernel_stage_marker(boot_info, "INPUT PROBE");
     write_line("[x64] input devices ready");
@@ -12657,8 +12693,16 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     display64_desktop_probe();
     if (display64_desktop_init_done() != 0u)
     {
-        write_line("[x64] gui interactive input wait");
-        collect_gui_interactive_probe_input(6000u);
+        if (scaffold_wide_panel_hardware_path(boot_info) == 0u)
+        {
+            write_line("[x64] gui interactive input wait");
+            collect_gui_interactive_probe_input(6000u);
+            log_mouse_surface();
+        }
+        else
+        {
+            write_line("[x64] gui interactive input wait skipped on hardware path");
+        }
     }
 #endif
     log_desktop_surface();

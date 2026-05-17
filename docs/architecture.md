@@ -2,12 +2,26 @@
 
 ## Goals
 
-LimitlessOS is designed around four non-negotiables:
+LimitlessOS is designed around five non-negotiables:
 
 - security first
 - fast and stable on both old and modern hardware
 - lightweight by default
+- native multi-ecosystem software execution as a first-class OS design goal
 - transparent AI boundaries
+
+## Product experience direction
+
+LimitlessOS should have its own recognizable identity, but its experience goals intentionally draw from several mature desktop traditions:
+
+- Red Hat-style Linux seriousness: professional, grounded, durable, and credible for workstations, admins, developers, and technical users
+- Windows-like simplicity: discoverable defaults, predictable app launching, clear setup paths, and plain-language choices for everyday users
+- macOS-like cleanliness: calm visual hierarchy, polished spacing, restrained animation, consistent typography, and a desktop that feels uncluttered by default
+- Linux/Unix power: transparent system state, strong terminal and scripting paths, composable tools, readable logs, and deep controls for experienced users
+
+These are reference qualities, not permission to clone another operating system's visual trade dress or interaction model. The LimitlessOS desktop, installer, Settings, Assistant, and app surfaces should feel clean and approachable at first glance, then reveal power through advanced modes, command surfaces, detailed status, and capability-scoped controls. Serious users should immediately see that the OS is production-minded; new users should not feel punished for choosing recommended defaults.
+
+The experience must stay lightweight. Visual polish cannot require always-on heavy effects, mandatory GPU acceleration, large background services, or fabricated showcase panels. If hardware or system information is shown, it must come from real detected state or explicitly say unavailable.
 
 ## Hybrid kernel model
 
@@ -116,6 +130,27 @@ Long term, the installer should be able to recommend:
 - legacy 32-bit minimal image
 - 64-bit standard image
 - 64-bit image with optional 32-bit compatibility libraries for older apps
+
+## Native multi-ecosystem execution model
+
+LimitlessOS's long-term purpose includes running applications from multiple major operating-system ecosystems directly through LimitlessOS-native architecture. This is not a cosmetic file-association feature and not a compatibility afterthought. It must shape process creation, executable loading, filesystem views, permission prompts, service brokerage, package policy, and ABI boundaries from the start.
+
+The target is that LimitlessOS can eventually recognize and execute major application and script formats in the same ordinary way existing operating systems recognize their own formats. Examples include PE/COFF-style Windows executables and scripts, ELF binaries and shell scripts, and bundle/package/container-file formats used by desktop application ecosystems. Support for any ecosystem must be based on real parsed executable/package metadata and documented ABI behavior, not invented device data, skeletal app lists, or hardcoded success output.
+
+The preferred design direction is an OS-persona layer above the hybrid kernel. A persona is not a virtual machine, emulator, container, or Wine-like patchwork. It is a native LimitlessOS execution environment that provides a specific ecosystem's ABI surface, process conventions, filesystem expectations, permission model, windowing/input expectations, IPC/service mappings, and package/application metadata interpretation while still using the LimitlessOS scheduler, memory manager, object-capability policy, brokered filesystem/storage/network/display/input services, audit model, and security boundaries.
+
+Personas must remain modular and demand-loaded. The base system must stay small enough for older computers; unused ecosystem support must not turn into always-on background services, mandatory GPU requirements, excessive RAM use, or a bloated default install. The installer may recommend persona bundles based on hardware and user intent, but the minimal install must remain lightweight.
+
+Security requirements for personas:
+
+- every persona must map foreign permissions and APIs into explicit LimitlessOS capabilities
+- no persona may grant ambient filesystem, network, input, display, package, firmware, installer, identity, secret, or AI authority
+- executable loading must validate real headers, signatures, entitlements, manifests, interpreter paths, or package metadata where those concepts exist
+- unsupported APIs must fail truthfully and audibly instead of pretending success
+- ecosystem services must be restartable and isolated when they do not require ring 0 privileges
+- kernel fast paths may be added only when the ABI cannot be implemented safely or efficiently in a brokered service
+
+This capability is not Product behavior yet. Until a persona has real loaders, ABI handling, security mapping, tests, and hardware/runtime evidence, UI and shell surfaces must report it as unavailable or planned rather than presenting it as working.
 
 ## Package management model
 

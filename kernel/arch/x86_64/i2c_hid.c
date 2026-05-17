@@ -6,11 +6,64 @@
 #include "pit.h"
 #include "serial.h"
 
+#if defined(LIMITLESS_X64_BIOS_KERNEL) && LIMITLESS_X64_BIOS_KERNEL
+
+void i2c_hid64_init(void)
+{
+}
+
+void i2c_hid64_poll_keyboard(void)
+{
+}
+
+void i2c_hid64_poll_pointer(void)
+{
+}
+
+u32 i2c_hid64_controller_present(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_device_found(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_report_count(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_error(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_pointer_found(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_pointer_report_count(void)
+{
+    return 0u;
+}
+
+u32 i2c_hid64_pointer_error(void)
+{
+    return 0u;
+}
+
+#else
+
 #define I2C_HID64_MAP_VIRTUAL_BASE 0xFFFFFFFF901E0000ull
+#define I2C_HID64_SECOND_MAP_VIRTUAL_BASE (I2C_HID64_MAP_VIRTUAL_BASE + I2C_HID64_PAGE_BYTES)
 #define I2C_HID64_MAP_PAGES 1u
 #define I2C_HID64_PAGE_BYTES 4096u
 #define I2C_HID64_POLL_LIMIT 250000u
 #define I2C_HID64_TIMEOUT_TICKS 1u
+#define I2C_HID64_TRANSFER_TIMEOUT_BYTES_PER_TICK 64u
 
 #define I2C_DW_IC_CON 0x00u
 #define I2C_DW_IC_TAR 0x04u
@@ -46,22 +99,26 @@
 #define I2C_DW_INTR_TX_ABRT 0x00000040u
 #define I2C_DW_COMP_TYPE_VALUE 0x44570140u
 
-#define I2C_HID64_ADDRESS_COUNT 2u
+#define I2C_HID64_PRIMARY_ADDRESS_COUNT 2u
+#define I2C_HID64_POINTER_ADDRESS_COUNT 4u
 #define I2C_HID64_DESCRIPTOR_REGISTER_COUNT 2u
 #define I2C_HID64_DESCRIPTOR_BYTES 30u
 #define I2C_HID64_DESCRIPTOR_MIN_LENGTH 30u
-#define I2C_HID64_REPORT_BYTES 16u
-#define I2C_HID64_REPORT_DESCRIPTOR_BYTES 128u
-#define I2C_HID64_TRANSFER_BYTES 128u
+#define I2C_HID64_REPORT_BYTES 128u
+#define I2C_HID64_REPORT_DESCRIPTOR_BYTES 512u
+#define I2C_HID64_TRANSFER_BYTES 512u
 #define I2C_HID64_RESET_WAIT_TICKS 3u
 #define I2C_HID64_RESET_WAIT_POLL_LIMIT 750000u
 #define I2C_HID64_COMMAND_RESET 0x01u
 #define I2C_HID64_COMMAND_SET_POWER 0x08u
 #define I2C_HID64_POINTER_KIND_NONE 0u
 #define I2C_HID64_POINTER_KIND_MOUSE 1u
-#define I2C_HID64_POINTER_KIND_TOUCHPAD_UNSUPPORTED 2u
+#define I2C_HID64_POINTER_KIND_TOUCHPAD 2u
 
-static const u8 g_i2c_hid64_addresses[I2C_HID64_ADDRESS_COUNT] = { 0x15u, 0x2Cu };
+static const u8 g_i2c_hid64_primary_addresses[I2C_HID64_PRIMARY_ADDRESS_COUNT] = { 0x15u, 0x2Cu };
+static const u8 g_i2c_hid64_pointer_addresses[I2C_HID64_POINTER_ADDRESS_COUNT] = {
+    0x15u, 0x2Cu, 0x35u, 0x38u
+};
 static const u16 g_i2c_hid64_descriptor_registers[I2C_HID64_DESCRIPTOR_REGISTER_COUNT] = { 0x0001u, 0x0000u };
 
 static u32 g_i2c_hid64_controller_present = 0u;
@@ -88,8 +145,15 @@ static u32 g_i2c_hid64_pointer_report_descriptor_length = 0u;
 static u32 g_i2c_hid64_pointer_input_register = 0u;
 static u32 g_i2c_hid64_pointer_command_register = 0u;
 static u32 g_i2c_hid64_pointer_max_input_length = 0u;
+static u32 g_i2c_hid64_pointer_report_has_id = 0u;
 static u32 g_i2c_hid64_pointer_report_count = 0u;
 static u32 g_i2c_hid64_pointer_error = 0u;
+static u64 g_i2c_hid64_mapped_physical_base = 0ull;
+static u64 g_i2c_hid64_keyboard_physical_base = 0ull;
+static u64 g_i2c_hid64_pointer_physical_base = 0ull;
+static u64 g_i2c_hid64_active_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+static u64 g_i2c_hid64_keyboard_virtual_base = 0ull;
+static u64 g_i2c_hid64_pointer_virtual_base = 0ull;
 static u8 g_i2c_hid64_descriptor[I2C_HID64_DESCRIPTOR_BYTES];
 static u8 g_i2c_hid64_report[I2C_HID64_REPORT_BYTES];
 static u8 g_i2c_hid64_report_descriptor[I2C_HID64_REPORT_DESCRIPTOR_BYTES];
@@ -97,7 +161,79 @@ static u8 g_i2c_hid64_pointer_report[I2C_HID64_REPORT_BYTES];
 
 static volatile u32 *i2c_hid64_reg(u32 offset)
 {
-    return (volatile u32 *)(u64)(I2C_HID64_MAP_VIRTUAL_BASE + (u64)offset);
+    return (volatile u32 *)(u64)(g_i2c_hid64_active_virtual_base + (u64)offset);
+}
+
+static u32 i2c_hid64_program_controller(void);
+
+static u32 i2c_hid64_mmio_flags_valid(u32 flags)
+{
+    return ((flags & (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
+            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
+            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED))
+        == (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
+            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
+            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED)) ? 1u : 0u;
+}
+
+static u32 i2c_hid64_map_physical(u64 virtual_base, u64 physical_base)
+{
+    if (physical_base == 0ull)
+    {
+        g_i2c_hid64_error = (g_i2c_hid64_error == 0u) ? 1u : g_i2c_hid64_error;
+        return 0u;
+    }
+
+    if ((g_i2c_hid64_mapped != 0u)
+        && (g_i2c_hid64_mapped_physical_base == physical_base)
+        && (g_i2c_hid64_active_virtual_base == virtual_base))
+    {
+        return 1u;
+    }
+
+    if (paging64_install_kernel_mmio_mapping(
+            virtual_base,
+            physical_base,
+            I2C_HID64_MAP_PAGES) == 0u)
+    {
+        g_i2c_hid64_error = (g_i2c_hid64_error == 0u) ? 2u : g_i2c_hid64_error;
+        return 0u;
+    }
+
+    g_i2c_hid64_mapped = 1u;
+    g_i2c_hid64_mapped_physical_base = physical_base;
+    g_i2c_hid64_active_virtual_base = virtual_base;
+    return 1u;
+}
+
+static u32 i2c_hid64_select_virtual(u64 virtual_base)
+{
+    if (virtual_base == 0ull)
+    {
+        return 0u;
+    }
+
+    g_i2c_hid64_active_virtual_base = virtual_base;
+    return 1u;
+}
+
+static u32 i2c_hid64_prepare_controller(u64 virtual_base, u64 physical_base)
+{
+    g_i2c_hid64_disabled = 0u;
+    if (i2c_hid64_map_physical(virtual_base, physical_base) == 0u)
+    {
+        return 0u;
+    }
+
+    if (i2c_hid64_program_controller() == 0u)
+    {
+        g_i2c_hid64_disabled = 0u;
+        return 0u;
+    }
+
+    g_i2c_hid64_error = 0u;
+    g_i2c_hid64_initialized = 1u;
+    return 1u;
 }
 
 static u32 i2c_hid64_read32(u32 offset)
@@ -113,7 +249,7 @@ static u32 i2c_hid64_read32(u32 offset)
 
 static u32 i2c_hid64_write32(u32 offset, u32 value)
 {
-    u64 virtual_address = I2C_HID64_MAP_VIRTUAL_BASE + (u64)offset;
+    u64 virtual_address = g_i2c_hid64_active_virtual_base + (u64)offset;
 
     if ((offset + 4u) > I2C_HID64_PAGE_BYTES)
     {
@@ -133,14 +269,26 @@ static u32 i2c_hid64_write32(u32 offset, u32 value)
     return 1u;
 }
 
-static u32 i2c_hid64_deadline_expired(u32 start_ticks, u32 poll)
+static u32 i2c_hid64_deadline_expired_after(u32 start_ticks, u32 poll, u32 timeout_ticks)
 {
-    if ((pit_get_ticks() - start_ticks) >= I2C_HID64_TIMEOUT_TICKS)
+    if ((pit_get_ticks() - start_ticks) >= timeout_ticks)
     {
         return 1u;
     }
 
     return (poll >= I2C_HID64_POLL_LIMIT) ? 1u : 0u;
+}
+
+static u32 i2c_hid64_deadline_expired(u32 start_ticks, u32 poll)
+{
+    return i2c_hid64_deadline_expired_after(start_ticks, poll, I2C_HID64_TIMEOUT_TICKS);
+}
+
+static u32 i2c_hid64_transfer_timeout_ticks(u32 byte_count)
+{
+    return I2C_HID64_TIMEOUT_TICKS
+        + ((byte_count + (I2C_HID64_TRANSFER_TIMEOUT_BYTES_PER_TICK - 1u))
+            / I2C_HID64_TRANSFER_TIMEOUT_BYTES_PER_TICK);
 }
 
 static void i2c_hid64_fail(u32 code)
@@ -186,6 +334,8 @@ static void i2c_hid64_log_status(const char *prefix)
     serial_write_string(prefix);
     serial_write_string(" addr ");
     i2c_hid64_serial_write_dec(g_i2c_hid64_address);
+    serial_write_string(" desc-reg ");
+    i2c_hid64_serial_write_dec(g_i2c_hid64_descriptor_register);
     serial_write_string(" in-reg ");
     i2c_hid64_serial_write_dec(g_i2c_hid64_input_register);
     serial_write_string(" cmd-reg ");
@@ -351,7 +501,10 @@ static u32 i2c_hid64_send_data_cmd(u32 value, u32 start_ticks, u32 code)
 static u32 i2c_hid64_read_register(u32 address, u16 reg, u8 *buffer, u32 byte_count)
 {
     u32 start_ticks;
-    u32 index;
+    u32 issued;
+    u32 received;
+    u32 poll;
+    u32 timeout_ticks;
 
     if ((buffer == 0) || (byte_count == 0u) || (byte_count > I2C_HID64_TRANSFER_BYTES))
     {
@@ -359,6 +512,7 @@ static u32 i2c_hid64_read_register(u32 address, u16 reg, u8 *buffer, u32 byte_co
     }
 
     start_ticks = pit_get_ticks();
+    timeout_ticks = i2c_hid64_transfer_timeout_ticks(byte_count);
     if (i2c_hid64_set_target(address, start_ticks) == 0u)
     {
         return 0u;
@@ -370,32 +524,65 @@ static u32 i2c_hid64_read_register(u32 address, u16 reg, u8 *buffer, u32 byte_co
         return 0u;
     }
 
-    for (index = 0u; index < byte_count; ++index)
+    issued = 0u;
+    received = 0u;
+    poll = 0u;
+    while (received < byte_count)
     {
-        u32 command = I2C_DW_DATA_CMD_READ;
-        if (index == 0u)
+        u32 status;
+        u32 progress = 0u;
+
+        if (i2c_hid64_deadline_expired_after(start_ticks, poll, timeout_ticks) != 0u)
         {
-            command |= I2C_DW_DATA_CMD_RESTART;
+            i2c_hid64_fail(146u);
+            return 0u;
         }
-        if ((index + 1u) == byte_count)
-        {
-            command |= I2C_DW_DATA_CMD_STOP;
-        }
-        if (i2c_hid64_send_data_cmd(command, start_ticks, 144u) == 0u)
+
+        status = i2c_hid64_read32(I2C_DW_IC_STATUS);
+        if (i2c_hid64_tx_aborted() != 0u)
         {
             return 0u;
         }
-    }
 
-    for (index = 0u; index < byte_count; ++index)
-    {
-        if (i2c_hid64_wait_status(I2C_DW_STATUS_RFNE, 1u, start_ticks, 146u) == 0u)
+        if ((issued < byte_count) && ((status & I2C_DW_STATUS_TFNF) != 0u))
         {
-            return 0u;
+            u32 command = I2C_DW_DATA_CMD_READ;
+            if (issued == 0u)
+            {
+                command |= I2C_DW_DATA_CMD_RESTART;
+            }
+            if ((issued + 1u) == byte_count)
+            {
+                command |= I2C_DW_DATA_CMD_STOP;
+            }
+            if (i2c_hid64_write32(I2C_DW_IC_DATA_CMD, command) == 0u)
+            {
+                i2c_hid64_fail(145u);
+                return 0u;
+            }
+            ++issued;
+            progress = 1u;
         }
-        buffer[index] = (u8)(i2c_hid64_read32(I2C_DW_IC_DATA_CMD) & 0xFFu);
+
+        if ((status & I2C_DW_STATUS_RFNE) != 0u)
+        {
+            buffer[received] = (u8)(i2c_hid64_read32(I2C_DW_IC_DATA_CMD) & 0xFFu);
+            ++received;
+            progress = 1u;
+        }
+
+        if (progress != 0u)
+        {
+            poll = 0u;
+        }
+        else
+        {
+            ++poll;
+            __asm__ __volatile__("pause");
+        }
     }
 
+    start_ticks = pit_get_ticks();
     if (i2c_hid64_wait_status(I2C_DW_STATUS_TFE, 1u, start_ticks, 148u) == 0u
         || i2c_hid64_wait_status(I2C_DW_STATUS_ACTIVITY, 0u, start_ticks, 149u) == 0u)
     {
@@ -497,6 +684,12 @@ static u32 i2c_hid64_u16(const u8 *bytes)
     return (u32)bytes[0] | ((u32)bytes[1] << 8);
 }
 
+static u32 i2c_hid64_hid_version_valid(u32 hid_version)
+{
+    return ((hid_version == 0x0100u)
+        || (hid_version == 0x0101u)) ? 1u : 0u;
+}
+
 static void i2c_hid64_zero(u8 *buffer, u32 byte_count)
 {
     u32 index;
@@ -534,6 +727,31 @@ static u32 i2c_hid64_report_has_usage(const u8 *report, u32 report_length, u32 u
         if ((usage_page == usage_page_match)
             && (report[index] == 0x09u)
             && (report[index + 1u] == usage_match))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 i2c_hid64_report_has_report_id(const u8 *report, u32 report_length)
+{
+    u32 index;
+
+    if (report == 0)
+    {
+        return 0u;
+    }
+
+    if (report_length > I2C_HID64_REPORT_DESCRIPTOR_BYTES)
+    {
+        report_length = I2C_HID64_REPORT_DESCRIPTOR_BYTES;
+    }
+
+    for (index = 0u; (index + 1u) < report_length; ++index)
+    {
+        if (report[index] == 0x85u)
         {
             return 1u;
         }
@@ -592,7 +810,7 @@ static u32 i2c_hid64_probe_descriptor(u32 address, u16 descriptor_register)
     command_register = i2c_hid64_u16(&g_i2c_hid64_descriptor[16]);
     data_register = i2c_hid64_u16(&g_i2c_hid64_descriptor[18]);
     if ((hid_descriptor_length < I2C_HID64_DESCRIPTOR_MIN_LENGTH)
-        || (hid_version != 0x0001u)
+        || (i2c_hid64_hid_version_valid(hid_version) == 0u)
         || (input_register == 0u)
         || (command_register == 0u)
         || (max_input_length < 8u))
@@ -616,9 +834,13 @@ static u32 i2c_hid64_probe_descriptor(u32 address, u16 descriptor_register)
 void i2c_hid64_init(void)
 {
     u64 physical_base;
+    u64 pointer_physical_base = 0ull;
     u32 address_index;
     u32 register_index;
+    u32 pointer_candidate_index;
+    u32 pointer_candidate_count;
     u32 flags;
+    u32 pointer_flags;
     u32 keyboard_ready = 0u;
     u32 keyboard_address = 0u;
     u32 keyboard_descriptor_register = 0u;
@@ -628,6 +850,7 @@ void i2c_hid64_init(void)
     u32 keyboard_command_register = 0u;
     u32 keyboard_data_register = 0u;
     u32 keyboard_max_input_length = 0u;
+    u64 keyboard_physical_base = 0ull;
 
     g_i2c_hid64_controller_present = pci64_lpss_i2c_hid_found();
     g_i2c_hid64_mapped = 0u;
@@ -653,8 +876,15 @@ void i2c_hid64_init(void)
     g_i2c_hid64_pointer_input_register = 0u;
     g_i2c_hid64_pointer_command_register = 0u;
     g_i2c_hid64_pointer_max_input_length = 0u;
+    g_i2c_hid64_pointer_report_has_id = 0u;
     g_i2c_hid64_pointer_report_count = 0u;
     g_i2c_hid64_pointer_error = 0u;
+    g_i2c_hid64_mapped_physical_base = 0ull;
+    g_i2c_hid64_keyboard_physical_base = 0ull;
+    g_i2c_hid64_pointer_physical_base = 0ull;
+    g_i2c_hid64_active_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+    g_i2c_hid64_keyboard_virtual_base = 0ull;
+    g_i2c_hid64_pointer_virtual_base = 0ull;
 
     if (g_i2c_hid64_controller_present == 0u)
     {
@@ -662,107 +892,222 @@ void i2c_hid64_init(void)
     }
 
     flags = pci64_lpss_i2c_mmio_flags();
-    if ((flags & (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
-            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
-            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED))
-        != (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
-            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
-            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED))
+    pointer_candidate_count = pci64_lpss_i2c_pointer_candidate_count();
+    physical_base = ((u64)pci64_lpss_i2c_base_high() << 32) | (u64)pci64_lpss_i2c_base_low();
+
+    if (i2c_hid64_mmio_flags_valid(flags) == 0u)
     {
         g_i2c_hid64_error = 1u;
-        return;
     }
-
-    physical_base = ((u64)pci64_lpss_i2c_base_high() << 32) | (u64)pci64_lpss_i2c_base_low();
-    if (paging64_install_kernel_mmio_mapping(
-            I2C_HID64_MAP_VIRTUAL_BASE,
-            physical_base,
-            I2C_HID64_MAP_PAGES) == 0u)
+    else if (i2c_hid64_prepare_controller(I2C_HID64_MAP_VIRTUAL_BASE, physical_base) == 0u)
     {
-        g_i2c_hid64_error = 2u;
-        return;
+        g_i2c_hid64_error = (g_i2c_hid64_error == 0u) ? 2u : g_i2c_hid64_error;
     }
-
-    g_i2c_hid64_mapped = 1u;
-    if (i2c_hid64_program_controller() == 0u)
+    else
     {
-        return;
-    }
-
-    g_i2c_hid64_initialized = 1u;
-    for (address_index = 0u; address_index < I2C_HID64_ADDRESS_COUNT; ++address_index)
-    {
-        for (register_index = 0u; register_index < I2C_HID64_DESCRIPTOR_REGISTER_COUNT; ++register_index)
+        for (address_index = 0u; address_index < I2C_HID64_PRIMARY_ADDRESS_COUNT; ++address_index)
         {
-            if (i2c_hid64_probe_descriptor(
-                    g_i2c_hid64_addresses[address_index],
-                    g_i2c_hid64_descriptor_registers[register_index]) != 0u)
+            for (register_index = 0u; register_index < I2C_HID64_DESCRIPTOR_REGISTER_COUNT; ++register_index)
             {
-                u32 found_address = g_i2c_hid64_address;
-                u32 found_descriptor_register = g_i2c_hid64_descriptor_register;
-                u32 found_report_descriptor_register = g_i2c_hid64_report_descriptor_register;
-                u32 found_report_descriptor_length = g_i2c_hid64_report_descriptor_length;
-                u32 found_command_register = g_i2c_hid64_command_register;
-                u32 is_mouse = 0u;
-                u32 is_touchpad = 0u;
+                if (i2c_hid64_probe_descriptor(
+                        g_i2c_hid64_primary_addresses[address_index],
+                        g_i2c_hid64_descriptor_registers[register_index]) != 0u)
+                {
+                    u32 found_address = g_i2c_hid64_address;
+                    u32 found_descriptor_register = g_i2c_hid64_descriptor_register;
+                    u32 found_report_descriptor_register = g_i2c_hid64_report_descriptor_register;
+                    u32 found_report_descriptor_length = g_i2c_hid64_report_descriptor_length;
+                    u32 found_command_register = g_i2c_hid64_command_register;
+                    u32 is_mouse = 0u;
+                    u32 is_touchpad = 0u;
+                    u32 has_report_id = 0u;
 
-                if (i2c_hid64_read_report_descriptor(
-                        found_address,
-                        found_report_descriptor_register,
-                        found_report_descriptor_length) != 0u)
-                {
-                    is_mouse = i2c_hid64_report_has_usage(
-                        g_i2c_hid64_report_descriptor,
-                        found_report_descriptor_length,
-                        0x01u,
-                        0x02u);
-                    is_touchpad = i2c_hid64_report_has_usage(
-                        g_i2c_hid64_report_descriptor,
-                        found_report_descriptor_length,
-                        0x0Du,
-                        0x05u);
-                }
+                    if (i2c_hid64_read_report_descriptor(
+                            found_address,
+                            found_report_descriptor_register,
+                            found_report_descriptor_length) != 0u)
+                    {
+                        is_mouse = i2c_hid64_report_has_usage(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length,
+                            0x01u,
+                            0x02u);
+                        is_touchpad = i2c_hid64_report_has_usage(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length,
+                            0x0Du,
+                            0x05u);
+                        has_report_id = i2c_hid64_report_has_report_id(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length);
+                    }
 
-                if (i2c_hid64_send_command_to(
-                        found_address,
-                        found_command_register,
-                        I2C_HID64_COMMAND_SET_POWER,
-                        0u) == 0u)
-                {
-                    continue;
-                }
-                if (i2c_hid64_send_command_to(
-                        found_address,
-                        found_command_register,
-                        I2C_HID64_COMMAND_RESET,
-                        0u) == 0u)
-                {
-                    continue;
-                }
-                i2c_hid64_wait_reset_settle();
+                    if (i2c_hid64_send_command_to(
+                            found_address,
+                            found_command_register,
+                            I2C_HID64_COMMAND_SET_POWER,
+                            0u) == 0u)
+                    {
+                        continue;
+                    }
+                    if (i2c_hid64_send_command_to(
+                            found_address,
+                            found_command_register,
+                            I2C_HID64_COMMAND_RESET,
+                            0u) == 0u)
+                    {
+                        continue;
+                    }
+                    i2c_hid64_wait_reset_settle();
 
-                if ((keyboard_ready == 0u) && (is_mouse == 0u) && (is_touchpad == 0u))
-                {
-                    (void)i2c_hid64_probe_descriptor(found_address, (u16)found_descriptor_register);
-                    keyboard_address = g_i2c_hid64_address;
-                    keyboard_descriptor_register = g_i2c_hid64_descriptor_register;
-                    keyboard_report_descriptor_register = g_i2c_hid64_report_descriptor_register;
-                    keyboard_report_descriptor_length = g_i2c_hid64_report_descriptor_length;
-                    keyboard_input_register = g_i2c_hid64_input_register;
-                    keyboard_command_register = g_i2c_hid64_command_register;
-                    keyboard_data_register = g_i2c_hid64_data_register;
-                    keyboard_max_input_length = g_i2c_hid64_max_input_length;
-                    keyboard_ready = 1u;
-                    i2c_hid64_log_status("keyboard ready");
+                    if ((keyboard_ready == 0u) && (is_mouse == 0u) && (is_touchpad == 0u))
+                    {
+                        (void)i2c_hid64_probe_descriptor(found_address, (u16)found_descriptor_register);
+                        keyboard_address = g_i2c_hid64_address;
+                        keyboard_descriptor_register = g_i2c_hid64_descriptor_register;
+                        keyboard_report_descriptor_register = g_i2c_hid64_report_descriptor_register;
+                        keyboard_report_descriptor_length = g_i2c_hid64_report_descriptor_length;
+                        keyboard_input_register = g_i2c_hid64_input_register;
+                        keyboard_command_register = g_i2c_hid64_command_register;
+                        keyboard_data_register = g_i2c_hid64_data_register;
+                        keyboard_max_input_length = g_i2c_hid64_max_input_length;
+                        keyboard_physical_base = physical_base;
+                        g_i2c_hid64_keyboard_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+                        keyboard_ready = 1u;
+                        i2c_hid64_log_status("keyboard ready");
+                    }
+                    else if ((g_i2c_hid64_pointer_found == 0u)
+                        && ((is_mouse != 0u) || (is_touchpad != 0u)))
+                    {
+                        (void)i2c_hid64_probe_descriptor(found_address, (u16)found_descriptor_register);
+                        g_i2c_hid64_pointer_found = 1u;
+                        g_i2c_hid64_pointer_kind = (is_mouse != 0u)
+                            ? I2C_HID64_POINTER_KIND_MOUSE
+                            : I2C_HID64_POINTER_KIND_TOUCHPAD;
+                        g_i2c_hid64_pointer_address = g_i2c_hid64_address;
+                        g_i2c_hid64_pointer_descriptor_register = g_i2c_hid64_descriptor_register;
+                        g_i2c_hid64_pointer_report_descriptor_register =
+                            g_i2c_hid64_report_descriptor_register;
+                        g_i2c_hid64_pointer_report_descriptor_length =
+                            g_i2c_hid64_report_descriptor_length;
+                        g_i2c_hid64_pointer_input_register = g_i2c_hid64_input_register;
+                        g_i2c_hid64_pointer_command_register = g_i2c_hid64_command_register;
+                        g_i2c_hid64_pointer_max_input_length = g_i2c_hid64_max_input_length;
+                        g_i2c_hid64_pointer_report_has_id = has_report_id;
+                        g_i2c_hid64_pointer_physical_base = physical_base;
+                        g_i2c_hid64_pointer_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+                        i2c_hid64_log_status(
+                            (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
+                                ? "pointer mouse ready"
+                                : "touchpad ready");
+                    }
+
+                    if ((keyboard_ready != 0u) && (g_i2c_hid64_pointer_found != 0u))
+                    {
+                        break;
+                    }
                 }
-                else if ((g_i2c_hid64_pointer_found == 0u)
-                    && ((is_mouse != 0u) || (is_touchpad != 0u)))
+                if (g_i2c_hid64_error == 4u)
                 {
+                    g_i2c_hid64_error = 0u;
+                }
+                if (g_i2c_hid64_disabled != 0u)
+                {
+                    break;
+                }
+            }
+            if ((g_i2c_hid64_disabled != 0u)
+                || ((keyboard_ready != 0u) && (g_i2c_hid64_pointer_found != 0u)))
+            {
+                break;
+            }
+        }
+    }
+
+    for (pointer_candidate_index = 0u;
+         (g_i2c_hid64_pointer_found == 0u) && (pointer_candidate_index < pointer_candidate_count);
+         ++pointer_candidate_index)
+    {
+        pointer_flags = pci64_lpss_i2c_pointer_candidate_mmio_flags(pointer_candidate_index);
+        pointer_physical_base =
+            ((u64)pci64_lpss_i2c_pointer_candidate_base_high(pointer_candidate_index) << 32)
+            | (u64)pci64_lpss_i2c_pointer_candidate_base_low(pointer_candidate_index);
+
+        if ((i2c_hid64_mmio_flags_valid(pointer_flags) == 0u)
+            || (pointer_physical_base == 0ull)
+            || (i2c_hid64_prepare_controller(
+                    I2C_HID64_SECOND_MAP_VIRTUAL_BASE,
+                    pointer_physical_base) == 0u))
+        {
+            continue;
+        }
+
+        for (address_index = 0u; address_index < I2C_HID64_POINTER_ADDRESS_COUNT; ++address_index)
+        {
+            for (register_index = 0u; register_index < I2C_HID64_DESCRIPTOR_REGISTER_COUNT; ++register_index)
+            {
+                if (i2c_hid64_probe_descriptor(
+                        g_i2c_hid64_pointer_addresses[address_index],
+                        g_i2c_hid64_descriptor_registers[register_index]) != 0u)
+                {
+                    u32 found_address = g_i2c_hid64_address;
+                    u32 found_descriptor_register = g_i2c_hid64_descriptor_register;
+                    u32 found_report_descriptor_register = g_i2c_hid64_report_descriptor_register;
+                    u32 found_report_descriptor_length = g_i2c_hid64_report_descriptor_length;
+                    u32 found_command_register = g_i2c_hid64_command_register;
+                    u32 is_mouse = 0u;
+                    u32 is_touchpad = 0u;
+                    u32 has_report_id = 0u;
+                    u32 tentative_touchpad = 0u;
+
+                    if (i2c_hid64_read_report_descriptor(
+                            found_address,
+                            found_report_descriptor_register,
+                            found_report_descriptor_length) != 0u)
+                    {
+                        is_mouse = i2c_hid64_report_has_usage(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length,
+                            0x01u,
+                            0x02u);
+                        is_touchpad = i2c_hid64_report_has_usage(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length,
+                            0x0Du,
+                            0x05u);
+                        has_report_id = i2c_hid64_report_has_report_id(
+                            g_i2c_hid64_report_descriptor,
+                            found_report_descriptor_length);
+                    }
+
+                    if ((is_mouse == 0u) && (is_touchpad == 0u))
+                    {
+                        is_touchpad = 1u;
+                        tentative_touchpad = 1u;
+                    }
+                    if (i2c_hid64_send_command_to(
+                            found_address,
+                            found_command_register,
+                            I2C_HID64_COMMAND_SET_POWER,
+                            0u) == 0u)
+                    {
+                        continue;
+                    }
+                    if (i2c_hid64_send_command_to(
+                            found_address,
+                            found_command_register,
+                            I2C_HID64_COMMAND_RESET,
+                            0u) == 0u)
+                    {
+                        continue;
+                    }
+                    i2c_hid64_wait_reset_settle();
+
                     (void)i2c_hid64_probe_descriptor(found_address, (u16)found_descriptor_register);
                     g_i2c_hid64_pointer_found = 1u;
                     g_i2c_hid64_pointer_kind = (is_mouse != 0u)
                         ? I2C_HID64_POINTER_KIND_MOUSE
-                        : I2C_HID64_POINTER_KIND_TOUCHPAD_UNSUPPORTED;
+                        : I2C_HID64_POINTER_KIND_TOUCHPAD;
                     g_i2c_hid64_pointer_address = g_i2c_hid64_address;
                     g_i2c_hid64_pointer_descriptor_register = g_i2c_hid64_descriptor_register;
                     g_i2c_hid64_pointer_report_descriptor_register =
@@ -772,31 +1117,49 @@ void i2c_hid64_init(void)
                     g_i2c_hid64_pointer_input_register = g_i2c_hid64_input_register;
                     g_i2c_hid64_pointer_command_register = g_i2c_hid64_command_register;
                     g_i2c_hid64_pointer_max_input_length = g_i2c_hid64_max_input_length;
+                    g_i2c_hid64_pointer_report_has_id = has_report_id;
+                    g_i2c_hid64_pointer_physical_base = pointer_physical_base;
+                    g_i2c_hid64_pointer_virtual_base = I2C_HID64_SECOND_MAP_VIRTUAL_BASE;
                     i2c_hid64_log_status(
-                        (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
-                            ? "pointer mouse ready"
-                            : "touchpad descriptor found unsupported report");
+                        (tentative_touchpad != 0u)
+                            ? "second controller tentative touchpad ready"
+                            : (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
+                            ? "second controller pointer mouse ready"
+                            : "second controller touchpad ready");
+                    break;
                 }
-
-                if ((keyboard_ready != 0u) && (g_i2c_hid64_pointer_found != 0u))
+                if (g_i2c_hid64_error == 4u)
+                {
+                    g_i2c_hid64_error = 0u;
+                }
+                if (g_i2c_hid64_disabled != 0u)
                 {
                     break;
                 }
             }
-            if (g_i2c_hid64_disabled != 0u)
+            if ((g_i2c_hid64_pointer_found != 0u) || (g_i2c_hid64_disabled != 0u))
             {
                 break;
             }
         }
-        if ((g_i2c_hid64_disabled != 0u)
-            || ((keyboard_ready != 0u) && (g_i2c_hid64_pointer_found != 0u)))
+
+        if ((g_i2c_hid64_pointer_found == 0u) && (g_i2c_hid64_disabled != 0u))
         {
-            break;
+            g_i2c_hid64_disabled = 0u;
+            g_i2c_hid64_initialized = 0u;
         }
+    }
+    if ((keyboard_ready != 0u) || (g_i2c_hid64_pointer_found != 0u))
+    {
+        g_i2c_hid64_disabled = 0u;
     }
 
     if (keyboard_ready != 0u)
     {
+        if (g_i2c_hid64_error >= 100u)
+        {
+            g_i2c_hid64_error = 0u;
+        }
         g_i2c_hid64_address = keyboard_address;
         g_i2c_hid64_descriptor_register = keyboard_descriptor_register;
         g_i2c_hid64_report_descriptor_register = keyboard_report_descriptor_register;
@@ -805,6 +1168,11 @@ void i2c_hid64_init(void)
         g_i2c_hid64_command_register = keyboard_command_register;
         g_i2c_hid64_data_register = keyboard_data_register;
         g_i2c_hid64_max_input_length = keyboard_max_input_length;
+        g_i2c_hid64_keyboard_physical_base = keyboard_physical_base;
+        if (g_i2c_hid64_keyboard_virtual_base == 0ull)
+        {
+            g_i2c_hid64_keyboard_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+        }
         g_i2c_hid64_device_found = 1u;
         return;
     }
@@ -822,6 +1190,12 @@ void i2c_hid64_poll_keyboard(void)
     if ((g_i2c_hid64_initialized == 0u)
         || (g_i2c_hid64_device_found == 0u)
         || (g_i2c_hid64_disabled != 0u))
+    {
+        return;
+    }
+
+    if ((g_i2c_hid64_keyboard_physical_base == 0ull)
+        || (i2c_hid64_select_virtual(g_i2c_hid64_keyboard_virtual_base) == 0u))
     {
         return;
     }
@@ -847,6 +1221,10 @@ void i2c_hid64_poll_keyboard(void)
     }
 
     report_length = i2c_hid64_u16(g_i2c_hid64_report);
+    if (report_length > read_bytes)
+    {
+        report_length = read_bytes;
+    }
     if ((report_length >= 10u) && (read_bytes >= 10u))
     {
         input64_accept_usb_hid_boot_report(&g_i2c_hid64_report[2], 8u);
@@ -859,6 +1237,116 @@ void i2c_hid64_poll_keyboard(void)
     }
 }
 
+static u32 i2c_hid64_payload_u16(const u8 *payload, u32 payload_length, u32 offset)
+{
+    if ((payload == 0) || ((offset + 1u) >= payload_length))
+    {
+        return 0u;
+    }
+
+    return (u32)payload[offset] | ((u32)payload[offset + 1u] << 8);
+}
+
+static u32 i2c_hid64_touchpad_contact_count(const u8 *payload, u32 payload_length, u32 base)
+{
+    if ((base + 9u) < payload_length && payload[base + 9u] <= 5u)
+    {
+        return payload[base + 9u];
+    }
+    if ((base + 8u) < payload_length && payload[base + 8u] <= 5u)
+    {
+        return payload[base + 8u];
+    }
+    if ((base + 6u) < payload_length && payload[base + 6u] <= 5u)
+    {
+        return payload[base + 6u];
+    }
+    if ((base + 5u) < payload_length && payload[base + 5u] <= 5u)
+    {
+        return payload[base + 5u];
+    }
+    if ((payload_length != 0u) && (payload[payload_length - 1u] <= 5u))
+    {
+        return payload[payload_length - 1u];
+    }
+
+    return 0u;
+}
+
+static u32 i2c_hid64_touchpad_try_contact_sample(
+    const u8 *payload,
+    u32 payload_length,
+    u32 base,
+    u32 has_contact_id)
+{
+    u32 flags;
+    u32 contact_id = 0u;
+    u32 coordinate_offset;
+    u32 x;
+    u32 y;
+    u32 count;
+    u32 active;
+    u32 buttons;
+
+    if ((payload == 0) || (base >= payload_length))
+    {
+        return 0u;
+    }
+
+    coordinate_offset = base + ((has_contact_id != 0u) ? 2u : 1u);
+    if ((coordinate_offset + 3u) >= payload_length)
+    {
+        return 0u;
+    }
+
+    flags = payload[base];
+    if (has_contact_id != 0u)
+    {
+        contact_id = payload[base + 1u] & 0x0Fu;
+        if (contact_id != 0u)
+        {
+            return 0u;
+        }
+    }
+
+    x = i2c_hid64_payload_u16(payload, payload_length, coordinate_offset);
+    y = i2c_hid64_payload_u16(payload, payload_length, coordinate_offset + 2u);
+    count = i2c_hid64_touchpad_contact_count(payload, payload_length, base);
+    active = (((flags & 0x01u) != 0u) || (count != 0u)) ? 1u : 0u;
+    buttons = ((flags & 0x04u) != 0u) ? 1u : 0u;
+
+    if ((active != 0u) && (x == 0u) && (y == 0u))
+    {
+        return 0u;
+    }
+
+    input64_accept_i2c_hid_touchpad_sample(x, y, active, buttons);
+    return 1u;
+}
+
+static u32 i2c_hid64_accept_touchpad_report(const u8 *payload, u32 payload_length)
+{
+    u32 base = 0u;
+
+    if ((payload == 0) || (payload_length < 5u))
+    {
+        return 0u;
+    }
+
+    if ((g_i2c_hid64_pointer_report_has_id != 0u)
+        || ((payload_length >= 7u) && (payload[0] > 0x0Fu)))
+    {
+        base = 1u;
+    }
+
+    if (i2c_hid64_touchpad_try_contact_sample(payload, payload_length, base, 1u) != 0u)
+    {
+        return 1u;
+    }
+
+    return i2c_hid64_touchpad_try_contact_sample(payload, payload_length, base, 0u);
+}
+
 void i2c_hid64_poll_pointer(void)
 {
     u32 read_bytes;
@@ -868,8 +1356,14 @@ void i2c_hid64_poll_pointer(void)
 
     if ((g_i2c_hid64_initialized == 0u)
         || (g_i2c_hid64_pointer_found == 0u)
-        || (g_i2c_hid64_pointer_kind != I2C_HID64_POINTER_KIND_MOUSE)
+        || (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_NONE)
         || (g_i2c_hid64_disabled != 0u))
+    {
+        return;
+    }
+
+    if ((g_i2c_hid64_pointer_physical_base == 0ull)
+        || (i2c_hid64_select_virtual(g_i2c_hid64_pointer_virtual_base) == 0u))
     {
         return;
     }
@@ -898,6 +1392,10 @@ void i2c_hid64_poll_pointer(void)
     }
 
     report_length = i2c_hid64_u16(g_i2c_hid64_pointer_report);
+    if (report_length > read_bytes)
+    {
+        report_length = read_bytes;
+    }
     if ((report_length >= 5u) && (read_bytes >= 5u))
     {
         payload = &g_i2c_hid64_pointer_report[2];
@@ -909,7 +1407,13 @@ void i2c_hid64_poll_pointer(void)
         payload_length = read_bytes;
     }
 
-    if (payload_length >= 3u)
+    if ((g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_TOUCHPAD)
+        && (i2c_hid64_accept_touchpad_report(payload, payload_length) != 0u))
+    {
+        ++g_i2c_hid64_pointer_report_count;
+    }
+    else if ((g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
+        && (payload_length >= 3u))
     {
         if ((payload[0] & 0xF8u) == 0u)
         {
@@ -961,7 +1465,7 @@ u32 i2c_hid64_pointer_error(void)
         return g_i2c_hid64_pointer_error;
     }
 
-    return (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_TOUCHPAD_UNSUPPORTED)
-        ? 201u
-        : 0u;
+    return 0u;
 }
+
+#endif

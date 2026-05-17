@@ -1,5 +1,34 @@
 # LimitlessOS Roadmap
 
+## Long-Term Product North Star: Native Multi-Ecosystem Execution
+
+LimitlessOS exists in part to break the traditional lock between software and one operating-system ecosystem. A core long-term Product goal is to run software from major ecosystems as first-class native citizens on one secure, lightweight platform. This must be designed into the kernel/service/package/security model rather than added later as a slow compatibility layer.
+
+Non-goals:
+
+- no required virtual machines for normal application execution
+- no emulation as the main compatibility strategy
+- no container dependency masquerading as native support
+- no Wine-like translation layer as the architectural foundation
+- no hardcoded "compatible" output without real executable loading and ABI behavior
+
+Design direction:
+
+- introduce OS personas above the LimitlessOS hybrid kernel
+- parse real executable and package formats before launching anything
+- map each persona's ABI, filesystem expectations, process model, permissions, IPC, display/input, and package conventions into LimitlessOS-native services
+- keep every persona capability-scoped and auditable
+- make personas optional and demand-loaded so older computers keep a lightweight base install
+- keep unsupported APIs truthful: unavailable, denied, or unsupported is better than invented success
+
+This is not current Product behavior. Product builds must continue to report cross-ecosystem execution as planned/unavailable until real loaders, ABI surfaces, permission mapping, tests, and verifier evidence exist.
+
+## Long-Term Product Experience Direction
+
+The LimitlessOS desktop and installer should be distinctive while combining four reference qualities: Red Hat-style Linux seriousness, Windows-like simplicity, macOS-like cleanliness, and Linux/Unix power. This means professional and credible, easy to approach, visually calm and polished, and still transparent, scriptable, auditable, and powerful for experienced users.
+
+This direction must not become cloning. LimitlessOS should not copy another platform's trade dress, icons, layout, or workflow wholesale. Beginner and advanced paths should coexist: recommended defaults for new users, visible detail and control for serious users, and no invented hardware/status panels.
+
 ## Current Gate: M18 AI Consent-Scoped Action Mode
 
 M1 cleanup-final through M17 AI Assistant read-only mode are accepted. M18 adds the first Product AI action broker foundation while preserving the no-inference/no-autonomy boundary: the Assistant app can request one of four predefined action templates, require explicit consent, receive only an action-bound/session-bound scoped capability, execute only within that scope, expire the grant, and record audit telemetry. Inference backend, model transport, generated answers, broad automation, task execution, cloud AI, package install/update, settings mutation, secret/token access, and internal install/write remain unavailable.
@@ -13,6 +42,8 @@ Product profile:
 - Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings, Installer, Assistant
+- Product UX direction: unique LimitlessOS identity with professional Linux-workstation credibility, mainstream discoverability, clean visual hierarchy, and Unix-level transparency/power
+- Native multi-ecosystem execution: planned architecture goal only; no Windows/macOS/Linux persona is Product yet
 - Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status, Assistant action broker foundation
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product identity/account association: local account type active, local association active/offline-capable, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, security-key login planned/unavailable, no ambient identity or account authority
@@ -32,6 +63,7 @@ Experimental profile:
 Unavailable or non-product in the Product profile:
 
 - ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI inference backend, AI-generated answers, autonomous AI actions, broad AI automation, cloud AI, model integration, chat inference, task execution
+- Windows, macOS, Linux, or other foreign-ecosystem native personas; PE/COFF, Mach-O, ELF user-app execution beyond current LimitlessOS-controlled bootstrap binaries; `.exe`, `.bat`, `.ps1`, `.app`, `.pkg`, `.dmg`, external shell-script, package-manager, or app-bundle execution as Product behavior
 
 M2 evidence:
 

@@ -6,6 +6,11 @@
 - fast for experienced users
 - minimal friction on low-spec hardware
 - clear explanation before any destructive disk action
+- visually clean, polished, and calm without hiding important system facts
+- beginner-friendly by default while keeping advanced controls one clear step away
+- professional enough for serious workstation, developer, admin, and power-user contexts
+
+The installer should express the broader LimitlessOS experience direction: grounded and capable like a serious Linux workstation, simple and discoverable like a mainstream consumer OS, clean and refined like a polished desktop environment, and transparent/powerful like Unix. It should remain uniquely LimitlessOS rather than copying Red Hat, Windows, macOS, GNOME, KDE, or any other system wholesale.
 
 ## Welcome screen
 

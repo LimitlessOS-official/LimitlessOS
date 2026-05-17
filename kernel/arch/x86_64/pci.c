@@ -69,6 +69,8 @@ enum
     PCI_INTEL_LPSS_I2C_TGL_LAST = 0xA0EFu,
     PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST = 0x51E8u,
     PCI_INTEL_LPSS_I2C_ADL_RPL_LAST = 0x51EFu,
+    PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST = 0x51C5u,
+    PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST = 0x51C6u,
     PCI_INTEL_LPSS_I2C_ICL_FIRST = 0x34E8u,
     PCI_INTEL_LPSS_I2C_ICL_LAST = 0x34EFu,
     PCI_INTEL_LPSS_I2C_ADL_N_FIRST = 0x54E8u,
@@ -83,7 +85,8 @@ enum
     PCI_VIRTIO_NET_MMIO_SPAN_HINT = 0x00004000u,
     PCI_E1000E_MMIO_SPAN_HINT = 0x00020000u,
     PCI_ECAM_INVALID_BUS = 0xFFFFFFFFu,
-    PCI_UEFI_BOOT_DRIVE_MARKER = 0x000000EFu
+    PCI_UEFI_BOOT_DRIVE_MARKER = 0x000000EFu,
+    PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT = 8u
 };
 
 #define PCI64_ECAM_MAP_VIRTUAL_BASE 0xFFFFFFFF90000000ull
@@ -163,6 +166,27 @@ static u32 g_first_lpss_i2c_base_high = 0u;
 static u32 g_first_lpss_i2c_span_hint = 0u;
 static u32 g_first_lpss_i2c_mmio_flags = 0u;
 static u32 g_first_lpss_i2c_mmio_token = 0u;
+static u32 g_second_lpss_i2c_address = 0xFFFFFFFFu;
+static u32 g_second_lpss_i2c_vendor_device = 0u;
+static u32 g_second_lpss_i2c_class = 0u;
+static u32 g_second_lpss_i2c_bar0 = 0u;
+static u32 g_second_lpss_i2c_bar1 = 0u;
+static u32 g_second_lpss_i2c_base_low = 0u;
+static u32 g_second_lpss_i2c_base_high = 0u;
+static u32 g_second_lpss_i2c_span_hint = 0u;
+static u32 g_second_lpss_i2c_mmio_flags = 0u;
+static u32 g_second_lpss_i2c_mmio_token = 0u;
+static u32 g_lpss_i2c_pointer_candidate_count = 0u;
+static u32 g_lpss_i2c_pointer_candidate_address[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_vendor_device[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_class[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_bar0[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_bar1[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_base_low[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_base_high[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_span_hint[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_mmio_flags[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
+static u32 g_lpss_i2c_pointer_candidate_mmio_token[PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT];
 static u32 g_inventory_token = 2166136261u;
 static u32 g_query_count = 0u;
 static u32 g_denial_count = 0u;
@@ -461,10 +485,56 @@ static u32 pci64_is_lpss_i2c_device(u32 device_id)
             && (device_id <= PCI_INTEL_LPSS_I2C_TGL_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_ADL_RPL_LAST))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_ICL_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_ICL_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_N_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_ADL_N_LAST));
+}
+
+static u32 pci64_is_lpss_i2c_primary_keyboard_candidate(u32 device_id)
+{
+    return (device_id == PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST) ? 1u : 0u;
+}
+
+static u32 pci64_is_lpss_i2c_pointer_candidate(u32 device_id)
+{
+    return ((device_id >= (PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST + 1u))
+            && (device_id <= (PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST + 3u)))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST));
+}
+
+static void pci64_note_lpss_i2c_pointer_candidate(
+    u32 address,
+    u32 vendor_device,
+    u32 class_register,
+    u32 bar0,
+    u32 bar1)
+{
+    u32 index;
+
+    for (index = 0u; index < g_lpss_i2c_pointer_candidate_count; ++index)
+    {
+        if (g_lpss_i2c_pointer_candidate_address[index] == address)
+        {
+            return;
+        }
+    }
+
+    if (g_lpss_i2c_pointer_candidate_count >= PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT)
+    {
+        return;
+    }
+
+    index = g_lpss_i2c_pointer_candidate_count;
+    g_lpss_i2c_pointer_candidate_address[index] = address;
+    g_lpss_i2c_pointer_candidate_vendor_device[index] = vendor_device;
+    g_lpss_i2c_pointer_candidate_class[index] = class_register;
+    g_lpss_i2c_pointer_candidate_bar0[index] = bar0;
+    g_lpss_i2c_pointer_candidate_bar1[index] = bar1;
+    ++g_lpss_i2c_pointer_candidate_count;
 }
 
 static void pci64_note_e1000e(
@@ -604,14 +674,47 @@ static void pci64_note_function(u32 bus, u32 device, u32 function)
         && (vendor == PCI_INTEL_VENDOR)
         && (pci64_is_lpss_i2c_device(device_id) != 0u))
     {
+        u32 lpss_address = (bus << 16) | (device << 8) | function;
+        u32 lpss_bar0 = pci64_bar_raw(bus, device, function, 0u);
+        u32 lpss_bar1 = pci64_bar_raw(bus, device, function, 1u);
+
         ++g_lpss_i2c_count;
-        if (g_first_lpss_i2c_address == 0xFFFFFFFFu)
+        if ((pci64_is_lpss_i2c_pointer_candidate(device_id) != 0u)
+            || (pci64_is_lpss_i2c_primary_keyboard_candidate(device_id) == 0u))
         {
-            g_first_lpss_i2c_address = (bus << 16) | (device << 8) | function;
+            pci64_note_lpss_i2c_pointer_candidate(
+                lpss_address,
+                vendor_device,
+                class_register,
+                lpss_bar0,
+                lpss_bar1);
+        }
+
+        if ((pci64_is_lpss_i2c_pointer_candidate(device_id) != 0u)
+            && (g_second_lpss_i2c_address == 0xFFFFFFFFu))
+        {
+            g_second_lpss_i2c_address = lpss_address;
+            g_second_lpss_i2c_vendor_device = vendor_device;
+            g_second_lpss_i2c_class = class_register;
+            g_second_lpss_i2c_bar0 = lpss_bar0;
+            g_second_lpss_i2c_bar1 = lpss_bar1;
+        }
+        if ((pci64_is_lpss_i2c_primary_keyboard_candidate(device_id) != 0u)
+            || (g_first_lpss_i2c_address == 0xFFFFFFFFu))
+        {
+            g_first_lpss_i2c_address = lpss_address;
             g_first_lpss_i2c_vendor_device = vendor_device;
             g_first_lpss_i2c_class = class_register;
-            g_first_lpss_i2c_bar0 = pci64_bar_raw(bus, device, function, 0u);
-            g_first_lpss_i2c_bar1 = pci64_bar_raw(bus, device, function, 1u);
+            g_first_lpss_i2c_bar0 = lpss_bar0;
+            g_first_lpss_i2c_bar1 = lpss_bar1;
+        }
+        else if (g_second_lpss_i2c_address == 0xFFFFFFFFu)
+        {
+            g_second_lpss_i2c_address = lpss_address;
+            g_second_lpss_i2c_vendor_device = vendor_device;
+            g_second_lpss_i2c_class = class_register;
+            g_second_lpss_i2c_bar0 = lpss_bar0;
+            g_second_lpss_i2c_bar1 = lpss_bar1;
         }
     }
 }
@@ -856,29 +959,39 @@ static void pci64_update_xhci_mmio_plan(void)
         g_first_xhci_mmio_token);
 }
 
-static void pci64_update_lpss_i2c_mmio_plan(void)
+static void pci64_build_lpss_i2c_mmio_plan(
+    u32 address,
+    u32 vendor_device,
+    u32 class_register,
+    u32 bar0,
+    u32 bar1,
+    u32 *base_low_out,
+    u32 *base_high_out,
+    u32 *span_hint_out,
+    u32 *flags_out,
+    u32 *token_out)
 {
     u32 flags = PCI64_LPSS_I2C_MMIO_FLAG_CONFIG_ONLY_DETECT;
     u32 base_low = 0u;
     u32 base_high = 0u;
     u32 token = 2166136261u;
 
-    if (g_first_lpss_i2c_address != 0xFFFFFFFFu)
+    if (address != 0xFFFFFFFFu)
     {
         flags |= PCI64_LPSS_I2C_MMIO_FLAG_PRESENT;
 
-        if ((g_first_lpss_i2c_bar0 & PCI_BAR_IO_SPACE) == 0u)
+        if ((bar0 & PCI_BAR_IO_SPACE) == 0u)
         {
             flags |= PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR;
 
-            if ((g_first_lpss_i2c_bar0 & PCI_BAR_MEMORY_TYPE_MASK)
+            if ((bar0 & PCI_BAR_MEMORY_TYPE_MASK)
                 == PCI_BAR_MEMORY_TYPE_64BIT)
             {
                 flags |= PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR;
-                base_high = g_first_lpss_i2c_bar1;
+                base_high = bar1;
             }
 
-            base_low = g_first_lpss_i2c_bar0 & PCI_BAR_MEMORY_BASE_MASK;
+            base_low = bar0 & PCI_BAR_MEMORY_BASE_MASK;
             if ((base_low != 0u) || (base_high != 0u))
             {
                 flags |= PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO;
@@ -891,25 +1004,69 @@ static void pci64_update_lpss_i2c_mmio_plan(void)
         }
     }
 
-    token = pci64_mix_token(token, g_first_lpss_i2c_address);
-    token = pci64_mix_token(token, g_first_lpss_i2c_vendor_device);
-    token = pci64_mix_token(token, g_first_lpss_i2c_class);
-    token = pci64_mix_token(token, g_first_lpss_i2c_bar0);
-    token = pci64_mix_token(token, g_first_lpss_i2c_bar1);
+    token = pci64_mix_token(token, address);
+    token = pci64_mix_token(token, vendor_device);
+    token = pci64_mix_token(token, class_register);
+    token = pci64_mix_token(token, bar0);
+    token = pci64_mix_token(token, bar1);
     token = pci64_mix_token(token, base_low);
     token = pci64_mix_token(token, base_high);
     token = pci64_mix_token(token, PCI_LPSS_I2C_MMIO_SPAN_HINT);
     token = pci64_mix_token(token, flags);
     token = (token != 0u) ? token : 1u;
 
-    g_first_lpss_i2c_base_low = base_low;
-    g_first_lpss_i2c_base_high = base_high;
-    g_first_lpss_i2c_span_hint =
+    *base_low_out = base_low;
+    *base_high_out = base_high;
+    *span_hint_out =
         ((flags & PCI64_LPSS_I2C_MMIO_FLAG_PRESENT) != 0u)
             ? PCI_LPSS_I2C_MMIO_SPAN_HINT
             : 0u;
-    g_first_lpss_i2c_mmio_flags = flags;
-    g_first_lpss_i2c_mmio_token = token;
+    *flags_out = flags;
+    *token_out = token;
+}
+
+static void pci64_update_lpss_i2c_mmio_plan(void)
+{
+    u32 index;
+
+    pci64_build_lpss_i2c_mmio_plan(
+        g_first_lpss_i2c_address,
+        g_first_lpss_i2c_vendor_device,
+        g_first_lpss_i2c_class,
+        g_first_lpss_i2c_bar0,
+        g_first_lpss_i2c_bar1,
+        &g_first_lpss_i2c_base_low,
+        &g_first_lpss_i2c_base_high,
+        &g_first_lpss_i2c_span_hint,
+        &g_first_lpss_i2c_mmio_flags,
+        &g_first_lpss_i2c_mmio_token);
+
+    pci64_build_lpss_i2c_mmio_plan(
+        g_second_lpss_i2c_address,
+        g_second_lpss_i2c_vendor_device,
+        g_second_lpss_i2c_class,
+        g_second_lpss_i2c_bar0,
+        g_second_lpss_i2c_bar1,
+        &g_second_lpss_i2c_base_low,
+        &g_second_lpss_i2c_base_high,
+        &g_second_lpss_i2c_span_hint,
+        &g_second_lpss_i2c_mmio_flags,
+        &g_second_lpss_i2c_mmio_token);
+
+    for (index = 0u; index < g_lpss_i2c_pointer_candidate_count; ++index)
+    {
+        pci64_build_lpss_i2c_mmio_plan(
+            g_lpss_i2c_pointer_candidate_address[index],
+            g_lpss_i2c_pointer_candidate_vendor_device[index],
+            g_lpss_i2c_pointer_candidate_class[index],
+            g_lpss_i2c_pointer_candidate_bar0[index],
+            g_lpss_i2c_pointer_candidate_bar1[index],
+            &g_lpss_i2c_pointer_candidate_base_low[index],
+            &g_lpss_i2c_pointer_candidate_base_high[index],
+            &g_lpss_i2c_pointer_candidate_span_hint[index],
+            &g_lpss_i2c_pointer_candidate_mmio_flags[index],
+            &g_lpss_i2c_pointer_candidate_mmio_token[index]);
+    }
 }
 
 static void pci64_update_virtio_net_mmio_plan(void)
@@ -1123,6 +1280,8 @@ static void pci64_scan_bus_range(u32 start_bus, u32 end_bus)
 
 void pci64_init(const struct boot_info *boot_info)
 {
+    u32 candidate_index;
+
     g_device_count = 0u;
     g_multifunction_count = 0u;
     g_storage_count = 0u;
@@ -1198,6 +1357,32 @@ void pci64_init(const struct boot_info *boot_info)
     g_first_lpss_i2c_span_hint = 0u;
     g_first_lpss_i2c_mmio_flags = 0u;
     g_first_lpss_i2c_mmio_token = 0u;
+    g_second_lpss_i2c_address = 0xFFFFFFFFu;
+    g_second_lpss_i2c_vendor_device = 0u;
+    g_second_lpss_i2c_class = 0u;
+    g_second_lpss_i2c_bar0 = 0u;
+    g_second_lpss_i2c_bar1 = 0u;
+    g_second_lpss_i2c_base_low = 0u;
+    g_second_lpss_i2c_base_high = 0u;
+    g_second_lpss_i2c_span_hint = 0u;
+    g_second_lpss_i2c_mmio_flags = 0u;
+    g_second_lpss_i2c_mmio_token = 0u;
+    g_lpss_i2c_pointer_candidate_count = 0u;
+    for (candidate_index = 0u;
+         candidate_index < PCI64_LPSS_I2C_POINTER_CANDIDATE_LIMIT;
+         ++candidate_index)
+    {
+        g_lpss_i2c_pointer_candidate_address[candidate_index] = 0xFFFFFFFFu;
+        g_lpss_i2c_pointer_candidate_vendor_device[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_class[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_bar0[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_bar1[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_base_low[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_base_high[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_span_hint[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_mmio_flags[candidate_index] = 0u;
+        g_lpss_i2c_pointer_candidate_mmio_token[candidate_index] = 0u;
+    }
     g_inventory_token = 2166136261u;
     g_query_count = 0u;
     g_denial_count = 0u;
@@ -1438,6 +1623,89 @@ u32 pci64_lpss_i2c_mmio_flags(void)
 u32 pci64_lpss_i2c_mmio_token(void)
 {
     return g_first_lpss_i2c_mmio_token;
+}
+
+u32 pci64_lpss_i2c_second_address(void)
+{
+    return g_second_lpss_i2c_address;
+}
+
+u32 pci64_lpss_i2c_second_vendor_device(void)
+{
+    return g_second_lpss_i2c_vendor_device;
+}
+
+u32 pci64_lpss_i2c_second_class(void)
+{
+    return g_second_lpss_i2c_class;
+}
+
+u32 pci64_lpss_i2c_second_bar0(void)
+{
+    return g_second_lpss_i2c_bar0;
+}
+
+u32 pci64_lpss_i2c_second_bar1(void)
+{
+    return g_second_lpss_i2c_bar1;
+}
+
+u32 pci64_lpss_i2c_second_base_low(void)
+{
+    return g_second_lpss_i2c_base_low;
+}
+
+u32 pci64_lpss_i2c_second_base_high(void)
+{
+    return g_second_lpss_i2c_base_high;
+}
+
+u32 pci64_lpss_i2c_second_span_hint(void)
+{
+    return g_second_lpss_i2c_span_hint;
+}
+
+u32 pci64_lpss_i2c_second_mmio_flags(void)
+{
+    return g_second_lpss_i2c_mmio_flags;
+}
+
+u32 pci64_lpss_i2c_second_mmio_token(void)
+{
+    return g_second_lpss_i2c_mmio_token;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_count(void)
+{
+    return g_lpss_i2c_pointer_candidate_count;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_address(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_address[index]
+        : 0xFFFFFFFFu;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_base_low(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_base_low[index]
+        : 0u;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_base_high(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_base_high[index]
+        : 0u;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_mmio_flags(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_mmio_flags[index]
+        : 0u;
 }
 
 u32 pci64_usb_uhci_count(void)
