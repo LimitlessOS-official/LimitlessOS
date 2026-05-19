@@ -856,6 +856,8 @@ static void write_service_namespace_line(struct efi_system_table *system_table)
     append_dec_u32(line, sizeof(line), &length, services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_BLOCK));
     append_string(line, sizeof(line), &length, " hardware ");
     append_dec_u32(line, sizeof(line), &length, services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_HARDWARE));
+    append_string(line, sizeof(line), &length, " network ");
+    append_dec_u32(line, sizeof(line), &length, services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_NETWORK));
     append_char(line, sizeof(line), &length, '\n');
     write_line(system_table, line);
 }

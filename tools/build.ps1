@@ -36,6 +36,8 @@ $runtimeImageHeader = Join-Path $generatedDir "runtime_image_x64_generated.h"
 $diskLsImageAsm = Join-Path $root "kernel\\arch\\x86_64\\ls_bin_user.asm"
 $diskLsImageBin = Join-Path $buildDir "ls-x86_64.bin"
 $diskUtilityImageAsm = Join-Path $root "kernel\\arch\\x86_64\\utility_bin_user.asm"
+$nativeAppManifestDir = Join-Path $root "apps\\native"
+$nativeAppSpecs = @()
 $nvmeGptImagePath = Join-Path $distDir "limitlessos-x86_64-nvme-gpt.img"
 $diskFlatBinarySpecs = @(
     @{ Name = "CAT"; Slot = [uint32]3; Define = "UTILITY_CAT"; Bin = (Join-Path $buildDir "cat-x86_64.bin") },
@@ -157,6 +159,213 @@ function ConvertTo-RepoRelativePath
     }
 
     return $fullPath
+}
+
+function ConvertTo-BuildUInt32
+{
+    param(
+        [Parameter(Mandatory = $true)]$Value,
+        [Parameter(Mandatory = $true)][string]$FieldName
+    )
+
+    if ($null -eq $Value) {
+        throw "Native app manifest field '$FieldName' is missing."
+    }
+
+    if ($Value -is [string]) {
+        $text = $Value.Trim()
+        if ($text.Length -eq 0) {
+            throw "Native app manifest field '$FieldName' is empty."
+        }
+        if ($text.StartsWith("0x", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [uint32][System.Convert]::ToUInt32($text.Substring(2), 16)
+        }
+        return [uint32][System.Convert]::ToUInt32($text, 10)
+    }
+
+    return [uint32]$Value
+}
+
+function Get-RequiredJsonProperty
+{
+    param(
+        [Parameter(Mandatory = $true)]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$ManifestPath
+    )
+
+    if ($Object.PSObject.Properties.Name -notcontains $Name) {
+        throw "Native app manifest $ManifestPath is missing required field '$Name'."
+    }
+
+    return $Object.$Name
+}
+
+function Get-OptionalJsonProperty
+{
+    param(
+        [Parameter(Mandatory = $true)]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        $DefaultValue = $null
+    )
+
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        return $Object.$Name
+    }
+
+    return $DefaultValue
+}
+
+function New-NativeAppDescriptorBytes
+{
+    param(
+        [Parameter(Mandatory = $true)]$Manifest,
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][uint32]$ExecutableId,
+        [Parameter(Mandatory = $true)][uint32]$PayloadSlot,
+        [Parameter(Mandatory = $true)][uint32]$AuthorityMask,
+        [Parameter(Mandatory = $true)][uint32]$ArgumentPolicy,
+        [Parameter(Mandatory = $true)][uint32]$LaunchBinding,
+        [Parameter(Mandatory = $true)][uint32]$EntryResult,
+        [Parameter(Mandatory = $true)][uint32]$SuccessResult
+    )
+
+    $usage = [string](Get-RequiredJsonProperty -Object $Manifest -Name "usage" -ManifestPath $ManifestPath)
+    $category = [string](Get-RequiredJsonProperty -Object $Manifest -Name "category" -ManifestPath $ManifestPath)
+    $capabilities = @(Get-RequiredJsonProperty -Object $Manifest -Name "capabilities" -ManifestPath $ManifestPath)
+    $capabilityNames = @($capabilities | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_.Length -gt 0 })
+    $allowedCapabilities = @("console", "network", "filesystem", "ramfs", "storage", "block")
+
+    if ($usage.Trim().Length -eq 0) {
+        throw "Native app manifest $ManifestPath has an empty usage field."
+    }
+    if ($category.Trim().Length -eq 0) {
+        throw "Native app manifest $ManifestPath has an empty category field."
+    }
+    if ($capabilityNames.Count -eq 0) {
+        throw "Native app manifest $ManifestPath must declare at least one capability."
+    }
+    foreach ($capabilityName in $capabilityNames) {
+        if ($allowedCapabilities -notcontains $capabilityName) {
+            throw "Native app manifest $ManifestPath declares unsupported capability '$capabilityName'."
+        }
+    }
+
+    $capabilityText = ($capabilityNames -join ",")
+    $descriptor = @(
+        "$ExecutableId",
+        "$AuthorityMask",
+        "$ArgumentPolicy",
+        "$LaunchBinding",
+        $usage,
+        $category,
+        "name=$Name",
+        "binary=$Name.BIN",
+        "payload-slot=$PayloadSlot",
+        ("entry-result=0x{0:X8}" -f $EntryResult),
+        ("success-result=0x{0:X8}" -f $SuccessResult),
+        "capabilities=$capabilityText"
+    ) -join "`n"
+    $descriptor = "$descriptor`n"
+
+    [byte[]]$descriptorBytes = [System.Text.Encoding]::ASCII.GetBytes($descriptor)
+    if ($descriptorBytes.Length -gt 256) {
+        throw "Native app descriptor for $Name is $($descriptorBytes.Length) bytes; max is 256 bytes."
+    }
+
+    return $descriptorBytes
+}
+
+function Build-NativeAppSpecs
+{
+    param(
+        [Parameter(Mandatory = $true)][string]$ManifestDir,
+        [Parameter(Mandatory = $true)][string]$OutputDir
+    )
+
+    $manifestFiles = @()
+    if (Test-Path $ManifestDir) {
+        $manifestFiles = @(Get-ChildItem -Path $ManifestDir -Filter "*.json" -File | Sort-Object Name)
+    }
+
+    $specs = @()
+    $seenNames = @{}
+    $seenSlots = @{}
+    foreach ($manifestFile in $manifestFiles) {
+        $manifestPath = $manifestFile.FullName
+        $manifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json
+        $name = ([string](Get-RequiredJsonProperty -Object $manifest -Name "name" -ManifestPath $manifestPath)).Trim().ToUpperInvariant()
+
+        if ($name -notmatch '^[A-Z][A-Z0-9_]{0,15}$') {
+            throw "Native app manifest $manifestPath has invalid name '$name'."
+        }
+        if ($seenNames.ContainsKey($name)) {
+            throw "Duplicate native app name '$name' in $manifestPath."
+        }
+        $seenNames[$name] = $true
+
+        $sourceAsmRelative = [string](Get-RequiredJsonProperty -Object $manifest -Name "sourceAsm" -ManifestPath $manifestPath)
+        $sourceAsm = Join-Path $root $sourceAsmRelative
+        if (-not (Test-Path $sourceAsm)) {
+            throw "Native app source for $name was not found: $sourceAsmRelative"
+        }
+
+        $executableId = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "executableId" -ManifestPath $manifestPath) -FieldName "executableId"
+        $payloadSlot = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "payloadSlot" -ManifestPath $manifestPath) -FieldName "payloadSlot"
+        $authorityMask = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "authorityMask" -ManifestPath $manifestPath) -FieldName "authorityMask"
+        $argumentPolicy = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "argumentPolicy" -ManifestPath $manifestPath) -FieldName "argumentPolicy"
+        $launchBinding = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "launchBinding" -ManifestPath $manifestPath) -FieldName "launchBinding"
+        $entryResult = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "entryResult" -ManifestPath $manifestPath) -FieldName "entryResult"
+        $successResult = ConvertTo-BuildUInt32 -Value (Get-RequiredJsonProperty -Object $manifest -Name "successResult" -ManifestPath $manifestPath) -FieldName "successResult"
+
+        if ($payloadSlot -eq 0) {
+            throw "Native app manifest $manifestPath uses invalid payload slot 0."
+        }
+        if ($seenSlots.ContainsKey([uint32]$payloadSlot)) {
+            throw "Duplicate native app payload slot $payloadSlot in $manifestPath."
+        }
+        $seenSlots[[uint32]$payloadSlot] = $true
+
+        $defineArgs = @()
+        $defines = @(Get-OptionalJsonProperty -Object $manifest -Name "defines" -DefaultValue @())
+        foreach ($define in $defines) {
+            $defineText = ([string]$define).Trim()
+            if ($defineText.Length -gt 0) {
+                $defineArgs += "-D$defineText"
+            }
+        }
+
+        $outputBin = Join-Path $OutputDir ("native-{0}-x86_64.bin" -f $name.ToLowerInvariant())
+        Write-Host "Assembling x86_64 native app $name"
+        & nasm -f bin @defineArgs $sourceAsm -o $outputBin
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to assemble native app $name."
+        }
+
+        [byte[]]$descriptorBytes = New-NativeAppDescriptorBytes `
+            -Manifest $manifest `
+            -ManifestPath $manifestPath `
+            -Name $name `
+            -ExecutableId $executableId `
+            -PayloadSlot $payloadSlot `
+            -AuthorityMask $authorityMask `
+            -ArgumentPolicy $argumentPolicy `
+            -LaunchBinding $launchBinding `
+            -EntryResult $entryResult `
+            -SuccessResult $successResult
+
+        $specs += [PSCustomObject]@{
+            Name = $name
+            Slot = [uint32]$payloadSlot
+            Bin = $outputBin
+            AppFileName = "$name.APP"
+            BinFileName = "$name.BIN"
+            DescriptorBytes = $descriptorBytes
+        }
+    }
+
+    return @($specs)
 }
 
 function Build-X86
@@ -411,7 +620,7 @@ function Build-X64Scaffold
     $commonSources += Get-Item (Join-Path $root "kernel\\core\\ramfs.c")
     $commonSources += Get-ChildItem -Path (Join-Path $root "kernel\\arch\\x86_64\\*.c") |
         Where-Object { $_.Name -ne "uefi_app.c" }
-    $commonSources = @($commonSources | Where-Object { $_.Name -ne "network_disabled.c" })
+    $commonSources = @($commonSources | Where-Object { ($_.Name -ne "network_disabled.c") -and ($_.Name -ne "network_socket.c") -and ($_.Name -ne "app_model.c") })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "package_signing.c" })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "identity.c" })
     $commonSources = @($commonSources | Where-Object { $_.Name -ne "identity_transport.c" })
@@ -431,6 +640,8 @@ function Build-X64Scaffold
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\installer_ux.c")
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\ai_policy.c")
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\package_signing.c")
+    $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\network_socket.c")
+    $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\app_model.c")
     $uefiSources += @(
         "fe.c",
         "ge.c",
@@ -655,6 +866,10 @@ function Build-X64Scaffold
     foreach ($spec in $diskFlatBinarySpecs) {
         Copy-Item -Force $spec.Bin (Join-Path $uefiAppsDir "$($spec.Name).BIN")
     }
+    foreach ($spec in $nativeAppSpecs) {
+        [System.IO.File]::WriteAllBytes((Join-Path $uefiAppsDir $spec.AppFileName), $spec.DescriptorBytes)
+        Copy-Item -Force $spec.Bin (Join-Path $uefiAppsDir $spec.BinFileName)
+    }
     $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
     $profileStatusLines = if ($BuildProfile -eq "Product") {
@@ -810,7 +1025,7 @@ mmio-command-page: x64 now materializes the AHCI command-memory preflight as a b
 mmio-drs-read: x64 now consumes drs-dwin into the first positive broker-private AHCI/ATAPI read: it patches the PRDT with the single-page bounce buffer physical address, records command-table checksum 0x14EC2F71 -> 0xD8BD95B6, programs only the selected port CLB/FB registers through the temporary kernel-only MMIO aperture, sets FRE/ST, clears PxIS/PxSERR, issues PxCI slot 0, polls bounded completion, seals 2048 bytes in the broker bounce buffer with a nonzero checksum, and still publishes no block endpoint, filesystem authority, user-visible read result, reusable read lease, write authority, commit authority, or media write
 mmio-drs-block: x64 now consumes drs-read into the first read-only AHCI-backed block route: UEFI and ISO AHCI paths report drs-block-state 3, drs-block-flags 0x000FFFFF, owner 0x00001006, read-token binding 1, block endpoint 1, block cap minted 1, read-only 1, delegated cap 1, routed read 1, bytes 2048, checksum matching drs-read, wrong-owner denial 1, stale-handle denial 1, and zero write authority, commit authority, filesystem mint, format authority, or media write; BIOS/no-AHCI media reports unavailable drs-block-flags 0x800E0001
 mmio-drs-fs-user: x64 now consumes drs-block into a broker-private ISO9660 read, then binds drs-fs into the first scoped read-only filesystem delegation to ring3: UEFI and ISO AHCI paths report drs-fs-state 3, drs-fs-flags 0x0001FFFF, PVD CD001 validation 1, README.TXT content-match 1, plus drs-fs-user-state 3, drs-fs-user-flags 0x001FFFFF, path /APPS/LS.APP, delegated 1, read-routed 1, root-read 1, bytes 79, checksum 0xFDB1F751, content-match 1, wrong-owner 1, stale 1, user-buffer 1, and zero write authority, commit authority, or additional filesystem capability mint; BIOS/no-AHCI media reports unavailable drs-fs-flags 0x8001C001 and drs-fs-user-flags 0x801C0001
-mmio-drs-fs-shell: x64 now binds the scoped drs-fs-user delegation into the shell startup path so APPS descriptors can be sourced from a dynamic real-ISO /APPS scan: UEFI and ISO AHCI paths report drs-fs-shell-state 3, drs-fs-shell-flags 0x0001FFFF, owner 0x00001006, user owner 0x00000201, fs-user-bound 1, delegated 1, descriptors-read 11, parsed 1, scan-dynamic 1, ls/cat/stat dispatched 1, RAMFS and ISO routes 1, and zero write authority, commit authority, or additional filesystem capability mint; BIOS/no-AHCI media reports unavailable drs-fs-shell-flags 0x8000E001
+mmio-drs-fs-shell: x64 now binds the scoped drs-fs-user delegation into the shell startup path so APPS descriptors can be sourced from a dynamic real-ISO /APPS scan: UEFI and ISO AHCI paths report drs-fs-shell-state 3, drs-fs-shell-flags 0x0001FFFF, owner 0x00001006, user owner 0x00000201, fs-user-bound 1, delegated 1, descriptors-read 12, parsed 1, scan-dynamic 1, ls/cat/stat dispatched 1, RAMFS and ISO routes 1, and zero write authority, commit authority, or additional filesystem capability mint; BIOS/no-AHCI media reports unavailable drs-fs-shell-flags 0x8000E001
 mmio-drs-load-full: x64 now expands disk-sourced flat-binary utility launch through the same delegated read-only ISO filesystem route: UEFI and ISO AHCI paths report drs-load-full-state 3, drs-load-full-flags 0x00007FFF, owner 0x00001006, user owner 0x00000201, load-bound 1, fs-shell-bound 1, binaries 10, verified 10, registered 10, cat/mkdir/write/rename/move completed 1, source disk, write-escalation 0, commit 0, additional-fs-caps 0, staged 1, denials 0, and unavailable 0; BIOS/no-AHCI media reports unavailable drs-load-full-flags 0x80001C01
 filesystem: x64 brokered RAMFS syscall surface reuses the shared ramfs implementation behind service-capability authorization, mints owner-scoped node capabilities for opened or created files and directories, enforces read/write/list/stat/create/revoke rights, rejects wrong-owner and revoked handles, reads README.TXT, lists APPS, writes NOTES.TXT, reports open/create/list/read/write/stat/revoke/denial telemetry through int 0x80, and is now exercised from sealed ring-3 user probes including CLI-shaped cat README.TXT paths, input-backed cat command receipt, a line-oriented shell loop, a second-page ring3 probe that creates USRNOTE.TXT and reads it back, and disk-sourced flat-binary utilities that can source APPS descriptors from the ISO-backed drs-fs-shell route while keeping RAMFS authority for mutable files, revokes temporary RAMFS handles, and keeps exact-length near misses and unknown input on non-fatal console-only branches
 mmio-issue-preflight: x64 now proves a brokered AHCI command-issue preflight without issuing the command: UEFI and ISO AHCI paths report issue-state 3, issue-flags 0x06FFFFFF, bound table/memory/command/read-plan tokens, idle slot/CI, ready TFD and SERR policy, checksum match 0x3FBFAF45, stop/start plus timeout policy, and zero DMA/MMIO/port/command side effects, while BIOS/no-AHCI media reports the unavailable issue-flags 0x073F0001 path
@@ -899,7 +1114,7 @@ mmio-driver-read-status-dma: x64 now consumes the sealed drs-exec token into a d
 mmio-driver-read-status-mmio: x64 now consumes the denied drs-dma token into the first broker-owned AHCI MMIO side-effect proof without command issue or DMA. UEFI and ISO AHCI paths report drs-mmio-state 3, drs-mmio-flags 0x3FFFFFFF, owner 0x00001006, query-only binding, checksum 0x76EFDDC5, DMA-token binding, exact selected-port PxIS register offset (0x00000210 for UEFI removable media and 0x00000390 for ISO in QEMU), exact write value 0x00000000, PxIS before/after 0x00000003 unchanged, rollback-required 0, teardown 1, stale-token denial 1, MMIO-write 1, and zero issue authority, DMA authority, media-read authority, write/commit authority, block endpoint/capability, filesystem mint, port-program, command issue, DMA, media-read, or media-write side effects; BIOS/no-AHCI media reports unavailable drs-mmio-flags 0x7FF00101
 mmio-driver-read-status-dwin: x64 now consumes the drs-mmio token into the first broker-owned single-page DMA-window lifetime proof without command issue, device DMA execution, or media-byte exposure. UEFI and ISO AHCI paths report drs-dwin-state 3, drs-dwin-flags 0x3FFFFFFF, owner 0x00001006, query-only binding, checksum 0x76EFDDC5, MMIO-token binding, selected ATAPI port, kind/op 2, LBA 0, blocks 1, read-bytes 2048, page-bytes 4096, table checksum 0x3FBFAF45, checksum-match 1, page/bounce physical addresses, bounce offset 2048, range-end 4096, single-page 1, broker-owned 1, bounds-enforced 1, confined 1, below4g 1, non-user 1, alias-safe 1, opened 1, closed 1, revoke-required 1, revoke-done 1, stale-denied 1, active 0, and zero issue/DMA-execution/media-read/write/commit authority, block endpoint/capability, filesystem mint, MMIO-write, port-program, command issue, DMA, media-read, or media-write side effects; BIOS/no-AHCI media reports unavailable drs-dwin-flags 0x7FC80001
 mmio-driver-read-status-read: x64 now consumes drs-dwin into the first positive bounded hardware-backed AHCI/ATAPI read while preserving broker-private sealing. UEFI and ISO AHCI paths report drs-read-state 3, drs-read-flags 0x007FFFFF, owner 0x00001006, query-only binding, dwin-bound 1, selected ATAPI port, kind/op 2, LBA 0, blocks 1, table checksum transition 0x14EC2F71 -> 0xD8BD95B6, issued 1, completed 1, bytes 2048, nonzero checksum, error 0, PRDBC 2048, CI idle before/after, bounded polls, MMIO/port/DMA/media telemetry 1, and zero write/commit authority, block endpoint/capability, filesystem mint, active lease, or media write; BIOS/no-AHCI media reports unavailable drs-read-flags 0x801F0001
-mmio-driver-read-status-block: x64 now consumes drs-read into a read-only AHCI-backed block route while preserving write closure, consumes that block capability into the first broker-private ISO9660 read, delegates one scoped read-only filesystem capability to ring3 through drs-fs-user, and keeps one persistent drs-fs-shell delegation for a dynamic disk-sourced /APPS descriptor scan. UEFI and ISO AHCI paths report drs-block-state 3, drs-block-flags 0x000FFFFF, owner 0x00001006, read routed 1, bytes 2048, checksum equal to drs-read, wrong-owner and stale-handle denial, plus drs-fs-state 3, PVD CD001 validation, README.TXT location/read, checksum 0x4ABDFAAA, drs-fs-user path /APPS/LS.APP, bytes 79, checksum 0xFDB1F751, delegated 1, wrong-owner 1, stale 1, drs-fs-shell descriptors-read 11, scan-dynamic 1, ls/cat/stat dispatch 1, and zero write authority, commit authority, additional filesystem mint, format authority, reusable lease, or media write; BIOS/no-AHCI media reports unavailable drs-block-flags 0x800E0001, drs-fs-flags 0x8001C001, drs-fs-user-flags 0x801C0001, and drs-fs-shell-flags 0x8000E001
+mmio-driver-read-status-block: x64 now consumes drs-read into a read-only AHCI-backed block route while preserving write closure, consumes that block capability into the first broker-private ISO9660 read, delegates one scoped read-only filesystem capability to ring3 through drs-fs-user, and keeps one persistent drs-fs-shell delegation for a dynamic disk-sourced /APPS descriptor scan. UEFI and ISO AHCI paths report drs-block-state 3, drs-block-flags 0x000FFFFF, owner 0x00001006, read routed 1, bytes 2048, checksum equal to drs-read, wrong-owner and stale-handle denial, plus drs-fs-state 3, PVD CD001 validation, README.TXT location/read, checksum 0x4ABDFAAA, drs-fs-user path /APPS/LS.APP, bytes 79, checksum 0xFDB1F751, delegated 1, wrong-owner 1, stale 1, drs-fs-shell descriptors-read 12, scan-dynamic 1, ls/cat/stat dispatch 1, and zero write authority, commit authority, additional filesystem mint, format authority, reusable lease, or media write; BIOS/no-AHCI media reports unavailable drs-block-flags 0x800E0001, drs-fs-flags 0x8001C001, drs-fs-user-flags 0x801C0001, and drs-fs-shell-flags 0x8000E001
 input-keyboard: x64 brokered keyboard input now has a 256-byte pending queue and bounded multi-scancode PS/2 controller drains so future live-shell verification has headroom beyond the compact scripted command stream while still reporting drops 0, QMP verification sends split press/release events with an 80 ms hold, 180 ms per-key pacing, 1300 ms post-line settling, and a 52000 ms probe window on disk media, while UEFI and ISO media use 210 ms per-key pacing, 1600 ms post-line settling, and a 56000 ms probe window so the compact x64 scaffold keeps command lines distinct without granting ambient input authority
 interrupts: IDT online with proof vector 0x30, syscall vector 0x80, PIT IRQ wakeups, and IRQ1 keyboard dispatch
 syscall: scaffold int 0x80 query ABI, brokered filesystem, console, input, and display syscall surfaces, and native syscall entry online
@@ -989,6 +1204,8 @@ if ($Architecture -eq "x86_64") {
             throw "Failed to assemble x86_64 disk-sourced $($spec.Name) flat binary."
         }
     }
+
+    $nativeAppSpecs = @(Build-NativeAppSpecs -ManifestDir $nativeAppManifestDir -OutputDir $buildDir)
 }
 
 Write-Host "Generating bootstrap package archive"
@@ -1000,8 +1217,8 @@ $packageStoreArgs = @{
 if ($Architecture -eq "x86_64") {
     $packageStoreArgs.PayloadImagePath = $runtimeImageBin
     $packageStoreArgs.PayloadSlot = 1
-    $packageStoreArgs.FlatBinaryImagePath = @($diskLsImageBin) + @($diskFlatBinarySpecs | ForEach-Object { $_.Bin })
-    $packageStoreArgs.FlatBinaryPayloadSlot = @([uint32]2) + @($diskFlatBinarySpecs | ForEach-Object { [uint32]$_.Slot })
+    $packageStoreArgs.FlatBinaryImagePath = @($diskLsImageBin) + @($diskFlatBinarySpecs | ForEach-Object { $_.Bin }) + @($nativeAppSpecs | ForEach-Object { $_.Bin })
+    $packageStoreArgs.FlatBinaryPayloadSlot = @([uint32]2) + @($diskFlatBinarySpecs | ForEach-Object { [uint32]$_.Slot }) + @($nativeAppSpecs | ForEach-Object { [uint32]$_.Slot })
     $packageStoreArgs.OutputSignaturePath = $packageStoreSignatureHeader
 }
 

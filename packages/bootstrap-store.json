@@ -91,6 +91,13 @@
       "imageOffset": 0,
       "imageSize": 1,
       "imageChecksum": "0x00000001"
+    },
+    {
+      "slot": 13,
+      "kind": "flat-binary",
+      "imageOffset": 0,
+      "imageSize": 1,
+      "imageChecksum": "0x00000001"
     }
   ],
   "manifests": [

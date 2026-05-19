@@ -1,0 +1,17 @@
+{
+  "name": "NETHELLO",
+  "executableId": 20,
+  "sourceAsm": "kernel/arch/x86_64/nethello_bin_user.asm",
+  "payloadSlot": 13,
+  "authorityMask": "0x00000060",
+  "argumentPolicy": 2,
+  "launchBinding": 1,
+  "usage": "nethello - print and open a brokered socket",
+  "category": "network",
+  "capabilities": [
+    "console",
+    "network"
+  ],
+  "entryResult": "0x4E484530",
+  "successResult": "0x4E484531"
+}

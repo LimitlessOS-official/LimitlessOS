@@ -15,6 +15,7 @@
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
+#include "network_socket_x64.h"
 #include "package_signing_x64.h"
 #include "pci_x64.h"
 #include "ramfs.h"
@@ -394,9 +395,19 @@ static u32 shell64_write_ipv4_line(
 
 static u32 shell64_print_network_status(u32 console_capability_handle, u32 owner_id)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    network_socket64_probe();
+#endif
     if (virtio_net64_dhcp_ack() == 0u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "no network\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "no network\n");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_text(console_capability_handle, owner_id, "socket api: brokered tcp-client foundation\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "socket connect: unavailable until brokered DHCP/DNS/HTTP is online\n");
+        return shell64_write_text(console_capability_handle, owner_id, "authority: capability required; no ambient network\n");
+#else
+        return shell64_write_text(console_capability_handle, owner_id, "authority: brokered status only; no ambient network\n");
+#endif
     }
 
     (void)shell64_write_text(console_capability_handle, owner_id, "network: online\n");
@@ -415,6 +426,20 @@ static u32 shell64_print_network_status(u32 console_capability_handle, u32 owner
         owner_id,
         "dns: ",
         virtio_net64_dhcp_dns());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_text(console_capability_handle, owner_id, "socket api: brokered tcp-client foundation\n");
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "socket http status: ",
+        network_socket64_last_http_status());
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "socket response bytes: ",
+        network_socket64_last_response_bytes());
+    (void)shell64_write_text(console_capability_handle, owner_id, "socket denied: raw packet, listen, send without broker data-plane authority\n");
+#endif
     return shell64_write_text(console_capability_handle, owner_id, "authority: brokered\n");
 }
 
@@ -970,6 +995,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "nethello"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: nethello - native app-model socket client\n");
+    }
+
     if (shell64_token_equals(token_start, token_length, "apps"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: apps\n");
@@ -1039,6 +1069,7 @@ static int shell64_token_is_product_command(u32 token_start, u32 token_length)
         || shell64_token_equals(token_start, token_length, "ls")
         || shell64_token_equals(token_start, token_length, "mkdir")
         || shell64_token_equals(token_start, token_length, "move")
+        || shell64_token_equals(token_start, token_length, "nethello")
         || shell64_token_equals(token_start, token_length, "rename")
         || shell64_token_equals(token_start, token_length, "stat")
         || shell64_token_equals(token_start, token_length, "touch")
@@ -1164,9 +1195,12 @@ static u32 shell64_list_apps(
     (void)root_capability_handle;
 
     (void)shell64_write_text(console_capability_handle, owner_id, "Product apps:\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "APPEND\nCAT\nCOPY\nDELETE\nLS\nMKDIR\nMOVE\nRENAME\nSTAT\nTOUCH\nWRITE\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "APPEND\nCAT\nCOPY\nDELETE\nLS\nMKDIR\nMOVE\nNETHELLO\nRENAME\nSTAT\nTOUCH\nWRITE\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Product services:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net\n");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_text(console_capability_handle, owner_id, "Brokered socket API: capability-scoped TCP-client foundation in net\n");
+#endif
     (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; MSI evidence pending\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
     (void)shell64_write_apps_gui_line(console_capability_handle, owner_id);
@@ -1184,11 +1218,11 @@ static u32 shell64_list_apps(
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
     }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M18:\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M21:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nAccount linking\nReal cloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Security key login\nCredential transport\nToken storage\nEnterprise policy\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nAI cloud access\nAI inference backend\nAI autonomous actions\nAI automation\nCloud AI\nAI-assisted setup\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud upload/download\nGeneral sockets\nServer sockets\nRaw packet APIs\nArbitrary network send/receive\nAI cloud access\nAI inference backend\nAI autonomous actions\nAI automation\nCloud AI\nAI-assisted setup\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Real internal install/write\nFormatting\nBoot entry changes\nPackage install/update actions\nApp store\n");
     return shell64_write_text(
         console_capability_handle,
@@ -1524,7 +1558,7 @@ u32 shell64_execute_line(
             return shell64_print_usage(console_capability_handle, owner_id, first_start, first_length);
         }
         (void)shell64_write_builtins_line(console_capability_handle, owner_id);
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move rename stat touch write\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
@@ -1538,7 +1572,7 @@ u32 shell64_execute_line(
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M18: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
+            "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
@@ -1583,6 +1617,11 @@ u32 shell64_execute_line(
             return shell64_write_text(console_capability_handle, owner_id, "usage: info <command>\n");
         }
         return shell64_info(console_capability_handle, owner_id, first_start, first_length);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "nethello"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "nethello: packaged native app runs during boot validation\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "ls"))

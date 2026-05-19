@@ -29,22 +29,22 @@ The LimitlessOS desktop and installer should be distinctive while combining four
 
 This direction must not become cloning. LimitlessOS should not copy another platform's trade dress, icons, layout, or workflow wholesale. Beginner and advanced paths should coexist: recommended defaults for new users, visible detail and control for serious users, and no invented hardware/status panels.
 
-## Current Gate: M18 AI Consent-Scoped Action Mode
+## Current Gate: M21 Native App SDK Foundation
 
-M1 cleanup-final through M17 AI Assistant read-only mode are accepted. M18 adds the first Product AI action broker foundation while preserving the no-inference/no-autonomy boundary: the Assistant app can request one of four predefined action templates, require explicit consent, receive only an action-bound/session-bound scoped capability, execute only within that scope, expire the grant, and record audit telemetry. Inference backend, model transport, generated answers, broad automation, task execution, cloud AI, package install/update, settings mutation, secret/token access, and internal install/write remain unavailable.
+M1 cleanup-final through M20 native app execution pipeline are accepted, and M21 turns the native app-model path into a manifest-driven SDK foundation. Product builds now read `apps/native/*.json`, assemble app binaries, generate descriptor metadata, stage `.APP`/`.BIN` pairs into `/APPS`, sign payload records through the package store, and load the app by name through a generic kernel descriptor parser. The current packaged app is `NETHELLO`: it prints through delegated console authority, proves undeclared filesystem/block capability requests are denied, requests its declared network service capability, uses the M19 brokered TCP-client status socket, observes send denial, closes the socket, and reports `drs-app-m21`. This is still not an ELF loader, arbitrary network data plane, or Linux/Windows app persona.
 
 Product profile:
 
 - Build command: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product`
-- BIOS kernel: `KERNEL64-BIOS.BIN`, 458400 bytes, 896 / 1024 BIOS sectors, 128 reserve
-- UEFI kernel: `KERNEL64.BIN`, 587904 / 2097152 bytes, checksum recorded in generated inventory/evidence, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
-- Sector status: ok for BIOS fallback; UEFI governed by the 2 MiB file contract
-- Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, RENAME, STAT, TOUCH, WRITE
+- BIOS kernel: `KERNEL64-BIOS.BIN`, 472640 bytes, 924 / 1024 BIOS sectors, 100 reserve
+- UEFI kernel: `KERNEL64.BIN`, 620672 / 2097152 bytes, checksum recorded in generated inventory/evidence, verified against BOOTMAN.TXT byte count/checksum, with no UEFI sector arithmetic
+- Sector status: BIOS fallback is below the 128-reserve warning threshold but still inside the hard loader limit; UEFI governed by the 2 MiB file contract
+- Product apps: APPEND, CAT, COPY, DELETE, LS, MKDIR, MOVE, NETHELLO, RENAME, STAT, TOUCH, WRITE
 - Product UEFI builtins: apps, help, hwval, info, lock, net, pkginfo, pwd; BIOS fallback omits `lock` and reports login/session lock unavailable
 - Product GUI apps: Terminal, File Manager, Settings, Installer, Assistant
 - Product UX direction: unique LimitlessOS identity with professional Linux-workstation credibility, mainstream discoverability, clean visual hierarchy, and Unix-level transparency/power
 - Native multi-ecosystem execution: planned architecture goal only; no Windows/macOS/Linux persona is Product yet
-- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status, Assistant action broker foundation
+- Product services: policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, brokered socket foundation, native app SDK foundation, installer dry-run service/tool, settings/system-info provider, local identity/status foundation, secrets-vault foundation metadata, identity transport descriptor verification, account association status, cloud-storage broker foundation, installer UX planning, AI policy broker foundation, Assistant host/context status, Assistant action broker foundation
 - Product session: one authenticated local console session; no full multiuser account-management UI, password-change UI, PAM/LDAP, or remote auth yet
 - Product identity/account association: local account type active, local association active/offline-capable, personal and enterprise account types planned/unavailable, cloud association planned/unavailable, security-key login planned/unavailable, no ambient identity or account authority
 - Product vault: foundation metadata only; encrypted-at-rest secret storage and token storage unavailable/non-product, no ambient secret authority
@@ -52,7 +52,7 @@ Product profile:
 - Product account association: Mode B policy/status only; local association is active, personal/enterprise/cloud association remains unavailable, account mutation/unlink/token/cloud/enterprise-policy paths are denied, and remote account identity grants no OS authority
 - Product cloud storage: foundation/status only; signed local provider descriptor verifies, but real cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority are unavailable or denied
 - Product package behavior: UEFI Product verifies Ed25519-signed package archive and payload signatures, denies missing/invalid/wrong-key/tampered/checksum-mismatched/malformed/oversized/duplicate/downgrade package data, requires scoped install authority, denies denied-capability requests, verifies signed update-index fixtures with unsigned/tampered/wrong-key/rollback/replay/no-auto-install coverage, and exposes read-only trust state through Settings and `pkginfo`
-- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, read-only Assistant host/context/audit status, consent-scoped Assistant action templates for note write, installer dry-run, Settings panel open, and package trust status, capability denial checks, no ambient authority
+- Product behavior: x86_64 boot, UEFI ISO/disk verification, UEFI login/first-run setup/lock/unlock, persistent ring-3 shell, truthful help/apps/pkginfo/hwval output, brokered persistent file workflow, hardware-gated brokered network status, restricted brokered TCP-client socket status, manifest-backed Ring-3 native app validation, brokered interactive desktop, focused-window keyboard routing, NVMe persistence verification, service/session status, signed package admission, package trust visibility, read-only hardware validation, read-only identity/vault/transport/account/cloud status, read-only installer planning and dry-run UX, read-only AI policy request/deny/audit status, read-only Assistant host/context/audit status, consent-scoped Assistant action templates for note write, installer dry-run, Settings panel open, and package trust status, capability denial checks, no ambient authority
 
 Experimental profile:
 
@@ -62,8 +62,8 @@ Experimental profile:
 
 Unavailable or non-product in the Product profile:
 
-- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, AI-assisted setup, AI inference backend, AI-generated answers, autonomous AI actions, broad AI automation, cloud AI, model integration, chat inference, task execution
-- Windows, macOS, Linux, or other foreign-ecosystem native personas; PE/COFF, Mach-O, ELF user-app execution beyond current LimitlessOS-controlled bootstrap binaries; `.exe`, `.bat`, `.ps1`, `.app`, `.pkg`, `.dmg`, external shell-script, package-manager, or app-bundle execution as Product behavior
+- ASK, ECHO, aliases, personal account login, enterprise account login, account linking, cloud account association, real public cloud storage, cloud sync, automatic cloud upload/download, offline cache, AI cloud access, app-direct cloud authority, security-key login, remote login, encrypted identity transport, encrypted cloud transport, credential transport, encrypted-at-rest secret storage, token storage, enterprise policy enrollment, multiuser account management, password-change UI, PAM/LDAP/remote auth, real internal install/write, formatting, boot-entry changes, package install/update actions, app store, auto-install, live public update fetch, trusted-time expiry enforcement, general socket library, server sockets, raw packet APIs, arbitrary app network send/receive, AI-assisted setup, AI inference backend, AI-generated answers, autonomous AI actions, broad AI automation, cloud AI, model integration, chat inference, task execution
+- Windows, macOS, Linux, or other foreign-ecosystem native personas; PE/COFF, Mach-O, ELF user-app execution beyond the current LimitlessOS `.APP`/flat-binary path; `.exe`, `.bat`, `.ps1`, foreign `.app`, `.pkg`, `.dmg`, external shell-script, package-manager, or app-bundle execution as Product behavior
 
 M2 evidence:
 
@@ -344,7 +344,51 @@ M18.1: UEFI Real-Firmware Handoff Compatibility
 - Preserve the split boot contract. Current status: BIOS remains at the 1024-sector contract; UEFI remains under the 2 MiB `KERNEL64.BIN` byte contract.
 - Preserve M18 behavior. Current status: Product QEMU UEFI/ISO verification still reaches ExitBootServices, x64 kernel entry, login shell, and M18 telemetry.
 - Add VirtualBox/MSI validation path. Current status: manual checklists record no-freeze handoff evidence; automated VirtualBox verification is unavailable in this workspace without `VBoxManage`.
-- No M19 work starts until M18.1 evidence is clean.
+- M18.1 evidence is clean enough for M19 work to begin.
+
+M19: Brokered Socket API Foundation
+
+- Publish a network service endpoint. Current status: UEFI Product registers `network` as a service endpoint class with explicit network and audit capability flags.
+- Add a syscall-level socket contract. Current status: open-tcp, recv-status, send, and close syscall numbers exist only on the UEFI Product path.
+- Require scoped network capability. Current status: no-cap and wrong-owner open attempts are denied and verifier-visible.
+- Keep risky surfaces closed. Current status: raw sockets, listen sockets, and send without broker data-plane authority are denied.
+- Represent one TCP-client status handle over the existing broker path. Current status: the socket foundation can expose HTTP status and response-byte telemetry after DHCP/DNS/HTTP proof succeeds.
+- Preserve authority boundaries. Current status: filesystem authority, storage authority, raw packet authority, and ambient network authority remain zero.
+- M20 native app execution work starts only after M19 build and UEFI socket verification are clean.
+
+## Industry Attention Roadmap
+
+These milestones convert the clean-room proof into services that a Canonical-, Red Hat-, OEM-, or security-lab-style evaluator can test, script, and reason about. Each step should produce an app-facing contract, verifier-visible denial paths, and a truthful non-goal list.
+
+M22: Functional AI Assistant
+
+- Replace Mode B-only templates with a real inference backend or remote-attested model path.
+- Keep the Assistant isolated from kernel, filesystem, secrets, package update, cloud, and settings authority unless each action receives explicit scoped consent.
+- Acceptance: a live model can answer within bounded context, denies unapproved tool/resource use, records audit, and never presents scripted output as inference.
+
+M23: Encrypted Vault Product
+
+- Turn the vault foundation from metadata into encrypted-at-rest storage for secrets and tokens.
+- Derive or unwrap vault keys through the existing trust-root model, then scope vault read/write authority per session and principal.
+- Acceptance: secrets survive reboot encrypted, wrong-owner/stale/unscoped reads and writes are denied, and physical image inspection does not expose plaintext.
+
+M24: Bare-Metal Validation Expansion
+
+- Complete the MSI Cyborg 15 A13VE validation pass and broaden `hwval` reports across UEFI, xHCI, NVMe, AHCI, framebuffer, input, and network variants.
+- Keep internal disk writes disabled unless a later installer authority explicitly enables them.
+- Acceptance: real-hardware boot logs and dry-run parser output are archived, comparable, and specific enough for hardware teams to reproduce.
+
+M25: SDK Expansion
+
+- Expand the M21 native app SDK so external C/assembly apps build into the LimitlessOS `.BIN`/`.APP` format with declared capabilities, without requiring kernel edits.
+- Add examples for filesystem, network socket status, Settings/status queries, and denied capability paths.
+- Acceptance: an external developer can build, package, inspect, and run a small Product app without editing kernel code.
+
+M26: Enterprise Identity and Policy
+
+- Move account association and identity transport beyond status-only foundations toward managed enrollment.
+- Add remote-auth and policy integration points while preserving no-token-without-vault and no-plaintext-credential-transport rules.
+- Acceptance: local, personal, and enterprise association states have real flows, verifier-visible denials, and a clear bridge toward LDAP/PAM-style environments without ambient identity authority.
 
 ## Phase 0: Bootstrap
 
@@ -471,7 +515,7 @@ Current bootstrap status:
 - The expanded `drs-nvme-fat` checkpoint gives the real-hardware storage lane its first broker-private NVMe FAT32 read and mutation proof without creating a block endpoint. UEFI/ISO media discover NVMe through the ECAM scanner, map a 64-bit BAR0 through broker-private MMIO, initialize admin queues, complete Identify Controller, create broker-private IO completion/submission queues through admin commands, submit namespace reads and writes into kernel-owned PRP buffers, validate GPT and the FAT32 VBR, parse BPB geometry, reconstruct ASCII and UTF-16 LFN entries, traverse `/APPS/DATA`, follow multi-cluster FAT chains, and verify staged `NVME.TXT`, `Limitless Long Name.txt`, `Caf\u00E9.txt`, `/APPS/DATA/FILE.TXT`, and `MULTI.BIN` content. The same checkpoint then opens only a broker-private mutation gate, allocates cluster `12` for a new LFN file, extends `NVME.TXT` through cluster `13`, tombstones and frees `/REMOVE.ME` on cluster `14`, flushes `16` dirty FAT/data/directory sectors through NVMe writes, and read-backs created/updated checksums `0x8B4D45D8` and `0x4E5F0AAE` while reporting zero filesystem delegation, zero block endpoint, zero caller-visible write authority, and zero commit authority; BIOS/disk media report unavailable.
 - The `drs-nvme-rw` checkpoint is now the first scoped caller-visible persistent storage write authority. It mints exactly one persistent read-write FAT32 capability from the existing NVMe driver, delegates it to the shell principal through the broker, gates shell-created files through that handle, proves wrong-owner/stale/revoked denial, writes and reads back `SHELL.TXT` with checksum `0x46A2678A`, records audit and commit counters, and verifies persistence with two sequential QEMU boots against the same writable NVMe image on both UEFI removable and ISO media. NVMe block endpoint publication, format authority, ambient filesystem authority, and additional filesystem capabilities remain zero; BIOS/disk media report unavailable.
 - The `drs-net` checkpoint adds QEMU networking as a broker-private virtio-net proof while real hardware validation proceeds. UEFI and ISO media find a modern virtio-net PCI function through ECAM, parse common/notify/device config capabilities, negotiate MAC support, stage RX/TX virtqueues in broker-private memory, transmit one ARP request for `10.0.2.2`, receive the gateway reply, and report nonzero local/peer MAC telemetry while granting zero filesystem authority, zero storage authority, and zero ambient network authority; BIOS/disk media report unavailable.
-- The `drs-dhcp` checkpoint adds the first broker-private IPv4/UDP state above that link proof. UEFI and ISO media construct IPv4 headers with checksums, send DHCPDISCOVER from UDP `68` to `67`, parse DHCPOFFER options, send DHCPREQUEST, parse DHCPACK, and record QEMU's assigned address, gateway `10.0.2.2`, DNS `10.0.2.3`, and lease time while still minting no socket, no filesystem authority, no storage authority, and no ambient network authority; BIOS/disk media report unavailable.
+- The `drs-dhcp` checkpoint adds the first broker-private IPv4/UDP state above that link proof. UEFI and ISO media construct IPv4 headers with checksums, send DHCPDISCOVER from UDP `68` to `67`, parse DHCPOFFER options, send DHCPREQUEST, parse DHCPACK, and record QEMU's assigned address, gateway `10.0.2.2`, DNS `10.0.2.3`, and lease time while the original checkpoint still minted no socket, no filesystem authority, no storage authority, and no ambient network authority; BIOS/disk media report unavailable. M19 builds on this later with the restricted brokered socket foundation described in the current gate.
 - Next up on the architecture side is turning the now-working UEFI-to-x64 kernel handoff into the primary lane on real machines: validate the UEFI ISO/removable image on hardware such as the MSI Cyborg 15 A13VE, preserve the capability and scheduler guarantees while normalizing manifest-launched process dispatch, keep growing recoverable x64 fault policy beyond the controlled proof sites, then continue storage/networking from the scoped NVMe FAT32 shell writer and broker-private virtio-net exchange toward explicit production-grade publication boundaries such as per-directory capability attenuation, crash-safe FAT commit journaling, mount/session lifecycle policy, and scoped network endpoints.
 
 ## Phase 2: Service model

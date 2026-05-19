@@ -1,5 +1,6 @@
 #include "syscall_x64.h"
 
+#include "app_model_x64.h"
 #include "block_x64.h"
 #include "capability_x64.h"
 #include "console_x64.h"
@@ -11,11 +12,15 @@
 #include "interrupts_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "network_socket_x64.h"
+#endif
 #include "pci_x64.h"
 #include "pit.h"
 #include "principal_x64.h"
 #include "process_x64.h"
 #include "serial.h"
+#include "services.h"
 #include "services_x64.h"
 #include "shell_x64.h"
 #include "x64.h"
@@ -99,6 +104,10 @@ void syscall64_init(const struct boot_info *boot_info)
     input64_init();
     input64_set_keyboard_scancode_set(input64_ps2_recommended_scancode_set());
     fs64_init();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    network_socket64_init();
+    app_model64_init();
+#endif
 }
 
 static u32 syscall64_pack_low32(u64 packed)
@@ -7582,7 +7591,28 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
             return g_native_last_syscall_code;
 
         case X64_SYSCALL_CAP_GRANT_SERVICE:
-            return (u64)capability64_grant_service((u32)arg0, (u32)arg1, (u32)arg2);
+        {
+            u32 owner_id = (u32)arg2;
+            u32 capability;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            owner_id = app_model64_effective_owner(owner_id);
+            if (app_model64_capability_request_allowed(
+                    (u32)arg0,
+                    (u32)arg1,
+                    owner_id) == 0u)
+            {
+                return (u64)CAPABILITY64_INVALID_HANDLE;
+            }
+#endif
+            capability = capability64_grant_service((u32)arg0, (u32)arg1, owner_id);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            if ((u32)arg0 == SERVICE_ENDPOINT_CLASS_NETWORK)
+            {
+                app_model64_record_network_capability(capability);
+            }
+#endif
+            return (u64)capability;
+        }
 
         case X64_SYSCALL_CAP_ROUTE:
             return (u64)capability64_route((u32)arg0, (u32)arg1, (u32)arg2);
@@ -7686,6 +7716,47 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
                 arg1,
                 syscall64_pack_low32(arg2),
                 syscall64_pack_high32(arg2));
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        case X64_SYSCALL_NET_SOCKET_OPEN_TCP:
+        {
+            u32 socket = network_socket64_open_tcp(
+                (u32)arg0,
+                (u32)arg1,
+                syscall64_pack_low16(arg2),
+                app_model64_effective_owner(syscall64_pack_high32(arg2)));
+            app_model64_record_socket_open(socket);
+            return (u64)socket;
+        }
+
+        case X64_SYSCALL_NET_SOCKET_RECV_STATUS:
+        {
+            u32 byte_count = network_socket64_recv_status(
+                (u32)arg0,
+                app_model64_effective_owner((u32)arg2));
+            app_model64_record_recv_status(byte_count);
+            return (u64)byte_count;
+        }
+
+        case X64_SYSCALL_NET_SOCKET_SEND:
+        {
+            u32 byte_count = network_socket64_send(
+                (u32)arg0,
+                syscall64_pack_low32(arg2),
+                app_model64_effective_owner(syscall64_pack_high32(arg2)));
+            app_model64_record_send(byte_count);
+            return (u64)byte_count;
+        }
+
+        case X64_SYSCALL_NET_SOCKET_CLOSE:
+        {
+            u32 closed = network_socket64_close(
+                (u32)arg0,
+                app_model64_effective_owner((u32)arg2));
+            app_model64_record_close(closed);
+            return (u64)closed;
+        }
+#endif
 
         case X64_SYSCALL_FS_NODE_RIGHTS:
             return (u64)fs64_node_rights((u32)arg0, (u32)arg2);

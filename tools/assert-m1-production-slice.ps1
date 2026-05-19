@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
-$m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "RENAME", "STAT", "TOUCH", "WRITE")
+$m1ProductApps = @("APPEND", "CAT", "COPY", "DELETE", "LS", "MKDIR", "MOVE", "NETHELLO", "RENAME", "STAT", "TOUCH", "WRITE")
 $m1ShellBuiltins = @("apps", "help", "hwval", "info", "lock", "net", "pkginfo", "pwd")
 $m4ProductGuiApps = @("Terminal", "File Manager", "Settings")
 $m15ProductGuiApps = @("Terminal", "File Manager", "Settings", "Installer")
@@ -490,7 +490,7 @@ function Assert-RuntimeShellSurfaceSource
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
         "Builtins: apps help hwval info lock net pkginfo pwd",
-        "Product apps: append cat copy delete ls mkdir move rename stat touch write",
+        "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write",
         "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
@@ -505,9 +505,10 @@ function Assert-RuntimeShellSurfaceSource
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable",
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
-        "Unavailable in M18: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
+        "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net",
+        "Brokered socket API: capability-scoped TCP-client foundation in net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings Installer Assistant",

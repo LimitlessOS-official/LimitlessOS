@@ -1,5 +1,6 @@
 #include "mmio_x64.h"
 
+#include "app_model_x64.h"
 #include "capability_x64.h"
 #include "launch_x64.h"
 #include "paging_x64.h"
@@ -45454,6 +45455,213 @@ u32 mmio64_fs_shell_read_descriptor(
         actual_count);
     return actual_count;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 mmio64_app_model_name_valid(const u8 *app_name, u32 app_name_bytes)
+{
+    u32 index;
+
+    if ((app_name == (const u8 *)0)
+        || (app_name_bytes == 0u)
+        || (app_name_bytes > 16u))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < app_name_bytes; ++index)
+    {
+        u8 ch = app_name[index];
+
+        if ((ch >= (u8)'a') && (ch <= (u8)'z'))
+        {
+            ch = (u8)(ch - ((u8)'a' - (u8)'A'));
+        }
+        if (!(((ch >= (u8)'A') && (ch <= (u8)'Z'))
+            || ((index != 0u) && (ch >= (u8)'0') && (ch <= (u8)'9'))
+            || ((index != 0u) && (ch == (u8)'_'))))
+        {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+static u32 mmio64_build_app_model_path(
+    const u8 *app_name,
+    u32 app_name_bytes,
+    const u8 *prefix,
+    u32 prefix_bytes,
+    const u8 *suffix,
+    u32 suffix_bytes,
+    u8 *destination,
+    u32 destination_bytes,
+    u32 *path_bytes_out)
+{
+    u32 index;
+    u32 total_bytes;
+
+    if ((app_name == (const u8 *)0)
+        || (prefix == (const u8 *)0)
+        || (suffix == (const u8 *)0)
+        || (destination == (u8 *)0)
+        || (path_bytes_out == (u32 *)0)
+        || (mmio64_app_model_name_valid(app_name, app_name_bytes) == 0u))
+    {
+        return 0u;
+    }
+
+    total_bytes = prefix_bytes + app_name_bytes + suffix_bytes;
+    if ((total_bytes == 0u) || (total_bytes >= destination_bytes))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < prefix_bytes; ++index)
+    {
+        destination[index] = prefix[index];
+    }
+    for (index = 0u; index < app_name_bytes; ++index)
+    {
+        destination[prefix_bytes + index] =
+            mmio64_ascii_upper(app_name[index]);
+    }
+    for (index = 0u; index < suffix_bytes; ++index)
+    {
+        destination[prefix_bytes + app_name_bytes + index] = suffix[index];
+    }
+    destination[total_bytes] = 0u;
+    *path_bytes_out = total_bytes;
+    return 1u;
+}
+
+u32 mmio64_stage_app_model_native_app(
+    u32 driver_read_status_fs_shell_token,
+    u32 owner_id,
+    const u8 *app_name,
+    u32 app_name_bytes)
+{
+    static const u8 app_prefix[] = {'/', 'A', 'P', 'P', 'S', '/'};
+    static const u8 bin_prefix[] = {'A', 'P', 'P', 'S', '/'};
+    static const u8 app_suffix[] = {'.', 'A', 'P', 'P'};
+    static const u8 bin_suffix[] = {'.', 'B', 'I', 'N'};
+    u8 app_path[MMIO64_FS_SHELL_DESCRIPTOR_PATH_BYTES];
+    u8 bin_path[MMIO64_FS_SHELL_DESCRIPTOR_PATH_BYTES];
+    u32 app_path_bytes = 0u;
+    u32 bin_path_bytes = 0u;
+    u8 descriptor[MMIO64_FS_SHELL_DESCRIPTOR_BYTES];
+    u32 descriptor_selector;
+    u32 descriptor_bytes;
+    u32 file_lba = 0u;
+    u32 file_bytes = 0u;
+    u32 file_checksum = 0u;
+    u32 apps_lba = 0u;
+    u32 apps_bytes = 0u;
+    u32 path_flags = 0u;
+    u32 expected_owner = g_ahci_driver_read_status_export_driver_owner;
+
+    if ((owner_id != expected_owner)
+        || (principal64_is_active(owner_id) == 0u))
+    {
+        return MMIO64_INVALID_RESULT;
+    }
+
+    if ((driver_read_status_fs_shell_token == 0u)
+        || (driver_read_status_fs_shell_token == MMIO64_INVALID_RESULT)
+        || (driver_read_status_fs_shell_token != g_ahci_driver_read_status_fs_shell_token)
+        || (g_ahci_driver_read_status_fs_shell_state
+            != MMIO64_AHCI_DRIVER_READ_STATUS_FS_SHELL_STATE_READY))
+    {
+        app_model64_mark_nethello_unavailable();
+        return MMIO64_INVALID_RESULT;
+    }
+
+    if ((mmio64_build_app_model_path(
+            app_name,
+            app_name_bytes,
+            app_prefix,
+            (u32)sizeof(app_prefix),
+            app_suffix,
+            (u32)sizeof(app_suffix),
+            app_path,
+            (u32)sizeof(app_path),
+            &app_path_bytes) == 0u)
+        || (mmio64_build_app_model_path(
+            app_name,
+            app_name_bytes,
+            bin_prefix,
+            (u32)sizeof(bin_prefix),
+            bin_suffix,
+            (u32)sizeof(bin_suffix),
+            bin_path,
+            (u32)sizeof(bin_path),
+            &bin_path_bytes) == 0u))
+    {
+        app_model64_mark_nethello_unavailable();
+        return MMIO64_INVALID_RESULT;
+    }
+
+    descriptor_selector = mmio64_fs_shell_descriptor_selector_by_path(
+        app_path,
+        app_path_bytes);
+    descriptor_bytes = mmio64_fs_shell_read_descriptor(
+        descriptor_selector,
+        0u,
+        descriptor,
+        (u32)sizeof(descriptor),
+        PRINCIPAL64_ID_CONSOLE_CLIENT);
+    if ((descriptor_selector == 0u)
+        || (descriptor_bytes == 0u)
+        || (descriptor_bytes == MMIO64_INVALID_RESULT))
+    {
+        app_model64_mark_nethello_unavailable();
+        return MMIO64_INVALID_RESULT;
+    }
+
+    if (mmio64_iso9660_read_path(
+            bin_path,
+            g_ahci_driver_read_status_load_buffer,
+            MMIO64_DRS_LOAD_BUFFER_BYTES,
+            &file_lba,
+            &file_bytes,
+            &file_checksum,
+            &apps_lba,
+            &apps_bytes,
+            &path_flags) == 0u)
+    {
+        app_model64_mark_nethello_unavailable();
+        return MMIO64_INVALID_RESULT;
+    }
+
+    (void)file_lba;
+    (void)apps_lba;
+    (void)apps_bytes;
+    (void)path_flags;
+    (void)bin_path_bytes;
+    return app_model64_stage_native_app(
+        app_name,
+        app_name_bytes,
+        descriptor,
+        descriptor_bytes,
+        g_ahci_driver_read_status_load_buffer,
+        file_bytes,
+        file_checksum,
+        PRINCIPAL64_ID_CONSOLE_CLIENT);
+}
+
+u32 mmio64_stage_app_model_nethello(
+    u32 driver_read_status_fs_shell_token,
+    u32 owner_id)
+{
+    static const u8 app_name[] = {'N', 'E', 'T', 'H', 'E', 'L', 'L', 'O'};
+
+    return mmio64_stage_app_model_native_app(
+        driver_read_status_fs_shell_token,
+        owner_id,
+        app_name,
+        (u32)sizeof(app_name));
+}
+#endif
 
 u32 mmio64_map_request_count(void)
 {

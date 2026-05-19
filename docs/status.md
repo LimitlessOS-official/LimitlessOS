@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-05-14
+Last updated: 2026-05-19
 
 ## Accepted Baseline
 
@@ -16,9 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M18.1 is `UEFI real-firmware handoff compatibility`.
+M21 is `native app SDK foundation`.
 
-M18.1 preserves M18 Product behavior and fixes the UEFI loader compatibility boundary. The loader no longer assumes fixed low physical pages are available for linked-kernel placement, page-root/handoff tables, boot-info, or trampoline. It checks firmware memory-map ownership, falls back to conventional-memory allocations, records actual handoff addresses, and stops with an explicit fail-fast diagnostic if no safe handoff can be built. M18.1 does not add post-M18 features.
+M1 cleanup-final through M20 native app execution pipeline are accepted, and M18.1 closed the UEFI real-firmware handoff compatibility boundary. M19 shifted networking from hardware-gated proof to app-facing brokered service: UEFI Product publishes a network service endpoint plus a narrow syscall-level TCP-client socket contract over the existing broker-owned DHCP/DNS/HTTP path. M21 now provides the first manifest-driven native app SDK foundation over that service. Product builds read `apps/native/*.json`, assemble app binaries, generate `.APP` descriptors, stage descriptor/binary pairs into `/APPS`, sign package payload records, and load apps by name through a generic descriptor parser before Ring-3 launch. M21 is not an ELF loader, server socket API, raw packet API, arbitrary app network data plane, or Linux/Windows app persona.
 
 ## Product Profile
 
@@ -31,16 +31,16 @@ Build:
 Current Product artifacts:
 
 - BIOS kernel: `KERNEL64-BIOS.BIN`
-- BIOS kernel bytes: 458400
-- BIOS kernel sectors: 896 / 1024
-- BIOS reserve: 128
+- BIOS kernel bytes: 472640
+- BIOS kernel sectors: 924 / 1024
+- BIOS reserve: 100
 - BIOS checksum: recorded in the generated artifact inventory
 - UEFI kernel: `KERNEL64.BIN`
-- UEFI kernel bytes: 587904
+- UEFI kernel bytes: 620672
 - UEFI kernel byte limit: 2,097,152 bytes
-- UEFI byte reserve: 1,509,248
+- UEFI byte reserve: 1,476,480
 - UEFI checksum: recorded in the generated artifact inventory; it changes when the build-time package signing key is regenerated
-- BIOS sector budget status: ok
+- BIOS sector budget status: warning threshold below 128 reserve sectors, hard 1024-sector loader limit still satisfied
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and checksum, with no UEFI sector arithmetic.
 - UEFI handoff: fixed low pages are preferences only. The loader verifies/allocates through the UEFI memory map, supports dynamic linked-kernel and handoff-table fallback, and reports allocation name/status/conflict/fallback diagnostics instead of silently freezing.
 
@@ -54,11 +54,13 @@ Product behavior:
 - persistent ring-3 shell
 - Product desktop with brokered compositor/window-manager authority
 - truthful `help`, `apps`, and `ls apps` output
-- brokered DHCP/DNS/TCP/HTTP network status through the `net` shell builtin when virtio-net or e1000e hardware is present
+- brokered DHCP/DNS/TCP/HTTP network status plus M19 restricted TCP-client socket status through the `net` shell builtin when virtio-net or e1000e hardware is present
 - Terminal, File Manager, and Settings GUI apps opened through real click interaction
 - Installer GUI app opened through the brokered desktop launcher
 - Product service lifecycle/status query surface
-- exactly one authenticated local console session with input, display, filesystem, network-status, and installer-dry-run authority scoped to that session
+- UEFI-only brokered network service endpoint and restricted socket syscall surface
+- manifest-driven native app descriptor/binary build path and generic UEFI Product native app loader
+- exactly one authenticated local console session with input, display, filesystem, network-status, restricted socket-status, and installer-dry-run authority scoped to that session
 - brokered persistent file workflow
 - NVMe persistence verification path
 - UEFI-only Ed25519 package archive and payload admission
@@ -213,7 +215,7 @@ M6 service/session behavior:
 
 - design note: `docs/service-session-m6.md`
 - service lifecycle states are modeled as declared, admitted, launching, running, degraded, stopping, stopped, crashed, restarting, and denied
-- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, installer dry-run service/tool, settings/system-info provider, cloud-storage broker foundation, and installer UX planning
+- Product services are policy/security broker, console/shell broker, input broker, display/compositor, window manager/desktop shell, filesystem broker, block/storage broker, hardware inventory broker, network broker, brokered socket foundation, native app SDK foundation, installer dry-run service/tool, settings/system-info provider, cloud-storage broker foundation, and installer UX planning
 - Settings is the Product-safe status surface for service/session information
 - controlled restart verification is limited to the scoped settings/system-info provider path
 - stale capabilities from the old generation are denied
@@ -235,6 +237,7 @@ Product apps:
 - LS
 - MKDIR
 - MOVE
+- NETHELLO
 - RENAME
 - STAT
 - TOUCH
@@ -283,6 +286,10 @@ Unavailable or not product-path in Product:
 - app store
 - auto-install
 - live public update fetch
+- general socket library
+- server sockets
+- raw packet API
+- arbitrary app network send/receive
 - multiuser account management UI
 - password change UI
 - PAM/LDAP/remote auth
@@ -483,6 +490,19 @@ M18.1 evidence pack:
 - includes the manual VirtualBox EFI checklist at `docs/hardware/virtualbox-uefi-m18-1.md`
 - keeps MSI physical validation pending user evidence
 
+M19 brokered socket verification:
+
+- generated by `.\tools\verify-network-socket-m19.ps1`
+- records Product UEFI network verification with virtio-net by default, or e1000e/e1000 when requested
+- proves the network service endpoint is registered, a network service capability is required and minted only through the broker, no-cap and wrong-owner socket opens are denied, raw sockets and listen sockets are denied, send without broker data-plane authority is denied, one TCP-client status handle can be represented over the existing DHCP/DNS/HTTP path, recv-status reports the broker-owned HTTP status/byte count, close retires the handle, no socket remains open after verification, and filesystem/storage/ambient network authority stay zero
+
+M21 native app SDK verification:
+
+- generated by `.\tools\verify-native-app-sdk-m21.ps1`
+- reads `apps/native/nethello.json`, assembles the declared native app binary, generates `/APPS/NETHELLO.APP`, stages `/APPS/NETHELLO.BIN`, and signs/verifies payload slot 13 through package metadata
+- validates descriptor metadata for `name`, `binary`, `payload-slot`, `entry-result`, `success-result`, and `capabilities`, maps the loaded binary into Ring-3 user memory, and runs it through the native user-entry path
+- proves the app can print through delegated console authority, request the declared network service capability, use the M19 brokered socket status path through syscall, observe send denial, close the socket, receive denial for undeclared filesystem/block capabilities, and finish with `drs-app-m21`
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -499,11 +519,11 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 
 ## Remaining Daily-Driver Blockers
 
-- Product BIOS reserve is back above the 128-sector warning threshold after the BIOS/UEFI kernel split.
+- Product BIOS reserve is currently 100 sectors after rebuilding the present source, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit.
 - Product UEFI now uses the 2 MiB file-size contract; BIOS remains on the 1024-sector loader contract.
 - UEFI remains governed by `KERNEL64.BIN` byte budget, manifest/checksum correctness, placement/load correctness, and artifact inventory correctness. UEFI is not blocked by the BIOS 1024-sector ceiling.
 - GUI/window manager/desktop are Product for Terminal, File Manager, Settings, Installer, brokered input, focused keyboard routing, and compositor-owned display.
-- Network is Product only as a brokered hardware-gated status path. There is no socket API, packet API, or ambient network authority.
+- Network now has an M19 brokered TCP-client socket foundation over the hardware-gated DHCP/DNS/HTTP path, and M21 packages one manifest-backed native app that consumes it from Ring 3 through generic descriptor validation. There is still no general socket library, server socket API, raw packet API, arbitrary app send/receive data plane, or ambient network authority.
 - Installer UX planning and dry-run are Product, but real internal install/write, formatting, and boot-entry authority remain unavailable.
 - M7.1 signed package admission has separate negative fixture coverage, but package-manager UI, app store, auto-install, live public update fetching, and trusted-time expiry enforcement remain unavailable.
 - M6 has a local console session model, not full multiuser login/authentication.
@@ -512,6 +532,6 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - M13 has an account association status foundation only; local association is active, but personal/enterprise/cloud association, account linking, security-key login, enterprise policy, token persistence, and remote account authority remain unavailable.
 - M14 has a cloud-storage broker foundation only; real public cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority remain unavailable or denied.
 - M15 has installer UX planning only; destructive install actions remain disabled by default and not Product-approved.
-- M18 has an Assistant host, read-only context flow, and predefined consent-scoped action templates only. Inference backend, model transport, generated answers, broad automation, autonomous action, package install/update, settings mutation, cloud AI, cloud memory, and internal install/write remain unavailable.
+- Assistant remains Mode B with read-only context flow and predefined consent-scoped action templates only. Inference backend, model transport, generated answers, broad automation, autonomous action, package install/update, settings mutation, cloud AI, cloud memory, and internal install/write remain unavailable.
 - Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.

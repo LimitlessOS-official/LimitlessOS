@@ -202,7 +202,7 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move nethello rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease when virtio-net/e1000e hardware is present$' -Message "M3 runtime help did not describe Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; MSI manual evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
@@ -242,10 +242,10 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product AI (policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable|assistant: launcher/Settings/pkginfo show (read-only consent flow|consent-scoped action templates); inference unavailable)$' -Message "M16-M18 runtime help did not describe Product AI policy/Assistant status."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M1[678]: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-(assistant|inference), ai-(actions|autonomy), ai-automation, cloud-ai, ai-assisted-setup, real-install$' -Message "M16-M18 runtime help did not label unavailable account/cloud/installer/AI surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M21: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install$|^Unavailable in M(20|1[6789]): ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, (general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, )?encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-(assistant|inference), ai-(actions|autonomy), ai-automation, cloud-ai, ai-assisted-setup, real-install$' -Message "M16-M21 runtime help did not label unavailable account/cloud/network/installer/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
-    foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
+    foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'NETHELLO', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
         Assert-OutputContains -Lines $persistentLines -Pattern ("^{0}$" -f [regex]::Escape($productApp)) -Message "M1 apps output did not include product app $productApp."
     }
 
@@ -720,7 +720,8 @@ function Send-QemuKeyboardProbe
         }
 
         if ($DebugLogPath.Length -gt 0) {
-            Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
+            Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64:shell\] persistent ring3 shell online' -TimeoutMilliseconds 600000
+            Start-Sleep -Milliseconds 500
         }
 
         $keys = @(
@@ -2721,7 +2722,7 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user input cli probe attempts 4 exits 4 result 0x49434C31 recorded 0x49434C31 expected 0x49434C31 command-bytes 14 read-bytes 32 prompt-bytes 14 console-writes 8 console-bytes 123 console-denials 0 input-reads 1 input-bytes 14 input-denials 0 input-eof 0 rip 0x00000000410003C0 rsp 0x0000000040020000 cs 0x0000000000000033 ss 0x000000000000002B' -Message "x64 ring-3 input/console/filesystem CLI proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help' -Message "x64 ring-3 shell stream help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Builtins: apps help hwval info (lock )?net pkginfo pwd|Builtins apps help hwval info lock net pkginfo pwd' -Message "x64 ring-3 shell stream builtin help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Product apps: append cat copy delete ls mkdir move nethello rename stat touch write' -Message "x64 ring-3 shell stream M1 product help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product network: net shows DHCP lease when virtio-net/e1000e hardware is present' -Message "x64 ring-3 shell stream Product network help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product package trust: pkginfo and Settings are read-only; install/apply disabled|Pkg trust read-only; no install/apply' -Message "x64 ring-3 shell stream Product package trust help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product GUI: unavailable on BIOS checksum fallback|Product GUI: Terminal, File Manager, Settings, Installer(, Assistant)? through brokered desktop input/display' -Message "x64 ring-3 shell stream Product GUI/installer/Assistant help output was not observed."
@@ -2729,7 +2730,7 @@ elseif ($BootMedia -eq "disk") {
     Assert-OutputContains -Lines $outputLines -Pattern 'Product login: first-run setup, authenticated session, lock/unlock through brokered input|UEFI login/session lock: unavailable on BIOS checksum fallback' -Message "x64 ring-3 shell stream Product login help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable' -Message "x64 ring-3 shell stream Product cloud storage help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only|Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled' -Message "x64 ring-3 shell stream Product installer UX help output was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M18: ask \(not AI\), echo, aliases|Unavailable in M17: ask \(not AI\), echo, aliases|Unavailable in M16: ask \(not AI\), echo, aliases|Unavailable in M15: ask \(not AI\), echo, aliases|Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern 'Unavailable in M21: ask \(not AI\), echo, aliases|Unavailable in M20: ask \(not AI\), echo, aliases|Unavailable in M19: ask \(not AI\), echo, aliases|Unavailable in M18: ask \(not AI\), echo, aliases|Unavailable in M17: ask \(not AI\), echo, aliases|Unavailable in M16: ask \(not AI\), echo, aliases|Unavailable in M15: ask \(not AI\), echo, aliases|Unavailable in M14: ask \(not AI\), echo, aliases|Unavailable in M13: ask \(not AI\), echo, aliases|Unavailable in M12: ask \(not AI\), echo, aliases|Unavailable in M11: ask \(not AI\), echo, aliases|Unavailable in M10: ask \(not AI\), echo, aliases|Unavail ASK-not-AI ECHO aliases' -Message "x64 ring-3 shell stream unavailable-surface help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help ls' -Message "x64 ring-3 descriptor-backed help command was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern 'ls \[path\] - list directory entries from cwd or a given path' -Message "x64 ring-3 descriptor-backed help output was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64:input\] \$ help cat' -Message "x64 ring-3 second descriptor-backed help command was not observed."
@@ -2781,7 +2782,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern 'LimitlessOS x86_64 UEFI scaffold' -Message "x64 UEFI scaffold banner was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] firmware boot active' -Message "x64 UEFI firmware handoff was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] package archive v2' -Message "x64 UEFI package archive summary was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] services 10 console 4 ramfs 5 input 6 display 7 block 8 hardware 9' -Message "x64 UEFI service namespace summary was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] services 11 console 4 ramfs 5 input 6 display 7 block 8 hardware 9 network 10' -Message "x64 UEFI service namespace summary was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] gop framebuffer mode [0-9]+ max [1-9][0-9]* [1-9][0-9]*x[1-9][0-9]* ppsl [1-9][0-9]* format (rgb|bgr) base 0x[0-9A-F]+ bytes 0x[0-9A-F]+' -Message "x64 UEFI GOP framebuffer geometry was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] gop draw pixels [1-9][0-9]* token 0x[0-9A-F]+ status 1' -Message "x64 UEFI GOP framebuffer draw proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] boot media read README\.TXT bytes 66 token 0xDAF085B1 prefix 1 status 0x0000000000000000' -Message "x64 UEFI boot-media file read proof was not observed."
@@ -3973,7 +3974,7 @@ else {
         'drs-fs-user-denials 2 drs-fs-user-unavailable 0 ' +
         'drs-fs-shell 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-fs-shell-state 3 drs-fs-shell-flags 0x0001FFFF ' +
         'drs-fs-shell-owner 0x00001006 drs-fs-shell-user-owner 0x00000201 drs-fs-shell-fs-user-bound 1 ' +
-        'drs-fs-shell-delegated 1 drs-fs-shell-descriptors-read 11 drs-fs-shell-descriptors-parsed 1 ' +
+        'drs-fs-shell-delegated 1 drs-fs-shell-descriptors-read 12 drs-fs-shell-descriptors-parsed 1 ' +
         'drs-fs-shell-scan-dynamic 1 ' +
         'drs-fs-shell-ls-dispatched 1 drs-fs-shell-cat-dispatched 1 drs-fs-shell-stat-dispatched 1 ' +
         'drs-fs-shell-ramfs-route 1 drs-fs-shell-iso-route 1 drs-fs-shell-write 0 drs-fs-shell-commit 0 ' +
@@ -4052,7 +4053,13 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '^network: online$' -Message "x64 persistent shell did not report an active Product network lease."
         Assert-OutputContains -Lines $outputLines -Pattern '^gateway: 10\.0\.2\.2$' -Message "x64 persistent shell did not report the DHCP gateway."
         Assert-OutputContains -Lines $outputLines -Pattern '^dns: 10\.0\.2\.[0-9]+$' -Message "x64 persistent shell did not report the DHCP DNS server."
+        Assert-OutputContains -Lines $outputLines -Pattern '^socket api: brokered tcp-client foundation$' -Message "x64 persistent shell did not report the brokered socket API foundation."
+        Assert-OutputContains -Lines $outputLines -Pattern '^socket http status: 200$' -Message "x64 persistent shell did not report the brokered socket HTTP status."
+        Assert-OutputContains -Lines $outputLines -Pattern '^socket denied: raw packet, listen, send without broker data-plane authority$' -Message "x64 persistent shell did not report socket denial boundaries."
         Assert-OutputContains -Lines $outputLines -Pattern '^authority: brokered$' -Message "x64 persistent shell did not label network authority as brokered."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-socket drs-socket-api 1 drs-socket-service 1 drs-socket-cap-required 1 drs-socket-cap-minted 1 drs-socket-no-cap-denied 1 drs-socket-wrong-owner-denied 1 drs-socket-raw-denied 1 drs-socket-listen-denied 1 drs-socket-send-denied 1 drs-socket-connect-attempt 1 drs-socket-connect-granted 1 drs-socket-connect-unavailable 0 drs-socket-recv-status 1 drs-socket-close 1 socket-count 0 http-status 200 response-bytes [1-9][0-9]* fs-authority 0 storage-authority 0 ambient-authority 0' -Message "x64 M19 brokered socket API foundation proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '^hello from user app$' -Message "x64 M21 native user app did not print through brokered console authority."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-app-m21 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-app-m21-state 4 drs-app-m21-flags 0x[0-9A-F]{8} drs-app-m21-owner 0x00000201 drs-app-m21-name-token 0x(?!00000000)[0-9A-F]{8} drs-app-m21-executable-id 20 drs-app-m21-authority-mask 0x00000060 drs-app-m21-capability-mask 0x00000003 drs-app-m21-payload-slot 13 drs-app-m21-entry-result 0x4E484530 drs-app-m21-success-result 0x4E484531 drs-app-m21-binary-path-verified 1 drs-app-m21-descriptor-read 1 drs-app-m21-descriptor-parsed 1 drs-app-m21-descriptor-bytes [1-9][0-9]* drs-app-m21-binary-read 1 drs-app-m21-checksum-verified 1 drs-app-m21-binary-bytes [1-9][0-9]* drs-app-m21-checksum 0x[0-9A-F]{8} drs-app-m21-expected-checksum 0x[0-9A-F]{8} drs-app-m21-mapped 1 drs-app-m21-mapped-bytes 4096 drs-app-m21-entry-rip 0x43000010 drs-app-m21-entry-rsp 0x40020000 drs-app-m21-entry-selectors 0x002B0033 drs-app-m21-entry-rflags 0x00000002 drs-app-m21-launched 1 drs-app-m21-hello 1 drs-app-m21-syscall-bridge 1 drs-app-m21-network-cap-requested 1 drs-app-m21-network-cap-granted 1 drs-app-m21-socket-open 1 drs-app-m21-recv-status 1 drs-app-m21-send-denied 1 drs-app-m21-close 1 drs-app-m21-fs-denied 1 drs-app-m21-storage-denied 1 drs-app-m21-exit-result 0x4E484531 drs-app-m21-exit-aux [1-9][0-9]* fs-authority 0 storage-authority 0 ambient-authority 0' -Message "x64 M21 native app SDK loader/capability/socket verification was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '^package system: enabled on UEFI Product$' -Message "x64 UEFI pkginfo did not report the signed-package Product path."
         Assert-OutputContains -Lines $outputLines -Pattern '^uefi package mode: Ed25519 verified$' -Message "x64 UEFI pkginfo did not report Ed25519 verification."
         Assert-OutputContains -Lines $outputLines -Pattern '^trusted public key fingerprint: [0-9A-F]{64}$' -Message "x64 UEFI pkginfo did not expose the signer fingerprint."

@@ -16,7 +16,11 @@ struct service64_record
 
 enum
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    SERVICE64_RECORD_COUNT = 11
+#else
     SERVICE64_RECORD_COUNT = 10
+#endif
 };
 
 static const struct service64_record g_service_records[SERVICE64_RECORD_COUNT] = {
@@ -100,6 +104,17 @@ static const struct service64_record g_service_records[SERVICE64_RECORD_COUNT] =
         0u,
         SERVICE_CAP_HARDWARE | SERVICE_CAP_AUDIT
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ,
+    {
+        SERVICE_ID_NETWORK,
+        "network",
+        SERVICE_ENDPOINT_CLASS_NETWORK,
+        10u,
+        1u,
+        SERVICE_CAP_NETWORK | SERVICE_CAP_AUDIT
+    }
+#endif
 };
 
 static u32 g_service_init = 0u;

@@ -217,6 +217,7 @@ foreach ($signer in @($spec.signers)) {
 }
 
 $payloadRecords = @()
+$payloadRecordSlots = @{}
 foreach ($payload in @($spec.payloads)) {
     $payloadSlotValue = Convert-ToUInt32 $payload.slot
     $imageSize = Convert-ToUInt32 $payload.imageSize
@@ -235,6 +236,23 @@ foreach ($payload in @($spec.payloads)) {
         ImageSize = $imageSize
         ImageChecksum = $imageChecksum
     }
+    $payloadRecordSlots[$payloadSlotValue] = $true
+}
+
+foreach ($payloadOverride in @($payloadOverrides.Values | Sort-Object Slot)) {
+    $payloadSlotValue = [uint32]$payloadOverride.Slot
+    if ($payloadRecordSlots.ContainsKey($payloadSlotValue)) {
+        continue
+    }
+
+    $payloadRecords += [pscustomobject]@{
+        Slot = $payloadSlotValue
+        Kind = Resolve-PayloadKind "flat-binary"
+        ImageOffset = [uint32]0
+        ImageSize = [uint32]$payloadOverride.Size
+        ImageChecksum = [uint32]$payloadOverride.Checksum
+    }
+    $payloadRecordSlots[$payloadSlotValue] = $true
 }
 
 $manifestRecords = @()

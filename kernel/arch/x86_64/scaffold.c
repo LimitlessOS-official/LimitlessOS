@@ -1,6 +1,7 @@
 #include "arch_build.h"
 #include "account_association_x64.h"
 #include "ai_policy_x64.h"
+#include "app_model_x64.h"
 #include "apic_x64.h"
 #include "auth_x64.h"
 #include "block_x64.h"
@@ -19,6 +20,7 @@
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
+#include "network_socket_x64.h"
 #include "paging_x64.h"
 #include "package_signing_x64.h"
 #include "pci_x64.h"
@@ -2710,6 +2712,10 @@ static void log_service_namespace(void)
     write_dec_u32(services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_BLOCK));
     write_string(" hardware ");
     write_dec_u32(services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_HARDWARE));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string(" network ");
+    write_dec_u32(services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_NETWORK));
+#endif
     write_line("");
 
     write_string("[x64] service caps policy ");
@@ -2730,6 +2736,11 @@ static void log_service_namespace(void)
     write_string(" hardware ");
     write_hex_u32(services64_capabilities_for_endpoint(
         services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_HARDWARE)));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string(" network ");
+    write_hex_u32(services64_capabilities_for_endpoint(
+        services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_NETWORK)));
+#endif
     write_line("");
 }
 
@@ -4004,6 +4015,82 @@ static void run_drs_load_full_probe(void)
         " drs-load-full-",
         X64_SYSCALL_MMIO_AHCI_DRIVER_READ_STATUS_LOAD_FULL_TELEMETRY);
     write_line("");
+}
+
+static void run_app_model_m20_probe(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    static const u8 app_name[] = {'N', 'E', 'T', 'H', 'E', 'L', 'L', 'O'};
+    u32 result = 0u;
+    u32 aux = 0u;
+    u32 fs_shell_token = (u32)syscall64_invoke(
+        X64_SYSCALL_MMIO_AHCI_DRIVER_READ_STATUS_FS_SHELL_TELEMETRY,
+        MMIO64_AHCI_DRIVER_READ_STATUS_FS_SHELL_TELEMETRY_TOKEN,
+        0u,
+        0u);
+    u32 token = mmio64_stage_app_model_native_app(
+        fs_shell_token,
+        PRINCIPAL64_ID_BLOCK_WORKER,
+        app_name,
+        (u32)sizeof(app_name));
+
+    if ((app_model64_nethello_mapped() != 0u)
+        && (app_model64_begin_nethello_user() != 0u))
+    {
+        result = interrupts64_trigger_user_entry_probe(
+            (u64)app_model64_nethello_entry_rip(),
+            (u64)app_model64_nethello_entry_rsp(),
+            (u64)app_model64_nethello_entry_selectors(),
+            (u64)app_model64_nethello_entry_rflags());
+        aux = interrupts64_user_entry_probe_aux();
+        app_model64_end_nethello_user();
+        token = app_model64_record_native_launch(result, aux);
+    }
+
+    write_labeled_hex_u32("[x64] drs-app-m21 ", token);
+    write_labeled_dec_u32(" drs-app-m21-state ", app_model64_nethello_state());
+    write_labeled_hex_u32(" drs-app-m21-flags ", app_model64_nethello_flags());
+    write_labeled_hex_u32(" drs-app-m21-owner ", app_model64_nethello_owner());
+    write_labeled_hex_u32(" drs-app-m21-name-token ", app_model64_native_name_token());
+    write_labeled_dec_u32(" drs-app-m21-executable-id ", app_model64_native_executable_id());
+    write_labeled_hex_u32(" drs-app-m21-authority-mask ", app_model64_native_authority_mask());
+    write_labeled_hex_u32(" drs-app-m21-capability-mask ", app_model64_native_capability_mask());
+    write_labeled_dec_u32(" drs-app-m21-payload-slot ", app_model64_native_payload_slot());
+    write_labeled_hex_u32(" drs-app-m21-entry-result ", app_model64_native_entry_result());
+    write_labeled_hex_u32(" drs-app-m21-success-result ", app_model64_native_success_result());
+    write_labeled_dec_u32(" drs-app-m21-binary-path-verified ", app_model64_native_binary_path_verified());
+    write_labeled_dec_u32(" drs-app-m21-descriptor-read ", app_model64_nethello_descriptor_read());
+    write_labeled_dec_u32(" drs-app-m21-descriptor-parsed ", app_model64_nethello_descriptor_parsed());
+    write_labeled_dec_u32(" drs-app-m21-descriptor-bytes ", app_model64_nethello_descriptor_bytes());
+    write_labeled_dec_u32(" drs-app-m21-binary-read ", app_model64_nethello_binary_read());
+    write_labeled_dec_u32(" drs-app-m21-checksum-verified ", app_model64_nethello_checksum_verified());
+    write_labeled_dec_u32(" drs-app-m21-binary-bytes ", app_model64_nethello_binary_bytes());
+    write_labeled_hex_u32(" drs-app-m21-checksum ", app_model64_nethello_checksum());
+    write_labeled_hex_u32(" drs-app-m21-expected-checksum ", app_model64_nethello_expected_checksum());
+    write_labeled_dec_u32(" drs-app-m21-mapped ", app_model64_nethello_mapped());
+    write_labeled_dec_u32(" drs-app-m21-mapped-bytes ", app_model64_nethello_mapped_bytes());
+    write_labeled_hex_u32(" drs-app-m21-entry-rip ", app_model64_nethello_entry_rip());
+    write_labeled_hex_u32(" drs-app-m21-entry-rsp ", app_model64_nethello_entry_rsp());
+    write_labeled_hex_u32(" drs-app-m21-entry-selectors ", app_model64_nethello_entry_selectors());
+    write_labeled_hex_u32(" drs-app-m21-entry-rflags ", app_model64_nethello_entry_rflags());
+    write_labeled_dec_u32(" drs-app-m21-launched ", app_model64_nethello_launched());
+    write_labeled_dec_u32(" drs-app-m21-hello ", app_model64_nethello_hello_completed());
+    write_labeled_dec_u32(" drs-app-m21-syscall-bridge ", app_model64_nethello_syscall_bridge());
+    write_labeled_dec_u32(" drs-app-m21-network-cap-requested ", app_model64_nethello_network_cap_requested());
+    write_labeled_dec_u32(" drs-app-m21-network-cap-granted ", app_model64_nethello_network_cap_granted());
+    write_labeled_dec_u32(" drs-app-m21-socket-open ", app_model64_nethello_socket_opened());
+    write_labeled_dec_u32(" drs-app-m21-recv-status ", app_model64_nethello_recv_status());
+    write_labeled_dec_u32(" drs-app-m21-send-denied ", app_model64_nethello_send_denied());
+    write_labeled_dec_u32(" drs-app-m21-close ", app_model64_nethello_socket_closed());
+    write_labeled_dec_u32(" drs-app-m21-fs-denied ", app_model64_nethello_fs_denied());
+    write_labeled_dec_u32(" drs-app-m21-storage-denied ", app_model64_nethello_storage_denied());
+    write_labeled_hex_u32(" drs-app-m21-exit-result ", app_model64_nethello_exit_result());
+    write_labeled_dec_u32(" drs-app-m21-exit-aux ", app_model64_nethello_exit_aux());
+    write_labeled_dec_u32(" fs-authority ", app_model64_nethello_fs_authority());
+    write_labeled_dec_u32(" storage-authority ", app_model64_nethello_storage_authority());
+    write_labeled_dec_u32(" ambient-authority ", app_model64_nethello_ambient_authority());
+    write_line("");
+#endif
 }
 
 static void log_syscall_surface(void)
@@ -10387,6 +10474,34 @@ static void log_http_surface(void)
     write_line("");
 }
 
+static void log_network_socket_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    network_socket64_probe();
+    write_labeled_dec_u32("[x64] drs-socket drs-socket-api ", network_socket64_api_published());
+    write_labeled_dec_u32(" drs-socket-service ", network_socket64_service_registered());
+    write_labeled_dec_u32(" drs-socket-cap-required ", network_socket64_capability_required());
+    write_labeled_dec_u32(" drs-socket-cap-minted ", network_socket64_service_capability_minted());
+    write_labeled_dec_u32(" drs-socket-no-cap-denied ", network_socket64_no_cap_denied());
+    write_labeled_dec_u32(" drs-socket-wrong-owner-denied ", network_socket64_wrong_owner_denied());
+    write_labeled_dec_u32(" drs-socket-raw-denied ", network_socket64_raw_denied());
+    write_labeled_dec_u32(" drs-socket-listen-denied ", network_socket64_listen_denied());
+    write_labeled_dec_u32(" drs-socket-send-denied ", network_socket64_send_denied());
+    write_labeled_dec_u32(" drs-socket-connect-attempt ", network_socket64_connect_attempted());
+    write_labeled_dec_u32(" drs-socket-connect-granted ", network_socket64_connect_granted());
+    write_labeled_dec_u32(" drs-socket-connect-unavailable ", network_socket64_connect_unavailable());
+    write_labeled_dec_u32(" drs-socket-recv-status ", network_socket64_recv_status_granted());
+    write_labeled_dec_u32(" drs-socket-close ", network_socket64_close_count());
+    write_labeled_dec_u32(" socket-count ", network_socket64_socket_count());
+    write_labeled_dec_u32(" http-status ", network_socket64_last_http_status());
+    write_labeled_dec_u32(" response-bytes ", network_socket64_last_response_bytes());
+    write_labeled_dec_u32(" fs-authority ", network_socket64_fs_authority());
+    write_labeled_dec_u32(" storage-authority ", network_socket64_storage_authority());
+    write_labeled_dec_u32(" ambient-authority ", network_socket64_ambient_authority());
+    write_line("");
+#endif
+}
+
 static void log_nvme_rw_surface(void)
 {
     write_labeled_dec_u32("[x64] drs-nvme-rw delegated ", mmio64_nvme_rw_delegated());
@@ -11927,6 +12042,9 @@ static void log_native_service_surface(void)
     u64 ramfs_endpoint = syscall64_native_invoke(X64_SYSCALL_RESOLVE_SERVICE_CLASS, SERVICE_ENDPOINT_CLASS_RAMFS, 0u, 0u);
     u64 input_endpoint = syscall64_native_invoke(X64_SYSCALL_RESOLVE_SERVICE_CLASS, SERVICE_ENDPOINT_CLASS_INPUT, 0u, 0u);
     u64 display_endpoint = syscall64_native_invoke(X64_SYSCALL_RESOLVE_SERVICE_CLASS, SERVICE_ENDPOINT_CLASS_DISPLAY, 0u, 0u);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 network_endpoint = syscall64_native_invoke(X64_SYSCALL_RESOLVE_SERVICE_CLASS, SERVICE_ENDPOINT_CLASS_NETWORK, 0u, 0u);
+#endif
 
     write_string("[x64] native services ");
     write_dec_u32((u32)syscall64_native_invoke(X64_SYSCALL_GET_SERVICE_COUNT, 0u, 0u, 0u));
@@ -11942,6 +12060,10 @@ static void log_native_service_surface(void)
     write_dec_u32((u32)input_endpoint);
     write_string(" display ");
     write_dec_u32((u32)display_endpoint);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string(" network ");
+    write_dec_u32((u32)network_endpoint);
+#endif
     write_string(" display-available ");
     write_dec_u32((u32)syscall64_native_invoke(X64_SYSCALL_DISPLAY_AVAILABLE, 0u, 0u, 0u));
     write_string(" display-text-writes ");
@@ -12767,6 +12889,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_native_service_surface();
     log_native_capability_surface();
     log_native_fault_surface();
+    log_network_socket_surface();
     log_brokered_keyboard_read_probe();
     run_user_entry_filesystem_probe();
     run_user_entry_cli_probe();
@@ -12779,6 +12902,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     run_user_entry_second_page_probe();
     run_drs_load_probe();
     run_drs_load_full_probe();
+    run_app_model_m20_probe();
     write_string("[x64] active virtual ");
     write_hex_u64(g_x64_scaffold_report.active_virtual_base);
     write_line("");

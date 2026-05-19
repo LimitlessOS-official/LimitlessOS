@@ -7335,6 +7335,14 @@ u32 mmio64_fs_shell_read_descriptor(
     u8 *destination,
     u32 byte_capacity,
     u32 owner_id);
+u32 mmio64_stage_app_model_nethello(
+    u32 driver_read_status_fs_shell_token,
+    u32 owner_id);
+u32 mmio64_stage_app_model_native_app(
+    u32 driver_read_status_fs_shell_token,
+    u32 owner_id,
+    const u8 *app_name,
+    u32 app_name_bytes);
 u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id);
 u32 mmio64_read_nvme_lba0(
     u32 probe_token,
