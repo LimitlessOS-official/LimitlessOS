@@ -5,10 +5,28 @@
 #include "services.h"
 #include "services_x64.h"
 
+/*
+ * A.0 adds opaque per-process extension slots for upcoming VMA, FD, persona,
+ * and audit state while preserving the private process64_record boundary.
+ * It integrates with process_x64.h accessors and the scaffold diagnostic; the
+ * checkpoint proves fresh records expose NULL extension slots without changing
+ * existing manifest/process behavior.
+ */
+
+enum
+{
+    PROCESS64_RECORD_COUNT = 7,
+    PROCESS64_NAME_BYTES = 32
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    ,
+    PROCESS64_CLONE_RECORD_COUNT = 4
+#endif
+};
+
 struct process64_record
 {
     u32 pid;
-    const char *name;
+    char name[PROCESS64_NAME_BYTES];
     u32 principal_id;
     u32 endpoint_class;
     u32 state;
@@ -19,14 +37,26 @@ struct process64_record
     u32 manifest_executable_id;
     u32 manifest_signer_id;
     u32 manifest_token;
+    void *vma_root;
+    void *fd_table;
+    void *persona_ctx;
+    void *audit_ctx;
 };
 
-enum
+struct process64_seed_record
 {
-    PROCESS64_RECORD_COUNT = 7
+    u32 pid;
+    char name[PROCESS64_NAME_BYTES];
+    u32 principal_id;
+    u32 endpoint_class;
+    u32 state;
+    u32 scheduler_class;
+    u32 capability_limit;
 };
 
-static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
+static const char g_process64_unknown_name[] = "unknown";
+
+static const struct process64_seed_record g_process_seeds[PROCESS64_RECORD_COUNT] = {
     {
         1u,
         "init-supervisor",
@@ -34,12 +64,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_INIT,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_SYSTEM,
-        16u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        16u
     },
     {
         2u,
@@ -48,12 +73,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_AI_POLICY,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_POLICY,
-        12u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        12u
     },
     {
         3u,
@@ -62,12 +82,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_DRIVER_HOST,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_IO,
-        8u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        8u
     },
     {
         4u,
@@ -76,12 +91,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_CONSOLE,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_INTERACTIVE,
-        10u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        10u
     },
     {
         5u,
@@ -90,12 +100,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_RAMFS,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_IO,
-        10u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        10u
     },
     {
         6u,
@@ -104,12 +109,7 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_INPUT,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_INTERACTIVE,
-        8u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        8u
     },
     {
         7u,
@@ -118,17 +118,142 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT] = {
         SERVICE_ENDPOINT_CLASS_NONE,
         PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_SERVICE | PROCESS64_STATE_READY | PROCESS64_STATE_SEALED,
         PROCESS64_CLASS_BACKGROUND,
-        4u,
-        LAUNCH64_INVALID_MANIFEST,
-        0u,
-        0u,
-        0u,
-        0u
+        4u
     }
 };
 
+static struct process64_record g_processes[PROCESS64_RECORD_COUNT];
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static struct process64_record g_process64_clone_records[PROCESS64_CLONE_RECORD_COUNT];
+static u32 g_process64_clone_count = 0u;
+static u32 g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
+#endif
 static u32 g_process_init = 0u;
 static u32 g_manifest_verified_count = 0u;
+
+static void process64_copy_name(char *target, const char *source)
+{
+    u32 index;
+
+    for (index = 0u; index < PROCESS64_NAME_BYTES; ++index)
+    {
+        target[index] = source[index];
+        if (source[index] == '\0')
+        {
+            ++index;
+            break;
+        }
+    }
+
+    while (index < PROCESS64_NAME_BYTES)
+    {
+        target[index] = '\0';
+        ++index;
+    }
+}
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static void process64_clear_record(struct process64_record *record)
+{
+    if (record == 0)
+    {
+        return;
+    }
+
+    record->pid = PROCESS64_INVALID_PID;
+    process64_copy_name(record->name, g_process64_unknown_name);
+    record->principal_id = 0u;
+    record->endpoint_class = SERVICE_ENDPOINT_CLASS_NONE;
+    record->state = 0u;
+    record->scheduler_class = 0u;
+    record->capability_limit = 0u;
+    record->manifest_index = LAUNCH64_INVALID_MANIFEST;
+    record->manifest_package_id = 0u;
+    record->manifest_executable_id = 0u;
+    record->manifest_signer_id = 0u;
+    record->manifest_token = 0u;
+    record->vma_root = 0;
+    record->fd_table = 0;
+    record->persona_ctx = 0;
+    record->audit_ctx = 0;
+}
+
+static u32 process64_clone_record_active(const struct process64_record *record)
+{
+    return ((record != 0)
+        && (record->pid != PROCESS64_INVALID_PID)
+        && (record->pid != 0u))
+        ? 1u
+        : 0u;
+}
+
+static void process64_clear_clone_records(void)
+{
+    u32 index;
+
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        process64_clear_record(&g_process64_clone_records[index]);
+    }
+
+    g_process64_clone_count = 0u;
+    g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
+}
+#endif
+
+static void process64_seed_record(u32 index, u32 preserve_extensions)
+{
+    void *vma_root = (preserve_extensions != 0u) ? g_processes[index].vma_root : 0;
+    void *fd_table = (preserve_extensions != 0u) ? g_processes[index].fd_table : 0;
+    void *persona_ctx = (preserve_extensions != 0u) ? g_processes[index].persona_ctx : 0;
+    void *audit_ctx = (preserve_extensions != 0u) ? g_processes[index].audit_ctx : 0;
+
+    g_processes[index].pid = g_process_seeds[index].pid;
+    process64_copy_name(g_processes[index].name, g_process_seeds[index].name);
+    g_processes[index].principal_id = g_process_seeds[index].principal_id;
+    g_processes[index].endpoint_class = g_process_seeds[index].endpoint_class;
+    g_processes[index].state = g_process_seeds[index].state;
+    g_processes[index].scheduler_class = g_process_seeds[index].scheduler_class;
+    g_processes[index].capability_limit = g_process_seeds[index].capability_limit;
+    g_processes[index].manifest_index = LAUNCH64_INVALID_MANIFEST;
+    g_processes[index].manifest_package_id = 0u;
+    g_processes[index].manifest_executable_id = 0u;
+    g_processes[index].manifest_signer_id = 0u;
+    g_processes[index].manifest_token = 0u;
+    g_processes[index].vma_root = vma_root;
+    g_processes[index].fd_table = fd_table;
+    g_processes[index].persona_ctx = persona_ctx;
+    g_processes[index].audit_ctx = audit_ctx;
+}
+
+static u32 process64_records_valid(void)
+{
+    return ((g_processes[0].pid == g_process_seeds[0].pid)
+        && (g_processes[0].principal_id == g_process_seeds[0].principal_id)
+        && (g_processes[PROCESS64_RECORD_COUNT - 1u].pid
+            == g_process_seeds[PROCESS64_RECORD_COUNT - 1u].pid)
+        && (g_processes[PROCESS64_RECORD_COUNT - 1u].principal_id
+            == g_process_seeds[PROCESS64_RECORD_COUNT - 1u].principal_id))
+        ? 1u
+        : 0u;
+}
+
+static void process64_seed_records(u32 preserve_extensions)
+{
+    u32 index;
+
+    for (index = 0u; index < PROCESS64_RECORD_COUNT; ++index)
+    {
+        process64_seed_record(index, preserve_extensions);
+    }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    if (preserve_extensions == 0u)
+    {
+        process64_clear_clone_records();
+    }
+#endif
+}
 
 static void process64_bind_manifests(void)
 {
@@ -186,7 +311,7 @@ static void process64_bind_manifests(void)
 
 static void process64_ensure_init(void)
 {
-    if (g_process_init != 0u)
+    if ((g_process_init != 0u) && (process64_records_valid() != 0u))
     {
         return;
     }
@@ -194,6 +319,7 @@ static void process64_ensure_init(void)
     principal64_init();
     services64_init();
     launch64_init();
+    process64_seed_records((g_process_init != 0u) ? 1u : 0u);
     process64_bind_manifests();
     g_process_init = 1u;
 }
@@ -212,7 +338,71 @@ static const struct process64_record *process64_find(u32 pid)
         }
     }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
+            && (g_process64_clone_records[index].pid == pid))
+        {
+            return &g_process64_clone_records[index];
+        }
+    }
+#endif
+
     return 0;
+}
+
+static struct process64_record *process64_find_mutable(u32 pid)
+{
+    u32 index;
+
+    process64_ensure_init();
+
+    for (index = 0u; index < PROCESS64_RECORD_COUNT; ++index)
+    {
+        if (g_processes[index].pid == pid)
+        {
+            return &g_processes[index];
+        }
+    }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
+            && (g_process64_clone_records[index].pid == pid))
+        {
+            return &g_process64_clone_records[index];
+        }
+    }
+#endif
+
+    return 0;
+}
+
+static u32 process64_attach_slot(void **slot, void *context)
+{
+    if ((slot == 0) || (context == 0) || (*slot != 0))
+    {
+        return 0u;
+    }
+
+    *slot = context;
+    return 1u;
+}
+
+static void *process64_detach_slot(void **slot)
+{
+    void *context;
+
+    if (slot == 0)
+    {
+        return 0;
+    }
+
+    context = *slot;
+    *slot = 0;
+    return context;
 }
 
 void process64_init(void)
@@ -223,15 +413,38 @@ void process64_init(void)
 u32 process64_count(void)
 {
     process64_ensure_init();
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    return PROCESS64_RECORD_COUNT + g_process64_clone_count;
+#else
     return PROCESS64_RECORD_COUNT;
+#endif
 }
 
 u32 process64_pid_by_index(u32 index)
 {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u32 clone_index;
+    u32 seen;
+#endif
+
     process64_ensure_init();
 
     if (index >= PROCESS64_RECORD_COUNT)
     {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        seen = PROCESS64_RECORD_COUNT;
+        for (clone_index = 0u; clone_index < PROCESS64_CLONE_RECORD_COUNT; ++clone_index)
+        {
+            if (process64_clone_record_active(&g_process64_clone_records[clone_index]) != 0u)
+            {
+                if (seen == index)
+                {
+                    return g_process64_clone_records[clone_index].pid;
+                }
+                ++seen;
+            }
+        }
+#endif
         return PROCESS64_INVALID_PID;
     }
 
@@ -794,5 +1007,186 @@ const char *process64_name(u32 pid)
 {
     const struct process64_record *record = process64_find(pid);
 
-    return (record != 0) ? record->name : "unknown";
+    return (record != 0) ? record->name : g_process64_unknown_name;
 }
+
+u32 process64_attach_vma(u32 pid, void *vma_root)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_attach_slot(&record->vma_root, vma_root) : 0u;
+}
+
+void *process64_detach_vma(u32 pid)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_detach_slot(&record->vma_root) : 0;
+}
+
+void *process64_vma_root(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->vma_root : 0;
+}
+
+u32 process64_attach_fd(u32 pid, void *fd_table)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_attach_slot(&record->fd_table, fd_table) : 0u;
+}
+
+void *process64_detach_fd(u32 pid)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_detach_slot(&record->fd_table) : 0;
+}
+
+void *process64_fd_table(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->fd_table : 0;
+}
+
+u32 process64_attach_persona(u32 pid, void *persona_ctx)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_attach_slot(&record->persona_ctx, persona_ctx) : 0u;
+}
+
+void *process64_detach_persona(u32 pid)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_detach_slot(&record->persona_ctx) : 0;
+}
+
+void *process64_persona_ctx(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->persona_ctx : 0;
+}
+
+u32 process64_attach_audit(u32 pid, void *audit_ctx)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_attach_slot(&record->audit_ctx, audit_ctx) : 0u;
+}
+
+void *process64_detach_audit(u32 pid)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    return (record != 0) ? process64_detach_slot(&record->audit_ctx) : 0;
+}
+
+void *process64_audit_ctx(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->audit_ctx : 0;
+}
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 process64_spawn_clone(u32 parent_pid)
+{
+    const struct process64_record *parent = process64_find(parent_pid);
+    struct process64_record *child = 0;
+    u32 index;
+
+    if ((parent == 0) || (parent->principal_id == 0u))
+    {
+        return PROCESS64_INVALID_PID;
+    }
+
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        if (process64_clone_record_active(&g_process64_clone_records[index]) == 0u)
+        {
+            child = &g_process64_clone_records[index];
+            break;
+        }
+    }
+
+    if (child == 0)
+    {
+        return PROCESS64_INVALID_PID;
+    }
+
+    process64_clear_record(child);
+    child->pid = g_process64_next_clone_pid++;
+    if ((g_process64_next_clone_pid == PROCESS64_INVALID_PID)
+        || (g_process64_next_clone_pid < PROCESS64_CLONE_PID_BASE))
+    {
+        g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
+    }
+
+    process64_copy_name(child->name, "linux-thread");
+    child->principal_id = parent->principal_id;
+    child->endpoint_class = SERVICE_ENDPOINT_CLASS_NONE;
+    child->state = PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_READY;
+    child->scheduler_class = parent->scheduler_class;
+    child->capability_limit = parent->capability_limit;
+    child->manifest_index = parent->manifest_index;
+    child->manifest_package_id = parent->manifest_package_id;
+    child->manifest_executable_id = parent->manifest_executable_id;
+    child->manifest_signer_id = parent->manifest_signer_id;
+    child->manifest_token = parent->manifest_token;
+    ++g_process64_clone_count;
+    return child->pid;
+}
+
+u32 process64_release_clone(u32 pid)
+{
+    u32 index;
+
+    process64_ensure_init();
+
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
+            && (g_process64_clone_records[index].pid == pid))
+        {
+            process64_clear_record(&g_process64_clone_records[index]);
+            if (g_process64_clone_count != 0u)
+            {
+                --g_process64_clone_count;
+            }
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+u32 process64_is_clone(u32 pid)
+{
+    u32 index;
+
+    process64_ensure_init();
+
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    {
+        if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
+            && (g_process64_clone_records[index].pid == pid))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+u32 process64_clone_count(void)
+{
+    process64_ensure_init();
+    return g_process64_clone_count;
+}
+#endif

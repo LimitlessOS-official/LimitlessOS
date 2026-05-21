@@ -33,7 +33,9 @@ u32 scheduler64_runqueue_start(u32 first_task);
 void scheduler64_runqueue_stop(void);
 u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame);
 u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result);
+u32 scheduler64_sleep_for_ticks(u32 requested_ticks);
 
+u32 scheduler64_runqueue_current_pid(void);
 u32 scheduler64_runqueue_attempts(void);
 u32 scheduler64_runqueue_exits(void);
 u32 scheduler64_runqueue_irqs(void);
@@ -47,5 +49,11 @@ u64 scheduler64_runqueue_task_rip(u32 task_id);
 u64 scheduler64_runqueue_task_rsp(u32 task_id);
 u64 scheduler64_runqueue_cs(void);
 u64 scheduler64_runqueue_ss(void);
+u32 scheduler64_sleep_count(void);
+u32 scheduler64_sleep_denial_count(void);
+u32 scheduler64_sleep_last_requested_ticks(void);
+u32 scheduler64_sleep_last_elapsed_ticks(void);
+u32 scheduler64_sleep_last_start_ticks(void);
+u32 scheduler64_sleep_last_end_ticks(void);
 
 #endif

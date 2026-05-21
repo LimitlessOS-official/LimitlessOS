@@ -4,6 +4,7 @@
 #include "types.h"
 
 #define PROCESS64_INVALID_PID 0xFFFFFFFFu
+#define PROCESS64_CLONE_PID_BASE 0x00002000u
 
 #define PROCESS64_STATE_BOOTSTRAPPED 0x00000001u
 #define PROCESS64_STATE_SERVICE 0x00000002u
@@ -76,5 +77,21 @@ u32 process64_runtime_payload_size(u32 pid);
 u32 process64_runtime_payload_checksum(u32 pid);
 u32 process64_manifest_verified_count(void);
 const char *process64_name(u32 pid);
+u32 process64_attach_vma(u32 pid, void *vma_root);
+void *process64_detach_vma(u32 pid);
+void *process64_vma_root(u32 pid);
+u32 process64_attach_fd(u32 pid, void *fd_table);
+void *process64_detach_fd(u32 pid);
+void *process64_fd_table(u32 pid);
+u32 process64_attach_persona(u32 pid, void *persona_ctx);
+void *process64_detach_persona(u32 pid);
+void *process64_persona_ctx(u32 pid);
+u32 process64_attach_audit(u32 pid, void *audit_ctx);
+void *process64_detach_audit(u32 pid);
+void *process64_audit_ctx(u32 pid);
+u32 process64_spawn_clone(u32 parent_pid);
+u32 process64_release_clone(u32 pid);
+u32 process64_is_clone(u32 pid);
+u32 process64_clone_count(void);
 
 #endif

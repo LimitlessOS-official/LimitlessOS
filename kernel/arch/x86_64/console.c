@@ -18,19 +18,22 @@ enum
     CONSOLE64_VGA_HEIGHT = 25u
 };
 
-static volatile u16 *const g_console64_vga = (volatile u16 *)(u64)0x00000000000B8000ull;
 static u32 g_write_count = 0u;
 static u32 g_byte_count = 0u;
 static u32 g_denial_count = 0u;
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+static volatile u16 *const g_console64_vga = (volatile u16 *)(u64)0x00000000000B8000ull;
 static u32 g_vga_row = 0u;
 static u32 g_vga_column = 0u;
 static u8 g_vga_color = 0x1Fu;
+#endif
 
 static void console64_debug_write_char(char character)
 {
     outb(0x00E9u, (u8)character);
 }
 
+#ifndef LIMITLESS_X64_UEFI_KERNEL
 static void console64_scroll_if_needed(void)
 {
     u32 row;
@@ -58,9 +61,14 @@ static void console64_scroll_if_needed(void)
 
     g_vga_row = CONSOLE64_VGA_HEIGHT - 1u;
 }
+#endif
 
 static void console64_vga_write_char(char character)
 {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    (void)character;
+    return;
+#else
     if (character == '\n')
     {
         g_vga_column = 0u;
@@ -95,6 +103,7 @@ static void console64_vga_write_char(char character)
         ++g_vga_row;
         console64_scroll_if_needed();
     }
+#endif
 }
 
 static int console64_range_overflows(u64 address, u32 byte_count)
@@ -177,9 +186,11 @@ void console64_init(void)
     g_write_count = 0u;
     g_byte_count = 0u;
     g_denial_count = 0u;
+#ifndef LIMITLESS_X64_UEFI_KERNEL
     g_vga_row = 0u;
     g_vga_column = 0u;
     g_vga_color = 0x1Fu;
+#endif
 }
 
 u32 console64_write(u32 console_capability_handle, u64 input_address, u32 byte_count, u32 owner_id)

@@ -11,11 +11,22 @@
 #define PAGING64_RUNTIME_PROTECTION_USER_ACCESSIBLE 0x00000020u
 #define PAGING64_RUNTIME_PROTECTION_WRITABLE 0x00000040u
 
+#define PAGING64_USER_PROT_READ 0x00000001u
+#define PAGING64_USER_PROT_WRITE 0x00000002u
+#define PAGING64_USER_PROT_EXECUTE 0x00000004u
+
 void paging64_configure_kernel_physical_base(u32 kernel_load_address);
 u64 paging64_kernel_physical_alias(const void *address);
 u32 paging64_install_runtime_mapping(u32 virtual_base, const void *source, u32 mapped_bytes);
 u32 paging64_install_user_runtime_mapping(u32 virtual_base, const void *source, u32 mapped_bytes);
 u32 paging64_install_user_stack_mapping(u32 stack_top, u32 stack_bytes);
+u32 paging64_install_user_page_mapping(u64 virtual_address, u64 physical_address, u32 protection_flags);
+u32 paging64_clear_user_page_mapping(u64 virtual_address);
+u32 paging64_remap_user_page(u64 virtual_address, u64 physical_address, u32 protection_flags);
+u32 paging64_update_user_page_protection(u64 virtual_address, u32 protection_flags);
+u32 paging64_user_page_present(u64 virtual_address);
+u64 paging64_user_page_physical(u64 virtual_address);
+u32 paging64_user_page_protection(u64 virtual_address);
 u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u32 page_count);
 u32 paging64_install_apic_mmio_mapping(u64 lapic_virtual, u32 lapic_physical, u64 ioapic_virtual, u32 ioapic_physical);
 u32 paging64_runtime_mapping_installed(void);

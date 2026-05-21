@@ -21,6 +21,13 @@ void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count);
 void input64_accept_i2c_hid_touchpad_sample(u32 x, u32 y, u32 contact_active, u32 buttons);
 void input64_set_mouse_bounds(u32 width, u32 height);
 u32 input64_read(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_read_kernel(
+    u32 input_capability_handle,
+    u8 *output,
+    u32 byte_capacity,
+    u32 owner_id);
+#endif
 u32 input64_read_line(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id);
 u32 input64_read_keyboard(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id);
 u32 input64_read_keyboard_line(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id);

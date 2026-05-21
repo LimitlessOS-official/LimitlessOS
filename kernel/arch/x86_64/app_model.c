@@ -2,7 +2,10 @@
 
 #include "capability_x64.h"
 #include "launch_x64.h"
+#include "persona_audit_x64.h"
+#include "persona_x64.h"
 #include "principal_x64.h"
+#include "process_x64.h"
 #include "services.h"
 
 #define APP64_DESCRIPTOR_AUTH_NETWORK 0x00000020u
@@ -163,6 +166,37 @@ static void app_model64_mark_native_unavailable(u32 payload_slot)
     g_native_app.expected_checksum =
         launch64_payload_checksum_by_slot(payload_slot);
     g_native_app.token = APP64_NETHELLO_FLAG_UNAVAILABLE;
+}
+
+static u32 app_model64_audit_format_rejection(u32 owner_id, u32 format_id)
+{
+    u32 pid = process64_pid_for_principal(owner_id);
+
+    if ((pid == PROCESS64_INVALID_PID) && (owner_id == PRINCIPAL64_ID_CONSOLE_CLIENT))
+    {
+        pid = process64_pid_for_principal(PRINCIPAL64_ID_CONSOLE_WORKER);
+    }
+    if (pid == PROCESS64_INVALID_PID)
+    {
+        pid = process64_pid_for_principal(PRINCIPAL64_ID_INIT_SUPERVISOR);
+    }
+
+    if ((pid == PROCESS64_INVALID_PID) || (format_id == PERSONA64_FORMAT_NATIVE_APP))
+    {
+        return 0u;
+    }
+
+    if ((process64_audit_ctx(pid) == 0) && (persona_audit64_attach(pid) == 0u))
+    {
+        return 0u;
+    }
+
+    return persona_audit64_record(
+        pid,
+        (u8)PERSONA_AUDIT64_EVENT_FORMAT_REJECTED,
+        (u16)format_id,
+        PERSONA_AUDIT64_RESULT_DENY,
+        0xD4000000ull | (u64)format_id);
 }
 
 static u32 app_model64_line_decimal(
@@ -802,6 +836,7 @@ u32 app_model64_stage_native_app(
 {
     u32 map_token;
     u32 index;
+    u32 descriptor_format;
 
     app_model64_reset_native();
     g_native_app.flags = APP64_NETHELLO_FLAG_REQUESTED;
@@ -818,6 +853,14 @@ u32 app_model64_stage_native_app(
         || (binary_bytes == 0u)
         || (binary_checksum == 0u))
     {
+        app_model64_mark_native_unavailable(0u);
+        return 0u;
+    }
+
+    descriptor_format = persona64_detect_format(descriptor, descriptor_bytes);
+    if (descriptor_format != PERSONA64_FORMAT_NATIVE_APP)
+    {
+        (void)app_model64_audit_format_rejection(owner_id, descriptor_format);
         app_model64_mark_native_unavailable(0u);
         return 0u;
     }

@@ -1,5 +1,7 @@
 #include "scheduler_x64.h"
 
+#include "interrupts_x64.h"
+#include "pit.h"
 #include "process_x64.h"
 
 enum
@@ -8,7 +10,9 @@ enum
     SCHEDULER64_TASK_UNUSED = 0u,
     SCHEDULER64_TASK_READY = 1u,
     SCHEDULER64_TASK_RUNNING = 2u,
-    SCHEDULER64_TASK_EXITED = 3u
+    SCHEDULER64_TASK_EXITED = 3u,
+    SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK = 50000u,
+    SCHEDULER64_SLEEP_MAX_SPIN_BUDGET = 1000000u
 };
 
 struct scheduler64_task
@@ -44,6 +48,17 @@ struct scheduler64_runqueue
 };
 
 static struct scheduler64_runqueue g_runqueue;
+static u32 g_scheduler64_sleep_count = 0u;
+static u32 g_scheduler64_sleep_denial_count = 0u;
+static u32 g_scheduler64_sleep_last_requested_ticks = 0u;
+static u32 g_scheduler64_sleep_last_elapsed_ticks = 0u;
+static u32 g_scheduler64_sleep_last_start_ticks = 0u;
+static u32 g_scheduler64_sleep_last_end_ticks = 0u;
+
+static void scheduler64_cpu_pause(void)
+{
+    __asm__ __volatile__("pause");
+}
 
 static void scheduler64_clear_frame(struct interrupt_frame64 *frame)
 {
@@ -128,6 +143,12 @@ static u32 scheduler64_next_runnable(u32 current)
 void scheduler64_init(void)
 {
     scheduler64_runqueue_reset();
+    g_scheduler64_sleep_count = 0u;
+    g_scheduler64_sleep_denial_count = 0u;
+    g_scheduler64_sleep_last_requested_ticks = 0u;
+    g_scheduler64_sleep_last_elapsed_ticks = 0u;
+    g_scheduler64_sleep_last_start_ticks = 0u;
+    g_scheduler64_sleep_last_end_ticks = 0u;
 }
 
 void scheduler64_runqueue_reset(void)
@@ -363,6 +384,66 @@ u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result)
     return SCHEDULER64_RUNQUEUE_EXIT_COMPLETE;
 }
 
+u32 scheduler64_sleep_for_ticks(u32 requested_ticks)
+{
+    u64 guard = 0ull;
+    u64 guard_limit;
+    u32 start_ticks;
+    u32 elapsed_ticks;
+
+    start_ticks = pit_get_ticks();
+    g_scheduler64_sleep_last_requested_ticks = requested_ticks;
+    g_scheduler64_sleep_last_start_ticks = start_ticks;
+    g_scheduler64_sleep_last_end_ticks = start_ticks;
+    g_scheduler64_sleep_last_elapsed_ticks = 0u;
+
+    if (requested_ticks == 0u)
+    {
+        ++g_scheduler64_sleep_count;
+        return 1u;
+    }
+
+    guard_limit =
+        ((u64)requested_ticks * (u64)SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK)
+        + (u64)SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK;
+    if (guard_limit > (u64)SCHEDULER64_SLEEP_MAX_SPIN_BUDGET)
+    {
+        guard_limit = (u64)SCHEDULER64_SLEEP_MAX_SPIN_BUDGET;
+    }
+
+    interrupts64_enable();
+    while ((((u32)(pit_get_ticks() - start_ticks)) < requested_ticks)
+        && (guard < guard_limit))
+    {
+        scheduler64_cpu_pause();
+        ++guard;
+    }
+    interrupts64_disable();
+
+    g_scheduler64_sleep_last_end_ticks = pit_get_ticks();
+    elapsed_ticks = (u32)(g_scheduler64_sleep_last_end_ticks - start_ticks);
+    g_scheduler64_sleep_last_elapsed_ticks = elapsed_ticks;
+    if (elapsed_ticks >= requested_ticks)
+    {
+        ++g_scheduler64_sleep_count;
+        return 1u;
+    }
+
+    ++g_scheduler64_sleep_denial_count;
+    return 0u;
+}
+
+u32 scheduler64_runqueue_current_pid(void)
+{
+    if ((g_runqueue.active == 0u)
+        || (g_runqueue.current_task >= g_runqueue.task_count))
+    {
+        return 0u;
+    }
+
+    return g_runqueue.tasks[g_runqueue.current_task].pid;
+}
+
 u32 scheduler64_runqueue_attempts(void)
 {
     return g_runqueue.attempts;
@@ -466,4 +547,34 @@ u64 scheduler64_runqueue_cs(void)
 u64 scheduler64_runqueue_ss(void)
 {
     return g_runqueue.ss;
+}
+
+u32 scheduler64_sleep_count(void)
+{
+    return g_scheduler64_sleep_count;
+}
+
+u32 scheduler64_sleep_denial_count(void)
+{
+    return g_scheduler64_sleep_denial_count;
+}
+
+u32 scheduler64_sleep_last_requested_ticks(void)
+{
+    return g_scheduler64_sleep_last_requested_ticks;
+}
+
+u32 scheduler64_sleep_last_elapsed_ticks(void)
+{
+    return g_scheduler64_sleep_last_elapsed_ticks;
+}
+
+u32 scheduler64_sleep_last_start_ticks(void)
+{
+    return g_scheduler64_sleep_last_start_ticks;
+}
+
+u32 scheduler64_sleep_last_end_ticks(void)
+{
+    return g_scheduler64_sleep_last_end_ticks;
 }

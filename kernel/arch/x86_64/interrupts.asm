@@ -7,6 +7,7 @@ extern syscall64_native_dispatch
 section .text
 
 global usermode64_enter_probe
+global usermode64_enter_probe_args
 global usermode64_probe_complete
 
 usermode64_enter_probe:
@@ -32,6 +33,65 @@ usermode64_enter_probe:
     push r9
     push r10
     push rcx
+    iretq
+.resume:
+    mov eax, [rel usermode64_probe_exit_result]
+    mov dword [rel usermode64_probe_active], 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    ret
+
+usermode64_enter_probe_args:
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+    mov r12, rcx
+    mov r13, rdx
+    mov r14, r8
+    mov r15, r9
+    mov rbx, [rsp + 104]
+    mov rbp, [rsp + 112]
+    mov rsi, [rsp + 120]
+    lea rax, [rel .resume]
+    mov [rel usermode64_probe_resume_rip], rax
+    mov [rel usermode64_probe_saved_rsp], rsp
+    mov dword [rel usermode64_probe_active], 1
+    mov r10, r14
+    mov r11, r14
+    and r10, 0xFFFF
+    shr r11, 16
+    and r11, 0xFFFF
+    push r11
+    push r13
+    push r15
+    push r10
+    push r12
+    mov rcx, rbx
+    mov rdx, rbp
+    mov r8, rsi
+    xor r9d, r9d
+    xor eax, eax
+    xor ebx, ebx
+    xor ebp, ebp
+    xor esi, esi
+    xor edi, edi
+    xor r10d, r10d
+    xor r11d, r11d
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r14d, r14d
+    xor r15d, r15d
     iretq
 .resume:
     mov eax, [rel usermode64_probe_exit_result]

@@ -277,6 +277,27 @@ static void fs64_store_path(
     record->path_byte_count = limit;
 }
 
+static int fs64_path_is_ephemeral_tmp(const struct fs64_node_capability *record)
+{
+    static const u8 tmp_prefix[] = "/tmp/";
+    u32 index;
+
+    if ((record == 0) || (record->path_byte_count < (sizeof(tmp_prefix) - 1u)))
+    {
+        return 0;
+    }
+
+    for (index = 0u; index < (sizeof(tmp_prefix) - 1u); ++index)
+    {
+        if (record->path[index] != tmp_prefix[index])
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static struct fs64_node_capability *fs64_find_live(u32 handle)
 {
     u32 index;
@@ -909,7 +930,8 @@ u32 fs64_write(
 
     if ((file_offset == 0u)
         && (actual_count != 0u)
-        && (record->path_byte_count != 0u))
+        && (record->path_byte_count != 0u)
+        && !fs64_path_is_ephemeral_tmp(record))
     {
         (void)mmio64_nvme_fat_shell_write_file(
             record->path,
@@ -961,7 +983,8 @@ u32 fs64_write_kernel(
 
     if ((file_offset == 0u)
         && (actual_count != 0u)
-        && (record->path_byte_count != 0u))
+        && (record->path_byte_count != 0u)
+        && !fs64_path_is_ephemeral_tmp(record))
     {
         (void)mmio64_nvme_fat_shell_write_file(
             record->path,

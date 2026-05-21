@@ -3,6 +3,12 @@
 #include "apic_x64.h"
 #include "descriptors_x64.h"
 #include "input_x64.h"
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+#include "linux_abi_x64.h"
+#include "pe64_x64.h"
+#include "persona_x64.h"
+#include "windows_seh_x64.h"
+#endif
 #include "pic.h"
 #include "pit.h"
 #include "process_x64.h"
@@ -44,6 +50,14 @@ extern void interrupt64_breakpoint_proof(void);
 extern void interrupt64_invalid_opcode_proof(void);
 extern void interrupt64_page_fault_proof(void);
 extern u32 usermode64_enter_probe(u64 rip, u64 rsp, u64 selectors, u64 rflags);
+extern u32 usermode64_enter_probe_args(
+    u64 rip,
+    u64 rsp,
+    u64 selectors,
+    u64 rflags,
+    u64 arg_rcx,
+    u64 arg_rdx,
+    u64 arg_r8);
 extern void usermode64_probe_complete(u64 result);
 extern u8 interrupt64_breakpoint_proof_resume;
 extern u8 interrupt64_invalid_opcode_proof_site;
@@ -475,6 +489,65 @@ u32 interrupts64_trigger_user_entry_probe(u64 rip, u64 rsp, u64 selectors, u64 r
     return result;
 }
 
+u32 interrupts64_trigger_user_entry_probe_args(
+    u64 rip,
+    u64 rsp,
+    u64 selectors,
+    u64 rflags,
+    u64 arg_rcx,
+    u64 arg_rdx,
+    u64 arg_r8,
+    u32 *out_aux)
+{
+    u32 result;
+    u32 saved_syscall_count = g_syscall_count;
+    u64 saved_last_syscall_code = g_last_syscall_code;
+    u32 saved_attempts = g_user_entry_probe_attempts;
+    u32 saved_exits = g_user_entry_probe_exits;
+    u32 saved_result = g_user_entry_probe_result;
+    u32 saved_aux = g_user_entry_probe_aux;
+    u64 saved_rip = g_user_entry_probe_rip;
+    u64 saved_rsp = g_user_entry_probe_rsp;
+    u64 saved_cs = g_user_entry_probe_cs;
+    u64 saved_ss = g_user_entry_probe_ss;
+    u32 saved_mode = g_user_entry_probe_mode;
+
+    if (out_aux != 0)
+    {
+        *out_aux = 0u;
+    }
+    ++g_user_entry_probe_attempts;
+    g_user_entry_probe_mode = X64_USER_PROBE_BASIC;
+    g_user_entry_probe_rip = rip;
+    g_user_entry_probe_rsp = rsp;
+    g_user_entry_probe_cs = selectors & 0xFFFFull;
+    g_user_entry_probe_ss = (selectors >> 16) & 0xFFFFull;
+    result = usermode64_enter_probe_args(
+        rip,
+        rsp,
+        selectors,
+        rflags,
+        arg_rcx,
+        arg_rdx,
+        arg_r8);
+    if (out_aux != 0)
+    {
+        *out_aux = g_user_entry_probe_aux;
+    }
+    g_syscall_count = saved_syscall_count;
+    g_last_syscall_code = saved_last_syscall_code;
+    g_user_entry_probe_attempts = saved_attempts;
+    g_user_entry_probe_exits = saved_exits;
+    g_user_entry_probe_result = saved_result;
+    g_user_entry_probe_aux = saved_aux;
+    g_user_entry_probe_rip = saved_rip;
+    g_user_entry_probe_rsp = saved_rsp;
+    g_user_entry_probe_cs = saved_cs;
+    g_user_entry_probe_ss = saved_ss;
+    g_user_entry_probe_mode = saved_mode;
+    return result;
+}
+
 u32 interrupts64_trigger_user_preempt_probe(u64 rip, u64 rsp, u64 selectors, u64 rflags)
 {
     u32 result;
@@ -848,6 +921,24 @@ u64 interrupts64_user_runqueue_probe_ss(void)
     return scheduler64_runqueue_ss();
 }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static void interrupt64_deliver_linux_signals_if_ready(struct interrupt_frame64 *frame)
+{
+    u32 pid;
+
+    if ((frame == 0) || ((frame->cs & 0x3ull) != 0x3ull))
+    {
+        return;
+    }
+
+    pid = scheduler64_runqueue_current_pid();
+    if ((pid != 0u) && (persona64_type(pid) == PERSONA64_TYPE_LINUX_ELF))
+    {
+        (void)linux_abi64_signal_deliver_pending(pid, frame);
+    }
+}
+#endif
+
 void interrupts64_dispatch(struct interrupt_frame64 *frame)
 {
     if (frame->vector < 32u)
@@ -857,6 +948,14 @@ void interrupts64_dispatch(struct interrupt_frame64 *frame)
         {
             return;
         }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        if (((frame->cs & 0x3ull) == 0x3ull)
+            && (windows_seh64_dispatch_exception(scheduler64_runqueue_current_pid(), frame) != 0u))
+        {
+            return;
+        }
+#endif
 
         interrupt64_log_exception(frame);
         cpu_cli();
@@ -877,6 +976,9 @@ void interrupts64_dispatch(struct interrupt_frame64 *frame)
         if (irq == 0u)
         {
             pit_handle_interrupt();
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+            pe64_kuser_tick_update_all();
+#endif
             if (((frame->cs & 0x3ull) == 0x3ull)
                 && (g_user_entry_probe_mode == X64_USER_PROBE_PREEMPT))
             {
@@ -930,6 +1032,9 @@ void interrupts64_dispatch(struct interrupt_frame64 *frame)
         {
             pic_send_eoi(irq);
         }
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        interrupt64_deliver_linux_signals_if_ready(frame);
+#endif
         return;
     }
 
@@ -977,5 +1082,8 @@ void interrupts64_dispatch(struct interrupt_frame64 *frame)
         }
 
         frame->rax = syscall64_dispatch(frame->rax, frame->rbx, frame->rcx, frame->rdx);
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        interrupt64_deliver_linux_signals_if_ready(frame);
+#endif
     }
 }

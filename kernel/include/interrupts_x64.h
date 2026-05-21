@@ -38,6 +38,15 @@ void interrupts64_trigger_invalid_opcode_proof(void);
 void interrupts64_trigger_page_fault_proof(void);
 void interrupts64_trigger_syscall_probe(u64 code);
 u32 interrupts64_trigger_user_entry_probe(u64 rip, u64 rsp, u64 selectors, u64 rflags);
+u32 interrupts64_trigger_user_entry_probe_args(
+    u64 rip,
+    u64 rsp,
+    u64 selectors,
+    u64 rflags,
+    u64 arg_rcx,
+    u64 arg_rdx,
+    u64 arg_r8,
+    u32 *out_aux);
 u32 interrupts64_trigger_user_preempt_probe(u64 rip, u64 rsp, u64 selectors, u64 rflags);
 u32 interrupts64_trigger_user_switch_probe(
     u64 source_rip,

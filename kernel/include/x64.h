@@ -3,6 +3,9 @@
 
 #include "types.h"
 
+#define X64_MSR_IA32_FS_BASE 0xC0000100u
+#define X64_MSR_IA32_GS_BASE 0xC0000101u
+
 static inline void outb(u16 port, u8 value)
 {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -112,6 +115,26 @@ static inline void wrmsr64(u32 msr, u64 value)
     u32 high = (u32)(value >> 32);
 
     __asm__ __volatile__("wrmsr" : : "c"(msr), "a"(low), "d"(high));
+}
+
+static inline u64 read_fs_base64(void)
+{
+    return rdmsr64(X64_MSR_IA32_FS_BASE);
+}
+
+static inline void write_fs_base64(u64 value)
+{
+    wrmsr64(X64_MSR_IA32_FS_BASE, value);
+}
+
+static inline u64 read_gs_base64(void)
+{
+    return rdmsr64(X64_MSR_IA32_GS_BASE);
+}
+
+static inline void write_gs_base64(u64 value)
+{
+    wrmsr64(X64_MSR_IA32_GS_BASE, value);
 }
 
 static inline void lgdt64(const void *base, u16 limit)

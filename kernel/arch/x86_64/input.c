@@ -1684,6 +1684,47 @@ u32 input64_read(u32 input_capability_handle, u64 output_address, u32 byte_capac
     return actual_count;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_read_kernel(
+    u32 input_capability_handle,
+    u8 *output,
+    u32 byte_capacity,
+    u32 owner_id)
+{
+    u32 endpoint;
+    u32 remaining;
+    u32 actual_count;
+
+    if ((output == 0) || (byte_capacity == 0u) || (byte_capacity > INPUT64_MAX_READ_BYTES))
+    {
+        return input64_deny();
+    }
+
+    endpoint = capability64_route(
+        input_capability_handle,
+        CAPABILITY64_RIGHT_SEND,
+        owner_id);
+    if (endpoint != services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INPUT))
+    {
+        return input64_deny();
+    }
+
+    if (g_cursor >= (u32)sizeof(g_seeded_command))
+    {
+        ++g_eof_count;
+        return 0u;
+    }
+
+    remaining = ((u32)sizeof(g_seeded_command)) - g_cursor;
+    actual_count = (byte_capacity < remaining) ? byte_capacity : remaining;
+    input64_copy(output, &g_seeded_command[g_cursor], actual_count);
+    g_cursor += actual_count;
+    ++g_read_count;
+    g_byte_count += actual_count;
+    return actual_count;
+}
+#endif
+
 u32 input64_read_line(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id)
 {
     u32 endpoint;

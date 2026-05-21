@@ -23,6 +23,9 @@
 #include "services.h"
 #include "services_x64.h"
 #include "shell_x64.h"
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "vma_x64.h"
+#endif
 #include "x64.h"
 #include "xhci_x64.h"
 
@@ -7538,6 +7541,13 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 {
     u64 noarg_result = 0ull;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (number == X64_SYSCALL_VMA_DIAG_QUERY)
+    {
+        return vma64_diag_query((u32)arg0, (u32)arg1);
+    }
+#endif
+
     if (syscall64_try_noarg(number, &noarg_result) != 0u)
     {
         return noarg_result;
@@ -8376,6 +8386,11 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 
         case X64_SYSCALL_LAUNCH_MANIFEST_ACCEPTS_RUNTIME_TOKEN:
             return (u64)launch64_manifest_accepts_runtime_token((u32)arg0, (u32)arg1);
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        case X64_SYSCALL_VMA_DIAG_QUERY:
+            return vma64_diag_query((u32)arg0, (u32)arg1);
+#endif
 
         default:
             return 0xFFFFFFFFFFFFFFFFull;
