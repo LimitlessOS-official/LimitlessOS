@@ -23,9 +23,17 @@
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "linux_abi_x64.h"
+#include "linux_dynamic_x64.h"
+#include "linux_libc_x64.h"
 #include "linux_signal_x64.h"
 #include "linux_vdso_x64.h"
 #include "linux_vfs_x64.h"
+#include "macos_abi_x64.h"
+#include "macos_cf_x64.h"
+#include "macos_dyld_x64.h"
+#include "macos_mach_x64.h"
+#include "macos_shim_x64.h"
+#include "macho64_x64.h"
 #include "mmio_x64.h"
 #include "network_socket_x64.h"
 #include "paging_x64.h"
@@ -51,7 +59,9 @@
 #include "virtio_net_x64.h"
 #include "windows_abi_x64.h"
 #include "windows_handle_x64.h"
+#include "windows_registry_x64.h"
 #include "windows_seh_x64.h"
+#include "windows_shim_x64.h"
 #include "windows_vfs_x64.h"
 #include "x64.h"
 #include "xhci_x64.h"
@@ -65,6 +75,20 @@
 #define SCAFFOLD_TIMER_WAIT_SPIN_BUDGET 500000000u
 #define SCAFFOLD_KEYBOARD_WAIT_SPIN_BUDGET 100000u
 #define SCAFFOLD_MOUSE_WAIT_SPIN_BUDGET 100000u
+#define SCAFFOLD_STORE_LE32(bytes, offset, value) \
+    do { \
+        u32 scaffold_store_le32_value = (u32)(value); \
+        (bytes)[(offset)] = (u8)(scaffold_store_le32_value & 0xFFu); \
+        (bytes)[(offset) + 1u] = (u8)((scaffold_store_le32_value >> 8) & 0xFFu); \
+        (bytes)[(offset) + 2u] = (u8)((scaffold_store_le32_value >> 16) & 0xFFu); \
+        (bytes)[(offset) + 3u] = (u8)((scaffold_store_le32_value >> 24) & 0xFFu); \
+    } while (0)
+#define SCAFFOLD_STORE_LE64(bytes, offset, value) \
+    do { \
+        u64 scaffold_store_le64_value = (u64)(value); \
+        SCAFFOLD_STORE_LE32((bytes), (offset), (u32)(scaffold_store_le64_value & 0xFFFFFFFFull)); \
+        SCAFFOLD_STORE_LE32((bytes), (offset) + 4u, (u32)(scaffold_store_le64_value >> 32)); \
+    } while (0)
 
 enum
 {
@@ -3096,6 +3120,57 @@ static void log_process_namespace(void)
     static u32 pipe_c5_live_final;
     static u32 pipe_c5_positive;
     static u8 pipe_c5_read_buf[8];
+    static struct interrupt_frame64 pipe_c6_reader_frame;
+    static struct interrupt_frame64 pipe_c6_writer_frame;
+    static u32 pipe_c6_target_owner;
+    static u32 pipe_c6_stdin_cap;
+    static u32 pipe_c6_stdout_cap;
+    static u32 pipe_c6_stderr_cap;
+    static u32 pipe_c6_target_init;
+    static u32 pipe_c6_read_a_fd;
+    static u32 pipe_c6_write_a_fd;
+    static u32 pipe_c6_read_b_fd;
+    static u32 pipe_c6_create;
+    static u32 pipe_c6_grant;
+    static u32 pipe_c6_direct_denied;
+    static u32 pipe_c6_read_block_result;
+    static u32 pipe_c6_write_bytes;
+    static u32 pipe_c6_read_after_wake;
+    static u32 pipe_c6_checksum;
+    static u32 pipe_c6_match;
+    static u32 pipe_c6_reader_task;
+    static u32 pipe_c6_writer_task;
+    static u32 pipe_c6_start;
+    static u32 pipe_c6_current_before;
+    static u32 pipe_c6_blocked_slot;
+    static u32 pipe_c6_reader_state_after_block;
+    static u32 pipe_c6_switch_to_writer;
+    static u32 pipe_c6_writer_state_after_switch;
+    static u32 pipe_c6_reader_state_after_wake;
+    static u32 pipe_c6_slot_after_wake;
+    static u32 pipe_c6_switch_to_reader;
+    static u32 pipe_c6_current_after_switch;
+    static u32 pipe_c6_reader_state_after_switch;
+    static u32 pipe_c6_pipe_block_before;
+    static u32 pipe_c6_pipe_block_after;
+    static u32 pipe_c6_pipe_wake_before;
+    static u32 pipe_c6_pipe_wake_after;
+    static u32 pipe_c6_sched_block_before;
+    static u32 pipe_c6_sched_block_after;
+    static u32 pipe_c6_sched_wake_before;
+    static u32 pipe_c6_sched_wake_after;
+    static u32 pipe_c6_sched_denial_before;
+    static u32 pipe_c6_sched_denial_after;
+    static u32 pipe_c6_avail_after_write;
+    static u32 pipe_c6_avail_after_read;
+    static u32 pipe_c6_close_writer;
+    static u32 pipe_c6_close_b_read;
+    static u32 pipe_c6_close_a_read;
+    static u32 pipe_c6_target_cleanup;
+    static u32 pipe_c6_live_before;
+    static u32 pipe_c6_live_final;
+    static u32 pipe_c6_positive;
+    static u8 pipe_c6_read_buf[8];
     static const u8 persona_d3_elf_bytes[8] = {
         0x7Fu, (u8)'E', (u8)'L', (u8)'F', 2u, 1u, 1u, 0u
     };
@@ -3139,6 +3214,130 @@ static void log_process_namespace(void)
     static const u8 persona_d4_dummy_binary[4] = {
         0x90u, 0xC3u, 0x00u, 0x00u
     };
+    static const char macho_m5_libsystem_path[] = "/usr/lib/libSystem.B.dylib";
+    static const char macho_m5_optional_path[] = "/usr/lib/libOptionalMissing.dylib";
+    static const char macho_m5_missing_path[] = "/usr/lib/libMissing.B.dylib";
+    static const char macho_m6_missing_symbol[] = "missing";
+    static const char macho_m7_data_segment_name[] = "__DATA";
+    static const char macho_m7_variables_section_name[] = "__thread_vars";
+    static const char macho_m7_regular_section_name[] = "__thread_data";
+    static const char macho_m7_zerofill_section_name[] = "__thread_bss";
+    static const char macho_m8_arg0[] = "/usr/bin/m8hello";
+    static const char macho_m8_arg1[] = "--tls";
+    static const char macho_m8_env0[] = "PATH=/usr/bin";
+    static const char macho_m8_env1[] = "HOME=/Users/limitless";
+    static const char macho_m8_exec_path[] = "/usr/bin/m8hello";
+    static const char *macho_m8_argv[2];
+    static const char *macho_m8_envp[2];
+    static const macho64_stack_aux_entry_t macho_m8_auxv[3] = {
+        { MACHO64_STACK_AUX_ENTRY, 0x0000000046100010ull },
+        { MACHO64_STACK_AUX_PAGESZ, 0x0000000000001000ull },
+        { MACHO64_STACK_AUX_NULL, 0x0000000000000000ull }
+    };
+    static const u8 macos_n1_path[] = "/APPS/LS.APP";
+    static const u8 macos_n1_write_bytes[] = "n1\n";
+    static const u8 macho_m1_valid_bytes[288] = {
+        [0x00] = 0xCFu,
+        [0x01] = 0xFAu,
+        [0x02] = 0xEDu,
+        [0x03] = 0xFEu,
+        [0x04] = 0x07u,
+        [0x07] = 0x01u,
+        [0x08] = 0x03u,
+        [0x0C] = 0x02u,
+        [0x10] = 0x03u,
+        [0x15] = 0x01u,
+        [0x18] = 0x85u,
+        [0x1A] = 0x20u
+    };
+    static const u8 macho_m1_bad_magic_bytes[32] = {
+        [0x00] = 0xFEu,
+        [0x01] = 0xEDu,
+        [0x02] = 0xFAu,
+        [0x03] = 0xCFu,
+        [0x04] = 0x07u,
+        [0x07] = 0x01u,
+        [0x08] = 0x03u,
+        [0x0C] = 0x02u,
+        [0x10] = 0x01u,
+        [0x14] = 0x08u
+    };
+    static u8 macho_m1_bad_cpu_bytes[288];
+    static u8 macho_m1_bad_subtype_bytes[288];
+    static u8 macho_m1_bad_filetype_bytes[288];
+    static u8 macho_m1_bad_range_bytes[288];
+    static const u8 macho_m2_fat_valid_bytes[640] = {
+        [0x00] = 0xCAu,
+        [0x01] = 0xFEu,
+        [0x02] = 0xBAu,
+        [0x03] = 0xBEu,
+        [0x07] = 0x02u,
+        [0x0B] = 0x07u,
+        [0x0F] = 0x03u,
+        [0x13] = 0x80u,
+        [0x17] = 0x20u,
+        [0x1B] = 0x04u,
+        [0x1C] = 0x01u,
+        [0x1F] = 0x07u,
+        [0x23] = 0x03u,
+        [0x26] = 0x01u,
+        [0x2A] = 0x01u,
+        [0x2B] = 0x20u,
+        [0x2F] = 0x0Cu,
+        [0x100] = 0xCFu,
+        [0x101] = 0xFAu,
+        [0x102] = 0xEDu,
+        [0x103] = 0xFEu,
+        [0x104] = 0x07u,
+        [0x107] = 0x01u,
+        [0x108] = 0x03u,
+        [0x10C] = 0x06u,
+        [0x110] = 0x02u,
+        [0x114] = 0x80u,
+        [0x118] = 0x85u,
+        [0x11A] = 0x20u
+    };
+    static const u8 macho_m2_bad_magic_bytes[8] = {
+        [0x00] = 0xFEu,
+        [0x01] = 0xEDu,
+        [0x02] = 0xFAu,
+        [0x03] = 0xCEu,
+        [0x07] = 0x01u
+    };
+    static const u8 macho_m2_bad_count_bytes[8] = {
+        [0x00] = 0xCAu,
+        [0x01] = 0xFEu,
+        [0x02] = 0xBAu,
+        [0x03] = 0xBEu,
+        [0x07] = 0x11u
+    };
+    static const u8 macho_m2_no_x64_bytes[80] = {
+        [0x00] = 0xCAu,
+        [0x01] = 0xFEu,
+        [0x02] = 0xBAu,
+        [0x03] = 0xBEu,
+        [0x07] = 0x01u,
+        [0x0B] = 0x07u,
+        [0x0F] = 0x03u,
+        [0x13] = 0x40u,
+        [0x17] = 0x20u,
+        [0x1B] = 0x04u
+    };
+    static const u8 macho_m2_bad_range_bytes[48] = {
+        [0x00] = 0xCAu,
+        [0x01] = 0xFEu,
+        [0x02] = 0xBAu,
+        [0x03] = 0xBEu,
+        [0x07] = 0x01u,
+        [0x08] = 0x01u,
+        [0x0B] = 0x07u,
+        [0x0F] = 0x03u,
+        [0x13] = 0x20u,
+        [0x17] = 0x80u,
+        [0x1B] = 0x04u
+    };
+    static u8 macho_m3_image_bytes[0x4000u];
+    static u8 macho_m4_bad_image_bytes[0x200u];
     static const u8 elf_e1_valid_bytes[384] = {
         [0x00] = 0x7Fu,
         [0x01] = (u8)'E',
@@ -3287,22 +3486,19 @@ static void log_process_namespace(void)
         [0x01] = (u8)'Z',
         [0x3C] = 0x40u
     };
-    static const u8 pe_j12_entry_code[60] = {
-        0xBBu, 0x52u, 0x52u, 0x45u, 0x50u,
-        0x48u, 0x83u, 0xF9u, 0x01u,
-        0x75u, 0x25u,
-        0x41u, 0x83u, 0xC9u, 0x01u,
-        0x48u, 0xB8u, 0x00u, 0x00u, 0xA0u, 0x44u, 0x00u, 0x00u, 0x00u, 0x00u,
-        0x48u, 0x39u, 0xC2u,
-        0x75u, 0x12u,
-        0x41u, 0x83u, 0xC9u, 0x02u,
-        0x4Du, 0x85u, 0xC0u,
-        0x75u, 0x09u,
-        0x41u, 0x83u, 0xC9u, 0x04u,
-        0xBBu, 0x32u, 0x31u, 0x45u, 0x50u,
-        0x44u, 0x89u, 0xC9u,
-        0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
-        0xCDu, 0x80u,
+    static const u8 pe_j12_entry_code[] = {
+        0xBBu, 0x52u, 0x52u, 0x45u, 0x50u, 0x45u, 0x31u, 0xC9u,
+        0x48u, 0x83u, 0xF9u, 0x01u, 0x74u, 0x28u, 0xB8u, 0x00u,
+        0x10u, 0xA0u, 0x44u, 0x48u, 0x39u, 0xC1u, 0x75u, 0x3Eu,
+        0x41u, 0x83u, 0xC9u, 0x01u, 0xB8u, 0x00u, 0x00u, 0xA0u,
+        0x44u, 0x48u, 0x39u, 0xC2u, 0x75u, 0x30u, 0x41u, 0x83u,
+        0xC9u, 0x02u, 0xB8u, 0x00u, 0x30u, 0xB0u, 0x44u, 0x49u,
+        0x39u, 0xC0u, 0x75u, 0x22u, 0xEBu, 0x17u, 0x41u, 0x83u,
+        0xC9u, 0x01u, 0xB8u, 0x00u, 0x00u, 0xA0u, 0x44u, 0x48u,
+        0x39u, 0xC2u, 0x75u, 0x12u, 0x41u, 0x83u, 0xC9u, 0x02u,
+        0x4Du, 0x85u, 0xC0u, 0x75u, 0x09u, 0x41u, 0x83u, 0xC9u,
+        0x04u, 0xBBu, 0x32u, 0x31u, 0x45u, 0x50u, 0x44u, 0x89u,
+        0xC9u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xCDu, 0x80u,
         0xEBu, 0xFEu
     };
     static const char elf_e6_argv0[] = "/bin/hello";
@@ -3666,8 +3862,11 @@ static void log_process_namespace(void)
     static pe64_section_summary_t pe_j12_summary;
     static pe64_map_result_t pe_j12_map_result;
     static pe64_entry_result_t pe_j12_result;
+    static pe64_entry_result_t pe_j12_exe_result;
     static pe64_entry_result_t pe_j12_bad_result;
+    static windows_shim64_ntdll_result_t pe_j12_ntdll_result;
     static persona_context_t *pe_j12_context;
+    static persona_context_t *pe_j12_exe_context;
     static u32 pe_j12_index;
     static u32 pe_j12_pid;
     static u32 pe_j12_vma_init;
@@ -3678,12 +3877,22 @@ static void log_process_namespace(void)
     static u32 pe_j12_map;
     static u32 pe_j12_launch;
     static u32 pe_j12_context_match;
+    static u32 pe_j12_ntdll_load;
+    static u32 pe_j12_ntdll_text_pte_before_exe;
+    static u32 pe_j12_ntdll_text_prot_before_exe;
+    static u32 pe_j12_ntdll_text_pte_after_exe;
+    static u32 pe_j12_ntdll_text_prot_after_exe;
+    static u32 pe_j12_exe_launch;
+    static u32 pe_j12_exe_context_match;
     static u32 pe_j12_denied;
     static u32 pe_j12_denied_error;
     static u32 pe_j12_unmap_text;
     static u32 pe_j12_unmap_rdata;
     static u32 pe_j12_unmap_data;
     static u32 pe_j12_unmap_stack;
+    static u32 pe_j12_unmap_exe_stack;
+    static u32 pe_j12_unmap_ntdll_text;
+    static u32 pe_j12_unmap_ntdll_rdata;
     static u32 pe_j12_persona_release;
     static u32 pe_j12_vma_release;
     static u32 pe_j12_cleanup;
@@ -3691,6 +3900,8 @@ static void log_process_namespace(void)
     static u32 pe_j12_positive;
     static u64 pe_j12_actual_base;
     static u64 pe_j12_stack_base;
+    static u64 pe_j12_exe_stack_base;
+    static u64 pe_j12_ntdll_base;
     static persona_context_t *windows_k1_context;
     static persona_audit64_record_t windows_k1_record = {0};
     static u32 windows_k1_pid;
@@ -3712,6 +3923,11 @@ static void log_process_namespace(void)
     static u32 windows_k1_entry_set_event;
     static u32 windows_k1_entry_create_mutant;
     static u32 windows_k1_entry_release_mutant;
+    static u32 windows_k1_entry_query_process;
+    static u32 windows_k1_entry_query_system;
+    static u32 windows_k1_entry_open_key;
+    static u32 windows_k1_entry_create_key;
+    static u32 windows_k1_entry_query_value_key;
     static u32 windows_k1_audit_before;
     static u32 windows_k1_result;
     static u32 windows_k1_audit_after_write;
@@ -3912,6 +4128,12 @@ static void log_process_namespace(void)
     static u32 windows_k4_close_count;
     static u32 windows_k4_pseudo_count;
     static u32 windows_k4_global_denials;
+    static u32 windows_k4_install_count_before;
+    static u32 windows_k4_duplicate_count_before;
+    static u32 windows_k4_inherit_count_before;
+    static u32 windows_k4_close_count_before;
+    static u32 windows_k4_pseudo_count_before;
+    static u32 windows_k4_global_denials_before;
     static u64 windows_k4_high_water;
     static u64 windows_k4_last_handle;
     static u32 windows_k4_last_cap;
@@ -4334,6 +4556,2844 @@ static void log_process_namespace(void)
     static u32 windows_k10_waiter_clone_release;
     static u32 windows_k10_cleanup;
     static u32 windows_k10_positive;
+    static persona_audit64_record_t windows_k10b_direct_record = {0};
+    static persona_audit64_record_t windows_k10b_wait_record = {0};
+    static persona_audit64_record_t windows_k10b_release_record = {0};
+    static persona_audit64_record_t windows_k10b_child_release_record = {0};
+    static struct interrupt_frame64 windows_k10b_waiter_frame;
+    static struct interrupt_frame64 windows_k10b_owner_frame;
+    static u32 windows_k10b_owner_pid;
+    static u32 windows_k10b_waiter_pid;
+    static u32 windows_k10b_owner_audit_attach;
+    static u32 windows_k10b_waiter_audit_attach;
+    static u32 windows_k10b_owner_vma_init;
+    static u32 windows_k10b_waiter_vma_init;
+    static u32 windows_k10b_owner_bind;
+    static u32 windows_k10b_waiter_bind;
+    static u32 windows_k10b_owner_handle_init;
+    static u32 windows_k10b_waiter_handle_init;
+    static u64 windows_k10b_owner_page;
+    static u64 windows_k10b_waiter_page;
+    static u64 windows_k10b_handle_ptr;
+    static u64 windows_k10b_owner_prev_ptr;
+    static u64 windows_k10b_waiter_prev_ptr;
+    static u64 windows_k10b_owner_handle;
+    static u64 windows_k10b_waiter_handle;
+    static u32 windows_k10b_owner_map_ok;
+    static u32 windows_k10b_waiter_map_ok;
+    static u32 windows_k10b_create_result;
+    static u32 windows_k10b_direct_result;
+    static u32 windows_k10b_wait_result;
+    static u32 windows_k10b_release_result;
+    static u32 windows_k10b_child_release_result;
+    static u32 windows_k10b_owner_prev;
+    static u32 windows_k10b_waiter_prev;
+    static u32 windows_k10b_wait_task;
+    static u32 windows_k10b_owner_task;
+    static u32 windows_k10b_runqueue_start;
+    static u32 windows_k10b_current_before_wait;
+    static u32 windows_k10b_waiter_slot_after_wait;
+    static u32 windows_k10b_waiter_pid_after_wait;
+    static u32 windows_k10b_waiter_state_after_wait;
+    static u32 windows_k10b_switch_to_owner;
+    static u32 windows_k10b_owner_state_after_switch;
+    static u32 windows_k10b_owner_after_release;
+    static u32 windows_k10b_count_after_release;
+    static u32 windows_k10b_waiter_state_after_wake;
+    static u32 windows_k10b_waiter_slot_after_release;
+    static u32 windows_k10b_switch_to_waiter;
+    static u32 windows_k10b_current_after_switch;
+    static u32 windows_k10b_waiter_state_after_switch;
+    static u32 windows_k10b_owner_after_child_release;
+    static u32 windows_k10b_count_after_child_release;
+    static u32 windows_k10b_block_count_before;
+    static u32 windows_k10b_block_count_after;
+    static u32 windows_k10b_wake_count_before;
+    static u32 windows_k10b_wake_count_after;
+    static u32 windows_k10b_sched_denial_before;
+    static u32 windows_k10b_sched_denial_after;
+    static u32 windows_k10b_wait_count_before;
+    static u32 windows_k10b_release_count_before;
+    static u32 windows_k10b_denial_count_before;
+    static u32 windows_k10b_handle_wait_count_before;
+    static u32 windows_k10b_handle_release_count_before;
+    static u32 windows_k10b_handle_denial_count_before;
+    static u32 windows_k10b_wait_count;
+    static u32 windows_k10b_release_count;
+    static u32 windows_k10b_denial_count;
+    static u32 windows_k10b_handle_wait_count;
+    static u32 windows_k10b_handle_release_count;
+    static u32 windows_k10b_handle_denial_count;
+    static u32 windows_k10b_audit_owner_after_create;
+    static u32 windows_k10b_audit_waiter_before;
+    static u32 windows_k10b_audit_waiter_after_direct;
+    static u32 windows_k10b_audit_waiter_after_wait;
+    static u32 windows_k10b_audit_owner_after_release;
+    static u32 windows_k10b_audit_waiter_after_release;
+    static u32 windows_k10b_read_direct_record;
+    static u32 windows_k10b_read_wait_record;
+    static u32 windows_k10b_read_release_record;
+    static u32 windows_k10b_read_child_release_record;
+    static u32 windows_k10b_close_waiter;
+    static u32 windows_k10b_close_owner;
+    static u32 windows_k10b_live_after_close;
+    static u32 windows_k10b_waiter_release_count;
+    static u32 windows_k10b_owner_release_count;
+    static u32 windows_k10b_unmap_waiter;
+    static u32 windows_k10b_unmap_owner;
+    static u32 windows_k10b_waiter_persona_release;
+    static u32 windows_k10b_owner_persona_release;
+    static u32 windows_k10b_waiter_audit_release;
+    static u32 windows_k10b_owner_audit_release;
+    static u32 windows_k10b_waiter_vma_release;
+    static u32 windows_k10b_owner_vma_release;
+    static u32 windows_k10b_waiter_clone_release;
+    static u32 windows_k10b_owner_clone_release;
+    static u32 windows_k10b_cleanup;
+    static u32 windows_k10b_positive;
+    static persona_audit64_record_t windows_k10c_timeout_record = {0};
+    static persona_audit64_record_t windows_k10c_deny_record = {0};
+    static struct interrupt_frame64 windows_k10c_wait_frame;
+    static struct interrupt_frame64 windows_k10c_peer_frame;
+    static u64 windows_k10c_stack_args[1];
+    static u32 windows_k10c_pid;
+    static u32 windows_k10c_audit_attach;
+    static u32 windows_k10c_vma_init;
+    static u32 windows_k10c_bind;
+    static u32 windows_k10c_handle_init;
+    static u64 windows_k10c_page;
+    static u64 windows_k10c_handle_ptr;
+    static u64 windows_k10c_timeout_ptr;
+    static u64 windows_k10c_handle;
+    static u32 windows_k10c_map_ok;
+    static u32 windows_k10c_create_result;
+    static u32 windows_k10c_wait_result;
+    static u32 windows_k10c_deny_result;
+    static u64 windows_k10c_resume_result;
+    static u32 windows_k10c_wait_task;
+    static u32 windows_k10c_peer_task;
+    static u32 windows_k10c_runqueue_start;
+    static u32 windows_k10c_waiter_slot_after_wait;
+    static u32 windows_k10c_state_after_wait;
+    static u32 windows_k10c_sleep_pending_after_wait;
+    static u32 windows_k10c_wake_tick;
+    static u32 windows_k10c_switch_peer;
+    static u32 windows_k10c_switch_waiter;
+    static u32 windows_k10c_state_after_timeout;
+    static u32 windows_k10c_waiter_slot_after_timeout;
+    static u32 windows_k10c_sleep_pending_after_timeout;
+    static u32 windows_k10c_sleep_elapsed;
+    static u32 windows_k10c_timed_before;
+    static u32 windows_k10c_timeout_before;
+    static u32 windows_k10c_timeout_denial_before;
+    static u32 windows_k10c_sched_block_before;
+    static u32 windows_k10c_sched_wake_before;
+    static u32 windows_k10c_sleep_count_before;
+    static u32 windows_k10c_sleep_wake_before;
+    static u32 windows_k10c_timed_delta;
+    static u32 windows_k10c_timeout_delta;
+    static u32 windows_k10c_timeout_denial_delta;
+    static u32 windows_k10c_sched_block_delta;
+    static u32 windows_k10c_sched_wake_delta;
+    static u32 windows_k10c_sleep_count_delta;
+    static u32 windows_k10c_sleep_wake_delta;
+    static u32 windows_k10c_last_timeout_task;
+    static u32 windows_k10c_last_timeout_ticks;
+    static u32 windows_k10c_last_timeout_result;
+    static u32 windows_k10c_audit_before;
+    static u32 windows_k10c_audit_after_timeout;
+    static u32 windows_k10c_audit_after_deny;
+    static u32 windows_k10c_read_timeout_record;
+    static u32 windows_k10c_read_deny_record;
+    static u32 windows_k10c_close;
+    static u32 windows_k10c_release_count;
+    static u32 windows_k10c_unmap;
+    static u32 windows_k10c_persona_release;
+    static u32 windows_k10c_audit_release;
+    static u32 windows_k10c_vma_release;
+    static u32 windows_k10c_clone_release;
+    static u32 windows_k10c_cleanup;
+    static u32 windows_k10c_positive;
+    static persona_audit64_record_t windows_k11_basic_record = {0};
+    static persona_audit64_record_t windows_k11_image_record = {0};
+    static persona_audit64_record_t windows_k11_deny_record = {0};
+    static pe64_teb_result_t windows_k11_teb_result;
+    static pe64_peb_result_t windows_k11_peb_result;
+    static u64 windows_k11_stack_args[1];
+    static u32 windows_k11_pid;
+    static u32 windows_k11_audit_attach;
+    static u32 windows_k11_vma_init;
+    static u32 windows_k11_bind;
+    static u32 windows_k11_entry_query;
+    static u32 windows_k11_setup_teb;
+    static u32 windows_k11_setup_peb;
+    static u64 windows_k11_page;
+    static u64 windows_k11_basic_ptr;
+    static u64 windows_k11_debug_ptr;
+    static u64 windows_k11_image_ptr;
+    static u64 windows_k11_ret_basic_ptr;
+    static u64 windows_k11_ret_debug_ptr;
+    static u64 windows_k11_ret_image_ptr;
+    static u32 windows_k11_map_ok;
+    static u32 windows_k11_audit_before;
+    static u32 windows_k11_audit_after_basic;
+    static u32 windows_k11_audit_after_debug;
+    static u32 windows_k11_audit_after_image;
+    static u32 windows_k11_audit_after_deny;
+    static u32 windows_k11_basic_result;
+    static u32 windows_k11_debug_result;
+    static u32 windows_k11_image_result;
+    static u32 windows_k11_deny_result;
+    static u32 windows_k11_read_basic_record;
+    static u32 windows_k11_read_image_record;
+    static u32 windows_k11_read_deny_record;
+    static u64 windows_k11_basic_peb;
+    static u64 windows_k11_basic_pid_value;
+    static u64 windows_k11_basic_parent_value;
+    static u32 windows_k11_basic_return_length;
+    static u64 windows_k11_debug_port;
+    static u32 windows_k11_debug_return_length;
+    static u32 windows_k11_image_length;
+    static u32 windows_k11_image_maximum_length;
+    static u64 windows_k11_image_buffer;
+    static u32 windows_k11_image_return_length;
+    static u32 windows_k11_image_checksum;
+    static u32 windows_k11_query_count;
+    static u32 windows_k11_denial_count;
+    static u32 windows_k11_fault_count;
+    static u32 windows_k11_last_class;
+    static u32 windows_k11_last_result;
+    static u64 windows_k11_last_peb;
+    static u32 windows_k11_last_return_length;
+    static u32 windows_k11_unmap_info;
+    static u32 windows_k11_unmap_teb;
+    static u64 windows_k11_gs_restore;
+    static u32 windows_k11_persona_release;
+    static u32 windows_k11_audit_release;
+    static u32 windows_k11_vma_release;
+    static u32 windows_k11_clone_release;
+    static u32 windows_k11_cleanup;
+    static u32 windows_k11_positive;
+    static persona_audit64_record_t windows_k12_basic_record = {0};
+    static persona_audit64_record_t windows_k12_deny_record = {0};
+    static u32 windows_k12_pid;
+    static u32 windows_k12_audit_attach;
+    static u32 windows_k12_vma_init;
+    static u32 windows_k12_bind;
+    static u32 windows_k12_entry_query;
+    static u64 windows_k12_page;
+    static u64 windows_k12_basic_ptr;
+    static u64 windows_k12_processor_ptr;
+    static u64 windows_k12_perf_ptr;
+    static u64 windows_k12_ret_basic_ptr;
+    static u64 windows_k12_ret_processor_ptr;
+    static u64 windows_k12_ret_perf_ptr;
+    static u32 windows_k12_map_ok;
+    static u32 windows_k12_audit_before;
+    static u32 windows_k12_audit_after_basic;
+    static u32 windows_k12_audit_after_processor;
+    static u32 windows_k12_audit_after_perf;
+    static u32 windows_k12_audit_after_deny;
+    static u32 windows_k12_basic_result;
+    static u32 windows_k12_processor_result;
+    static u32 windows_k12_perf_result;
+    static u32 windows_k12_deny_result;
+    static u32 windows_k12_read_basic_record;
+    static u32 windows_k12_read_deny_record;
+    static u32 windows_k12_basic_page_size;
+    static u32 windows_k12_basic_physical_pages;
+    static u32 windows_k12_basic_highest_page;
+    static u32 windows_k12_basic_granularity;
+    static u64 windows_k12_basic_min_user;
+    static u64 windows_k12_basic_max_user;
+    static u64 windows_k12_basic_affinity;
+    static u32 windows_k12_basic_processor_count;
+    static u32 windows_k12_processor_arch;
+    static u32 windows_k12_processor_level;
+    static u32 windows_k12_processor_revision;
+    static u32 windows_k12_processor_maximum;
+    static u32 windows_k12_processor_features;
+    static u32 windows_k12_perf_available_pages;
+    static u32 windows_k12_perf_committed_pages;
+    static u32 windows_k12_perf_commit_limit;
+    static u32 windows_k12_perf_peak_commit;
+    static u32 windows_k12_perf_vma_claimed;
+    static u32 windows_k12_perf_vma_free;
+    static u32 windows_k12_perf_page_size;
+    static u32 windows_k12_basic_return_length;
+    static u32 windows_k12_processor_return_length;
+    static u32 windows_k12_perf_return_length;
+    static u32 windows_k12_perf_checksum;
+    static u32 windows_k12_query_count;
+    static u32 windows_k12_denial_count;
+    static u32 windows_k12_fault_count;
+    static u32 windows_k12_last_class;
+    static u32 windows_k12_last_result;
+    static u32 windows_k12_last_return_length;
+    static u32 windows_k12_last_page_size;
+    static u32 windows_k12_last_processor_count;
+    static u32 windows_k12_last_physical_pages;
+    static u32 windows_k12_last_free_pages;
+    static u32 windows_k12_unmap_info;
+    static u32 windows_k12_persona_release;
+    static u32 windows_k12_audit_release;
+    static u32 windows_k12_vma_release;
+    static u32 windows_k12_clone_release;
+    static u32 windows_k12_cleanup;
+    static u32 windows_k12_positive;
+    static windows_shim64_ntdll_result_t windows_k13_result;
+    static windows_shim64_ntdll_result_t windows_k13_bad_result;
+    static windows_shim64_registry_t windows_k13_registry;
+    static persona_context_t *windows_k13_context;
+    static u32 windows_k13_pid;
+    static u32 windows_k13_audit_attach;
+    static u32 windows_k13_vma_init;
+    static u32 windows_k13_bind;
+    static u32 windows_k13_load;
+    static u64 windows_k13_exe_base;
+    static u64 windows_k13_exe_map;
+    static u32 windows_k13_exe_pte;
+    static u32 windows_k13_exe_prot;
+    static u32 windows_k13_registry_build;
+    static u64 windows_k13_ldr_export;
+    static u64 windows_k13_heap_export;
+    static u64 windows_k13_ntwrite_export;
+    static u64 windows_k13_missing_export;
+    static u32 windows_k13_text_pte;
+    static u32 windows_k13_rdata_pte;
+    static u32 windows_k13_context_match;
+    static u32 windows_k13_launch;
+    static u32 windows_k13_transfer_match;
+    static u32 windows_k13_denied;
+    static u32 windows_k13_denied_error;
+    static u32 windows_k13_unmap_text;
+    static u32 windows_k13_unmap_rdata;
+    static u32 windows_k13_unmap_stack;
+    static u32 windows_k13_persona_release;
+    static u32 windows_k13_audit_release;
+    static u32 windows_k13_vma_release;
+    static u32 windows_k13_clone_release;
+    static u32 windows_k13_cleanup;
+    static u32 windows_k13_positive;
+    static u32 windows_k13_load_count_snapshot;
+    static u32 windows_k13_denial_count_snapshot;
+    static u64 windows_k13_last_base_snapshot;
+    static const u8 windows_k13b_syscall_template[140] = {
+        0x48u, 0xC7u, 0xC1u, 0x04u, 0x00u, 0x00u, 0x00u,
+        0x31u, 0xD2u,
+        0x45u, 0x31u, 0xC0u,
+        0x45u, 0x31u, 0xC9u,
+        0x48u, 0x83u, 0xECu, 0x58u,
+        0x48u, 0xB8u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u,
+        0x48u, 0x89u, 0x44u, 0x24u, 0x20u,
+        0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x48u, 0x89u, 0x44u, 0x24u, 0x28u,
+        0x48u, 0xC7u, 0x44u, 0x24u, 0x30u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x48u, 0xC7u, 0x44u, 0x24u, 0x38u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x48u, 0xC7u, 0x44u, 0x24u, 0x40u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0xFFu, 0xD0u,
+        0x48u, 0x83u, 0xC4u, 0x58u,
+        0x48u, 0xA3u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x48u, 0xA1u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x48u, 0xA3u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
+        0xBBu, 0x42u, 0x33u, 0x31u, 0x4Bu,
+        0xB9u, 0x88u, 0x88u, 0x88u, 0x88u,
+        0xCDu, 0x80u, 0xF4u
+    };
+    static persona_audit64_record_t windows_k13b_record = {0};
+    static windows_shim64_ntdll_result_t windows_k13b_result;
+    static u32 windows_k13b_pid;
+    static u32 windows_k13b_audit_attach;
+    static u32 windows_k13b_vma_init;
+    static u32 windows_k13b_bind;
+    static u32 windows_k13b_load;
+    static u64 windows_k13b_code_addr;
+    static u64 windows_k13b_data_addr;
+    static u64 windows_k13b_code_map;
+    static u64 windows_k13b_data_map;
+    static u64 windows_k13b_stack_top;
+    static u64 windows_k13b_ntwrite_export;
+    static u32 windows_k13b_i;
+    static u32 windows_k13b_code_copy;
+    static u32 windows_k13b_data_init;
+    static u32 windows_k13b_code_prot;
+    static u32 windows_k13b_task;
+    static u32 windows_k13b_runqueue_start;
+    static u32 windows_k13b_current_pid;
+    static u32 windows_k13b_transfer;
+    static u32 windows_k13b_aux;
+    static u64 windows_k13b_return_status;
+    static u32 windows_k13b_iosb_status;
+    static u64 windows_k13b_iosb_info;
+    static u64 windows_k13b_info_copy;
+    static u32 windows_k13b_console_before_count;
+    static u32 windows_k13b_console_after_count;
+    static u32 windows_k13b_console_before_bytes;
+    static u32 windows_k13b_console_after_bytes;
+    static u32 windows_k13b_native_before;
+    static u32 windows_k13b_native_after;
+    static u32 windows_k13b_persona_before;
+    static u32 windows_k13b_persona_after;
+    static u32 windows_k13b_windows_before;
+    static u32 windows_k13b_windows_after;
+    static u32 windows_k13b_write_before;
+    static u32 windows_k13b_write_after;
+    static u32 windows_k13b_audit_before;
+    static u32 windows_k13b_audit_after;
+    static u32 windows_k13b_last_pid;
+    static u32 windows_k13b_last_type;
+    static u64 windows_k13b_last_result;
+    static u32 windows_k13b_read_record;
+    static u32 windows_k13b_dispatch_match;
+    static u32 windows_k13b_return_match;
+    static u32 windows_k13b_unmap_ntdll_text;
+    static u32 windows_k13b_unmap_ntdll_rdata;
+    static u32 windows_k13b_unmap_code;
+    static u32 windows_k13b_unmap_data;
+    static u32 windows_k13b_persona_release;
+    static u32 windows_k13b_audit_release;
+    static u32 windows_k13b_vma_release;
+    static u32 windows_k13b_clone_release;
+    static u32 windows_k13b_cleanup;
+    static u32 windows_k13b_positive;
+    static const u8 windows_k14b_kernel32_template[] = {
+        0x48u, 0x83u, 0xECu, 0x28u,
+        0xB9u, 0xF5u, 0xFFu, 0xFFu, 0xFFu,
+        0x48u, 0xB8u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u,
+        0xFFu, 0xD0u,
+        0x48u, 0xA3u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x48u, 0x89u, 0xC1u,
+        0x48u, 0xBAu, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x41u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x49u, 0xB9u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x48u, 0xC7u, 0x44u, 0x24u, 0x20u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0xFFu, 0xD0u,
+        0x48u, 0xA3u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0xB8u, 0x88u, 0x88u, 0x88u, 0x88u,
+        0xBBu, 0x42u, 0x34u, 0x31u, 0x4Bu,
+        0xB9u, 0x99u, 0x99u, 0x99u, 0x99u,
+        0xCDu, 0x80u,
+        0xF4u
+    };
+    static const u8 windows_k14c_pe_entry_template[] = {
+        0x48u, 0x83u, 0xECu, 0x40u,
+        0xB9u, 0xF5u, 0xFFu, 0xFFu, 0xFFu,
+        0x48u, 0xA1u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u,
+        0xFFu, 0xD0u,
+        0x48u, 0xA3u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x48u, 0x89u, 0xC1u,
+        0x48u, 0xBAu, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x41u, 0xB8u, 0x04u, 0x00u, 0x00u, 0x00u,
+        0x49u, 0xB9u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x48u, 0xC7u, 0x44u, 0x24u, 0x20u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x48u, 0xA1u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0xFFu, 0xD0u,
+        0x48u, 0xA3u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x48u, 0x83u, 0xC4u, 0x40u,
+        0xB8u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0xBBu, 0x43u, 0x34u, 0x31u, 0x4Bu,
+        0xB9u, 0x02u, 0x00u, 0x00u, 0x00u,
+        0xCDu, 0x80u,
+        0xF4u
+    };
+    static const u8 windows_k14c_dll_name[] = "kernel32.dll";
+    static const u8 windows_k14c_get_name[] = "GetStdHandle";
+    static const u8 windows_k14c_write_name[] = "WriteConsoleA";
+    static const u8 windows_k14c_message[] = "K14C";
+    static windows_shim64_ntdll_result_t windows_k14_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k14_result;
+    static windows_shim64_kernel32_result_t windows_k14_bad_result;
+    static windows_shim64_registry_t windows_k14_registry;
+    static windows_shim64_registry_t windows_k14_ntdll_only_registry;
+    static persona_context_t *windows_k14_context;
+    static pe64_header_t windows_k14_import_header;
+    static pe64_section_t windows_k14_import_sections[PE64_MAX_SECTIONS];
+    static pe64_section_summary_t windows_k14_import_summary;
+    static pe64_map_result_t windows_k14_import_map_result;
+    static pe64_import_result_t windows_k14_import_result;
+    static pe64_import_result_t windows_k14_bad_import_result;
+    static u32 windows_k14_pid;
+    static u32 windows_k14_audit_attach;
+    static u32 windows_k14_vma_init;
+    static u32 windows_k14_bind;
+    static u32 windows_k14_ntdll_load;
+    static u32 windows_k14_load;
+    static u32 windows_k14_registry_build;
+    static u64 windows_k14_exit_export;
+    static u64 windows_k14_write_console_export;
+    static u64 windows_k14_virtual_alloc_export;
+    static u64 windows_k14_missing_export;
+    static u32 windows_k14_text_pte;
+    static u32 windows_k14_rdata_pte;
+    static u32 windows_k14_context_match;
+    static u64 windows_k14_import_base;
+    static u64 windows_k14_iat_va;
+    static u64 windows_k14_iat_before;
+    static u64 windows_k14_iat_after;
+    static u32 windows_k14_import_header_parse;
+    static u32 windows_k14_import_parse;
+    static u32 windows_k14_import_map;
+    static u32 windows_k14_import_resolve;
+    static u32 windows_k14_import_denied;
+    static u32 windows_k14_import_denied_error;
+    static u32 windows_k14_import_rdata_prot;
+    static u32 windows_k14_index;
+    static persona_audit64_record_t windows_k14b_record = {0};
+    static windows_shim64_ntdll_result_t windows_k14b_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k14b_kernel32_result;
+    static u32 windows_k14b_pid;
+    static u32 windows_k14b_audit_attach;
+    static u32 windows_k14b_vma_init;
+    static u32 windows_k14b_bind;
+    static u32 windows_k14b_ntdll_load;
+    static u32 windows_k14b_kernel32_load;
+    static u64 windows_k14b_code_addr;
+    static u64 windows_k14b_data_addr;
+    static u64 windows_k14b_code_map;
+    static u64 windows_k14b_data_map;
+    static u64 windows_k14b_stack_top;
+    static u32 windows_k14b_code_copy;
+    static u32 windows_k14b_data_init;
+    static u32 windows_k14b_code_prot;
+    static u32 windows_k14b_task;
+    static u32 windows_k14b_runqueue_start;
+    static u32 windows_k14b_current_pid;
+    static u32 windows_k14b_transfer;
+    static u32 windows_k14b_aux;
+    static u64 windows_k14b_handle_value;
+    static u64 windows_k14b_return_value;
+    static u32 windows_k14b_written_value;
+    static u32 windows_k14b_console_before_count;
+    static u32 windows_k14b_console_after_count;
+    static u32 windows_k14b_console_before_bytes;
+    static u32 windows_k14b_console_after_bytes;
+    static u32 windows_k14b_native_before;
+    static u32 windows_k14b_native_after;
+    static u32 windows_k14b_persona_before;
+    static u32 windows_k14b_persona_after;
+    static u32 windows_k14b_windows_before;
+    static u32 windows_k14b_windows_after;
+    static u32 windows_k14b_write_before;
+    static u32 windows_k14b_write_after;
+    static u32 windows_k14b_audit_before;
+    static u32 windows_k14b_audit_after;
+    static u32 windows_k14b_last_pid;
+    static u32 windows_k14b_last_type;
+    static u64 windows_k14b_last_result;
+    static u32 windows_k14b_read_record;
+    static u32 windows_k14b_return_match;
+    static u32 windows_k14b_dispatch_match;
+    static u32 windows_k14b_unmap_ntdll_text;
+    static u32 windows_k14b_unmap_ntdll_rdata;
+    static u32 windows_k14b_unmap_kernel32_text;
+    static u32 windows_k14b_unmap_kernel32_rdata;
+    static u32 windows_k14b_unmap_code;
+    static u32 windows_k14b_unmap_data;
+    static u32 windows_k14b_persona_release;
+    static u32 windows_k14b_audit_release;
+    static u32 windows_k14b_vma_release;
+    static u32 windows_k14b_clone_release;
+    static u32 windows_k14b_cleanup;
+    static u8 windows_k14c_image_bytes[0x00000A00u];
+    static persona_audit64_record_t windows_k14c_record = {0};
+    static windows_shim64_ntdll_result_t windows_k14c_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k14c_kernel32_result;
+    static windows_shim64_registry_t windows_k14c_registry;
+    static pe64_header_t windows_k14c_header;
+    static pe64_section_t windows_k14c_sections[PE64_MAX_SECTIONS];
+    static pe64_section_summary_t windows_k14c_summary;
+    static pe64_map_result_t windows_k14c_map_result;
+    static pe64_import_result_t windows_k14c_import_result;
+    static pe64_entry_result_t windows_k14c_entry_result;
+    static u32 windows_k14c_pid;
+    static u32 windows_k14c_audit_attach;
+    static u32 windows_k14c_vma_init;
+    static u32 windows_k14c_bind;
+    static u32 windows_k14c_ntdll_load;
+    static u32 windows_k14c_kernel32_load;
+    static u32 windows_k14c_registry_build;
+    static u32 windows_k14c_header_parse;
+    static u32 windows_k14c_parse;
+    static u32 windows_k14c_map;
+    static u32 windows_k14c_resolve;
+    static u32 windows_k14c_prepare;
+    static u64 windows_k14c_base;
+    static u64 windows_k14c_stack_base;
+    static u64 windows_k14c_get_iat;
+    static u64 windows_k14c_write_iat;
+    static u64 windows_k14c_get_iat_before;
+    static u64 windows_k14c_write_iat_before;
+    static u64 windows_k14c_get_iat_after;
+    static u64 windows_k14c_write_iat_after;
+    static u32 windows_k14c_image_ready;
+    static u32 windows_k14c_task;
+    static u32 windows_k14c_runqueue_start;
+    static u32 windows_k14c_current_pid;
+    static u32 windows_k14c_transfer;
+    static u32 windows_k14c_aux;
+    static u64 windows_k14c_handle_value;
+    static u64 windows_k14c_return_value;
+    static u32 windows_k14c_written_value;
+    static u32 windows_k14c_console_before_count;
+    static u32 windows_k14c_console_after_count;
+    static u32 windows_k14c_console_before_bytes;
+    static u32 windows_k14c_console_after_bytes;
+    static u32 windows_k14c_native_before;
+    static u32 windows_k14c_native_after;
+    static u32 windows_k14c_persona_before;
+    static u32 windows_k14c_persona_after;
+    static u32 windows_k14c_windows_before;
+    static u32 windows_k14c_windows_after;
+    static u32 windows_k14c_write_before;
+    static u32 windows_k14c_write_after;
+    static u32 windows_k14c_audit_before;
+    static u32 windows_k14c_audit_after;
+    static u32 windows_k14c_last_pid;
+    static u32 windows_k14c_last_type;
+    static u64 windows_k14c_last_result;
+    static u32 windows_k14c_read_record;
+    static u32 windows_k14c_return_match;
+    static u32 windows_k14c_dispatch_match;
+    static u32 windows_k14c_unmap_ntdll_text;
+    static u32 windows_k14c_unmap_ntdll_rdata;
+    static u32 windows_k14c_unmap_kernel32_text;
+    static u32 windows_k14c_unmap_kernel32_rdata;
+    static u32 windows_k14c_unmap_text;
+    static u32 windows_k14c_unmap_rdata;
+    static u32 windows_k14c_unmap_data;
+    static u32 windows_k14c_unmap_stack;
+    static u32 windows_k14c_persona_release;
+    static u32 windows_k14c_audit_release;
+    static u32 windows_k14c_vma_release;
+    static u32 windows_k14c_clone_release;
+    static u32 windows_k14c_cleanup;
+    static u32 windows_k14c_positive;
+    static u32 windows_k14_denied;
+    static u32 windows_k14_denied_error;
+    static u32 windows_k14_unmap_ntdll_text;
+    static u32 windows_k14_unmap_ntdll_rdata;
+    static u32 windows_k14_unmap_kernel32_text;
+    static u32 windows_k14_unmap_kernel32_rdata;
+    static u32 windows_k14_unmap_import_text;
+    static u32 windows_k14_unmap_import_rdata;
+    static u32 windows_k14_unmap_import_data;
+    static u32 windows_k14_persona_release;
+    static u32 windows_k14_audit_release;
+    static u32 windows_k14_vma_release;
+    static u32 windows_k14_cleanup;
+    static u32 windows_k14_positive;
+    static u32 windows_k14_load_count_snapshot;
+    static u32 windows_k14_denial_count_snapshot;
+    static u64 windows_k14_last_base_snapshot;
+    static windows_shim64_ntdll_result_t windows_k15_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k15_kernel32_result;
+    static windows_shim64_crt_result_t windows_k15_result;
+    static windows_shim64_crt_result_t windows_k15_bad_result;
+    static windows_shim64_registry_t windows_k15_registry;
+    static windows_shim64_registry_t windows_k15_crt_registry;
+    static windows_shim64_registry_t windows_k15_kernel_registry;
+    static persona_context_t *windows_k15_context;
+    static pe64_header_t windows_k15_import_header;
+    static pe64_section_t windows_k15_import_sections[PE64_MAX_SECTIONS];
+    static pe64_section_summary_t windows_k15_import_summary;
+    static pe64_map_result_t windows_k15_import_map_result;
+    static pe64_import_result_t windows_k15_import_result;
+    static pe64_import_result_t windows_k15_bad_import_result;
+    static u32 windows_k15_pid;
+    static u32 windows_k15_audit_attach;
+    static u32 windows_k15_vma_init;
+    static u32 windows_k15_bind;
+    static u32 windows_k15_ntdll_load;
+    static u32 windows_k15_kernel32_load;
+    static u32 windows_k15_load;
+    static u32 windows_k15_registry_build;
+    static u32 windows_k15_crt_registry_build;
+    static u64 windows_k15_printf_export;
+    static u64 windows_k15_malloc_export;
+    static u64 windows_k15_memcpy_export;
+    static u64 windows_k15_fopen_export;
+    static u64 windows_k15_exit_export;
+    static u64 windows_k15_missing_export;
+    static u32 windows_k15_text_pte;
+    static u32 windows_k15_rdata_pte;
+    static u32 windows_k15_context_match;
+    static u64 windows_k15_import_base;
+    static u64 windows_k15_printf_iat_va;
+    static u64 windows_k15_exit_iat_va;
+    static u64 windows_k15_printf_iat_before;
+    static u64 windows_k15_printf_iat_after;
+    static u64 windows_k15_exit_iat_before;
+    static u64 windows_k15_exit_iat_after;
+    static u32 windows_k15_import_header_parse;
+    static u32 windows_k15_import_parse;
+    static u32 windows_k15_import_map;
+    static u32 windows_k15_import_resolve;
+    static u32 windows_k15_import_denied;
+    static u32 windows_k15_import_denied_error;
+    static u32 windows_k15_import_rdata_prot;
+    static u32 windows_k15_index;
+    static u32 windows_k15_denied;
+    static u32 windows_k15_denied_error;
+    static u32 windows_k15_unmap_ntdll_text;
+    static u32 windows_k15_unmap_ntdll_rdata;
+    static u32 windows_k15_unmap_kernel32_text;
+    static u32 windows_k15_unmap_kernel32_rdata;
+    static u32 windows_k15_unmap_crt_text;
+    static u32 windows_k15_unmap_crt_rdata;
+    static u32 windows_k15_unmap_import_text;
+    static u32 windows_k15_unmap_import_rdata;
+    static u32 windows_k15_unmap_import_data;
+    static u32 windows_k15_persona_release;
+    static u32 windows_k15_audit_release;
+    static u32 windows_k15_vma_release;
+    static u32 windows_k15_cleanup;
+    static u32 windows_k15_positive;
+    static const u8 windows_l1_c_path[] =
+        "\\??\\C:\\Windows\\System32\\ntdll.dll";
+    static const u8 windows_l1_unc_path[] =
+        "\\??\\UNC\\server\\share\\file.txt";
+    static const u8 windows_l1_con_path[] =
+        "\\Device\\ConDrv\\Console";
+    static const u8 windows_l1_null_path[] =
+        "\\Device\\Null";
+    static const u8 windows_l1_bad_path[] =
+        "\\??\\Z:\\nowhere.txt";
+    static windows_vfs64_route_result_t windows_l1_c_route;
+    static windows_vfs64_route_result_t windows_l1_unc_route;
+    static windows_vfs64_route_result_t windows_l1_con_route;
+    static windows_vfs64_route_result_t windows_l1_null_route;
+    static windows_vfs64_route_result_t windows_l1_bad_route;
+    static windows_vfs64_route_result_t windows_l1_wrong_route;
+    static u32 windows_l1_pid;
+    static u32 windows_l1_bind;
+    static u32 windows_l1_c_result;
+    static u32 windows_l1_unc_result;
+    static u32 windows_l1_con_result;
+    static u32 windows_l1_null_result;
+    static u32 windows_l1_bad_result;
+    static u32 windows_l1_wrong_persona_result;
+    static u32 windows_l1_route_count;
+    static u32 windows_l1_route_denials;
+    static u32 windows_l1_last_route_type;
+    static u32 windows_l1_last_target_hash;
+    static u32 windows_l1_last_target_bytes;
+    static u32 windows_l1_last_device_id;
+    static u32 windows_l1_last_unavailable;
+    static u32 windows_l1_persona_release;
+    static u32 windows_l1_clone_release;
+    static u32 windows_l1_cleanup;
+    static u32 windows_l1_positive;
+    static const u8 windows_l2_ntdll_path[] =
+        "\\??\\C:\\Windows\\System32\\ntdll.dll";
+    static const u8 windows_l2_kernel32_path[] =
+        "\\??\\C:\\Windows\\System32\\kernel32.dll";
+    static const u8 windows_l2_msvcrt_path[] =
+        "\\??\\C:\\Windows\\System32\\msvcrt.dll";
+    static const u8 windows_l2_ucrtbase_path[] =
+        "\\??\\C:\\Windows\\System32\\ucrtbase.dll";
+    static const u8 windows_l2_missing_path[] =
+        "\\??\\C:\\Windows\\System32\\missing.dll";
+    static windows_vfs64_open_result_t windows_l2_open[5];
+    static u32 windows_l2_result[5];
+    static const u8 *windows_l2_path;
+    static u32 windows_l2_path_bytes;
+    static u32 windows_l2_index;
+    static u32 windows_l2_pid;
+    static u32 windows_l2_bind;
+    static u32 windows_l2_handle_init;
+    static u32 windows_l2_owner;
+    static u32 windows_l2_ramfs_endpoint;
+    static u32 windows_l2_ok_mask;
+    static u32 windows_l2_id_word;
+    static u32 windows_l2_type_mask;
+    static u32 windows_l2_cap_mask;
+    static u32 windows_l2_close_mask;
+    static u32 windows_l2_live_before_close;
+    static u32 windows_l2_open_count;
+    static u32 windows_l2_open_denials;
+    static u32 windows_l2_route_count;
+    static u32 windows_l2_route_denials;
+    static u32 windows_l2_last_shim_id;
+    static u32 windows_l2_last_result;
+    static u32 windows_l2_live_after_close;
+    static u32 windows_l2_release_count;
+    static u32 windows_l2_table_clear;
+    static u32 windows_l2_persona_release;
+    static u32 windows_l2_clone_release;
+    static u32 windows_l2_cleanup;
+    static u32 windows_l2_positive;
+    static const u8 windows_l3_profile_path[] =
+        "\\??\\C:\\Users\\LimitlessUser\\Desktop\\test.txt";
+    static const u8 windows_l3_other_user_path[] =
+        "\\??\\C:\\Users\\OtherUser\\Desktop\\test.txt";
+    static windows_vfs64_open_result_t windows_l3_open;
+    static windows_vfs64_open_result_t windows_l3_deny_open;
+    static u32 windows_l3_pid;
+    static u32 windows_l3_bind;
+    static u32 windows_l3_handle_init;
+    static u32 windows_l3_owner;
+    static u32 windows_l3_result;
+    static u32 windows_l3_deny_result;
+    static u32 windows_l3_type_ok;
+    static u32 windows_l3_cap_ok;
+    static u32 windows_l3_node;
+    static u32 windows_l3_node_exists;
+    static u32 windows_l3_last_node;
+    static u32 windows_l3_dir_mask;
+    static u32 windows_l3_profile_count;
+    static u32 windows_l3_profile_denials;
+    static u32 windows_l3_open_count;
+    static u32 windows_l3_open_denials;
+    static u32 windows_l3_route_count;
+    static u32 windows_l3_route_denials;
+    static u32 windows_l3_last_result;
+    static u32 windows_l3_last_route_type;
+    static u32 windows_l3_live_before_close;
+    static u32 windows_l3_close;
+    static u32 windows_l3_live_after_close;
+    static u32 windows_l3_release_count;
+    static u32 windows_l3_table_clear;
+    static u32 windows_l3_persona_release;
+    static u32 windows_l3_clone_release;
+    static u32 windows_l3_cleanup;
+    static u32 windows_l3_positive;
+    static const u8 windows_l4_temp_path[] =
+        "\\??\\C:\\Users\\LimitlessUser\\AppData\\Local\\Temp\\scratch.tmp";
+    static const u8 windows_l4_payload[] = "temp-ok";
+    static windows_vfs64_open_result_t windows_l4_open;
+    static windows_vfs64_open_result_t windows_l4_post_open;
+    static u8 windows_l4_read_buffer[8];
+    static u32 windows_l4_pid;
+    static u32 windows_l4_bind;
+    static u32 windows_l4_handle_init;
+    static u32 windows_l4_owner;
+    static u32 windows_l4_result;
+    static u32 windows_l4_write_result;
+    static u32 windows_l4_read_result;
+    static u32 windows_l4_delete_result;
+    static u32 windows_l4_post_result;
+    static u32 windows_l4_type_ok;
+    static u32 windows_l4_cap_ok;
+    static u32 windows_l4_node;
+    static u32 windows_l4_node_exists;
+    static u32 windows_l4_last_node;
+    static u32 windows_l4_dir_mask;
+    static u32 windows_l4_bytes_written;
+    static u32 windows_l4_bytes_read;
+    static u32 windows_l4_checksum;
+    static u32 windows_l4_match;
+    static u32 windows_l4_create_count;
+    static u32 windows_l4_write_count;
+    static u32 windows_l4_read_count;
+    static u32 windows_l4_delete_count;
+    static u32 windows_l4_temp_denials;
+    static u32 windows_l4_open_count;
+    static u32 windows_l4_open_denials;
+    static u32 windows_l4_route_count;
+    static u32 windows_l4_route_denials;
+    static u32 windows_l4_last_result;
+    static u32 windows_l4_last_route_type;
+    static u32 windows_l4_live_before_close;
+    static u32 windows_l4_close;
+    static u32 windows_l4_live_after_close;
+    static u32 windows_l4_release_count;
+    static u32 windows_l4_table_clear;
+    static u32 windows_l4_persona_release;
+    static u32 windows_l4_clone_release;
+    static u32 windows_l4_cleanup;
+    static u32 windows_l4_positive;
+    static const u8 windows_l5_key_path[] =
+        "\\Registry\\Machine\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+    static const u8 windows_l5_create_path[] =
+        "\\Registry\\Machine\\SOFTWARE\\LimitlessOS\\Scratch";
+    static const u8 windows_l5_value_name[] = "CurrentVersion";
+    static const u8 windows_l5_missing_value_name[] = "MissingValue";
+    static persona_audit64_record_t windows_l5_record;
+    static u64 windows_l5_stack_args_query[2];
+    static u64 windows_l5_stack_args_create[3];
+    static u64 windows_l5_page;
+    static u64 windows_l5_key_handle_out;
+    static u64 windows_l5_create_handle_out;
+    static u64 windows_l5_disposition_out;
+    static u64 windows_l5_result_length_out;
+    static u64 windows_l5_object_attributes;
+    static u64 windows_l5_unicode_string;
+    static u64 windows_l5_path_buffer;
+    static u64 windows_l5_value_unicode;
+    static u64 windows_l5_value_buffer;
+    static u64 windows_l5_query_info;
+    static u64 windows_l5_create_object_attributes;
+    static u64 windows_l5_create_unicode_string;
+    static u64 windows_l5_create_path_buffer;
+    static u64 windows_l5_handle;
+    static u64 windows_l5_create_handle;
+    static u32 windows_l5_pid;
+    static u32 windows_l5_audit_attach;
+    static u32 windows_l5_vma_init;
+    static u32 windows_l5_bind;
+    static u32 windows_l5_handle_init;
+    static u32 windows_l5_owner;
+    static u32 windows_l5_init_endpoint;
+    static u32 windows_l5_map_ok;
+    static u32 windows_l5_path_index;
+    static u32 windows_l5_open_result;
+    static u32 windows_l5_query_result;
+    static u32 windows_l5_create_result;
+    static u32 windows_l5_missing_result;
+    static u32 windows_l5_key_type;
+    static u32 windows_l5_create_type;
+    static u32 windows_l5_key_id;
+    static u32 windows_l5_create_key_id;
+    static u32 windows_l5_cap_ok;
+    static u32 windows_l5_create_cap_ok;
+    static u32 windows_l5_value_type;
+    static u32 windows_l5_data_length;
+    static u32 windows_l5_required_success;
+    static u32 windows_l5_result_length_success;
+    static u32 windows_l5_checksum;
+    static u32 windows_l5_match;
+    static u32 windows_l5_disposition;
+    static u32 windows_l5_live_before_close;
+    static u32 windows_l5_close_key;
+    static u32 windows_l5_close_created;
+    static u32 windows_l5_live_after_close;
+    static u32 windows_l5_abi_open_count;
+    static u32 windows_l5_abi_create_count;
+    static u32 windows_l5_abi_query_count;
+    static u32 windows_l5_abi_denial_count;
+    static u32 windows_l5_abi_fault_count;
+    static u32 windows_l5_reg_open_count;
+    static u32 windows_l5_reg_create_count;
+    static u32 windows_l5_reg_query_count;
+    static u32 windows_l5_reg_denial_count;
+    static u32 windows_l5_reg_dynamic_count;
+    static u32 windows_l5_last_syscall;
+    static u32 windows_l5_last_result;
+    static u32 windows_l5_last_key_id;
+    static u32 windows_l5_last_required;
+    static u32 windows_l5_last_value_type;
+    static u32 windows_l5_audit_before;
+    static u32 windows_l5_audit_after;
+    static u32 windows_l5_read_record;
+    static u32 windows_l5_release_count;
+    static u32 windows_l5_table_clear;
+    static u32 windows_l5_unmap;
+    static u32 windows_l5_persona_release;
+    static u32 windows_l5_audit_release;
+    static u32 windows_l5_vma_release;
+    static u32 windows_l5_clone_release;
+    static u32 windows_l5_cleanup;
+    static u32 windows_l5_positive;
+    static macho64_header_t macho_m1_header;
+    static macho64_header_t macho_m1_bad_header;
+    static u32 macho_m1_parse;
+    static u32 macho_m1_bad_magic;
+    static u32 macho_m1_bad_magic_error;
+    static u32 macho_m1_bad_cpu;
+    static u32 macho_m1_bad_cpu_error;
+    static u32 macho_m1_bad_subtype;
+    static u32 macho_m1_bad_subtype_error;
+    static u32 macho_m1_bad_filetype;
+    static u32 macho_m1_bad_filetype_error;
+    static u32 macho_m1_bad_range;
+    static u32 macho_m1_bad_range_error;
+    static u32 macho_m1_copy_index;
+    static u32 macho_m1_positive;
+    static macho64_fat_slice_t macho_m2_slice;
+    static macho64_fat_slice_t macho_m2_bad_slice;
+    static macho64_header_t macho_m2_header;
+    static u32 macho_m2_slice_result;
+    static u32 macho_m2_header_result;
+    static u32 macho_m2_short;
+    static u32 macho_m2_short_error;
+    static u32 macho_m2_bad_magic;
+    static u32 macho_m2_bad_magic_error;
+    static u32 macho_m2_bad_count;
+    static u32 macho_m2_bad_count_error;
+    static u32 macho_m2_no_x64;
+    static u32 macho_m2_no_x64_error;
+    static u32 macho_m2_bad_range;
+    static u32 macho_m2_bad_range_error;
+    static u32 macho_m2_positive;
+    static macho64_header_t macho_m3_header;
+    static macho64_segment_map_result_t macho_m3_result;
+    static macho64_segment_map_result_t macho_m3_bad_result;
+    static u64 macho_m3_text_va;
+    static u64 macho_m3_data_va;
+    static u64 macho_m3_linkedit_va;
+    static u32 macho_m3_index;
+    static u32 macho_m3_parse;
+    static u32 macho_m3_map;
+    static u32 macho_m3_text_pte;
+    static u32 macho_m3_data_pte;
+    static u32 macho_m3_linkedit_pte;
+    static u32 macho_m3_text_prot;
+    static u32 macho_m3_data_prot;
+    static u32 macho_m3_linkedit_prot;
+    static u32 macho_m3_text_first;
+    static u32 macho_m3_data_first;
+    static u32 macho_m3_linkedit_first;
+    static u32 macho_m3_bss_zero;
+    static u32 macho_m3_cleanup;
+    static u32 macho_m3_after_cleanup;
+    static u32 macho_m3_denied;
+    static u32 macho_m3_denied_error;
+    static u32 macho_m3_denial_cleanup;
+    static u32 macho_m3_positive;
+    static macho64_main_result_t macho_m4_result;
+    static macho64_main_result_t macho_m4_bad_result;
+    static macho64_header_t macho_m4_bad_header;
+    static u64 macho_m4_stack_top;
+    static u64 macho_m4_stack_page;
+    static u32 macho_m4_segment_map;
+    static u32 macho_m4_prepare;
+    static u32 macho_m4_entry_pte;
+    static u32 macho_m4_entry_prot;
+    static u32 macho_m4_stack_pte;
+    static u32 macho_m4_stack_prot;
+    static u32 macho_m4_bad_parse;
+    static u32 macho_m4_denied;
+    static u32 macho_m4_denied_error;
+    static u32 macho_m4_cleanup;
+    static u32 macho_m4_after_cleanup;
+    static u32 macho_m4_positive;
+    static macho64_dylib_result_t macho_m5_result;
+    static macho64_dylib_result_t macho_m5_bad_result;
+    static u32 macho_m5_walk;
+    static u32 macho_m5_bad_walk;
+    static u32 macho_m5_bad_error;
+    static u32 macho_m5_path_match;
+    static u32 macho_m5_positive;
+    static macho64_dyld_info_result_t macho_m6_result;
+    static macho64_dyld_info_result_t macho_m6_bad_result;
+    static u64 macho_m6_slide;
+    static u64 macho_m6_rebase_slot;
+    static u64 macho_m6_bind_slot;
+    static u64 macho_m6_rebase_readback;
+    static u64 macho_m6_bind_readback;
+    static u32 macho_m6_apply;
+    static u32 macho_m6_bad_apply;
+    static u32 macho_m6_bad_error;
+    static u32 macho_m6_positive;
+    static u8 macho_m7_image_bytes[0x2000u];
+    static macho64_header_t macho_m7_header;
+    static macho64_segment_map_result_t macho_m7_map_result;
+    static macho64_tls_result_t macho_m7_result;
+    static macho64_tls_result_t macho_m7_bad_result;
+    static persona_context_t *macho_m7_context;
+    static u32 macho_m7_pid;
+    static u32 macho_m7_vma_init;
+    static u32 macho_m7_bind;
+    static u32 macho_m7_type;
+    static u32 macho_m7_parse;
+    static u32 macho_m7_map;
+    static u32 macho_m7_setup;
+    static u32 macho_m7_denied;
+    static u32 macho_m7_denied_error;
+    static u32 macho_m7_present;
+    static u32 macho_m7_prot;
+    static u32 macho_m7_context_match;
+    static u32 macho_m7_zero_ok;
+    static u32 macho_m7_unmap_data;
+    static u32 macho_m7_unmap_tls;
+    static u32 macho_m7_persona_release;
+    static u32 macho_m7_vma_release;
+    static u32 macho_m7_clone_release;
+    static u32 macho_m7_cleanup;
+    static u32 macho_m7_after_cleanup;
+    static u64 macho_m7_data_va;
+    static u64 macho_m7_tls_base;
+    static u64 macho_m7_gs_zero;
+    static u64 macho_m7_gs_restore;
+    static u32 macho_m7_template_first;
+    static u32 macho_m7_positive;
+    static macho64_stack_result_t macho_m8_result;
+    static macho64_stack_result_t macho_m8_bad_result;
+    static persona_context_t *macho_m8_context;
+    static u32 macho_m8_pid;
+    static u32 macho_m8_vma_init;
+    static u32 macho_m8_bind;
+    static u32 macho_m8_type;
+    static u64 macho_m8_stack_base;
+    static u64 macho_m8_stack_top;
+    static u64 macho_m8_stack_map;
+    static u32 macho_m8_build;
+    static u32 macho_m8_denied;
+    static u32 macho_m8_denied_error;
+    static u64 macho_m8_argc_value;
+    static u64 macho_m8_argv0_ptr;
+    static u64 macho_m8_env0_ptr;
+    static u64 macho_m8_apple0_ptr;
+    static u64 macho_m8_aux0_type;
+    static u64 macho_m8_aux0_value;
+    static u32 macho_m8_exec_prefix_match;
+    static u32 macho_m8_context_match;
+    static u32 macho_m8_unmap_stack;
+    static u32 macho_m8_persona_release;
+    static u32 macho_m8_vma_release;
+    static u32 macho_m8_clone_release;
+    static u32 macho_m8_cleanup;
+    static u32 macho_m8_after_cleanup;
+    static u32 macho_m8_positive;
+    static persona_context_t *macos_n1_context;
+    static macos_abi64_stat_t *macos_n1_stat;
+    static macos_abi64_timespec_t *macos_n1_time;
+    static persona_audit64_record_t macos_n1_unimpl_record;
+    static u32 macos_n1_pid;
+    static u32 macos_n1_owner;
+    static u32 macos_n1_vma_init;
+    static u32 macos_n1_audit_attach;
+    static u32 macos_n1_fd_init;
+    static u32 macos_n1_bind;
+    static u32 macos_n1_context_bound;
+    static u32 macos_n1_table_size;
+    static u32 macos_n1_unimplemented_entries;
+    static u32 macos_n1_entries_installed;
+    static u32 macos_n1_stdin_cap;
+    static u32 macos_n1_stdout_cap;
+    static u32 macos_n1_stderr_cap;
+    static u64 macos_n1_buffer_base;
+    static u64 macos_n1_buffer_map;
+    static u64 macos_n1_path_addr;
+    static u64 macos_n1_write_addr;
+    static u64 macos_n1_read_addr;
+    static u64 macos_n1_stat_addr;
+    static u64 macos_n1_time_addr;
+    static u64 macos_n1_sysctl_name_addr;
+    static u64 macos_n1_sysctl_len_addr;
+    static u64 macos_n1_sysctl_out_addr;
+    static u64 macos_n1_map_addr;
+    static u64 macos_n1_getpid_ret;
+    static u64 macos_n1_write_ret;
+    static u64 macos_n1_open_ret;
+    static u64 macos_n1_read_ret;
+    static u64 macos_n1_stat_ret;
+    static u64 macos_n1_fstat_ret;
+    static u64 macos_n1_close_ret;
+    static u64 macos_n1_mmap_ret;
+    static u64 macos_n1_mprotect_ret;
+    static u64 macos_n1_munmap_ret;
+    static u64 macos_n1_clock_ret;
+    static u64 macos_n1_sysctl_ret;
+    static u64 macos_n1_bad_open_ret;
+    static u64 macos_n1_unimpl_ret;
+    static u64 macos_n1_exit_ret;
+    static u32 macos_n1_console_before_count;
+    static u32 macos_n1_console_after_count;
+    static u32 macos_n1_console_before_bytes;
+    static u32 macos_n1_console_after_bytes;
+    static u32 macos_n1_read_checksum;
+    static u64 macos_n1_stat_size;
+    static u32 macos_n1_stat_mode;
+    static u64 macos_n1_time_sec;
+    static u64 macos_n1_time_nsec;
+    static u32 macos_n1_sysctl_prefix;
+    static u64 macos_n1_sysctl_len;
+    static u32 macos_n1_pte_mapped;
+    static u32 macos_n1_prot_after_map;
+    static u32 macos_n1_prot_after_protect;
+    static u32 macos_n1_pte_after_unmap;
+    static u32 macos_n1_audit_before;
+    static u32 macos_n1_audit_after_unimpl;
+    static u32 macos_n1_read_unimpl_record;
+    static u32 macos_n1_clone_release;
+    static u32 macos_n1_after_cleanup;
+    static u32 macos_n1_positive;
+    static macos_mach64_msg_header_t *macos_n2_send_header;
+    static macos_mach64_msg_header_t *macos_n2_recv_header;
+    static persona_audit64_record_t macos_n2_unimpl_record;
+    static u32 macos_n2_pid;
+    static u32 macos_n2_vma_init;
+    static u32 macos_n2_audit_attach;
+    static u32 macos_n2_bind;
+    static u64 macos_n2_buffer_base;
+    static u64 macos_n2_buffer_map;
+    static u64 macos_n2_send_addr;
+    static u64 macos_n2_recv_addr;
+    static u32 macos_n2_table_size;
+    static u32 macos_n2_unimplemented_entries;
+    static u32 macos_n2_entries_installed;
+    static u64 macos_n2_task_port;
+    static u64 macos_n2_thread_port;
+    static u64 macos_n2_host_port;
+    static u64 macos_n2_reply_port;
+    static u32 macos_n2_live_after_ports;
+    static u32 macos_n2_task_kind;
+    static u32 macos_n2_thread_kind;
+    static u32 macos_n2_host_kind;
+    static u32 macos_n2_reply_rights;
+    static u32 macos_n2_task_endpoint;
+    static u32 macos_n2_reply_endpoint;
+    static u32 macos_n2_reply_capability;
+    static u64 macos_n2_send_ret;
+    static u64 macos_n2_recv_ret;
+    static u64 macos_n2_bad_send_ret;
+    static u64 macos_n2_unimpl_ret;
+    static u32 macos_n2_pending_after_send;
+    static u32 macos_n2_pending_after_recv;
+    static u32 macos_n2_recv_id;
+    static u32 macos_n2_recv_size;
+    static u32 macos_n2_recv_local;
+    static u32 macos_n2_recv_remote;
+    static u32 macos_n2_body_checksum;
+    static u32 macos_n2_send_count_before;
+    static u32 macos_n2_send_count_after;
+    static u32 macos_n2_recv_count_before;
+    static u32 macos_n2_recv_count_after;
+    static u32 macos_n2_denial_before;
+    static u32 macos_n2_denial_after;
+    static u32 macos_n2_audit_before;
+    static u32 macos_n2_audit_after_unimpl;
+    static u32 macos_n2_read_unimpl_record;
+    static u32 macos_n2_release_ports;
+    static u32 macos_n2_unmap_buffer;
+    static u32 macos_n2_persona_release;
+    static u32 macos_n2_audit_release;
+    static u32 macos_n2_vma_release;
+    static u32 macos_n2_clone_release;
+    static u32 macos_n2_after_cleanup;
+    static u32 macos_n2_positive;
+    static const u8 macos_n3_message[] = "n3-libSystem\n";
+    static macos_shim64_libsystem_result_t macos_n3_load_result;
+    static macos_shim64_libsystem_result_t macos_n3_bad_load_result;
+    static macos_shim64_call_result_t macos_n3_printf_result;
+    static macos_shim64_call_result_t macos_n3_strlen_result;
+    static macos_shim64_call_result_t macos_n3_malloc_result;
+    static macos_shim64_call_result_t macos_n3_memset_result;
+    static macos_shim64_call_result_t macos_n3_memcpy_result;
+    static macos_shim64_call_result_t macos_n3_realloc_result;
+    static macos_shim64_call_result_t macos_n3_free_result;
+    static macos_shim64_call_result_t macos_n3_mmap_result;
+    static macos_shim64_call_result_t macos_n3_mprotect_result;
+    static macos_shim64_call_result_t macos_n3_munmap_result;
+    static macos_shim64_call_result_t macos_n3_open_result;
+    static macos_shim64_call_result_t macos_n3_close_result;
+    static macos_shim64_call_result_t macos_n3_clock_result;
+    static macos_shim64_call_result_t macos_n3_bad_result;
+    static u32 macos_n3_pid;
+    static u32 macos_n3_owner;
+    static u32 macos_n3_vma_init;
+    static u32 macos_n3_audit_attach;
+    static u32 macos_n3_stdin_cap;
+    static u32 macos_n3_stdout_cap;
+    static u32 macos_n3_stderr_cap;
+    static u32 macos_n3_fd_init;
+    static u32 macos_n3_bind;
+    static u64 macos_n3_buffer_base;
+    static u64 macos_n3_message_addr;
+    static u64 macos_n3_path_addr;
+    static u64 macos_n3_time_addr;
+    static u64 macos_n3_mmap_addr;
+    static u32 macos_n3_load;
+    static u32 macos_n3_bad_load;
+    static u32 macos_n3_symbol_count;
+    static u32 macos_n3_resolved_count;
+    static u64 macos_n3_write_addr;
+    static u64 macos_n3_read_addr;
+    static u64 macos_n3_open_addr;
+    static u64 macos_n3_close_addr;
+    static u64 macos_n3_exit_addr;
+    static u64 macos_n3_mmap_fn_addr;
+    static u64 macos_n3_munmap_addr;
+    static u64 macos_n3_mprotect_addr;
+    static u64 macos_n3_malloc_addr;
+    static u64 macos_n3_free_addr;
+    static u64 macos_n3_realloc_addr;
+    static u64 macos_n3_memcpy_addr;
+    static u64 macos_n3_memset_addr;
+    static u64 macos_n3_strlen_addr;
+    static u64 macos_n3_printf_addr;
+    static u64 macos_n3_clock_addr;
+    static u64 macos_n3_missing_addr;
+    static u32 macos_n3_text_present;
+    static u32 macos_n3_rodata_present;
+    static u32 macos_n3_console_before_count;
+    static u32 macos_n3_console_after_count;
+    static u32 macos_n3_console_before_bytes;
+    static u32 macos_n3_console_after_bytes;
+    static u32 macos_n3_audit_before;
+    static u32 macos_n3_audit_after;
+    static u32 macos_n3_load_before;
+    static u32 macos_n3_call_before;
+    static u32 macos_n3_bridge_before;
+    static u32 macos_n3_memory_before;
+    static u32 macos_n3_denial_before;
+    static u32 macos_n3_fault_before;
+    static u32 macos_n3_load_delta;
+    static u32 macos_n3_call_delta;
+    static u32 macos_n3_bridge_delta;
+    static u32 macos_n3_memory_delta;
+    static u32 macos_n3_denial_delta;
+    static u32 macos_n3_fault_delta;
+    static u32 macos_n3_copied_match;
+    static u32 macos_n3_time_written;
+    static u32 macos_n3_mmap_present;
+    static u32 macos_n3_mprotect_prot;
+    static u32 macos_n3_last_symbol;
+    static u32 macos_n3_last_error;
+    static u64 macos_n3_last_result;
+    static u32 macos_n3_release_shim;
+    static u32 macos_n3_unmap_buffer;
+    static u32 macos_n3_fd_release;
+    static u32 macos_n3_persona_release;
+    static u32 macos_n3_audit_release;
+    static u32 macos_n3_vma_release;
+    static u32 macos_n3_clone_release;
+    static u32 macos_n3_cleanup;
+    static u32 macos_n3_positive;
+    static const u8 macos_n4_symbol_write[] = "_write";
+    static macos_dyld64_load_result_t macos_n4_load_result;
+    static macos_dyld64_load_result_t macos_n4_bad_load_result;
+    static macos_dyld64_call_result_t macos_n4_binder_result;
+    static macos_dyld64_call_result_t macos_n4_count_result;
+    static macos_dyld64_call_result_t macos_n4_name_result;
+    static macos_dyld64_call_result_t macos_n4_bad_call_result;
+    static macos_dyld64_lazy_bind_result_t macos_n4_missing_bind_result;
+    static u32 macos_n4_pid;
+    static u32 macos_n4_owner;
+    static u32 macos_n4_vma_init;
+    static u32 macos_n4_audit_attach;
+    static u32 macos_n4_bind;
+    static u64 macos_n4_buffer_base;
+    static u64 macos_n4_slot_addr;
+    static u64 macos_n4_symbol_addr;
+    static u64 macos_n4_slot_after;
+    static u32 macos_n4_buffer_map;
+    static u32 macos_n4_load;
+    static u32 macos_n4_bad_load;
+    static u32 macos_n4_symbol_count;
+    static u32 macos_n4_resolved_count;
+    static u64 macos_n4_stub_addr;
+    static u64 macos_n4_get_name_addr;
+    static u64 macos_n4_image_count_addr;
+    static u64 macos_n4_missing_addr;
+    static u32 macos_n4_text_present;
+    static u32 macos_n4_rodata_present;
+    static u32 macos_n4_name_prefix;
+    static u32 macos_n4_load_before;
+    static u32 macos_n4_call_before;
+    static u32 macos_n4_lazy_before;
+    static u32 macos_n4_image_before;
+    static u32 macos_n4_denial_before;
+    static u32 macos_n4_fault_before;
+    static u32 macos_n4_audit_before;
+    static u32 macos_n4_audit_after;
+    static u32 macos_n4_load_delta;
+    static u32 macos_n4_call_delta;
+    static u32 macos_n4_lazy_delta;
+    static u32 macos_n4_image_delta;
+    static u32 macos_n4_denial_delta;
+    static u32 macos_n4_fault_delta;
+    static u32 macos_n4_release_shim;
+    static u32 macos_n4_unmap_buffer;
+    static u32 macos_n4_persona_release;
+    static u32 macos_n4_audit_release;
+    static u32 macos_n4_vma_release;
+    static u32 macos_n4_clone_release;
+    static u32 macos_n4_cleanup;
+    static u32 macos_n4_positive;
+    static const u8 macos_n5_message[] = "n5-CoreFoundation\n";
+    static macos_shim64_libsystem_result_t macos_n5_libsystem_result;
+    static macos_cf64_load_result_t macos_n5_load_result;
+    static macos_cf64_load_result_t macos_n5_bad_load_result;
+    static macos_cf64_call_result_t macos_n5_allocator_result;
+    static macos_cf64_call_result_t macos_n5_create_result;
+    static macos_cf64_call_result_t macos_n5_retain_result;
+    static macos_cf64_call_result_t macos_n5_get_result;
+    static macos_cf64_call_result_t macos_n5_show_result;
+    static macos_cf64_call_result_t macos_n5_release1_result;
+    static macos_cf64_call_result_t macos_n5_release2_result;
+    static macos_cf64_call_result_t macos_n5_bad_result;
+    static u32 macos_n5_pid;
+    static u32 macos_n5_owner;
+    static u32 macos_n5_vma_init;
+    static u32 macos_n5_audit_attach;
+    static u32 macos_n5_stdin_cap;
+    static u32 macos_n5_stdout_cap;
+    static u32 macos_n5_stderr_cap;
+    static u32 macos_n5_fd_init;
+    static u32 macos_n5_bind;
+    static u64 macos_n5_buffer_base;
+    static u64 macos_n5_message_addr;
+    static u64 macos_n5_output_addr;
+    static u32 macos_n5_buffer_map;
+    static u32 macos_n5_libsystem_load;
+    static u32 macos_n5_load;
+    static u32 macos_n5_bad_load;
+    static u32 macos_n5_symbol_count;
+    static u32 macos_n5_resolved_count;
+    static u64 macos_n5_allocator_addr;
+    static u64 macos_n5_release_addr;
+    static u64 macos_n5_retain_addr;
+    static u64 macos_n5_create_addr;
+    static u64 macos_n5_get_addr;
+    static u64 macos_n5_show_addr;
+    static u64 macos_n5_missing_addr;
+    static u32 macos_n5_text_present;
+    static u32 macos_n5_rodata_present;
+    static u32 macos_n5_output_match;
+    static u32 macos_n5_output_nul;
+    static u32 macos_n5_console_before_count;
+    static u32 macos_n5_console_after_count;
+    static u32 macos_n5_console_before_bytes;
+    static u32 macos_n5_console_after_bytes;
+    static u32 macos_n5_live_after_create;
+    static u32 macos_n5_live_after_retain;
+    static u32 macos_n5_live_after_release1;
+    static u32 macos_n5_live_after_release2;
+    static u32 macos_n5_load_before;
+    static u32 macos_n5_call_before;
+    static u32 macos_n5_create_before;
+    static u32 macos_n5_get_before;
+    static u32 macos_n5_show_before;
+    static u32 macos_n5_retain_before;
+    static u32 macos_n5_release_before;
+    static u32 macos_n5_denial_before;
+    static u32 macos_n5_fault_before;
+    static u32 macos_n5_scratch_before;
+    static u32 macos_n5_shim_call_before;
+    static u32 macos_n5_shim_bridge_before;
+    static u32 macos_n5_audit_before;
+    static u32 macos_n5_audit_after;
+    static u32 macos_n5_load_delta;
+    static u32 macos_n5_call_delta;
+    static u32 macos_n5_create_delta;
+    static u32 macos_n5_get_delta;
+    static u32 macos_n5_show_delta;
+    static u32 macos_n5_retain_delta;
+    static u32 macos_n5_release_delta;
+    static u32 macos_n5_denial_delta;
+    static u32 macos_n5_fault_delta;
+    static u32 macos_n5_scratch_delta;
+    static u32 macos_n5_shim_call_delta;
+    static u32 macos_n5_shim_bridge_delta;
+    static u32 macos_n5_release_cf;
+    static u32 macos_n5_release_shim;
+    static u32 macos_n5_unmap_buffer;
+    static u32 macos_n5_fd_release;
+    static u32 macos_n5_persona_release;
+    static u32 macos_n5_audit_release;
+    static u32 macos_n5_vma_release;
+    static u32 macos_n5_clone_release;
+    static u32 macos_n5_cleanup;
+    static u32 macos_n5_positive;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    static persona_audit64_record_t persona_o1_record = {0};
+    static u32 persona_o1_linux_pid;
+    static u32 persona_o1_windows_pid;
+    static u32 persona_o1_linux_owner;
+    static u32 persona_o1_windows_owner;
+    static u32 persona_o1_linux_bind;
+    static u32 persona_o1_windows_bind;
+    static u32 persona_o1_audit_attach;
+    static u32 persona_o1_linux_mask;
+    static u32 persona_o1_windows_mask;
+    static u32 persona_o1_tagged_cap;
+    static u32 persona_o1_untagged_cap;
+    static u32 persona_o1_self_delegate;
+    static u32 persona_o1_cross_delegate;
+    static u32 persona_o1_legacy_delegate;
+    static u32 persona_o1_tag;
+    static u32 persona_o1_tag_mask;
+    static u32 persona_o1_self_tag;
+    static u32 persona_o1_self_mask;
+    static u32 persona_o1_legacy_tag;
+    static u32 persona_o1_legacy_mask;
+    static u32 persona_o1_self_route;
+    static u32 persona_o1_legacy_route;
+    static u32 persona_o1_denial_before;
+    static u32 persona_o1_denial_after;
+    static u32 persona_o1_transfer_before;
+    static u32 persona_o1_transfer_after;
+    static u32 persona_o1_audit_before;
+    static u32 persona_o1_audit_after;
+    static u32 persona_o1_audit_read;
+    static u32 persona_o1_revoke_tagged;
+    static u32 persona_o1_revoke_legacy;
+    static u32 persona_o1_windows_release;
+    static u32 persona_o1_linux_release;
+    static u32 persona_o1_audit_release;
+    static u32 persona_o1_cleanup;
+    static u32 persona_o1_positive;
+    static const u32 persona_o2_expected_codes[5] = {
+        LINUX_ABI64_SYSCALL_GETPID,
+        LINUX_ABI64_SYSCALL_GETTID,
+        LINUX_ABI64_SYSCALL_ARCH_PRCTL,
+        LINUX_ABI64_SYSCALL_SET_TID_ADDRESS,
+        LINUX_ABI64_SYSCALL_CLOCK_GETTIME
+    };
+    static const u32 persona_o2_expected_ops[5] = {
+        PERSONA_AUDIT64_OP_PROCESS,
+        PERSONA_AUDIT64_OP_PROCESS,
+        PERSONA_AUDIT64_OP_PROCESS,
+        PERSONA_AUDIT64_OP_PROCESS,
+        PERSONA_AUDIT64_OP_TIME
+    };
+    static const u64 persona_o2_expected_rips[5] = {
+        0x00000000F0200027ull,
+        0x00000000F02000BAull,
+        0x00000000F0201002ull,
+        0x00000000F02000DAull,
+        0x00000000F02000E4ull
+    };
+    static persona_audit64_record_t persona_o2_records[5] = {{0}};
+    static u32 persona_o2_read[5];
+    static u32 persona_o2_expected_tokens[5];
+    static u64 persona_o2_returns[5];
+    static u32 persona_o2_pid;
+    static u32 persona_o2_audit_attach;
+    static u32 persona_o2_bind;
+    static u64 persona_o2_page;
+    static u32 persona_o2_map_ok;
+    static u32 persona_o2_audit_before;
+    static u32 persona_o2_audit_after;
+    static u32 persona_o2_audit_delta;
+    static u32 persona_o2_index;
+    static u32 persona_o2_event_match;
+    static u32 persona_o2_code_match;
+    static u32 persona_o2_persona_match;
+    static u32 persona_o2_result_match;
+    static u32 persona_o2_rip_match;
+    static u32 persona_o2_token_match;
+    static u32 persona_o2_operation_match;
+    static u32 persona_o2_return_match;
+    static u32 persona_o2_timestamp_match;
+    static u32 persona_o2_time_match;
+    static u32 persona_o2_last_token;
+    static u32 persona_o2_last_operation;
+    static u32 persona_o2_cleanup_unmap;
+    static u32 persona_o2_persona_release;
+    static u32 persona_o2_audit_release;
+    static u64 persona_o2_fs_before;
+    static u64 persona_o2_fs_after_restore;
+    static u32 persona_o2_cleanup;
+    static u32 persona_o2_positive;
+    static u32 persona_o3_pipefd_words[2];
+    static u32 persona_o3_pid;
+    static u32 persona_o3_owner;
+    static u32 persona_o3_vma_init;
+    static u32 persona_o3_audit_attach;
+    static u32 persona_o3_stdin_cap;
+    static u32 persona_o3_stdout_cap;
+    static u32 persona_o3_stderr_cap;
+    static u32 persona_o3_fd_init;
+    static u32 persona_o3_bind;
+    static u32 persona_o3_default_vma_budget;
+    static u32 persona_o3_default_fd_budget;
+    static u32 persona_o3_default_pipe_budget;
+    static u32 persona_o3_config_fd;
+    static u32 persona_o3_config_pipe;
+    static u64 persona_o3_mmap_ok;
+    static u64 persona_o3_mmap_denied;
+    static u64 persona_o3_dup_ok;
+    static u64 persona_o3_dup_denied;
+    static u64 persona_o3_pipe_ok;
+    static u64 persona_o3_pipe_denied;
+    static u64 persona_o3_pipe_user_addr;
+    static u32 persona_o3_pages_after_map;
+    static u32 persona_o3_vma_kind;
+    static u32 persona_o3_vma_requested;
+    static u32 persona_o3_vma_limit;
+    static u32 persona_o3_fd_live_after_dup;
+    static u32 persona_o3_fd_kind;
+    static u32 persona_o3_fd_requested;
+    static u32 persona_o3_fd_limit;
+    static u32 persona_o3_pipe_count_after_create;
+    static u32 persona_o3_pipe_kind;
+    static u32 persona_o3_pipe_requested;
+    static u32 persona_o3_pipe_limit;
+    static u32 persona_o3_budget_denials;
+    static u32 persona_o3_audit_before;
+    static u32 persona_o3_audit_after;
+    static u32 persona_o3_pipe_read_fd;
+    static u32 persona_o3_pipe_write_fd;
+    static u32 persona_o3_close_dup;
+    static u32 persona_o3_close_pipe_read;
+    static u32 persona_o3_close_pipe_write;
+    static u32 persona_o3_pipe_count_after_close;
+    static u32 persona_o3_unmap;
+    static u32 persona_o3_fd_release;
+    static u32 persona_o3_persona_release;
+    static u32 persona_o3_audit_release;
+    static u32 persona_o3_vma_release;
+    static u32 persona_o3_clone_release;
+    static u32 persona_o3_cleanup;
+    static u32 persona_o3_positive;
+    static persona_audit64_record_t persona_o4_record = {0};
+    static u32 persona_o4_linux_pid;
+    static u32 persona_o4_windows_pid;
+    static u32 persona_o4_linux_owner;
+    static u32 persona_o4_windows_owner;
+    static u32 persona_o4_audit_attach;
+    static u32 persona_o4_linux_bind;
+    static u32 persona_o4_windows_bind;
+    static u32 persona_o4_linux_group;
+    static u32 persona_o4_windows_group;
+    static u64 persona_o4_self_ret;
+    static u64 persona_o4_cross_ret;
+    static u32 persona_o4_audit_before;
+    static u32 persona_o4_audit_after;
+    static u32 persona_o4_audit_read;
+    static u32 persona_o4_event;
+    static u32 persona_o4_code;
+    static u32 persona_o4_result;
+    static u32 persona_o4_persona;
+    static u32 persona_o4_rip_match;
+    static u32 persona_o4_windows_type;
+    static u32 persona_o4_denials;
+    static u32 persona_o4_last_source;
+    static u32 persona_o4_last_target;
+    static u32 persona_o4_last_source_group;
+    static u32 persona_o4_last_target_group;
+    static u32 persona_o4_last_result;
+    static u32 persona_o4_windows_release;
+    static u32 persona_o4_linux_release;
+    static u32 persona_o4_audit_release;
+    static u32 persona_o4_windows_clone_release;
+    static u32 persona_o4_linux_clone_release;
+    static u32 persona_o4_cleanup;
+    static u32 persona_o4_positive;
+    static persona_audit64_record_t persona_o5_linux_record = {0};
+    static persona_audit64_record_t persona_o5_windows_record = {0};
+    static persona_audit64_record_t persona_o5_macos_record = {0};
+    static u32 persona_o5_linux_pid;
+    static u32 persona_o5_windows_pid;
+    static u32 persona_o5_macos_pid;
+    static u32 persona_o5_linux_audit_attach;
+    static u32 persona_o5_windows_audit_attach;
+    static u32 persona_o5_macos_audit_attach;
+    static u32 persona_o5_linux_bind;
+    static u32 persona_o5_windows_bind;
+    static u32 persona_o5_macos_bind;
+    static u32 persona_o5_linux_before;
+    static u32 persona_o5_windows_before;
+    static u32 persona_o5_macos_before;
+    static u32 persona_o5_linux_after;
+    static u32 persona_o5_windows_after;
+    static u32 persona_o5_macos_after;
+    static u32 persona_o5_linux_read;
+    static u32 persona_o5_windows_read;
+    static u32 persona_o5_macos_read;
+    static u32 persona_o5_linux_unimpl_before;
+    static u32 persona_o5_windows_unimpl_before;
+    static u32 persona_o5_macos_unimpl_before;
+    static u32 persona_o5_linux_unimpl_after;
+    static u32 persona_o5_windows_unimpl_after;
+    static u32 persona_o5_macos_unimpl_after;
+    static u32 persona_o5_linux_abi_result;
+    static u32 persona_o5_windows_abi_result;
+    static u32 persona_o5_macos_abi_result;
+    static u64 persona_o5_linux_expected_return;
+    static u64 persona_o5_windows_expected_return;
+    static u64 persona_o5_macos_expected_return;
+    static u64 persona_o5_linux_return;
+    static u64 persona_o5_windows_return;
+    static u64 persona_o5_macos_return;
+    static u32 persona_o5_linux_release;
+    static u32 persona_o5_windows_release;
+    static u32 persona_o5_macos_release;
+    static u32 persona_o5_linux_audit_release;
+    static u32 persona_o5_windows_audit_release;
+    static u32 persona_o5_macos_audit_release;
+    static u32 persona_o5_linux_clone_release;
+    static u32 persona_o5_windows_clone_release;
+    static u32 persona_o5_macos_clone_release;
+    static u32 persona_o5_cleanup;
+    static u32 persona_o5_positive;
+    static persona_audit64_record_t persona_o6_record = {0};
+    static persona_audit64_crash_report_t persona_o6_report = {0};
+    static struct interrupt_frame64 persona_o6_frame;
+    static u32 persona_o6_pid;
+    static u32 persona_o6_vma_init;
+    static u32 persona_o6_audit_attach;
+    static u32 persona_o6_bind;
+    static u64 persona_o6_stack;
+    static u32 persona_o6_record_result;
+    static u32 persona_o6_bad_record_result;
+    static u32 persona_o6_audit_before;
+    static u32 persona_o6_audit_after;
+    static u32 persona_o6_crash_before;
+    static u32 persona_o6_crash_after;
+    static u32 persona_o6_read_record;
+    static u32 persona_o6_read_report;
+    static u32 persona_o6_unmap;
+    static u32 persona_o6_persona_release;
+    static u32 persona_o6_audit_release;
+    static u32 persona_o6_vma_release;
+    static u32 persona_o6_clone_release;
+    static u32 persona_o6_cleanup;
+    static u32 persona_o6_positive;
+    static const char linux_p1_argv0[] = "/bin/dynprobe";
+    static const char linux_p1_env0[] = "LD_LIBRARY_PATH=/lib";
+    const char *linux_p1_argv[1];
+    const char *linux_p1_envp[1];
+    static u8 linux_p1_app_bytes[0x00000500u];
+    static u8 linux_p1_missing_bytes[0x00000500u];
+    static linux_dynamic64_launch_result_t linux_p1_result;
+    static linux_dynamic64_launch_result_t linux_p1_missing_result;
+    static persona_audit64_record_t linux_p1_audit_record = {0};
+    static persona_context_t *linux_p1_context;
+    static const u8 *linux_p1_ld_image;
+    static u32 linux_p1_pid;
+    static u32 linux_p1_vma_init;
+    static u32 linux_p1_audit_attach;
+    static u32 linux_p1_bind;
+    static u32 linux_p1_init;
+    static u32 linux_p1_build_i;
+    static u32 linux_p1_prepare_before;
+    static u32 linux_p1_prepare_after;
+    static u32 linux_p1_load_before;
+    static u32 linux_p1_load_after;
+    static u32 linux_p1_denial_before;
+    static u32 linux_p1_denial_after;
+    static u32 linux_p1_dep_before;
+    static u32 linux_p1_dep_after;
+    static u32 linux_p1_audit_before;
+    static u32 linux_p1_audit_after;
+    static u32 linux_p1_prepare;
+    static u32 linux_p1_missing_prepare;
+    static u32 linux_p1_export_match;
+    static u32 linux_p1_missing_export;
+    static u32 linux_p1_read_audit;
+    static u32 linux_p1_release;
+    static u32 linux_p1_persona_release;
+    static u32 linux_p1_audit_release;
+    static u32 linux_p1_vma_release;
+    static u32 linux_p1_clone_release;
+    static u32 linux_p1_pages_clear;
+    static u32 linux_p1_context_match;
+    static u32 linux_p1_cleanup;
+    static u32 linux_p1_positive;
+    static const char linux_p2_argv0[] = "/bin/libcprobe";
+    static const char linux_p2_env0[] = "LD_LIBRARY_PATH=/lib";
+    const char *linux_p2_argv[1];
+    const char *linux_p2_envp[1];
+    static u8 linux_p2_app_bytes[0x00000500u];
+    static linux_dynamic64_launch_result_t linux_p2_result;
+    static linux_libc64_load_result_t linux_p2_bad_load_result;
+    static persona_audit64_record_t linux_p2_audit_record = {0};
+    static persona_context_t *linux_p2_context;
+    static const u8 *linux_p2_libc_image;
+    static u32 linux_p2_pid;
+    static u32 linux_p2_vma_init;
+    static u32 linux_p2_audit_attach;
+    static u32 linux_p2_owner;
+    static u32 linux_p2_stdin_cap;
+    static u32 linux_p2_stdout_cap;
+    static u32 linux_p2_stderr_cap;
+    static u32 linux_p2_fd_init;
+    static u32 linux_p2_fd_release;
+    static u32 linux_p2_bind;
+    static u32 linux_p2_init;
+    static u32 linux_p2_build_i;
+    static u32 linux_p2_prepare_before;
+    static u32 linux_p2_prepare_after;
+    static u32 linux_p2_dynamic_load_before;
+    static u32 linux_p2_dynamic_load_after;
+    static u32 linux_p2_libc_load_before;
+    static u32 linux_p2_libc_load_after;
+    static u32 linux_p2_libc_denial_before;
+    static u32 linux_p2_libc_denial_after;
+    static u32 linux_p2_dep_supported_before;
+    static u32 linux_p2_dep_supported_after;
+    static u32 linux_p2_audit_before;
+    static u32 linux_p2_audit_after;
+    static u32 linux_p2_prepare;
+    static u32 linux_p2_bad_load;
+    static u32 linux_p2_export_match;
+    static u32 linux_p2_missing_export;
+    static u32 linux_p2_dep_libc;
+    static u32 linux_p2_dep_unknown;
+    static u32 linux_p2_read_audit;
+    static u32 linux_p2_release;
+    static u32 linux_p2_persona_release;
+    static u32 linux_p2_audit_release;
+    static u32 linux_p2_vma_release;
+    static u32 linux_p2_clone_release;
+    static u32 linux_p2_pages_clear;
+    static u32 linux_p2_context_match;
+    static u32 linux_p2_cleanup;
+    static u32 linux_p2_positive;
+    static const char linux_p3_argv0[] = "/bin/pthreadprobe";
+    static const u8 linux_p3_pthread_dep[] = "libpthread.so.0";
+    static const u8 linux_p3_libc_dep[] = "libc.so.6";
+    static const u8 linux_p3_missing_dep[] = "libpthread_missing.so";
+    const char *linux_p3_argv[1];
+    static u8 linux_p3_app_bytes[0x00000500u];
+    static u8 linux_p3_missing_bytes[0x00000500u];
+    static linux_dynamic64_launch_result_t linux_p3_result;
+    static linux_dynamic64_launch_result_t linux_p3_missing_result;
+    static persona_audit64_record_t linux_p3_audit_record = {0};
+    static u32 linux_p3_pid;
+    static u32 linux_p3_vma_init;
+    static u32 linux_p3_audit_attach;
+    static u32 linux_p3_bind;
+    static u32 linux_p3_build_i;
+    static u32 linux_p3_init;
+    static u32 linux_p3_prepare_before;
+    static u32 linux_p3_prepare_after;
+    static u32 linux_p3_dynamic_load_before;
+    static u32 linux_p3_dynamic_load_after;
+    static u32 linux_p3_libc_load_before;
+    static u32 linux_p3_libc_load_after;
+    static u32 linux_p3_denial_before;
+    static u32 linux_p3_denial_after;
+    static u32 linux_p3_dep_denial_before;
+    static u32 linux_p3_dep_denial_after;
+    static u32 linux_p3_dep_supported_before;
+    static u32 linux_p3_dep_supported_after;
+    static u32 linux_p3_audit_before;
+    static u32 linux_p3_audit_after;
+    static u32 linux_p3_prepare;
+    static u32 linux_p3_missing_prepare;
+    static u32 linux_p3_alias_supported;
+    static u32 linux_p3_alias_missing;
+    static u32 linux_p3_exit_export;
+    static u32 linux_p3_exit_stub;
+    static u32 linux_p3_needed_match;
+    static u32 linux_p3_export_match;
+    static u32 linux_p3_context_match;
+    static u32 linux_p3_denial_match;
+    static u32 linux_p3_read_audit;
+    static u32 linux_p3_release;
+    static u32 linux_p3_persona_release;
+    static u32 linux_p3_audit_release;
+    static u32 linux_p3_vma_release;
+    static u32 linux_p3_clone_release;
+    static u32 linux_p3_pages_clear;
+    static u32 linux_p3_cleanup;
+    static u32 linux_p3_positive;
+    static const u8 linux_p2c_harness_template[53] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
+        0xBBu, 0x31u, 0x43u, 0x32u, 0x50u, 0xB9u, 0x01u, 0x00u,
+        0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static const u8 linux_p2c_message[] = "p2c-puts";
+    static u64 linux_p2c_code_addr;
+    static u64 linux_p2c_data_addr;
+    static u64 linux_p2c_code_map;
+    static u64 linux_p2c_data_map;
+    static u32 linux_p2c_i;
+    static u32 linux_p2c_code_copy;
+    static u32 linux_p2c_data_init;
+    static u32 linux_p2c_code_prot;
+    static u32 linux_p2c_task;
+    static u32 linux_p2c_runqueue_start;
+    static u32 linux_p2c_current_pid;
+    static u32 linux_p2c_console_before_count;
+    static u32 linux_p2c_console_after_count;
+    static u32 linux_p2c_console_before_bytes;
+    static u32 linux_p2c_console_after_bytes;
+    static u32 linux_p2c_native_before;
+    static u32 linux_p2c_native_after;
+    static u32 linux_p2c_persona_before;
+    static u32 linux_p2c_persona_after;
+    static u32 linux_p2c_linux_before;
+    static u32 linux_p2c_linux_after;
+    static u32 linux_p2c_write_before;
+    static u32 linux_p2c_write_after;
+    static u32 linux_p2c_audit_before;
+    static u32 linux_p2c_audit_after;
+    static u32 linux_p2c_transfer;
+    static u32 linux_p2c_aux;
+    static u64 linux_p2c_puts_return;
+    static u32 linux_p2c_last_pid;
+    static u32 linux_p2c_last_type;
+    static u64 linux_p2c_last_result;
+    static u32 linux_p2c_audit_read;
+    static persona_audit64_record_t linux_p2c_audit_record = {0};
+    static u32 linux_p2c_return_match;
+    static u32 linux_p2c_console_match;
+    static u32 linux_p2c_dispatch_match;
+    static u32 linux_p2c_export_match;
+    static u32 linux_p2c_unmap_code;
+    static u32 linux_p2c_unmap_data;
+    static u32 linux_p2c_reset;
+    static u32 linux_p2c_positive;
+    static const u8 linux_p2d_harness_template[88] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x88u, 0x88u, 0x88u,
+        0x88u, 0x77u, 0x77u, 0x77u, 0x77u, 0x48u, 0xB8u, 0xAAu,
+        0xAAu, 0xAAu, 0xAAu, 0x99u, 0x99u, 0x99u, 0x99u, 0xFFu,
+        0xD0u, 0x49u, 0xBAu, 0xCCu, 0xCCu, 0xCCu, 0xCCu, 0xBBu,
+        0xBBu, 0xBBu, 0xBBu, 0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u,
+        0x00u, 0x00u, 0x00u, 0xBBu, 0x31u, 0x44u, 0x32u, 0x50u,
+        0xB9u, 0x02u, 0x00u, 0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static const u8 linux_p2d_literal[] = "p2d-printf\n";
+    static const u8 linux_p2d_format[] = "bad %s\n";
+    static u64 linux_p2d_code_addr;
+    static u64 linux_p2d_data_addr;
+    static u64 linux_p2d_code_map;
+    static u64 linux_p2d_data_map;
+    static u32 linux_p2d_i;
+    static u32 linux_p2d_code_copy;
+    static u32 linux_p2d_data_init;
+    static u32 linux_p2d_code_prot;
+    static u32 linux_p2d_task;
+    static u32 linux_p2d_runqueue_start;
+    static u32 linux_p2d_current_pid;
+    static u32 linux_p2d_console_before_count;
+    static u32 linux_p2d_console_after_count;
+    static u32 linux_p2d_console_before_bytes;
+    static u32 linux_p2d_console_after_bytes;
+    static u32 linux_p2d_native_before;
+    static u32 linux_p2d_native_after;
+    static u32 linux_p2d_persona_before;
+    static u32 linux_p2d_persona_after;
+    static u32 linux_p2d_linux_before;
+    static u32 linux_p2d_linux_after;
+    static u32 linux_p2d_write_before;
+    static u32 linux_p2d_write_after;
+    static u32 linux_p2d_audit_before;
+    static u32 linux_p2d_audit_after;
+    static u32 linux_p2d_transfer;
+    static u32 linux_p2d_aux;
+    static u64 linux_p2d_printf_return;
+    static u64 linux_p2d_deny_return;
+    static u32 linux_p2d_last_pid;
+    static u32 linux_p2d_last_type;
+    static u64 linux_p2d_last_result;
+    static u32 linux_p2d_audit_read;
+    static persona_audit64_record_t linux_p2d_audit_record = {0};
+    static u32 linux_p2d_return_match;
+    static u32 linux_p2d_deny_match;
+    static u32 linux_p2d_console_match;
+    static u32 linux_p2d_dispatch_match;
+    static u32 linux_p2d_export_match;
+    static u32 linux_p2d_unmap_code;
+    static u32 linux_p2d_unmap_data;
+    static u32 linux_p2d_reset;
+    static u32 linux_p2d_positive;
+    static const u8 linux_p2e_harness_template[110] = {
+        0xBFu, 0x18u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x22u,
+        0x22u, 0x22u, 0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0xFFu,
+        0xD0u, 0x49u, 0xBAu, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u,
+        0x33u, 0x33u, 0x33u, 0x49u, 0x89u, 0x02u, 0x48u, 0x85u,
+        0xC0u, 0x78u, 0x39u, 0x49u, 0x89u, 0xC3u, 0x48u, 0xBAu,
+        0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x49u, 0x89u, 0x13u, 0x49u, 0xBAu, 0x88u, 0x88u, 0x88u,
+        0x88u, 0x77u, 0x77u, 0x77u, 0x77u, 0x49u, 0x89u, 0x12u,
+        0x4Cu, 0x89u, 0xDFu, 0x48u, 0xB8u, 0xAAu, 0xAAu, 0xAAu,
+        0xAAu, 0x99u, 0x99u, 0x99u, 0x99u, 0xFFu, 0xD0u, 0x49u,
+        0xBAu, 0xCCu, 0xCCu, 0xCCu, 0xCCu, 0xBBu, 0xBBu, 0xBBu,
+        0xBBu, 0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u,
+        0x00u, 0xBBu, 0x31u, 0x45u, 0x32u, 0x50u, 0xB9u, 0x02u,
+        0x00u, 0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static linux_libc64_load_result_t linux_p2e_result;
+    static persona_audit64_record_t linux_p2e_audit_record = {0};
+    static u32 linux_p2e_pid;
+    static u32 linux_p2e_vma_init;
+    static u32 linux_p2e_audit_attach;
+    static u32 linux_p2e_bind;
+    static u32 linux_p2e_load;
+    static u64 linux_p2e_code_addr;
+    static u64 linux_p2e_data_addr;
+    static u64 linux_p2e_stack_addr;
+    static u64 linux_p2e_stack_top;
+    static u64 linux_p2e_code_map;
+    static u64 linux_p2e_data_map;
+    static u64 linux_p2e_stack_map;
+    static u32 linux_p2e_i;
+    static u32 linux_p2e_code_copy;
+    static u32 linux_p2e_code_prot;
+    static u32 linux_p2e_libc_page_present;
+    static u32 linux_p2e_task;
+    static u32 linux_p2e_runqueue_start;
+    static u32 linux_p2e_current_pid;
+    static u32 linux_p2e_native_before;
+    static u32 linux_p2e_native_after;
+    static u32 linux_p2e_persona_before;
+    static u32 linux_p2e_persona_after;
+    static u32 linux_p2e_linux_before;
+    static u32 linux_p2e_linux_after;
+    static u32 linux_p2e_mmap_before;
+    static u32 linux_p2e_mmap_after;
+    static u32 linux_p2e_mmap_bytes_before;
+    static u32 linux_p2e_mmap_bytes_after;
+    static u32 linux_p2e_munmap_before;
+    static u32 linux_p2e_munmap_after;
+    static u32 linux_p2e_munmap_bytes_before;
+    static u32 linux_p2e_munmap_bytes_after;
+    static u32 linux_p2e_audit_before;
+    static u32 linux_p2e_audit_after;
+    static u32 linux_p2e_transfer;
+    static u32 linux_p2e_aux;
+    static u64 linux_p2e_malloc_ptr;
+    static u64 linux_p2e_free_return;
+    static u64 linux_p2e_heap_magic;
+    static u64 linux_p2e_heap_base;
+    static u32 linux_p2e_last_pid;
+    static u32 linux_p2e_last_type;
+    static u64 linux_p2e_last_result;
+    static u32 linux_p2e_audit_read;
+    static u32 linux_p2e_pointer_match;
+    static u32 linux_p2e_magic_match;
+    static u32 linux_p2e_free_match;
+    static u32 linux_p2e_dispatch_match;
+    static u32 linux_p2e_export_match;
+    static u32 linux_p2e_heap_unmapped;
+    static u32 linux_p2e_reset;
+    static u32 linux_p2e_unmap_code;
+    static u32 linux_p2e_unmap_data;
+    static u32 linux_p2e_unmap_stack;
+    static u32 linux_p2e_positive;
+    static const u8 linux_p2f_harness_template[205] = {
+        0xBFu, 0x04u, 0x00u, 0x00u, 0x00u, 0xBEu, 0x08u, 0x00u,
+        0x00u, 0x00u, 0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0x85u, 0xC0u, 0x0Fu, 0x84u,
+        0x8Fu, 0x00u, 0x00u, 0x00u, 0x0Fu, 0x88u, 0x89u, 0x00u,
+        0x00u, 0x00u, 0x49u, 0x89u, 0xC3u, 0x31u, 0xC9u, 0x31u,
+        0xD2u, 0x49u, 0x83u, 0x3Cu, 0x13u, 0x00u, 0x75u, 0x02u,
+        0xFFu, 0xC1u, 0x83u, 0xC2u, 0x08u, 0x83u, 0xFAu, 0x20u,
+        0x75u, 0xEFu, 0x49u, 0xBAu, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x55u, 0x55u, 0x55u, 0x55u, 0x49u, 0x89u, 0x0Au, 0x48u,
+        0xBAu, 0x88u, 0x88u, 0x88u, 0x88u, 0x77u, 0x77u, 0x77u,
+        0x77u, 0x49u, 0x89u, 0x13u, 0x4Cu, 0x89u, 0xDFu, 0xBEu,
+        0x40u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0xAAu, 0xAAu,
+        0xAAu, 0xAAu, 0x99u, 0x99u, 0x99u, 0x99u, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0xCCu, 0xCCu, 0xCCu, 0xCCu, 0xBBu, 0xBBu,
+        0xBBu, 0xBBu, 0x49u, 0x89u, 0x02u, 0x48u, 0x85u, 0xC0u,
+        0x74u, 0x31u, 0x78u, 0x2Fu, 0x49u, 0x89u, 0xC3u, 0x49u,
+        0x8Bu, 0x13u, 0x49u, 0xBAu, 0xEEu, 0xEEu, 0xEEu, 0xEEu,
+        0xDDu, 0xDDu, 0xDDu, 0xDDu, 0x49u, 0x89u, 0x12u, 0x4Cu,
+        0x89u, 0xDFu, 0x48u, 0xB8u, 0x78u, 0x56u, 0x34u, 0x12u,
+        0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x32u, 0x54u, 0x76u, 0x98u, 0x01u, 0xEFu, 0xCDu, 0xABu,
+        0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
+        0xBBu, 0x31u, 0x46u, 0x32u, 0x50u, 0xB9u, 0x04u, 0x00u,
+        0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static persona_audit64_record_t linux_p2f_audit_record = {0};
+    static u64 linux_p2f_code_addr;
+    static u64 linux_p2f_data_addr;
+    static u64 linux_p2f_stack_addr;
+    static u64 linux_p2f_stack_top;
+    static u64 linux_p2f_code_map;
+    static u64 linux_p2f_data_map;
+    static u64 linux_p2f_stack_map;
+    static u32 linux_p2f_i;
+    static u32 linux_p2f_code_copy;
+    static u32 linux_p2f_code_prot;
+    static u32 linux_p2f_task;
+    static u32 linux_p2f_runqueue_start;
+    static u32 linux_p2f_current_pid;
+    static u32 linux_p2f_native_before;
+    static u32 linux_p2f_native_after;
+    static u32 linux_p2f_persona_before;
+    static u32 linux_p2f_persona_after;
+    static u32 linux_p2f_linux_before;
+    static u32 linux_p2f_linux_after;
+    static u32 linux_p2f_mmap_before;
+    static u32 linux_p2f_mmap_after;
+    static u32 linux_p2f_mmap_bytes_before;
+    static u32 linux_p2f_mmap_bytes_after;
+    static u32 linux_p2f_munmap_before;
+    static u32 linux_p2f_munmap_after;
+    static u32 linux_p2f_munmap_bytes_before;
+    static u32 linux_p2f_munmap_bytes_after;
+    static u32 linux_p2f_audit_before;
+    static u32 linux_p2f_audit_after;
+    static u32 linux_p2f_transfer;
+    static u32 linux_p2f_aux;
+    static u64 linux_p2f_calloc_ptr;
+    static u64 linux_p2f_realloc_ptr;
+    static u64 linux_p2f_free_return;
+    static u64 linux_p2f_zero_qwords;
+    static u64 linux_p2f_copied_magic;
+    static u32 linux_p2f_last_pid;
+    static u32 linux_p2f_last_type;
+    static u64 linux_p2f_last_result;
+    static u32 linux_p2f_audit_read;
+    static u32 linux_p2f_pointer_match;
+    static u32 linux_p2f_zero_match;
+    static u32 linux_p2f_copy_match;
+    static u32 linux_p2f_free_match;
+    static u32 linux_p2f_calloc_unmapped;
+    static u32 linux_p2f_realloc_unmapped;
+    static u32 linux_p2f_dispatch_match;
+    static u32 linux_p2f_export_match;
+    static u32 linux_p2f_reset;
+    static u32 linux_p2f_unmap_code;
+    static u32 linux_p2f_unmap_data;
+    static u32 linux_p2f_unmap_stack;
+    static u32 linux_p2f_positive;
+    static const u8 linux_p2g_harness_template[108] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0xBEu, 0x01u, 0x00u, 0x00u, 0x00u, 0x48u,
+        0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u,
+        0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x55u, 0x55u, 0x55u, 0x55u, 0x49u, 0x89u, 0x02u,
+        0x48u, 0xBFu, 0x88u, 0x88u, 0x88u, 0x88u, 0x77u, 0x77u,
+        0x77u, 0x77u, 0xBEu, 0x01u, 0x00u, 0x00u, 0x00u, 0xBAu,
+        0x0Bu, 0x00u, 0x00u, 0x00u, 0xB9u, 0x01u, 0x00u, 0x00u,
+        0x00u, 0x48u, 0xB8u, 0xAAu, 0xAAu, 0xAAu, 0xAAu, 0x99u,
+        0x99u, 0x99u, 0x99u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xCCu,
+        0xCCu, 0xCCu, 0xCCu, 0xBBu, 0xBBu, 0xBBu, 0xBBu, 0x49u,
+        0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu,
+        0x31u, 0x47u, 0x32u, 0x50u, 0xB9u, 0x04u, 0x00u, 0x00u,
+        0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static const u8 linux_p2g_fputs_message[] = "p2g-fputs\n";
+    static const u8 linux_p2g_fwrite_message[] = "p2g-fwrite\n";
+    static persona_audit64_record_t linux_p2g_audit_record = {0};
+    static u64 linux_p2g_code_addr;
+    static u64 linux_p2g_data_addr;
+    static u64 linux_p2g_code_map;
+    static u64 linux_p2g_data_map;
+    static u32 linux_p2g_i;
+    static u32 linux_p2g_code_copy;
+    static u32 linux_p2g_data_init;
+    static u32 linux_p2g_code_prot;
+    static u32 linux_p2g_task;
+    static u32 linux_p2g_runqueue_start;
+    static u32 linux_p2g_current_pid;
+    static u32 linux_p2g_console_before_count;
+    static u32 linux_p2g_console_after_count;
+    static u32 linux_p2g_console_before_bytes;
+    static u32 linux_p2g_console_after_bytes;
+    static u32 linux_p2g_native_before;
+    static u32 linux_p2g_native_after;
+    static u32 linux_p2g_persona_before;
+    static u32 linux_p2g_persona_after;
+    static u32 linux_p2g_linux_before;
+    static u32 linux_p2g_linux_after;
+    static u32 linux_p2g_write_before;
+    static u32 linux_p2g_write_after;
+    static u32 linux_p2g_audit_before;
+    static u32 linux_p2g_audit_after;
+    static u32 linux_p2g_transfer;
+    static u32 linux_p2g_aux;
+    static u64 linux_p2g_fputs_return;
+    static u64 linux_p2g_fwrite_return;
+    static u32 linux_p2g_last_pid;
+    static u32 linux_p2g_last_type;
+    static u64 linux_p2g_last_result;
+    static u32 linux_p2g_audit_read;
+    static u32 linux_p2g_return_match;
+    static u32 linux_p2g_console_match;
+    static u32 linux_p2g_dispatch_match;
+    static u32 linux_p2g_export_match;
+    static u32 linux_p2g_unmap_code;
+    static u32 linux_p2g_unmap_data;
+    static u32 linux_p2g_reset;
+    static u32 linux_p2g_positive;
+    static const u8 linux_p2h_harness_template[223] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x88u, 0x88u, 0x88u,
+        0x88u, 0x77u, 0x77u, 0x77u, 0x77u, 0x48u, 0xB8u, 0x44u,
+        0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u, 0xFFu,
+        0xD0u, 0x49u, 0xBAu, 0xAAu, 0xAAu, 0xAAu, 0xAAu, 0x99u,
+        0x99u, 0x99u, 0x99u, 0x49u, 0x89u, 0x02u, 0x48u, 0xBFu,
+        0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u, 0x11u, 0x11u,
+        0x48u, 0xBEu, 0xCCu, 0xCCu, 0xCCu, 0xCCu, 0xBBu, 0xBBu,
+        0xBBu, 0xBBu, 0xBAu, 0x01u, 0x00u, 0x00u, 0x00u, 0x48u,
+        0xB8u, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xDDu, 0xDDu, 0xDDu,
+        0xDDu, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xF0u, 0xDEu, 0xBCu,
+        0x9Au, 0x78u, 0x56u, 0x34u, 0x12u, 0x49u, 0x89u, 0x02u,
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0xFEu, 0xC0u, 0xADu, 0x9Bu, 0x87u, 0x65u, 0x43u, 0x21u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x88u, 0x88u, 0x88u,
+        0x88u, 0x77u, 0x77u, 0x77u, 0x77u, 0x48u, 0xBEu, 0xCCu,
+        0xCCu, 0xCCu, 0xCCu, 0xBBu, 0xBBu, 0xBBu, 0xBBu, 0xBAu,
+        0x01u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0xEEu, 0xEEu,
+        0xEEu, 0xEEu, 0xDDu, 0xDDu, 0xDDu, 0xDDu, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0x93u, 0x97u, 0x58u, 0x53u, 0x26u, 0x59u,
+        0x41u, 0x31u, 0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u,
+        0x00u, 0x00u, 0xBBu, 0x31u, 0x48u, 0x32u, 0x50u, 0xB9u,
+        0xDDu, 0xCCu, 0xBBu, 0xAAu, 0xCDu,
+        0x80u, 0xF4u
+    };
+    static const u8 linux_p2h_present_name[] = "LD_LIBRARY_PATH";
+    static const u8 linux_p2h_absent_name[] = "LIMITLESS_ENV";
+    static const u8 linux_p2h_setenv_value[] = "present";
+    static u64 linux_p2h_code_addr;
+    static u64 linux_p2h_data_addr;
+    static u64 linux_p2h_code_map;
+    static u64 linux_p2h_data_map;
+    static u32 linux_p2h_i;
+    static u32 linux_p2h_code_copy;
+    static u32 linux_p2h_data_init;
+    static u32 linux_p2h_code_prot;
+    static u32 linux_p2h_task;
+    static u32 linux_p2h_runqueue_start;
+    static u32 linux_p2h_current_pid;
+    static u32 linux_p2h_native_before;
+    static u32 linux_p2h_native_after;
+    static u32 linux_p2h_persona_before;
+    static u32 linux_p2h_persona_after;
+    static u32 linux_p2h_linux_before;
+    static u32 linux_p2h_linux_after;
+    static u32 linux_p2h_write_before;
+    static u32 linux_p2h_write_after;
+    static u32 linux_p2h_audit_before;
+    static u32 linux_p2h_audit_after;
+    static u32 linux_p2h_transfer;
+    static u32 linux_p2h_aux;
+    static u64 linux_p2h_present_return;
+    static u64 linux_p2h_absent_return;
+    static u64 linux_p2h_setenv_return;
+    static u64 linux_p2h_updated_return;
+    static u64 linux_p2h_missing_setenv_return;
+    static u64 linux_p2h_envp_snapshot;
+    static u32 linux_p2h_value_match;
+    static u32 linux_p2h_return_match;
+    static u32 linux_p2h_denial_match;
+    static u32 linux_p2h_syscall_match;
+    static u32 linux_p2h_export_match;
+    static u32 linux_p2h_bind_match;
+    static u32 linux_p2h_unmap_code;
+    static u32 linux_p2h_unmap_data;
+    static u32 linux_p2h_reset;
+    static u32 linux_p2h_positive;
+    static const u8 linux_p2i_harness_template[64] = {
+        0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0x44u, 0x44u,
+        0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u, 0x49u, 0x89u,
+        0x02u, 0xC7u, 0x00u, 0x16u, 0x00u, 0x00u, 0x00u, 0x8Bu,
+        0x08u, 0x49u, 0xBAu, 0x66u, 0x66u, 0x66u, 0x66u, 0x55u,
+        0x55u, 0x55u, 0x55u, 0x49u, 0x89u, 0x0Au, 0xB8u, 0xF3u,
+        0x00u, 0x00u, 0x00u, 0xBBu, 0x31u, 0x49u, 0x32u, 0x50u,
+        0xB9u, 0x01u, 0x00u, 0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static u64 linux_p2i_code_addr;
+    static u64 linux_p2i_data_addr;
+    static u64 linux_p2i_code_map;
+    static u64 linux_p2i_data_map;
+    static u32 linux_p2i_i;
+    static u32 linux_p2i_code_copy;
+    static u32 linux_p2i_code_prot;
+    static u32 linux_p2i_errno_prot;
+    static u32 linux_p2i_task;
+    static u32 linux_p2i_runqueue_start;
+    static u32 linux_p2i_current_pid;
+    static u32 linux_p2i_native_before;
+    static u32 linux_p2i_native_after;
+    static u32 linux_p2i_persona_before;
+    static u32 linux_p2i_persona_after;
+    static u32 linux_p2i_linux_before;
+    static u32 linux_p2i_linux_after;
+    static u32 linux_p2i_write_before;
+    static u32 linux_p2i_write_after;
+    static u32 linux_p2i_audit_before;
+    static u32 linux_p2i_audit_after;
+    static u32 linux_p2i_transfer;
+    static u32 linux_p2i_aux;
+    static u64 linux_p2i_errno_return;
+    static u64 linux_p2i_errno_value;
+    static u32 linux_p2i_value_match;
+    static u32 linux_p2i_syscall_match;
+    static u32 linux_p2i_export_match;
+    static u32 linux_p2i_unmap_code;
+    static u32 linux_p2i_unmap_data;
+    static u32 linux_p2i_reset;
+    static u32 linux_p2i_positive;
+    static const u8 linux_p2k_harness_template[229] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x88u, 0x88u, 0x88u, 0x88u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0x49u, 0x89u, 0x02u, 0x49u, 0xBBu, 0x22u, 0x22u, 0x22u,
+        0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0x41u, 0x8Bu, 0x03u,
+        0x49u, 0xBAu, 0xAAu, 0xAAu, 0xAAu, 0xAAu, 0x99u, 0x99u,
+        0x99u, 0x99u, 0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x22u,
+        0x22u, 0x22u, 0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0x48u,
+        0xB8u, 0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u,
+        0x55u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xCCu, 0xCCu, 0xCCu,
+        0xCCu, 0xBBu, 0xBBu, 0xBBu, 0xBBu, 0x49u, 0x89u, 0x02u,
+        0x49u, 0xBBu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x41u, 0x8Bu, 0x03u, 0x49u, 0xBAu, 0xEEu,
+        0xEEu, 0xEEu, 0xEEu, 0xDDu, 0xDDu, 0xDDu, 0xDDu, 0x49u,
+        0x89u, 0x02u, 0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0x48u, 0xB8u, 0x66u, 0x66u,
+        0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0x34u, 0x34u, 0x34u, 0x34u, 0x12u, 0x12u,
+        0x12u, 0x12u, 0x49u, 0x89u, 0x02u, 0x31u, 0xFFu, 0x48u,
+        0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u,
+        0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0x78u, 0x78u, 0x78u,
+        0x78u, 0x56u, 0x56u, 0x56u, 0x56u, 0x49u, 0x89u, 0x02u,
+        0x31u, 0xFFu, 0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x55u, 0x55u, 0x55u, 0x55u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0xBCu, 0xBCu, 0xBCu, 0xBCu, 0x9Au, 0x9Au, 0x9Au, 0x9Au,
+        0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
+        0xBBu, 0x31u, 0x4Bu, 0x32u, 0x50u, 0xB9u, 0xDDu, 0xCCu,
+        0xBBu, 0xAAu, 0xCDu, 0x80u, 0xF4u
+    };
+    static persona_audit64_record_t linux_p2k_audit_record = {0};
+    static u64 linux_p2k_code_addr;
+    static u64 linux_p2k_data_addr;
+    static u64 linux_p2k_code_map;
+    static u64 linux_p2k_data_map;
+    static u32 linux_p2k_i;
+    static u32 linux_p2k_code_copy;
+    static u32 linux_p2k_data_init;
+    static u32 linux_p2k_code_prot;
+    static u32 linux_p2k_task;
+    static u32 linux_p2k_runqueue_start;
+    static u32 linux_p2k_current_pid;
+    static u32 linux_p2k_native_before;
+    static u32 linux_p2k_native_after;
+    static u32 linux_p2k_persona_before;
+    static u32 linux_p2k_persona_after;
+    static u32 linux_p2k_linux_before;
+    static u32 linux_p2k_linux_after;
+    static u32 linux_p2k_futex_wake_before;
+    static u32 linux_p2k_futex_wake_after;
+    static u32 linux_p2k_futex_woken_before;
+    static u32 linux_p2k_futex_woken_after;
+    static u32 linux_p2k_audit_before;
+    static u32 linux_p2k_audit_after;
+    static u32 linux_p2k_transfer;
+    static u32 linux_p2k_aux;
+    static u64 linux_p2k_lock_return;
+    static u64 linux_p2k_unlock_return;
+    static u64 linux_p2k_empty_unlock_return;
+    static u64 linux_p2k_null_lock_return;
+    static u64 linux_p2k_null_unlock_return;
+    static u64 linux_p2k_word_after_lock;
+    static u64 linux_p2k_word_after_unlock;
+    static u32 linux_p2k_last_pid;
+    static u32 linux_p2k_last_type;
+    static u64 linux_p2k_last_result;
+    static u32 linux_p2k_audit_read;
+    static u32 linux_p2k_return_match;
+    static u32 linux_p2k_word_match;
+    static u32 linux_p2k_dispatch_match;
+    static u32 linux_p2k_export_match;
+    static u32 linux_p2k_unmap_code;
+    static u32 linux_p2k_unmap_data;
+    static u32 linux_p2k_reset;
+    static u32 linux_p2k_positive;
+    static const u8 linux_p2n_harness_template[115] = {
+        0x48u, 0xBFu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x22u, 0x22u, 0x22u,
+        0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0x48u, 0xB8u, 0x88u,
+        0x88u, 0x88u, 0x88u, 0x77u, 0x77u, 0x77u, 0x77u, 0xFFu,
+        0xD0u, 0x49u, 0xBAu, 0xAAu, 0xAAu, 0xAAu, 0xAAu, 0x99u,
+        0x99u, 0x99u, 0x99u, 0x49u, 0x89u, 0x02u, 0x31u, 0xFFu,
+        0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u,
+        0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xCCu, 0xCCu,
+        0xCCu, 0xCCu, 0xBBu, 0xBBu, 0xBBu, 0xBBu, 0x49u, 0x89u,
+        0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu, 0x31u,
+        0x4Eu, 0x32u, 0x50u, 0xB9u, 0xDDu, 0xCCu, 0xBBu, 0xAAu,
+        0xCDu, 0x80u, 0xF4u
+    };
+    static persona_audit64_record_t linux_p2n_audit_record = {0};
+    static u64 linux_p2n_code_addr;
+    static u64 linux_p2n_data_addr;
+    static u64 linux_p2n_code_map;
+    static u64 linux_p2n_data_map;
+    static u32 linux_p2n_i;
+    static u32 linux_p2n_code_copy;
+    static u32 linux_p2n_data_init;
+    static u32 linux_p2n_code_prot;
+    static u32 linux_p2n_task;
+    static u32 linux_p2n_runqueue_start;
+    static u32 linux_p2n_current_pid;
+    static u32 linux_p2n_native_before;
+    static u32 linux_p2n_native_after;
+    static u32 linux_p2n_persona_before;
+    static u32 linux_p2n_persona_after;
+    static u32 linux_p2n_linux_before;
+    static u32 linux_p2n_linux_after;
+    static u32 linux_p2n_futex_wake_before;
+    static u32 linux_p2n_futex_wake_after;
+    static u32 linux_p2n_futex_woken_before;
+    static u32 linux_p2n_futex_woken_after;
+    static u32 linux_p2n_audit_before;
+    static u32 linux_p2n_audit_after;
+    static u32 linux_p2n_transfer;
+    static u32 linux_p2n_aux;
+    static u64 linux_p2n_signal_return;
+    static u64 linux_p2n_broadcast_return;
+    static u64 linux_p2n_null_return;
+    static u32 linux_p2n_last_pid;
+    static u32 linux_p2n_last_type;
+    static u64 linux_p2n_last_result;
+    static u32 linux_p2n_audit_read;
+    static u32 linux_p2n_return_match;
+    static u32 linux_p2n_dispatch_match;
+    static u32 linux_p2n_export_match;
+    static u32 linux_p2n_unmap_code;
+    static u32 linux_p2n_unmap_data;
+    static u32 linux_p2n_reset;
+    static u32 linux_p2n_positive;
+    static const u8 linux_p2o_waiter_template[63] = {
+        0x48u, 0xBFu, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x48u, 0xBEu, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x22u, 0x22u, 0x22u, 0x22u, 0x48u, 0xB8u, 0x33u, 0x33u,
+        0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x44u, 0x44u, 0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u,
+        0x00u, 0x00u, 0xBBu, 0x32u, 0x4Fu, 0x32u, 0x50u, 0xB9u,
+        0xDDu, 0xCCu, 0xBBu, 0xAAu, 0xCDu, 0x80u, 0xF4u
+    };
+    static const u8 linux_p2o_signaler_template[53] = {
+        0x48u, 0xBFu, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u,
+        0x55u, 0x55u, 0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x66u, 0x66u, 0x66u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u,
+        0xBBu, 0x33u, 0x4Fu, 0x32u, 0x50u, 0xB9u, 0xDDu, 0xCCu,
+        0xBBu, 0xAAu, 0xCDu, 0x80u, 0xF4u
+    };
+    static u64 linux_p2o_code_addr;
+    static u64 linux_p2o_data_addr;
+    static u64 linux_p2o_code_map;
+    static u64 linux_p2o_data_map;
+    static u32 linux_p2o_i;
+    static u32 linux_p2o_code_copy;
+    static u32 linux_p2o_data_init;
+    static u32 linux_p2o_code_prot;
+    static u32 linux_p2o_task;
+    static u32 linux_p2o_signaler_task;
+    static u32 linux_p2o_runqueue_start;
+    static u32 linux_p2o_current_pid;
+    static u32 linux_p2o_blocks_before;
+    static u32 linux_p2o_blocks_after;
+    static u32 linux_p2o_wakes_before;
+    static u32 linux_p2o_wakes_after;
+    static u32 linux_p2o_switches_before;
+    static u32 linux_p2o_switches_after;
+    static u32 linux_p2o_native_before;
+    static u32 linux_p2o_native_after;
+    static u32 linux_p2o_persona_before;
+    static u32 linux_p2o_persona_after;
+    static u32 linux_p2o_linux_before;
+    static u32 linux_p2o_linux_after;
+    static u32 linux_p2o_futex_wait_before;
+    static u32 linux_p2o_futex_wait_after;
+    static u32 linux_p2o_futex_wake_before;
+    static u32 linux_p2o_futex_wake_after;
+    static u32 linux_p2o_audit_before;
+    static u32 linux_p2o_audit_after;
+    static u32 linux_p2o_transfer;
+    static u32 linux_p2o_aux;
+    static u64 linux_p2o_wait_return;
+    static u64 linux_p2o_signal_return;
+    static u32 linux_p2o_cond_word_after;
+    static u32 linux_p2o_mutex_word_after;
+    static u32 linux_p2o_waiter_state;
+    static u32 linux_p2o_signaler_state;
+    static u32 linux_p2o_waiter_result;
+    static u32 linux_p2o_signaler_result;
+    static u32 linux_p2o_return_match;
+    static u32 linux_p2o_dispatch_match;
+    static u32 linux_p2o_export_match;
+    static u32 linux_p2o_unmap_code;
+    static u32 linux_p2o_unmap_data;
+    static u32 linux_p2o_reset;
+    static u32 linux_p2o_positive;
+    static const u8 linux_p2p_harness_template[223] = {
+        0x31u, 0xFFu, 0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0xBAu,
+        0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x49u, 0x89u, 0x02u, 0x48u, 0xBFu, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x55u, 0x55u, 0x55u, 0x55u, 0x31u, 0xF6u, 0x48u,
+        0xB8u, 0x88u, 0x88u, 0x88u, 0x88u, 0x77u, 0x77u, 0x77u,
+        0x77u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xAAu, 0xAAu, 0xAAu,
+        0xAAu, 0x99u, 0x99u, 0x99u, 0x99u, 0x49u, 0x89u, 0x02u,
+        0x31u, 0xFFu, 0x48u, 0xBEu, 0xCCu, 0xCCu, 0xCCu, 0xCCu,
+        0xBBu, 0xBBu, 0xBBu, 0xBBu, 0x48u, 0xB8u, 0xEEu, 0xEEu,
+        0xEEu, 0xEEu, 0xDDu, 0xDDu, 0xDDu, 0xDDu, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0x34u, 0x34u, 0x34u, 0x34u, 0x12u, 0x12u,
+        0x12u, 0x12u, 0x49u, 0x89u, 0x02u, 0x31u, 0xFFu, 0x48u,
+        0xB8u, 0x78u, 0x78u, 0x78u, 0x78u, 0x56u, 0x56u, 0x56u,
+        0x56u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0xBCu, 0xBCu, 0xBCu,
+        0xBCu, 0x9Au, 0x9Au, 0x9Au, 0x9Au, 0x49u, 0x89u, 0x02u,
+        0x48u, 0xBFu, 0xF0u, 0xF0u, 0xF0u, 0xF0u, 0xDEu, 0xDEu,
+        0xDEu, 0xDEu, 0x31u, 0xF6u, 0x48u, 0xB8u, 0x68u, 0x24u,
+        0x68u, 0x24u, 0x57u, 0x13u, 0x57u, 0x13u, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0xAAu, 0xAAu, 0x55u, 0x55u, 0x55u, 0x55u,
+        0xAAu, 0xAAu, 0x49u, 0x89u, 0x02u, 0xBFu, 0x01u, 0x00u,
+        0x00u, 0x00u, 0x48u, 0xBEu, 0x80u, 0x70u, 0x60u, 0x50u,
+        0x40u, 0x30u, 0x20u, 0x10u, 0x48u, 0xB8u, 0x5Eu, 0xEAu,
+        0x15u, 0x0Du, 0x0Du, 0xF0u, 0xADu, 0x0Bu, 0xFFu, 0xD0u,
+        0x49u, 0xBAu, 0xDEu, 0xC0u, 0xADu, 0xDEu, 0xBEu, 0xBAu,
+        0xFEu, 0xCAu, 0x49u, 0x89u, 0x02u, 0xB8u, 0xF3u, 0x00u,
+        0x00u, 0x00u, 0xBBu, 0x31u, 0x50u, 0x32u, 0x50u, 0xB9u,
+        0x44u, 0x33u, 0x22u, 0x11u, 0xCDu, 0x80u, 0xF4u
+    };
+    static persona_audit64_record_t linux_p2p_audit_record = {0};
+    static u64 linux_p2p_code_addr;
+    static u64 linux_p2p_data_addr;
+    static u64 linux_p2p_value;
+    static u64 linux_p2p_code_map;
+    static u64 linux_p2p_data_map;
+    static u32 linux_p2p_i;
+    static u32 linux_p2p_code_copy;
+    static u32 linux_p2p_data_init;
+    static u32 linux_p2p_code_prot;
+    static u32 linux_p2p_task;
+    static u32 linux_p2p_runqueue_start;
+    static u32 linux_p2p_current_pid;
+    static u32 linux_p2p_native_before;
+    static u32 linux_p2p_native_after;
+    static u32 linux_p2p_persona_before;
+    static u32 linux_p2p_persona_after;
+    static u32 linux_p2p_linux_before;
+    static u32 linux_p2p_linux_after;
+    static u32 linux_p2p_audit_before;
+    static u32 linux_p2p_audit_after;
+    static u32 linux_p2p_transfer;
+    static u32 linux_p2p_aux;
+    static u32 linux_p2p_key_out;
+    static u32 linux_p2p_key2_out;
+    static u64 linux_p2p_pre_get_return;
+    static u64 linux_p2p_create_return;
+    static u64 linux_p2p_set_return;
+    static u64 linux_p2p_get_return;
+    static u64 linux_p2p_second_create_return;
+    static u64 linux_p2p_bad_set_return;
+    static u32 linux_p2p_audit_read;
+    static u32 linux_p2p_return_match;
+    static u32 linux_p2p_dispatch_match;
+    static u32 linux_p2p_export_match;
+    static u32 linux_p2p_unmap_code;
+    static u32 linux_p2p_unmap_data;
+    static u32 linux_p2p_reset;
+    static u32 linux_p2p_positive;
+    static const u8 linux_p2l_harness_template[159] = {
+        0x49u, 0xBCu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x31u, 0xFFu, 0x31u, 0xF6u, 0x48u, 0xBAu,
+        0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x4Cu, 0x89u, 0xE1u, 0x48u, 0xB8u, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x55u, 0x55u, 0x55u, 0x55u, 0xFFu, 0xD0u, 0x49u,
+        0x89u, 0x44u, 0x24u, 0x30u, 0x49u, 0x8Du, 0x7Cu, 0x24u,
+        0x20u, 0x49u, 0x8Du, 0x74u, 0x24u, 0x18u, 0x48u, 0xBAu,
+        0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0x4Cu, 0x89u, 0xE1u, 0x48u, 0xB8u, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x55u, 0x55u, 0x55u, 0x55u, 0xFFu, 0xD0u, 0x49u,
+        0x89u, 0x44u, 0x24u, 0x38u, 0x49u, 0x8Du, 0x7Cu, 0x24u,
+        0x20u, 0x31u, 0xF6u, 0x48u, 0xBAu, 0x44u, 0x44u, 0x44u,
+        0x44u, 0x33u, 0x33u, 0x33u, 0x33u, 0x4Cu, 0x89u, 0xE1u,
+        0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u, 0x55u, 0x55u,
+        0x55u, 0x55u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x44u, 0x24u,
+        0x28u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu, 0x31u,
+        0x4Cu, 0x32u, 0x50u, 0xB9u, 0x01u, 0x00u, 0x00u, 0x00u,
+        0xCDu, 0x80u, 0xF4u, 0x48u, 0xB8u, 0x6Cu, 0x32u, 0x74u,
+        0x68u, 0x72u, 0x74u, 0x68u, 0x70u, 0x48u, 0x89u, 0x47u,
+        0x40u, 0xB8u, 0x78u, 0x56u, 0x34u, 0x12u, 0xC3u
+    };
+    static linux_libc64_load_result_t linux_p2l_result;
+    static persona_audit64_record_t linux_p2l_audit_record = {0};
+    static u32 linux_p2l_pid;
+    static u32 linux_p2l_vma_init;
+    static u32 linux_p2l_audit_attach;
+    static u32 linux_p2l_owner;
+    static u32 linux_p2l_stdin_cap;
+    static u32 linux_p2l_stdout_cap;
+    static u32 linux_p2l_stderr_cap;
+    static u32 linux_p2l_fd_init;
+    static u32 linux_p2l_fd_release;
+    static u32 linux_p2l_bind;
+    static u64 linux_p2l_libc_base;
+    static u32 linux_p2l_load;
+    static u64 linux_p2l_code_addr;
+    static u64 linux_p2l_data_addr;
+    static u64 linux_p2l_code_map;
+    static u64 linux_p2l_data_map;
+    static u64 linux_p2l_stack_addr;
+    static u64 linux_p2l_stack_map;
+    static u64 linux_p2l_stack_top;
+    static u64 linux_p2l_start_fn;
+    static u64 linux_p2l_thread_storage;
+    static u64 linux_p2l_child_stack;
+    static u64 linux_p2l_child_stack_base;
+    static u32 linux_p2l_i;
+    static u32 linux_p2l_code_copy;
+    static u32 linux_p2l_data_init;
+    static u32 linux_p2l_code_prot;
+    static u32 linux_p2l_task;
+    static u32 linux_p2l_runqueue_start;
+    static u32 linux_p2l_current_pid;
+    static u32 linux_p2l_native_before;
+    static u32 linux_p2l_native_after;
+    static u32 linux_p2l_persona_before;
+    static u32 linux_p2l_persona_after;
+    static u32 linux_p2l_linux_before;
+    static u32 linux_p2l_linux_after;
+    static u32 linux_p2l_mmap_before;
+    static u32 linux_p2l_mmap_after;
+    static u32 linux_p2l_mmap_bytes_before;
+    static u32 linux_p2l_mmap_bytes_after;
+    static u32 linux_p2l_clone_before;
+    static u32 linux_p2l_clone_after;
+    static u32 linux_p2l_clone_thread_before;
+    static u32 linux_p2l_clone_thread_after;
+    static u32 linux_p2l_clone_sched_before;
+    static u32 linux_p2l_clone_sched_after;
+    static u32 linux_p2l_audit_before;
+    static u32 linux_p2l_audit_after;
+    static u32 linux_p2l_transfer;
+    static u32 linux_p2l_aux;
+    static u64 linux_p2l_invalid_return;
+    static u64 linux_p2l_unsupported_return;
+    static u64 linux_p2l_create_return;
+    static u64 linux_p2l_thread_value;
+    static u32 linux_p2l_child_pid;
+    static u32 linux_p2l_child_task;
+    static u32 linux_p2l_child_task_pid;
+    static u32 linux_p2l_child_task_state;
+    static u64 linux_p2l_child_task_rip;
+    static u64 linux_p2l_child_task_rsp;
+    static u32 linux_p2l_shared_vma;
+    static u32 linux_p2l_shared_fd;
+    static u32 linux_p2l_shared_audit;
+    static u32 linux_p2l_last_pid;
+    static u32 linux_p2l_last_type;
+    static u64 linux_p2l_last_result;
+    static u32 linux_p2l_audit_read;
+    static u32 linux_p2l_return_match;
+    static u32 linux_p2l_clone_match;
+    static u32 linux_p2l_dispatch_match;
+    static u32 linux_p2l_export_match;
+    static u32 linux_p2l_unmap_probe_stack;
+    static u32 linux_p2l_release_clone;
+    static u32 linux_p2l_unmap_thread_stack;
+    static u32 linux_p2l_unmap_code;
+    static u32 linux_p2l_unmap_data;
+    static u32 linux_p2l_libc_release;
+    static u32 linux_p2l_persona_release;
+    static u32 linux_p2l_audit_release;
+    static u32 linux_p2l_vma_release;
+    static u32 linux_p2l_clone_release;
+    static u32 linux_p2l_cleanup;
+    static u32 linux_p2l_reset;
+    static u32 linux_p2l_positive;
+    static const u8 linux_p2m_harness_template[100] = {
+        0x49u, 0xBCu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0x31u, 0xFFu, 0x31u, 0xF6u, 0x48u, 0xB8u,
+        0x44u, 0x44u, 0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0xFFu, 0xD0u, 0x49u, 0x89u, 0x44u, 0x24u, 0x20u, 0xBFu,
+        0x55u, 0x55u, 0x55u, 0x55u, 0x49u, 0x8Du, 0x74u, 0x24u,
+        0x40u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u,
+        0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x44u,
+        0x24u, 0x28u, 0xBFu, 0x55u, 0x55u, 0x55u, 0x55u, 0x31u,
+        0xF6u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x33u,
+        0x33u, 0x33u, 0x33u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x44u,
+        0x24u, 0x30u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu,
+        0x31u, 0x4Du, 0x32u, 0x50u, 0xB9u, 0x01u, 0x00u, 0x00u,
+        0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static linux_libc64_load_result_t linux_p2m_result;
+    static persona_audit64_record_t linux_p2m_audit_record = {0};
+    static u32 linux_p2m_pid;
+    static u32 linux_p2m_vma_init;
+    static u32 linux_p2m_audit_attach;
+    static u32 linux_p2m_owner;
+    static u32 linux_p2m_stdin_cap;
+    static u32 linux_p2m_stdout_cap;
+    static u32 linux_p2m_stderr_cap;
+    static u32 linux_p2m_fd_init;
+    static u32 linux_p2m_fd_release;
+    static u32 linux_p2m_bind;
+    static u64 linux_p2m_libc_base;
+    static u32 linux_p2m_load;
+    static u64 linux_p2m_code_addr;
+    static u64 linux_p2m_data_addr;
+    static u64 linux_p2m_stack_addr;
+    static u64 linux_p2m_child_stack_addr;
+    static u64 linux_p2m_code_map;
+    static u64 linux_p2m_data_map;
+    static u64 linux_p2m_stack_map;
+    static u64 linux_p2m_child_stack_map;
+    static u64 linux_p2m_stack_top;
+    static u64 linux_p2m_child_stack_top;
+    static u32 linux_p2m_i;
+    static u32 linux_p2m_code_copy;
+    static u32 linux_p2m_data_init;
+    static u32 linux_p2m_code_prot;
+    static u64 linux_p2m_clone_return;
+    static u32 linux_p2m_child_pid;
+    static u32 linux_p2m_child_task;
+    static u32 linux_p2m_child_task_pid;
+    static u32 linux_p2m_child_task_state;
+    static u64 linux_p2m_child_task_rsp;
+    static u32 linux_p2m_child_exit_result;
+    static u32 linux_p2m_child_exit_code;
+    static u32 linux_p2m_task;
+    static u32 linux_p2m_runqueue_start;
+    static u32 linux_p2m_current_pid;
+    static u32 linux_p2m_native_before;
+    static u32 linux_p2m_native_after;
+    static u32 linux_p2m_persona_before;
+    static u32 linux_p2m_persona_after;
+    static u32 linux_p2m_linux_before;
+    static u32 linux_p2m_linux_after;
+    static u32 linux_p2m_wait4_before;
+    static u32 linux_p2m_wait4_after;
+    static u32 linux_p2m_reap_before;
+    static u32 linux_p2m_reap_after;
+    static u32 linux_p2m_audit_before;
+    static u32 linux_p2m_audit_after;
+    static u32 linux_p2m_transfer;
+    static u32 linux_p2m_aux;
+    static u64 linux_p2m_invalid_return;
+    static u64 linux_p2m_retval_return;
+    static u64 linux_p2m_join_return;
+    static u32 linux_p2m_last_pid;
+    static u32 linux_p2m_last_type;
+    static u64 linux_p2m_last_result;
+    static u32 linux_p2m_audit_read;
+    static u32 linux_p2m_return_match;
+    static u32 linux_p2m_wait_match;
+    static u32 linux_p2m_dispatch_match;
+    static u32 linux_p2m_export_match;
+    static u32 linux_p2m_reap_match;
+    static u32 linux_p2m_unmap_code;
+    static u32 linux_p2m_unmap_data;
+    static u32 linux_p2m_unmap_stack;
+    static u32 linux_p2m_unmap_child_stack;
+    static u32 linux_p2m_libc_release;
+    static u32 linux_p2m_persona_release;
+    static u32 linux_p2m_audit_release;
+    static u32 linux_p2m_vma_release;
+    static u32 linux_p2m_parent_release;
+    static u32 linux_p2m_cleanup;
+    static u32 linux_p2m_reset;
+    static u32 linux_p2m_positive;
+    static const u8 linux_p2j_harness_template[43] = {
+        0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0x44u, 0x44u,
+        0x44u, 0x44u, 0x33u, 0x33u, 0x33u, 0x33u, 0x49u, 0x89u,
+        0x02u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu, 0x31u,
+        0x4Au, 0x32u, 0x50u, 0xB9u, 0x01u, 0x00u, 0x00u, 0x00u,
+        0xCDu, 0x80u, 0xF4u
+    };
+    static linux_libc64_load_result_t linux_p2j_result;
+    static u32 linux_p2j_pid;
+    static u32 linux_p2j_vma_init;
+    static u32 linux_p2j_audit_attach;
+    static u32 linux_p2j_bind;
+    static u32 linux_p2j_load;
+    static u64 linux_p2j_code_addr;
+    static u64 linux_p2j_data_addr;
+    static u64 linux_p2j_stack_addr;
+    static u64 linux_p2j_libc_base;
+    static u64 linux_p2j_code_map;
+    static u64 linux_p2j_data_map;
+    static u64 linux_p2j_stack_map;
+    static u32 linux_p2j_i;
+    static u32 linux_p2j_code_copy;
+    static u32 linux_p2j_code_prot;
+    static u32 linux_p2j_task;
+    static u32 linux_p2j_runqueue_start;
+    static u32 linux_p2j_current_pid;
+    static u32 linux_p2j_native_before;
+    static u32 linux_p2j_native_after;
+    static u32 linux_p2j_persona_before;
+    static u32 linux_p2j_persona_after;
+    static u32 linux_p2j_linux_before;
+    static u32 linux_p2j_linux_after;
+    static u32 linux_p2j_exit_group_before;
+    static u32 linux_p2j_exit_group_after;
+    static u32 linux_p2j_transfer;
+    static u32 linux_p2j_aux;
+    static u64 linux_p2j_return_value;
+    static u32 linux_p2j_exited;
+    static u32 linux_p2j_exit_code;
+    static u32 linux_p2j_last_pid;
+    static u32 linux_p2j_last_code;
+    static u32 linux_p2j_last_vma;
+    static u32 linux_p2j_last_fd;
+    static u32 linux_p2j_last_persona;
+    static u32 linux_p2j_last_audit_release;
+    static u32 linux_p2j_last_audit_recorded;
+    static u32 linux_p2j_slots_detached;
+    static u32 linux_p2j_reattach_vma;
+    static u32 linux_p2j_reattach_audit;
+    static u32 linux_p2j_audit_count_after_reattach;
+    static u32 linux_p2j_vma_release;
+    static u32 linux_p2j_audit_release;
+    static u32 linux_p2j_clone_release;
+    static u32 linux_p2j_pages_clear;
+    static u32 linux_p2j_export_match;
+    static u32 linux_p2j_dispatch_match;
+    static u32 linux_p2j_exit_match;
+    static u32 linux_p2j_cleanup;
+    static u32 linux_p2j_positive;
+    static void *linux_p2j_vma_ctx;
+    static void *linux_p2j_audit_ctx;
+    static const u8 linux_p2b_harness_template[251] = {
+        0x49u, 0xBCu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0x49u, 0x8Du,
+        0x7Cu, 0x24u, 0x20u, 0x49u, 0x8Du, 0x34u, 0x24u, 0x48u, 0xB8u, 0x01u, 0x00u, 0x00u,
+        0x00u, 0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x84u, 0x24u, 0x20u,
+        0x01u, 0x00u, 0x00u, 0x49u, 0x8Du, 0x7Cu, 0x24u, 0x60u, 0x49u, 0x8Du, 0x74u, 0x24u,
+        0x40u, 0xBAu, 0x05u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x02u, 0x00u, 0x00u, 0x00u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x84u, 0x24u, 0x28u, 0x01u,
+        0x00u, 0x00u, 0x49u, 0x8Du, 0xBCu, 0x24u, 0x80u, 0x00u, 0x00u, 0x00u, 0x49u, 0x8Du,
+        0xB4u, 0x24u, 0x90u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x03u, 0x00u, 0x00u, 0x00u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x84u, 0x24u, 0x30u, 0x01u,
+        0x00u, 0x00u, 0x49u, 0x8Du, 0xBCu, 0x24u, 0x80u, 0x00u, 0x00u, 0x00u, 0x49u, 0x8Du,
+        0xB4u, 0x24u, 0x90u, 0x00u, 0x00u, 0x00u, 0xBAu, 0x02u, 0x00u, 0x00u, 0x00u, 0x48u,
+        0xB8u, 0x04u, 0x00u, 0x00u, 0x00u, 0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u,
+        0x89u, 0x84u, 0x24u, 0x38u, 0x01u, 0x00u, 0x00u, 0x49u, 0x8Du, 0xBCu, 0x24u, 0x80u,
+        0x00u, 0x00u, 0x00u, 0x49u, 0x8Du, 0xB4u, 0x24u, 0x90u, 0x00u, 0x00u, 0x00u, 0xBAu,
+        0x03u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x04u, 0x00u, 0x00u, 0x00u, 0x11u, 0x11u,
+        0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x84u, 0x24u, 0x40u, 0x01u, 0x00u, 0x00u,
+        0x49u, 0x8Du, 0xBCu, 0x24u, 0xA2u, 0x00u, 0x00u, 0x00u, 0x49u, 0x8Du, 0xB4u, 0x24u,
+        0xA0u, 0x00u, 0x00u, 0x00u, 0xBAu, 0x08u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x05u,
+        0x00u, 0x00u, 0x00u, 0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0x89u, 0x84u,
+        0x24u, 0x48u, 0x01u, 0x00u, 0x00u, 0xB8u, 0xF3u, 0x00u, 0x00u, 0x00u, 0xBBu, 0x31u,
+        0x42u, 0x32u, 0x50u, 0xB9u, 0x05u, 0x00u, 0x00u, 0x00u, 0xCDu, 0x80u, 0xF4u
+    };
+    static const u8 linux_p2b_src_copy[] = "limitless";
+    static const u8 linux_p2b_src_ncopy[] = "os";
+    static const u8 linux_p2b_cmp_left[] = "abc";
+    static const u8 linux_p2b_cmp_right[] = "abd";
+    static const u8 linux_p2b_move_seed[] = "0123456789";
+    static const u8 linux_p2b_move_expected[] = "0101234567";
+    static u64 linux_p2b_code_addr;
+    static u64 linux_p2b_data_addr;
+    static u64 linux_p2b_code_map;
+    static u64 linux_p2b_data_map;
+    static u32 linux_p2b_i;
+    static u32 linux_p2b_j;
+    static u32 linux_p2b_code_copy;
+    static u32 linux_p2b_code_prot;
+    static u32 linux_p2b_data_init;
+    static u32 linux_p2b_transfer;
+    static u32 linux_p2b_aux;
+    static u64 linux_p2b_strcpy_ret;
+    static u64 linux_p2b_strncpy_ret;
+    static u64 linux_p2b_strcmp_ret;
+    static u64 linux_p2b_strncmp2_ret;
+    static u64 linux_p2b_strncmp3_ret;
+    static u64 linux_p2b_memmove_ret;
+    static u32 linux_p2b_strcpy_match;
+    static u32 linux_p2b_strncpy_match;
+    static u32 linux_p2b_strcmp_match;
+    static u32 linux_p2b_strncmp_match;
+    static u32 linux_p2b_memmove_match;
+    static u32 linux_p2b_return_match;
+    static u32 linux_p2b_export_match;
+    static u32 linux_p2b_checksum;
+    static u32 linux_p2b_unmap_code;
+    static u32 linux_p2b_unmap_data;
+    static u32 linux_p2b_positive;
+#endif
     static u32 elf_e2_header_parse;
     static u32 elf_e2_parse;
     static u32 elf_e2_truncated;
@@ -5901,6 +8961,7 @@ static void log_process_namespace(void)
     static u32 linux_f24_positive;
     static persona_audit64_record_t linux_f25_wait_record;
     static persona_audit64_record_t linux_f25_wake_record;
+    static persona_audit64_record_t linux_f25_direct_record;
     static persona_audit64_record_t linux_f25_eagain_record;
     static persona_audit64_record_t linux_f25_fault_record;
     static persona_audit64_record_t linux_f25_badop_record;
@@ -5908,12 +8969,25 @@ static void log_process_namespace(void)
     static u64 linux_f25_buffer;
     static u64 linux_f25_wait_return;
     static u64 linux_f25_wake_return;
+    static u64 linux_f25_direct_return;
     static u64 linux_f25_eagain_return;
     static u64 linux_f25_fault_return;
     static u64 linux_f25_badop_return;
     static u32 linux_f25_entry;
     static u32 linux_f25_map_ok;
     static u32 linux_f25_initial_value;
+    static u32 linux_f25_wait_task;
+    static u32 linux_f25_peer_task;
+    static u32 linux_f25_runqueue_start;
+    static u32 linux_f25_task_id_before_wait;
+    static u32 linux_f25_wait_task_state_after_wait;
+    static u32 linux_f25_wait_task_state_after_wake;
+    static u32 linux_f25_sched_block_count_before;
+    static u32 linux_f25_sched_block_count_after_wait;
+    static u32 linux_f25_sched_wake_count_before;
+    static u32 linux_f25_sched_wake_count_after_wake;
+    static u32 linux_f25_sched_denial_count_before;
+    static u32 linux_f25_sched_denial_count_after;
     static u32 linux_f25_waiters_after_wait;
     static u32 linux_f25_waiters_after_wake;
     static u32 linux_f25_wait_count_before;
@@ -5931,20 +9005,84 @@ static void log_process_namespace(void)
     static u32 linux_f25_audit_before;
     static u32 linux_f25_audit_after_wait;
     static u32 linux_f25_audit_after_wake;
+    static u32 linux_f25_audit_after_direct;
     static u32 linux_f25_audit_after_eagain;
     static u32 linux_f25_audit_after_fault;
     static u32 linux_f25_audit_after_badop;
     static u32 linux_f25_read_wait_record;
     static u32 linux_f25_read_wake_record;
+    static u32 linux_f25_read_direct_record;
     static u32 linux_f25_read_eagain_record;
     static u32 linux_f25_read_fault_record;
     static u32 linux_f25_read_badop_record;
     static u32 linux_f25_last_pid;
     static u64 linux_f25_last_address;
     static u32 linux_f25_last_value;
+    static u32 linux_f25_last_task;
     static u32 linux_f25_last_wake;
     static u32 linux_f25_cleanup_unmap;
     static u32 linux_f25_positive;
+    static persona_audit64_record_t linux_f25b_timeout_record;
+    static persona_audit64_record_t linux_f25b_zero_record;
+    static persona_audit64_record_t linux_f25b_invalid_record;
+    static persona_audit64_record_t linux_f25b_fault_record;
+    static struct interrupt_frame64 linux_f25b_wait_frame;
+    static struct interrupt_frame64 linux_f25b_peer_frame;
+    static volatile u32 *linux_f25b_word;
+    static volatile linux_abi64_timespec_t *linux_f25b_timeout;
+    static u64 linux_f25b_buffer;
+    static u64 linux_f25b_wait_return;
+    static u64 linux_f25b_resume_return;
+    static u64 linux_f25b_zero_return;
+    static u64 linux_f25b_invalid_return;
+    static u64 linux_f25b_fault_return;
+    static u32 linux_f25b_map_ok;
+    static u32 linux_f25b_wait_task;
+    static u32 linux_f25b_peer_task;
+    static u32 linux_f25b_start;
+    static u32 linux_f25b_switch_peer;
+    static u32 linux_f25b_switch_waiter;
+    static u32 linux_f25b_state_after_wait;
+    static u32 linux_f25b_state_after_timeout;
+    static u32 linux_f25b_waiters_after_wait;
+    static u32 linux_f25b_waiters_after_timeout;
+    static u32 linux_f25b_sleep_pending_after_wait;
+    static u32 linux_f25b_sleep_pending_after_timeout;
+    static u32 linux_f25b_wake_tick;
+    static u32 linux_f25b_elapsed;
+    static u32 linux_f25b_timed_before;
+    static u32 linux_f25b_timed_after;
+    static u32 linux_f25b_timeout_before;
+    static u32 linux_f25b_timeout_after;
+    static u32 linux_f25b_wait_before;
+    static u32 linux_f25b_wait_after;
+    static u32 linux_f25b_denial_before;
+    static u32 linux_f25b_denial_after;
+    static u32 linux_f25b_fault_before;
+    static u32 linux_f25b_fault_after;
+    static u32 linux_f25b_sched_block_before;
+    static u32 linux_f25b_sched_block_after;
+    static u32 linux_f25b_sched_wake_before;
+    static u32 linux_f25b_sched_wake_after;
+    static u32 linux_f25b_sleep_count_before;
+    static u32 linux_f25b_sleep_count_after;
+    static u32 linux_f25b_sleep_wake_before;
+    static u32 linux_f25b_sleep_wake_after;
+    static u32 linux_f25b_audit_before;
+    static u32 linux_f25b_audit_after_wait;
+    static u32 linux_f25b_audit_after_timeout;
+    static u32 linux_f25b_audit_after_zero;
+    static u32 linux_f25b_audit_after_invalid;
+    static u32 linux_f25b_audit_after_fault;
+    static u32 linux_f25b_read_timeout_record;
+    static u32 linux_f25b_read_zero_record;
+    static u32 linux_f25b_read_invalid_record;
+    static u32 linux_f25b_read_fault_record;
+    static u32 linux_f25b_last_timeout_task;
+    static u32 linux_f25b_last_timeout_ticks;
+    static u32 linux_f25b_last_timeout_result;
+    static u32 linux_f25b_cleanup_unmap;
+    static u32 linux_f25b_positive;
     static persona_audit64_record_t linux_f26_success_record;
     static persona_audit64_record_t linux_f26_fork_record;
     static struct interrupt_frame64 linux_f26_timer_frame;
@@ -6453,6 +9591,10 @@ static void log_process_namespace(void)
     elf_e6_argv[1] = elf_e6_argv1;
     elf_e6_envp[0] = elf_e6_envp0;
     elf_e6_envp[1] = elf_e6_envp1;
+    linux_p1_argv[0] = linux_p1_argv0;
+    linux_p1_envp[0] = linux_p1_env0;
+    linux_p2_argv[0] = linux_p2_argv0;
+    linux_p2_envp[0] = linux_p2_env0;
 #endif
 
     write_string("[x64] processes total ");
@@ -7533,6 +10675,221 @@ static void log_process_namespace(void)
             && (pipe_c5_invalid_grant_denied != 0u)
             && (pipe_c5_scheduler_boundary != 0u)
             && (pipe_c5_live_final == pipe_live_before))
+            ? 1u
+            : 0u;
+    pipe_c6_live_before = pipe64_live_count();
+    pipe_c6_target_owner = process64_principal(policy_pid);
+    pipe_c6_stdin_cap = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_INPUT,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+        pipe_c6_target_owner);
+    pipe_c6_stdout_cap = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_CONSOLE,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+        pipe_c6_target_owner);
+    pipe_c6_stderr_cap = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_CONSOLE,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+        pipe_c6_target_owner);
+    pipe_c6_target_init = fd64_init_process(
+        policy_pid,
+        pipe_c6_target_owner,
+        pipe_c6_stdin_cap,
+        pipe_c6_stdout_cap,
+        pipe_c6_stderr_cap);
+    pipe_c6_read_a_fd = FD64_INVALID_FD;
+    pipe_c6_write_a_fd = FD64_INVALID_FD;
+    pipe_c6_read_b_fd = FD64_INVALID_FD;
+    pipe_c6_create = pipe64_create(init_pid, &pipe_c6_read_a_fd, &pipe_c6_write_a_fd);
+    pipe_c6_grant = pipe64_grant_endpoint(init_pid, pipe_c6_read_a_fd, policy_pid, &pipe_c6_read_b_fd);
+    for (pipe_data_index = 0u; pipe_data_index < (u32)sizeof(pipe_c6_read_buf); ++pipe_data_index)
+    {
+        pipe_c6_read_buf[pipe_data_index] = 0u;
+    }
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+    pipe_c6_direct_denied =
+        ((pipe_c6_grant != 0u)
+            && (fd64_read(policy_pid, pipe_c6_read_b_fd, pipe_c6_read_buf, 5u) == FD64_IO_ERROR))
+            ? 1u
+            : 0u;
+    scheduler64_runqueue_reset();
+    pipe_c6_reader_task = (pipe_c6_grant != 0u)
+        ? scheduler64_runqueue_register_process_task(
+            policy_pid,
+            process64_runtime_token(policy_pid),
+            process64_runtime_user_entry_token(policy_pid),
+            0x00000000F2061000ull,
+            0x0000000042061800ull,
+            (u64)process64_runtime_user_entry_selectors(policy_pid),
+            (u64)process64_runtime_user_entry_rflags(policy_pid))
+        : SCHEDULER64_INVALID_TASK;
+    pipe_c6_writer_task = (pipe_c6_reader_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_register_process_task(
+            init_pid,
+            process64_runtime_token(init_pid),
+            process64_runtime_user_entry_token(init_pid),
+            0x00000000F2062000ull,
+            0x0000000042062800ull,
+            (u64)process64_runtime_user_entry_selectors(init_pid),
+            (u64)process64_runtime_user_entry_rflags(init_pid))
+        : SCHEDULER64_INVALID_TASK;
+    pipe_c6_start = (pipe_c6_writer_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(pipe_c6_reader_task)
+        : 0u;
+    pipe_c6_current_before = scheduler64_runqueue_current_task_id();
+    pipe_c6_pipe_block_before = pipe64_block_count();
+    pipe_c6_pipe_wake_before = pipe64_wake_count();
+    pipe_c6_sched_block_before = scheduler64_runqueue_block_count();
+    pipe_c6_sched_wake_before = scheduler64_runqueue_wake_count();
+    pipe_c6_sched_denial_before = scheduler64_runqueue_block_denial_count();
+    pipe_c6_read_block_result =
+        ((pipe_c6_start != 0u) && (pipe_c6_read_b_fd != FD64_INVALID_FD))
+            ? fd64_read(policy_pid, pipe_c6_read_b_fd, pipe_c6_read_buf, 5u)
+            : FD64_IO_ERROR;
+    pipe_c6_blocked_slot = (pipe_c6_read_b_fd != FD64_INVALID_FD)
+        ? pipe64_blocked_reader_task(
+            fd64_entry_capability(policy_pid, pipe_c6_read_b_fd),
+            pipe_c6_target_owner)
+        : SCHEDULER64_INVALID_TASK;
+    pipe_c6_reader_state_after_block =
+        (pipe_c6_reader_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(pipe_c6_reader_task)
+            : 0u;
+    pipe_c6_pipe_block_after = pipe64_block_count();
+    pipe_c6_sched_block_after = scheduler64_runqueue_block_count();
+    pipe_c6_reader_frame.rip = 0x00000000F2061000ull;
+    pipe_c6_reader_frame.rsp = 0x0000000042061800ull;
+    pipe_c6_reader_frame.rflags = (u64)process64_runtime_user_entry_rflags(policy_pid);
+    pipe_c6_reader_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(policy_pid) & 0xFFFFull;
+    pipe_c6_reader_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(policy_pid) >> 16) & 0xFFFFull;
+    pipe_c6_switch_to_writer =
+        (pipe_c6_reader_state_after_block == SCHEDULER64_TASK_BLOCKED)
+            ? scheduler64_runqueue_on_timer(&pipe_c6_reader_frame)
+            : 0u;
+    pipe_c6_writer_state_after_switch =
+        (pipe_c6_writer_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(pipe_c6_writer_task)
+            : 0u;
+    pipe_c6_write_bytes =
+        (pipe_c6_switch_to_writer != 0u)
+            ? fd64_write(init_pid, pipe_c6_write_a_fd, (const u8 *)"wake!", 5u)
+            : FD64_IO_ERROR;
+    pipe_c6_reader_state_after_wake =
+        (pipe_c6_reader_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(pipe_c6_reader_task)
+            : 0u;
+    pipe_c6_slot_after_wake = (pipe_c6_read_b_fd != FD64_INVALID_FD)
+        ? pipe64_blocked_reader_task(
+            fd64_entry_capability(policy_pid, pipe_c6_read_b_fd),
+            pipe_c6_target_owner)
+        : SCHEDULER64_INVALID_TASK;
+    pipe_c6_pipe_wake_after = pipe64_wake_count();
+    pipe_c6_sched_wake_after = scheduler64_runqueue_wake_count();
+    pipe_c6_avail_after_write = (pipe_c6_read_b_fd != FD64_INVALID_FD)
+        ? pipe64_bytes_available(
+            fd64_entry_capability(policy_pid, pipe_c6_read_b_fd),
+            pipe_c6_target_owner)
+        : PIPE64_IO_ERROR;
+    pipe_c6_writer_frame.rip = 0x00000000F2062000ull;
+    pipe_c6_writer_frame.rsp = 0x0000000042062800ull;
+    pipe_c6_writer_frame.rflags = (u64)process64_runtime_user_entry_rflags(init_pid);
+    pipe_c6_writer_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(init_pid) & 0xFFFFull;
+    pipe_c6_writer_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(init_pid) >> 16) & 0xFFFFull;
+    pipe_c6_switch_to_reader =
+        (pipe_c6_reader_state_after_wake == SCHEDULER64_TASK_READY)
+            ? scheduler64_runqueue_on_timer(&pipe_c6_writer_frame)
+            : 0u;
+    pipe_c6_current_after_switch = scheduler64_runqueue_current_task_id();
+    pipe_c6_reader_state_after_switch =
+        (pipe_c6_reader_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(pipe_c6_reader_task)
+            : 0u;
+    for (pipe_data_index = 0u; pipe_data_index < (u32)sizeof(pipe_c6_read_buf); ++pipe_data_index)
+    {
+        pipe_c6_read_buf[pipe_data_index] = 0u;
+    }
+    pipe_c6_read_after_wake =
+        (pipe_c6_current_after_switch == pipe_c6_reader_task)
+            ? fd64_read(policy_pid, pipe_c6_read_b_fd, pipe_c6_read_buf, 5u)
+            : FD64_IO_ERROR;
+    pipe_c6_checksum = 0u;
+    for (pipe_data_index = 0u;
+        (pipe_data_index < pipe_c6_read_after_wake) && (pipe_data_index < (u32)sizeof(pipe_c6_read_buf));
+        ++pipe_data_index)
+    {
+        pipe_c6_checksum =
+            (pipe_c6_checksum << 5)
+            ^ (pipe_c6_checksum >> 2)
+            ^ pipe_c6_read_buf[pipe_data_index];
+    }
+    pipe_c6_match =
+        ((pipe_c6_read_after_wake == 5u)
+            && (pipe_c6_read_buf[0] == (u8)'w')
+            && (pipe_c6_read_buf[1] == (u8)'a')
+            && (pipe_c6_read_buf[2] == (u8)'k')
+            && (pipe_c6_read_buf[3] == (u8)'e')
+            && (pipe_c6_read_buf[4] == (u8)'!'))
+            ? 1u
+            : 0u;
+    pipe_c6_avail_after_read = (pipe_c6_read_b_fd != FD64_INVALID_FD)
+        ? pipe64_bytes_available(
+            fd64_entry_capability(policy_pid, pipe_c6_read_b_fd),
+            pipe_c6_target_owner)
+        : PIPE64_IO_ERROR;
+    pipe_c6_sched_denial_after = scheduler64_runqueue_block_denial_count();
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+    pipe_c6_close_writer = (pipe_c6_write_a_fd != FD64_INVALID_FD)
+        ? fd64_close(init_pid, pipe_c6_write_a_fd)
+        : 0u;
+    pipe_c6_close_b_read = (pipe_c6_read_b_fd != FD64_INVALID_FD)
+        ? fd64_close(policy_pid, pipe_c6_read_b_fd)
+        : 0u;
+    pipe_c6_close_a_read = (pipe_c6_read_a_fd != FD64_INVALID_FD)
+        ? fd64_close(init_pid, pipe_c6_read_a_fd)
+        : 0u;
+    pipe_c6_target_cleanup = fd64_release_process(policy_pid);
+    pipe_c6_live_final = pipe64_live_count();
+    pipe_c6_positive =
+        ((pipe_c6_target_init != 0u)
+            && (pipe_c6_create != 0u)
+            && (pipe_c6_grant != 0u)
+            && (pipe_c6_direct_denied != 0u)
+            && (pipe_c6_reader_task != SCHEDULER64_INVALID_TASK)
+            && (pipe_c6_writer_task != SCHEDULER64_INVALID_TASK)
+            && (pipe_c6_start != 0u)
+            && (pipe_c6_current_before == pipe_c6_reader_task)
+            && (pipe_c6_read_block_result == FD64_IO_BLOCKED)
+            && (pipe_c6_blocked_slot == pipe_c6_reader_task)
+            && (pipe_c6_reader_state_after_block == SCHEDULER64_TASK_BLOCKED)
+            && ((pipe_c6_pipe_block_after - pipe_c6_pipe_block_before) == 1u)
+            && ((pipe_c6_sched_block_after - pipe_c6_sched_block_before) == 1u)
+            && (pipe_c6_switch_to_writer != 0u)
+            && (pipe_c6_writer_state_after_switch == SCHEDULER64_TASK_RUNNING)
+            && (pipe_c6_write_bytes == 5u)
+            && (pipe_c6_reader_state_after_wake == SCHEDULER64_TASK_READY)
+            && (pipe_c6_slot_after_wake == SCHEDULER64_INVALID_TASK)
+            && ((pipe_c6_pipe_wake_after - pipe_c6_pipe_wake_before) == 1u)
+            && ((pipe_c6_sched_wake_after - pipe_c6_sched_wake_before) == 1u)
+            && (pipe_c6_avail_after_write == 5u)
+            && (pipe_c6_switch_to_reader != 0u)
+            && (pipe_c6_current_after_switch == pipe_c6_reader_task)
+            && (pipe_c6_reader_state_after_switch == SCHEDULER64_TASK_RUNNING)
+            && (pipe_c6_read_after_wake == 5u)
+            && (pipe_c6_checksum != 0u)
+            && (pipe_c6_match != 0u)
+            && (pipe_c6_avail_after_read == 0u)
+            && ((pipe_c6_sched_denial_after - pipe_c6_sched_denial_before) == 0u)
+            && (pipe_c6_close_writer != 0u)
+            && (pipe_c6_close_b_read != 0u)
+            && (pipe_c6_close_a_read != 0u)
+            && (pipe_c6_target_cleanup == 3u)
+            && (pipe_c6_live_final == pipe_c6_live_before))
             ? 1u
             : 0u;
     persona_audit_attach_result = persona_audit64_attach(init_pid);
@@ -9501,6 +12858,8 @@ static void log_process_namespace(void)
     }
     pe_j12_actual_base = 0x0000000044A00000ull;
     pe_j12_stack_base = 0x0000000044B00000ull;
+    pe_j12_exe_stack_base = 0x0000000044B02000ull;
+    pe_j12_ntdll_base = 0x0000000044B80000ull;
     pe_j12_pid = console_pid;
     pe_j12_vma_init =
         (pe_j12_pid != PROCESS64_INVALID_PID)
@@ -9579,6 +12938,61 @@ static void log_process_namespace(void)
                 &pe_j12_bad_result)
             : PE64_DENIED;
     pe_j12_denied_error = pe_j12_bad_result.error;
+    windows_shim64_init();
+    pe_j12_ntdll_load =
+        ((pe_j12_map == PE64_OK) && (pe_j12_denied == PE64_DENIED))
+            ? windows_shim64_load_ntdll(
+                pe_j12_pid,
+                pe_j12_ntdll_base,
+                &pe_j12_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    pe_j12_ntdll_text_pte_before_exe =
+        paging64_user_page_present(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA);
+    pe_j12_ntdll_text_prot_before_exe =
+        paging64_user_page_protection(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA);
+    pe_j12_exe_launch =
+        ((pe_j12_map == PE64_OK) && (pe_j12_ntdll_load == WINDOWS_SHIM64_OK))
+            ? pe64_launch_entry(
+                pe_j12_pid,
+                &pe_j12_exe_header,
+                pe_j12_sections,
+                pe_j12_summary.section_count,
+                pe_j12_actual_base,
+                pe_j12_exe_stack_base,
+                PE64_ENTRY_STACK_BYTES,
+                pe_j12_ntdll_result.ldr_initialize_thunk,
+                1u,
+                &pe_j12_exe_result)
+            : PE64_DENIED;
+    pe_j12_ntdll_text_pte_after_exe =
+        paging64_user_page_present(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA);
+    pe_j12_ntdll_text_prot_after_exe =
+        paging64_user_page_protection(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA);
+    pe_j12_exe_context = persona64_context_for_process(pe_j12_pid);
+    pe_j12_exe_context_match =
+        ((pe_j12_exe_context != 0)
+            && (pe_j12_exe_context->windows_entry_rip
+                == pe_j12_exe_result.transfer_rip)
+            && (pe_j12_exe_context->windows_entry_rsp
+                == pe_j12_exe_result.initial_rsp)
+            && (pe_j12_exe_context->windows_entry_arg_rcx
+                == pe_j12_exe_result.arg_rcx)
+            && (pe_j12_exe_context->windows_entry_arg_rdx
+                == pe_j12_exe_result.arg_rdx)
+            && (pe_j12_exe_context->windows_entry_arg_r8
+                == pe_j12_exe_result.arg_r8)
+            && (pe_j12_exe_context->windows_entry_transfer_ready
+                == pe_j12_exe_result.transfer_ready))
+            ? 1u
+            : 0u;
     pe_j12_unmap_text =
         (paging64_user_page_present(pe_j12_actual_base + 0x00001000ull) != 0u)
             ? vma64_unmap(pe_j12_pid, pe_j12_actual_base + 0x00001000ull, VMA64_PAGE_BYTES)
@@ -9595,6 +13009,30 @@ static void log_process_namespace(void)
         (paging64_user_page_present(pe_j12_stack_base) != 0u)
             ? vma64_unmap(pe_j12_pid, pe_j12_stack_base, PE64_ENTRY_STACK_BYTES)
             : 1u;
+    pe_j12_unmap_exe_stack =
+        (paging64_user_page_present(pe_j12_exe_stack_base) != 0u)
+            ? vma64_unmap(pe_j12_pid, pe_j12_exe_stack_base, PE64_ENTRY_STACK_BYTES)
+            : 1u;
+    pe_j12_unmap_ntdll_text =
+        (paging64_user_page_present(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0u)
+            ? vma64_unmap(
+                pe_j12_pid,
+                pe_j12_ntdll_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    pe_j12_unmap_ntdll_rdata =
+        (paging64_user_page_present(
+            pe_j12_ntdll_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0u)
+            ? vma64_unmap(
+                pe_j12_pid,
+                pe_j12_ntdll_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
     pe_j12_persona_release =
         (pe_j12_pid != PROCESS64_INVALID_PID)
             ? persona64_release(pe_j12_pid)
@@ -9609,7 +13047,10 @@ static void log_process_namespace(void)
             && (pe_j12_unmap_text != 0u)
             && (pe_j12_unmap_rdata != 0u)
             && (pe_j12_unmap_data != 0u)
-            && (pe_j12_unmap_stack != 0u))
+            && (pe_j12_unmap_stack != 0u)
+            && (pe_j12_unmap_exe_stack != 0u)
+            && (pe_j12_unmap_ntdll_text != 0u)
+            && (pe_j12_unmap_ntdll_rdata != 0u))
             ? 1u
             : 0u;
     pe_j12_after_cleanup =
@@ -9619,7 +13060,14 @@ static void log_process_namespace(void)
             && (paging64_user_page_present(pe_j12_actual_base + 0x00001000ull) == 0u)
             && (paging64_user_page_present(pe_j12_actual_base + 0x00002000ull) == 0u)
             && (paging64_user_page_present(pe_j12_actual_base + 0x00003000ull) == 0u)
-            && (paging64_user_page_present(pe_j12_stack_base) == 0u))
+            && (paging64_user_page_present(pe_j12_stack_base) == 0u)
+            && (paging64_user_page_present(pe_j12_exe_stack_base) == 0u)
+            && (paging64_user_page_present(
+                pe_j12_ntdll_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(
+                pe_j12_ntdll_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) == 0u))
             ? 1u
             : 0u;
     pe_j12_positive =
@@ -9659,10 +13107,5810 @@ static void log_process_namespace(void)
             && (pe_j12_context_match != 0u)
             && (pe_j12_denied == PE64_DENIED)
             && (pe_j12_denied_error == PE64_ERROR_ENTRY_NTDLL_UNAVAILABLE)
+            && (pe_j12_ntdll_load == WINDOWS_SHIM64_OK)
+            && (pe_j12_ntdll_result.ldr_initialize_thunk
+                == (pe_j12_ntdll_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_LDR_INITIALIZE_THUNK))
+            && (pe_j12_exe_launch == PE64_OK)
+            && (pe_j12_exe_result.error == PE64_ERROR_NONE)
+            && (pe_j12_exe_result.dll_entry == 0u)
+            && (pe_j12_exe_result.entry_rip == pe_j12_result.entry_rip)
+            && (pe_j12_exe_result.transfer_rip
+                == pe_j12_ntdll_result.ldr_initialize_thunk)
+            && (pe_j12_exe_result.stack_base == pe_j12_exe_stack_base)
+            && (pe_j12_exe_result.stack_top
+                == (pe_j12_exe_stack_base + PE64_ENTRY_STACK_BYTES))
+            && (pe_j12_exe_result.initial_rsp == (pe_j12_exe_stack_base + 0x00000FE0ull))
+            && (pe_j12_exe_result.arg_rcx == pe_j12_result.entry_rip)
+            && (pe_j12_exe_result.arg_rdx == pe_j12_actual_base)
+            && (pe_j12_exe_result.arg_r8 == pe_j12_exe_result.stack_top)
+            && (pe_j12_exe_result.transfer_ready != 0u)
+            && (pe_j12_exe_result.transfer_executed != 0u)
+            && (pe_j12_exe_result.transfer_result == PE64_ENTRY_PROBE_RESULT)
+            && (pe_j12_exe_result.transfer_aux == PE64_ENTRY_PROBE_AUX_MATCH)
+            && (pe_j12_exe_result.context_stored != 0u)
+            && (pe_j12_exe_context_match != 0u)
             && (pe_j12_cleanup != 0u)
             && (pe_j12_after_cleanup != 0u))
             ? 1u
             : 0u;
+
+    windows_shim64_init();
+    windows_k13_pid = console_pid;
+    windows_k13_audit_attach =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k13_pid)
+            : 0u;
+    windows_k13_vma_init =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k13_pid)
+            : 0u;
+    windows_k13_bind =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k13_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k13_load =
+        ((windows_k13_bind == PERSONA64_ATTACH_OK) && (windows_k13_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k13_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE,
+                &windows_k13_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k13_registry_build =
+        (windows_k13_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_registry(windows_k13_pid, &windows_k13_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k13_ldr_export =
+        (windows_k13_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_export(windows_k13_pid, "LdrInitializeThunk")
+            : 0ull;
+    windows_k13_heap_export =
+        (windows_k13_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_export(windows_k13_pid, "RtlAllocateHeap")
+            : 0ull;
+    windows_k13_ntwrite_export =
+        (windows_k13_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_export(windows_k13_pid, "NtWriteFile")
+            : 0ull;
+    windows_k13_missing_export =
+        (windows_k13_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_export(windows_k13_pid, "MissingExport")
+            : 0ull;
+    windows_k13_text_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA);
+    windows_k13_rdata_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA);
+    windows_k13_context = persona64_context_for_process(windows_k13_pid);
+    windows_k13_context_match =
+        ((windows_k13_context != 0)
+            && (windows_k13_context->windows_ntdll_base
+                == WINDOWS_SHIM64_NTDLL_DEFAULT_BASE)
+            && (windows_k13_context->windows_ntdll_ldr_initialize_thunk
+                == windows_k13_result.ldr_initialize_thunk)
+            && (windows_k13_context->windows_ntdll_symbol_count
+                == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+            && (windows_k13_context->windows_ntdll_checksum
+                == windows_k13_result.image_checksum))
+            ? 1u
+            : 0u;
+    windows_k13_exe_base = 0x0000000044D00000ull;
+    windows_k13_exe_map =
+        ((windows_k13_load == WINDOWS_SHIM64_OK) && (windows_k13_vma_init != 0u))
+            ? vma64_map_anon(
+                windows_k13_pid,
+                windows_k13_exe_base + 0x00001000ull,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    windows_k13_exe_pte =
+        paging64_user_page_present(windows_k13_exe_base + 0x00001000ull);
+    windows_k13_exe_prot =
+        paging64_user_page_protection(windows_k13_exe_base + 0x00001000ull);
+    windows_k13_launch =
+        ((windows_k13_exe_map == (windows_k13_exe_base + 0x00001000ull))
+            && (windows_k13_ldr_export == windows_k13_result.ldr_initialize_thunk)
+            && (windows_k13_ldr_export != 0ull))
+            ? WINDOWS_SHIM64_OK
+            : WINDOWS_SHIM64_DENIED;
+    windows_k13_transfer_match =
+        ((windows_k13_launch == WINDOWS_SHIM64_OK)
+            && (windows_k13_context != 0)
+            && (windows_k13_context->windows_ntdll_ldr_initialize_thunk
+                == windows_k13_ldr_export)
+            && (windows_k13_exe_pte != 0u)
+            && (windows_k13_exe_prot
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE)))
+            ? 1u
+            : 0u;
+    windows_k13_denied =
+        ((windows_k13_bind == PERSONA64_ATTACH_OK) && (windows_k13_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k13_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE + 1ull,
+                &windows_k13_bad_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k13_denied_error = windows_k13_bad_result.error;
+    windows_k13_unmap_text =
+        (vma64_find(
+            windows_k13_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k13_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13_unmap_rdata =
+        (vma64_find(
+            windows_k13_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k13_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13_unmap_stack =
+        (vma64_find(windows_k13_pid, 0x0000000044E00000ull) != 0)
+            ? vma64_unmap(windows_k13_pid, 0x0000000044E00000ull, PE64_ENTRY_STACK_BYTES)
+            : 1u;
+    if (vma64_find(windows_k13_pid, windows_k13_exe_base + 0x00001000ull) != 0)
+    {
+        (void)vma64_unmap(
+            windows_k13_pid,
+            windows_k13_exe_base + 0x00001000ull,
+            VMA64_PAGE_BYTES);
+    }
+    windows_k13_persona_release =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k13_pid)
+            : 0u;
+    windows_k13_audit_release =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k13_pid)
+            : 0u;
+    windows_k13_vma_release =
+        (windows_k13_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k13_pid)
+            : 0u;
+    windows_k13_clone_release =
+        (windows_k13_pid != PROCESS64_INVALID_PID) ? 1u : 0u;
+    windows_k13_cleanup =
+        ((windows_k13_unmap_text != 0u)
+            && (windows_k13_unmap_rdata != 0u)
+            && (windows_k13_unmap_stack != 0u)
+            && (windows_k13_persona_release != 0u)
+            && (windows_k13_audit_release != 0u)
+            && (windows_k13_vma_release == 0u)
+            && (windows_k13_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k13_positive =
+        ((windows_k13_pid != PROCESS64_INVALID_PID)
+            && (windows_k13_audit_attach != 0u)
+            && (windows_k13_vma_init != 0u)
+            && (windows_k13_bind == PERSONA64_ATTACH_OK)
+            && (windows_k13_load == WINDOWS_SHIM64_OK)
+            && (windows_k13_result.error == WINDOWS_SHIM64_ERROR_NONE)
+            && (windows_k13_result.image_base == WINDOWS_SHIM64_NTDLL_DEFAULT_BASE)
+            && (windows_k13_result.image_bytes == WINDOWS_SHIM64_NTDLL_IMAGE_BYTES)
+            && (windows_k13_result.file_bytes == WINDOWS_SHIM64_NTDLL_FILE_BYTES)
+            && (windows_k13_result.section_count == 2u)
+            && (windows_k13_result.mapped_count == 2u)
+            && (windows_k13_result.symbol_count == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+            && (windows_k13_result.ldr_initialize_thunk
+                == (WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_LDR_INITIALIZE_THUNK))
+            && (windows_k13_result.rtl_allocate_heap
+                == (WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_RTL_ALLOCATE_HEAP))
+            && (windows_k13_result.image_checksum != 0u)
+            && (windows_k13_result.text_checksum != 0u)
+            && (windows_k13_result.rdata_checksum != 0u)
+            && (windows_k13_result.name_checksum != 0u)
+            && (windows_k13_result.text_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (windows_k13_result.rdata_protection == PAGING64_USER_PROT_READ)
+            && (windows_k13_result.context_stored != 0u)
+            && (windows_k13_text_pte != 0u)
+            && (windows_k13_rdata_pte != 0u)
+            && (windows_k13_context_match != 0u)
+            && (windows_k13_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k13_registry.registry.library_count == WINDOWS_SHIM64_NTDLL_LIBRARY_COUNT)
+            && (windows_k13_registry.libraries[0].symbol_count
+                == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+            && (windows_k13_ldr_export == windows_k13_result.ldr_initialize_thunk)
+            && (windows_k13_heap_export == windows_k13_result.rtl_allocate_heap)
+            && (windows_k13_ntwrite_export
+                == (WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_NT_WRITE_FILE))
+            && (windows_k13_missing_export == 0ull)
+            && (windows_k13_exe_pte != 0u)
+            && (windows_k13_exe_prot
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (windows_k13_launch == WINDOWS_SHIM64_OK)
+            && (windows_k13_transfer_match != 0u)
+            && (windows_k13_denied == WINDOWS_SHIM64_DENIED)
+            && (windows_k13_denied_error == WINDOWS_SHIM64_ERROR_BASE)
+            && (windows_k13_cleanup != 0u))
+            ? 1u
+            : 0u;
+    windows_k13_load_count_snapshot = windows_shim64_ntdll_load_count();
+    windows_k13_denial_count_snapshot = windows_shim64_ntdll_denial_count();
+    windows_k13_last_base_snapshot = windows_shim64_ntdll_last_base();
+
+    windows_shim64_init();
+    windows_k13b_pid = process64_spawn_clone(console_pid);
+    windows_k13b_audit_attach =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k13b_pid)
+            : 0u;
+    windows_k13b_vma_init =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k13b_pid)
+            : 0u;
+    windows_k13b_bind =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k13b_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    windows_k13b_load =
+        ((windows_k13b_bind == PERSONA64_ATTACH_OK) && (windows_k13b_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k13b_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE,
+                &windows_k13b_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k13b_code_addr = 0x0000000044D00000ull;
+    windows_k13b_data_addr = 0x0000000044D01000ull;
+    windows_k13b_stack_top = windows_k13b_data_addr + 0x00000F00ull;
+    windows_k13b_ntwrite_export =
+        (windows_k13b_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_ntdll_export(windows_k13b_pid, "NtWriteFile")
+            : 0ull;
+    windows_k13b_code_map =
+        ((windows_k13b_load == WINDOWS_SHIM64_OK) && (windows_k13b_ntwrite_export != 0ull))
+            ? vma64_map_anon(
+                windows_k13b_pid,
+                windows_k13b_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    windows_k13b_data_map =
+        (windows_k13b_code_map == windows_k13b_code_addr)
+            ? vma64_map_anon(
+                windows_k13b_pid,
+                windows_k13b_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (windows_k13b_data_map == windows_k13b_data_addr)
+    {
+        volatile u8 *windows_k13b_code = (volatile u8 *)(u64)windows_k13b_code_addr;
+        volatile u8 *windows_k13b_data = (volatile u8 *)(u64)windows_k13b_data_addr;
+
+        for (windows_k13b_i = 0u; windows_k13b_i < VMA64_PAGE_BYTES; ++windows_k13b_i)
+        {
+            windows_k13b_data[windows_k13b_i] = 0u;
+        }
+        windows_k13b_data[0x40u] = (u8)'K';
+        windows_k13b_data[0x41u] = (u8)'1';
+        windows_k13b_data[0x42u] = (u8)'3';
+        windows_k13b_data[0x43u] = (u8)'\n';
+
+        for (windows_k13b_i = 0u;
+            windows_k13b_i < (u32)sizeof(windows_k13b_syscall_template);
+            ++windows_k13b_i)
+        {
+            windows_k13b_code[windows_k13b_i] =
+                windows_k13b_syscall_template[windows_k13b_i];
+        }
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x15u, windows_k13b_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x24u, windows_k13b_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE32(windows_k13b_code, 0x36u, 4u);
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x4Eu, windows_k13b_ntwrite_export);
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x5Eu, windows_k13b_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x68u, windows_k13b_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(windows_k13b_code, 0x72u, windows_k13b_data_addr + 0xA8ull);
+        SCAFFOLD_STORE_LE32(windows_k13b_code, 0x7Bu, X64_SYSCALL_USERMODE_PROBE_EXIT);
+        SCAFFOLD_STORE_LE32(windows_k13b_code, 0x80u, 0x4B313342u);
+        SCAFFOLD_STORE_LE32(windows_k13b_code, 0x85u, WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT);
+        windows_k13b_code_prot = paging64_user_page_protection(windows_k13b_code_addr);
+        windows_k13b_code_copy =
+            ((windows_k13b_code[0] == 0x48u)
+                && (windows_k13b_code[0x58u] == 0x48u)
+                && (windows_k13b_code[0x8Bu] == 0xF4u)
+                && (windows_k13b_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        windows_k13b_data_init =
+            ((windows_k13b_data[0x40u] == (u8)'K')
+                && (windows_k13b_data[0x43u] == (u8)'\n')
+                && (*((volatile u64 *)(u64)(windows_k13b_data_addr + 0xA0ull)) == 0ull)
+                && (*((volatile u64 *)(u64)(windows_k13b_data_addr + 0xA8ull)) == 0ull))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        windows_k13b_task =
+            scheduler64_runqueue_register_process_task(
+                windows_k13b_pid,
+                process64_runtime_token(windows_k13b_pid),
+                process64_runtime_user_entry_token(windows_k13b_pid),
+                windows_k13b_code_addr,
+                windows_k13b_stack_top,
+                (u64)process64_runtime_user_entry_selectors(windows_k13b_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k13b_pid));
+        windows_k13b_runqueue_start =
+            ((windows_k13b_code_copy != 0u)
+                && (windows_k13b_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(windows_k13b_task)
+                : 0u;
+        windows_k13b_current_pid = scheduler64_runqueue_current_pid();
+        windows_k13b_console_before_count = console64_write_count();
+        windows_k13b_console_before_bytes = console64_byte_count();
+        windows_k13b_native_before = syscall64_native_count();
+        windows_k13b_persona_before = syscall64_native_persona_dispatch_count();
+        windows_k13b_windows_before = syscall64_native_persona_windows_dispatch_count();
+        windows_k13b_write_before = windows_abi64_write_count();
+        windows_k13b_audit_before = persona_audit64_count(windows_k13b_pid);
+        windows_k13b_transfer =
+            (windows_k13b_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    windows_k13b_code_addr,
+                    windows_k13b_stack_top,
+                    (u64)process64_runtime_user_entry_selectors(windows_k13b_pid),
+                    (u64)process64_runtime_user_entry_rflags(windows_k13b_pid))
+                : 0u;
+        windows_k13b_aux = interrupts64_user_entry_probe_aux();
+        scheduler64_runqueue_stop();
+        windows_k13b_console_after_count = console64_write_count();
+        windows_k13b_console_after_bytes = console64_byte_count();
+        windows_k13b_native_after = syscall64_native_count();
+        windows_k13b_persona_after = syscall64_native_persona_dispatch_count();
+        windows_k13b_windows_after = syscall64_native_persona_windows_dispatch_count();
+        windows_k13b_write_after = windows_abi64_write_count();
+        windows_k13b_audit_after = persona_audit64_count(windows_k13b_pid);
+        windows_k13b_return_status =
+            *((volatile u64 *)(u64)(windows_k13b_data_addr + 0xA0ull));
+        windows_k13b_iosb_status =
+            *((volatile u32 *)(u64)(windows_k13b_data_addr + 0x80ull));
+        windows_k13b_iosb_info =
+            *((volatile u64 *)(u64)(windows_k13b_data_addr + 0x88ull));
+        windows_k13b_info_copy =
+            *((volatile u64 *)(u64)(windows_k13b_data_addr + 0xA8ull));
+        windows_k13b_last_pid = syscall64_native_persona_last_pid();
+        windows_k13b_last_type = syscall64_native_persona_last_type();
+        windows_k13b_last_result = syscall64_native_persona_last_result();
+        windows_k13b_read_record =
+            (windows_k13b_audit_after > windows_k13b_audit_before)
+                ? persona_audit64_read(
+                    windows_k13b_pid,
+                    windows_k13b_audit_after - 1u,
+                    &windows_k13b_record)
+                : 0u;
+        windows_k13b_return_match =
+            ((windows_k13b_transfer == 0x4B313342u)
+                && (windows_k13b_aux == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+                && (windows_k13b_return_status == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+                && (windows_k13b_iosb_status == WINDOWS_ABI64_STATUS_SUCCESS)
+                && (windows_k13b_iosb_info == 4ull)
+                && (windows_k13b_info_copy == 4ull))
+                ? 1u
+                : 0u;
+        windows_k13b_dispatch_match =
+            (((windows_k13b_native_after - windows_k13b_native_before) == 1u)
+                && ((windows_k13b_persona_after - windows_k13b_persona_before) == 1u)
+                && ((windows_k13b_windows_after - windows_k13b_windows_before) == 1u)
+                && ((windows_k13b_write_after - windows_k13b_write_before) == 1u)
+                && ((windows_k13b_console_after_count - windows_k13b_console_before_count) == 1u)
+                && ((windows_k13b_console_after_bytes - windows_k13b_console_before_bytes) == 4u)
+                && (windows_k13b_last_pid == windows_k13b_pid)
+                && (windows_k13b_last_type == PERSONA64_TYPE_WINDOWS_PE)
+                && (windows_k13b_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+                && ((windows_k13b_audit_after - windows_k13b_audit_before) == 1u)
+                && (windows_k13b_read_record != 0u)
+                && (windows_k13b_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+                && (windows_k13b_record.event_code == WINDOWS_ABI64_SYSCALL_NTWRITEFILE)
+                && (windows_k13b_record.result == WINDOWS_ABI64_STATUS_SUCCESS))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+    }
+    windows_k13b_unmap_ntdll_text =
+        (vma64_find(
+            windows_k13b_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k13b_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13b_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k13b_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k13b_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13b_unmap_code =
+        (vma64_find(windows_k13b_pid, windows_k13b_code_addr) != 0)
+            ? vma64_unmap(windows_k13b_pid, windows_k13b_code_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13b_unmap_data =
+        (vma64_find(windows_k13b_pid, windows_k13b_data_addr) != 0)
+            ? vma64_unmap(windows_k13b_pid, windows_k13b_data_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k13b_persona_release =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k13b_pid)
+            : 0u;
+    windows_k13b_audit_release =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k13b_pid)
+            : 0u;
+    windows_k13b_vma_release =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k13b_pid)
+            : 0u;
+    windows_k13b_clone_release =
+        (windows_k13b_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k13b_pid)
+            : 0u;
+    windows_k13b_cleanup =
+        ((windows_k13b_unmap_ntdll_text != 0u)
+            && (windows_k13b_unmap_ntdll_rdata != 0u)
+            && (windows_k13b_unmap_code != 0u)
+            && (windows_k13b_unmap_data != 0u)
+            && (windows_k13b_persona_release != 0u)
+            && (windows_k13b_audit_release != 0u)
+            && (windows_k13b_vma_release == 0u)
+            && (windows_k13b_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k13b_positive =
+        ((windows_k13b_pid != PROCESS64_INVALID_PID)
+            && (windows_k13b_audit_attach != 0u)
+            && (windows_k13b_vma_init != 0u)
+            && (windows_k13b_bind == PERSONA64_ATTACH_OK)
+            && (windows_k13b_load == WINDOWS_SHIM64_OK)
+            && (windows_k13b_ntwrite_export
+                == (WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_NT_WRITE_FILE))
+            && (windows_k13b_code_map == windows_k13b_code_addr)
+            && (windows_k13b_data_map == windows_k13b_data_addr)
+            && (windows_k13b_code_copy != 0u)
+            && (windows_k13b_data_init != 0u)
+            && (windows_k13b_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k13b_runqueue_start != 0u)
+            && (windows_k13b_current_pid == windows_k13b_pid)
+            && (windows_k13b_return_match != 0u)
+            && (windows_k13b_dispatch_match != 0u)
+            && (windows_k13b_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_shim64_init();
+    windows_k14_pid = console_pid;
+    windows_k14_audit_attach =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k14_pid)
+            : 0u;
+    windows_k14_vma_init =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k14_pid)
+            : 0u;
+    windows_k14_bind =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k14_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k14_denied =
+        ((windows_k14_bind == PERSONA64_ATTACH_OK) && (windows_k14_vma_init != 0u))
+            ? windows_shim64_load_kernel32(
+                windows_k14_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE,
+                &windows_k14_bad_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14_denied_error = windows_k14_bad_result.error;
+    windows_k14_ntdll_load =
+        ((windows_k14_bind == PERSONA64_ATTACH_OK) && (windows_k14_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k14_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE,
+                &windows_k14_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14_load =
+        (windows_k14_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k14_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE,
+                &windows_k14_result)
+            : WINDOWS_SHIM64_DENIED;
+    (void)windows_shim64_ntdll_registry(
+        windows_k14_pid,
+        &windows_k14_ntdll_only_registry);
+    windows_k14_registry_build =
+        (windows_k14_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_combined_registry(windows_k14_pid, &windows_k14_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14_exit_export =
+        (windows_k14_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_kernel32_export(windows_k14_pid, "ExitProcess")
+            : 0ull;
+    windows_k14_write_console_export =
+        (windows_k14_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_kernel32_export(windows_k14_pid, "WriteConsoleA")
+            : 0ull;
+    windows_k14_virtual_alloc_export =
+        (windows_k14_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_kernel32_export(windows_k14_pid, "VirtualAlloc")
+            : 0ull;
+    windows_k14_missing_export =
+        (windows_k14_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_kernel32_export(windows_k14_pid, "MissingKernel32Export")
+            : 0ull;
+    windows_k14_text_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA);
+    windows_k14_rdata_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA);
+    windows_k14_context = persona64_context_for_process(windows_k14_pid);
+    windows_k14_context_match =
+        ((windows_k14_context != 0)
+            && (windows_k14_context->windows_kernel32_base
+                == WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE)
+            && (windows_k14_context->windows_kernel32_write_console_a
+                == windows_k14_result.write_console_a)
+            && (windows_k14_context->windows_kernel32_symbol_count
+                == WINDOWS_SHIM64_KERNEL32_SYMBOL_COUNT)
+            && (windows_k14_context->windows_kernel32_checksum
+                == windows_k14_result.image_checksum))
+            ? 1u
+            : 0u;
+
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(pe_j5_image_bytes);
+        ++windows_k14_index)
+    {
+        pe_j5_image_bytes[windows_k14_index] = 0u;
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(pe_j1_valid_bytes);
+        ++windows_k14_index)
+    {
+        pe_j5_image_bytes[windows_k14_index] = pe_j1_valid_bytes[windows_k14_index];
+    }
+    pe_j5_image_bytes[0x110u] = 0x00u;
+    pe_j5_image_bytes[0x111u] = 0x20u;
+    pe_j5_image_bytes[0x114u] = 0x80u;
+    for (windows_k14_index = 0u; windows_k14_index < 0x00000200u; ++windows_k14_index)
+    {
+        pe_j5_image_bytes[0x00000400u + windows_k14_index] =
+            (u8)(0x30u + (windows_k14_index & 0x0Fu));
+        pe_j5_image_bytes[0x00000800u + windows_k14_index] =
+            (u8)(0xA0u + (windows_k14_index & 0x0Fu));
+    }
+    pe_j5_image_bytes[0x00000600u] = 0x40u;
+    pe_j5_image_bytes[0x00000601u] = 0x20u;
+    pe_j5_image_bytes[0x0000060Cu] = 0x60u;
+    pe_j5_image_bytes[0x0000060Du] = 0x20u;
+    pe_j5_image_bytes[0x00000610u] = 0x80u;
+    pe_j5_image_bytes[0x00000611u] = 0x20u;
+    pe_j5_image_bytes[0x00000640u] = 0x70u;
+    pe_j5_image_bytes[0x00000641u] = 0x20u;
+    pe_j5_image_bytes[0x00000660u] = (u8)'k';
+    pe_j5_image_bytes[0x00000661u] = (u8)'e';
+    pe_j5_image_bytes[0x00000662u] = (u8)'r';
+    pe_j5_image_bytes[0x00000663u] = (u8)'n';
+    pe_j5_image_bytes[0x00000664u] = (u8)'e';
+    pe_j5_image_bytes[0x00000665u] = (u8)'l';
+    pe_j5_image_bytes[0x00000666u] = (u8)'3';
+    pe_j5_image_bytes[0x00000667u] = (u8)'2';
+    pe_j5_image_bytes[0x00000668u] = (u8)'.';
+    pe_j5_image_bytes[0x00000669u] = (u8)'d';
+    pe_j5_image_bytes[0x0000066Au] = (u8)'l';
+    pe_j5_image_bytes[0x0000066Bu] = (u8)'l';
+    pe_j5_image_bytes[0x00000672u] = (u8)'W';
+    pe_j5_image_bytes[0x00000673u] = (u8)'r';
+    pe_j5_image_bytes[0x00000674u] = (u8)'i';
+    pe_j5_image_bytes[0x00000675u] = (u8)'t';
+    pe_j5_image_bytes[0x00000676u] = (u8)'e';
+    pe_j5_image_bytes[0x00000677u] = (u8)'C';
+    pe_j5_image_bytes[0x00000678u] = (u8)'o';
+    pe_j5_image_bytes[0x00000679u] = (u8)'n';
+    pe_j5_image_bytes[0x0000067Au] = (u8)'s';
+    pe_j5_image_bytes[0x0000067Bu] = (u8)'o';
+    pe_j5_image_bytes[0x0000067Cu] = (u8)'l';
+    pe_j5_image_bytes[0x0000067Du] = (u8)'e';
+    pe_j5_image_bytes[0x0000067Eu] = (u8)'A';
+    pe_j5_image_bytes[0x00000680u] = 0x70u;
+    pe_j5_image_bytes[0x00000681u] = 0x20u;
+    windows_k14_import_base = 0x0000000045200000ull;
+    windows_k14_import_header_parse =
+        pe64_parse_header(
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            &windows_k14_import_header);
+    windows_k14_import_parse =
+        pe64_parse_sections(
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            &windows_k14_import_header,
+            windows_k14_import_sections,
+            PE64_MAX_SECTIONS,
+            &windows_k14_import_summary);
+    windows_k14_import_map =
+        pe64_map_sections(
+            windows_k14_pid,
+            &windows_k14_import_header,
+            windows_k14_import_sections,
+            windows_k14_import_summary.section_count,
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            windows_k14_import_base,
+            &windows_k14_import_map_result);
+    windows_k14_iat_va = windows_k14_import_base + 0x00002080ull;
+    windows_k14_iat_before =
+        (paging64_user_page_present(windows_k14_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14_iat_va)
+            : 0ull;
+    windows_k14_import_resolve =
+        ((windows_k14_import_map == PE64_OK)
+            && (windows_k14_registry_build == WINDOWS_SHIM64_OK))
+            ? pe64_resolve_imports(
+                windows_k14_pid,
+                &windows_k14_import_header,
+                windows_k14_import_sections,
+                windows_k14_import_summary.section_count,
+                windows_k14_import_base,
+                &windows_k14_registry.registry,
+                &windows_k14_import_result)
+            : PE64_DENIED;
+    windows_k14_iat_after =
+        (paging64_user_page_present(windows_k14_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14_iat_va)
+            : 0ull;
+    windows_k14_import_rdata_prot =
+        paging64_user_page_protection(windows_k14_import_base + 0x00002000ull);
+    windows_k14_import_denied =
+        (windows_k14_import_map == PE64_OK)
+            ? pe64_resolve_imports(
+                windows_k14_pid,
+                &windows_k14_import_header,
+                windows_k14_import_sections,
+                windows_k14_import_summary.section_count,
+                windows_k14_import_base,
+                &windows_k14_ntdll_only_registry.registry,
+                &windows_k14_bad_import_result)
+            : PE64_DENIED;
+    windows_k14_import_denied_error = windows_k14_bad_import_result.error;
+    windows_k14_load_count_snapshot = windows_shim64_kernel32_load_count();
+    windows_k14_denial_count_snapshot = windows_shim64_kernel32_denial_count();
+    windows_k14_last_base_snapshot = windows_shim64_kernel32_last_base();
+
+    windows_k14b_pid = process64_spawn_clone(console_pid);
+    windows_k14b_audit_attach =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k14b_pid)
+            : 0u;
+    windows_k14b_vma_init =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k14b_pid)
+            : 0u;
+    windows_k14b_bind =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k14b_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k14b_ntdll_load =
+        ((windows_k14b_bind == PERSONA64_ATTACH_OK) && (windows_k14b_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k14b_pid,
+                0x0000000044D20000ull,
+                &windows_k14b_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14b_kernel32_load =
+        (windows_k14b_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k14b_pid,
+                0x0000000044D80000ull,
+                &windows_k14b_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14b_code_addr = 0x0000000044DC0000ull;
+    windows_k14b_data_addr = 0x0000000044DD0000ull;
+    windows_k14b_stack_top = windows_k14b_data_addr + 0x00000F00ull;
+    windows_k14b_code_map =
+        ((windows_k14b_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k14b_kernel32_result.get_std_handle != 0ull)
+            && (windows_k14b_kernel32_result.write_console_a != 0ull)
+            && (paging64_user_page_present(windows_k14b_kernel32_result.get_std_handle) != 0u))
+            ? vma64_map_anon(
+                windows_k14b_pid,
+                windows_k14b_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    windows_k14b_data_map =
+        (windows_k14b_code_map == windows_k14b_code_addr)
+            ? vma64_map_anon(
+                windows_k14b_pid,
+                windows_k14b_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (windows_k14b_data_map == windows_k14b_data_addr)
+    {
+        volatile u8 *windows_k14b_code = (volatile u8 *)(u64)windows_k14b_code_addr;
+        volatile u8 *windows_k14b_data = (volatile u8 *)(u64)windows_k14b_data_addr;
+
+        for (windows_k14_index = 0u; windows_k14_index < VMA64_PAGE_BYTES; ++windows_k14_index)
+        {
+            windows_k14b_data[windows_k14_index] = 0u;
+        }
+        windows_k14b_data[0x40u] = (u8)'K';
+        windows_k14b_data[0x41u] = (u8)'1';
+        windows_k14b_data[0x42u] = (u8)'4';
+        windows_k14b_data[0x43u] = (u8)'\n';
+
+        for (windows_k14_index = 0u;
+            windows_k14_index < (u32)sizeof(windows_k14b_kernel32_template);
+            ++windows_k14_index)
+        {
+            windows_k14b_code[windows_k14_index] =
+                windows_k14b_kernel32_template[windows_k14_index];
+        }
+        SCAFFOLD_STORE_LE64(
+            windows_k14b_code,
+            0x0Bu,
+            windows_k14b_kernel32_result.get_std_handle);
+        SCAFFOLD_STORE_LE64(windows_k14b_code, 0x17u, windows_k14b_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE64(windows_k14b_code, 0x24u, windows_k14b_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE32(windows_k14b_code, 0x2Eu, 4u);
+        SCAFFOLD_STORE_LE64(windows_k14b_code, 0x34u, windows_k14b_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE64(
+            windows_k14b_code,
+            0x47u,
+            windows_k14b_kernel32_result.write_console_a);
+        SCAFFOLD_STORE_LE64(windows_k14b_code, 0x53u, windows_k14b_data_addr + 0x98ull);
+        SCAFFOLD_STORE_LE32(windows_k14b_code, 0x5Cu, X64_SYSCALL_USERMODE_PROBE_EXIT);
+        SCAFFOLD_STORE_LE32(
+            windows_k14b_code,
+            0x66u,
+            WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT);
+        windows_k14b_code_prot = paging64_user_page_protection(windows_k14b_code_addr);
+        windows_k14b_code_copy =
+            ((windows_k14b_code[0] == 0x48u)
+                && (windows_k14b_code[0x15u] == 0x48u)
+                && (windows_k14b_code[0x51u] == 0x48u)
+                && (windows_k14b_code[0x6Cu] == 0xF4u)
+                && (windows_k14b_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        windows_k14b_data_init =
+            ((windows_k14b_data[0x40u] == (u8)'K')
+                && (windows_k14b_data[0x43u] == (u8)'\n')
+                && (*((volatile u64 *)(u64)(windows_k14b_data_addr + 0x90ull)) == 0ull)
+                && (*((volatile u64 *)(u64)(windows_k14b_data_addr + 0x98ull)) == 0ull)
+                && (*((volatile u32 *)(u64)(windows_k14b_data_addr + 0xA0ull)) == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        windows_k14b_task =
+            scheduler64_runqueue_register_process_task(
+                windows_k14b_pid,
+                process64_runtime_token(windows_k14b_pid),
+                process64_runtime_user_entry_token(windows_k14b_pid),
+                windows_k14b_code_addr,
+                windows_k14b_stack_top,
+                (u64)process64_runtime_user_entry_selectors(windows_k14b_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k14b_pid));
+        windows_k14b_runqueue_start =
+            ((windows_k14b_code_copy != 0u)
+                && (windows_k14b_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(windows_k14b_task)
+                : 0u;
+        windows_k14b_current_pid = scheduler64_runqueue_current_pid();
+        windows_k14b_console_before_count = console64_write_count();
+        windows_k14b_console_before_bytes = console64_byte_count();
+        windows_k14b_native_before = syscall64_native_count();
+        windows_k14b_persona_before = syscall64_native_persona_dispatch_count();
+        windows_k14b_windows_before = syscall64_native_persona_windows_dispatch_count();
+        windows_k14b_write_before = windows_abi64_write_count();
+        windows_k14b_audit_before = persona_audit64_count(windows_k14b_pid);
+        windows_k14b_transfer =
+            (windows_k14b_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    windows_k14b_code_addr,
+                    windows_k14b_stack_top,
+                    (u64)process64_runtime_user_entry_selectors(windows_k14b_pid),
+                    (u64)process64_runtime_user_entry_rflags(windows_k14b_pid))
+                : 0u;
+        windows_k14b_aux = interrupts64_user_entry_probe_aux();
+        scheduler64_runqueue_stop();
+        windows_k14b_console_after_count = console64_write_count();
+        windows_k14b_console_after_bytes = console64_byte_count();
+        windows_k14b_native_after = syscall64_native_count();
+        windows_k14b_persona_after = syscall64_native_persona_dispatch_count();
+        windows_k14b_windows_after = syscall64_native_persona_windows_dispatch_count();
+        windows_k14b_write_after = windows_abi64_write_count();
+        windows_k14b_audit_after = persona_audit64_count(windows_k14b_pid);
+        windows_k14b_handle_value =
+            *((volatile u64 *)(u64)(windows_k14b_data_addr + 0x90ull));
+        windows_k14b_return_value =
+            *((volatile u64 *)(u64)(windows_k14b_data_addr + 0x98ull));
+        windows_k14b_written_value =
+            *((volatile u32 *)(u64)(windows_k14b_data_addr + 0xA0ull));
+        windows_k14b_last_pid = syscall64_native_persona_last_pid();
+        windows_k14b_last_type = syscall64_native_persona_last_type();
+        windows_k14b_last_result = syscall64_native_persona_last_result();
+        windows_k14b_read_record =
+            (windows_k14b_audit_after > windows_k14b_audit_before)
+                ? persona_audit64_read(
+                    windows_k14b_pid,
+                    windows_k14b_audit_after - 1u,
+                    &windows_k14b_record)
+                : 0u;
+        windows_k14b_return_match =
+            ((windows_k14b_transfer == 0x4B313442u)
+                && (windows_k14b_aux == WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT)
+                && (windows_k14b_handle_value == WINDOWS_ABI64_STDOUT_HANDLE)
+                && (windows_k14b_return_value == 1ull)
+                && (windows_k14b_written_value == 4u))
+                ? 1u
+                : 0u;
+        windows_k14b_dispatch_match =
+            (((windows_k14b_native_after - windows_k14b_native_before) == 1u)
+                && ((windows_k14b_persona_after - windows_k14b_persona_before) == 1u)
+                && ((windows_k14b_windows_after - windows_k14b_windows_before) == 1u)
+                && ((windows_k14b_write_after - windows_k14b_write_before) == 1u)
+                && ((windows_k14b_console_after_count - windows_k14b_console_before_count) == 1u)
+                && ((windows_k14b_console_after_bytes - windows_k14b_console_before_bytes) == 4u)
+                && (windows_k14b_last_pid == windows_k14b_pid)
+                && (windows_k14b_last_type == PERSONA64_TYPE_WINDOWS_PE)
+                && (windows_k14b_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+                && ((windows_k14b_audit_after - windows_k14b_audit_before) == 1u)
+                && (windows_k14b_read_record != 0u)
+                && (windows_k14b_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+                && (windows_k14b_record.event_code == WINDOWS_ABI64_SYSCALL_NTWRITEFILE)
+                && (windows_k14b_record.result == WINDOWS_ABI64_STATUS_SUCCESS))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+    }
+
+    windows_k14_unmap_ntdll_text =
+        (vma64_find(
+            windows_k14_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k14_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_kernel32_text =
+        (vma64_find(
+            windows_k14_pid,
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k14_pid,
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_import_text =
+        (vma64_find(windows_k14_pid, windows_k14_import_base + 0x00001000ull) != 0)
+            ? vma64_unmap(windows_k14_pid, windows_k14_import_base + 0x00001000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_import_rdata =
+        (vma64_find(windows_k14_pid, windows_k14_import_base + 0x00002000ull) != 0)
+            ? vma64_unmap(windows_k14_pid, windows_k14_import_base + 0x00002000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14_unmap_import_data =
+        (vma64_find(windows_k14_pid, windows_k14_import_base + 0x00003000ull) != 0)
+            ? vma64_unmap(windows_k14_pid, windows_k14_import_base + 0x00003000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_ntdll_text =
+        (vma64_find(
+            windows_k14b_pid,
+            windows_k14b_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14b_pid,
+                windows_k14b_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k14b_pid,
+            windows_k14b_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14b_pid,
+                windows_k14b_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_kernel32_text =
+        (vma64_find(
+            windows_k14b_pid,
+            windows_k14b_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14b_pid,
+                windows_k14b_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k14b_pid,
+            windows_k14b_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14b_pid,
+                windows_k14b_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_code =
+        (vma64_find(windows_k14b_pid, windows_k14b_code_addr) != 0)
+            ? vma64_unmap(windows_k14b_pid, windows_k14b_code_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_unmap_data =
+        (vma64_find(windows_k14b_pid, windows_k14b_data_addr) != 0)
+            ? vma64_unmap(windows_k14b_pid, windows_k14b_data_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14b_persona_release =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k14b_pid)
+            : 0u;
+    windows_k14b_audit_release =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k14b_pid)
+            : 0u;
+    windows_k14b_vma_release =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k14b_pid)
+            : 0u;
+    windows_k14b_clone_release =
+        (windows_k14b_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k14b_pid)
+            : 0u;
+    windows_k14b_cleanup =
+        ((windows_k14b_unmap_ntdll_text != 0u)
+            && (windows_k14b_unmap_ntdll_rdata != 0u)
+            && (windows_k14b_unmap_kernel32_text != 0u)
+            && (windows_k14b_unmap_kernel32_rdata != 0u)
+            && (windows_k14b_unmap_code != 0u)
+            && (windows_k14b_unmap_data != 0u)
+            && (windows_k14b_persona_release != 0u)
+            && (windows_k14b_audit_release != 0u)
+            && (windows_k14b_vma_release == 0u)
+            && (windows_k14b_clone_release != 0u))
+            ? 1u
+            : 0u;
+
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_image_bytes);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[windows_k14_index] = 0u;
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(pe_j1_valid_bytes);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[windows_k14_index] = pe_j1_valid_bytes[windows_k14_index];
+    }
+    for (windows_k14_index = 0u; windows_k14_index < 0x00000200u; ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x00000400u + windows_k14_index] = 0x90u;
+        windows_k14c_image_bytes[0x00000600u + windows_k14_index] = 0u;
+        windows_k14c_image_bytes[0x00000800u + windows_k14_index] = 0u;
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_pe_entry_template);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x00000400u + windows_k14_index] =
+            windows_k14c_pe_entry_template[windows_k14_index];
+    }
+
+    windows_k14c_base = 0x0000000044DC0000ull;
+    windows_k14c_stack_base = 0x0000000044DD0000ull;
+    windows_k14c_get_iat = windows_k14c_base + 0x00002080ull;
+    windows_k14c_write_iat = windows_k14c_base + 0x00002088ull;
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x110u, 0x00002000u);
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x114u, 0x000000E0u);
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x600u, 0x00002040u);
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x60Cu, 0x00002060u);
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x610u, 0x00002080u);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x640u, 0x00000000000020A0ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x648u, 0x00000000000020C0ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x680u, 0x00000000000020A0ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x688u, 0x00000000000020C0ull);
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_dll_name);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x660u + windows_k14_index] =
+            windows_k14c_dll_name[windows_k14_index];
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_get_name);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x6A2u + windows_k14_index] =
+            windows_k14c_get_name[windows_k14_index];
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_write_name);
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x6C2u + windows_k14_index] =
+            windows_k14c_write_name[windows_k14_index];
+    }
+    for (windows_k14_index = 0u;
+        windows_k14_index < (u32)sizeof(windows_k14c_message) - 1u;
+        ++windows_k14_index)
+    {
+        windows_k14c_image_bytes[0x800u + windows_k14_index] =
+            windows_k14c_message[windows_k14_index];
+    }
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x40Bu, windows_k14c_get_iat);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x417u, windows_k14c_base + 0x00003080ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x424u, windows_k14c_base + 0x00003000ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x434u, windows_k14c_base + 0x00003090ull);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x447u, windows_k14c_write_iat);
+    SCAFFOLD_STORE_LE64(windows_k14c_image_bytes, 0x453u, windows_k14c_base + 0x00003088ull);
+    SCAFFOLD_STORE_LE32(windows_k14c_image_bytes, 0x460u, X64_SYSCALL_USERMODE_PROBE_EXIT);
+    windows_k14c_image_ready =
+        ((windows_k14c_image_bytes[0x400u] == 0x48u)
+            && (windows_k14c_image_bytes[0x470u] == 0xF4u)
+            && (windows_k14c_image_bytes[0x660u] == (u8)'k')
+            && (windows_k14c_image_bytes[0x6A2u] == (u8)'G')
+            && (windows_k14c_image_bytes[0x6C2u] == (u8)'W')
+            && (windows_k14c_image_bytes[0x800u] == (u8)'K'))
+            ? 1u
+            : 0u;
+
+    windows_k14c_pid = process64_spawn_clone(console_pid);
+    windows_k14c_audit_attach =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k14c_pid)
+            : 0u;
+    windows_k14c_vma_init =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k14c_pid)
+            : 0u;
+    windows_k14c_bind =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k14c_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    windows_k14c_ntdll_load =
+        ((windows_k14c_image_ready != 0u)
+            && (windows_k14c_bind == PERSONA64_ATTACH_OK)
+            && (windows_k14c_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k14c_pid,
+                0x0000000044D20000ull,
+                &windows_k14c_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14c_kernel32_load =
+        (windows_k14c_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k14c_pid,
+                0x0000000044D80000ull,
+                &windows_k14c_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14c_registry_build =
+        (windows_k14c_kernel32_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_combined_registry(windows_k14c_pid, &windows_k14c_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14c_header_parse =
+        (windows_k14c_registry_build == WINDOWS_SHIM64_OK)
+            ? pe64_parse_header(
+                windows_k14c_image_bytes,
+                (u32)sizeof(windows_k14c_image_bytes),
+                &windows_k14c_header)
+            : PE64_DENIED;
+    windows_k14c_parse =
+        (windows_k14c_header_parse == PE64_OK)
+            ? pe64_parse_sections(
+                windows_k14c_image_bytes,
+                (u32)sizeof(windows_k14c_image_bytes),
+                &windows_k14c_header,
+                windows_k14c_sections,
+                PE64_MAX_SECTIONS,
+                &windows_k14c_summary)
+            : PE64_DENIED;
+    windows_k14c_map =
+        (windows_k14c_parse == PE64_OK)
+            ? pe64_map_sections(
+                windows_k14c_pid,
+                &windows_k14c_header,
+                windows_k14c_sections,
+                windows_k14c_summary.section_count,
+                windows_k14c_image_bytes,
+                (u32)sizeof(windows_k14c_image_bytes),
+                windows_k14c_base,
+                &windows_k14c_map_result)
+            : PE64_DENIED;
+    windows_k14c_get_iat_before =
+        (paging64_user_page_present(windows_k14c_get_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14c_get_iat)
+            : 0ull;
+    windows_k14c_write_iat_before =
+        (paging64_user_page_present(windows_k14c_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14c_write_iat)
+            : 0ull;
+    windows_k14c_resolve =
+        (windows_k14c_map == PE64_OK)
+            ? pe64_resolve_imports(
+                windows_k14c_pid,
+                &windows_k14c_header,
+                windows_k14c_sections,
+                windows_k14c_summary.section_count,
+                windows_k14c_base,
+                &windows_k14c_registry.registry,
+                &windows_k14c_import_result)
+            : PE64_DENIED;
+    windows_k14c_get_iat_after =
+        (paging64_user_page_present(windows_k14c_get_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14c_get_iat)
+            : 0ull;
+    windows_k14c_write_iat_after =
+        (paging64_user_page_present(windows_k14c_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k14c_write_iat)
+            : 0ull;
+    windows_k14c_prepare =
+        (windows_k14c_resolve == PE64_OK)
+            ? pe64_launch_entry(
+                windows_k14c_pid,
+                &windows_k14c_header,
+                windows_k14c_sections,
+                windows_k14c_summary.section_count,
+                windows_k14c_base,
+                windows_k14c_stack_base,
+                PE64_ENTRY_STACK_BYTES,
+                windows_k14c_ntdll_result.ldr_initialize_thunk,
+                0u,
+                &windows_k14c_entry_result)
+            : PE64_DENIED;
+    scheduler64_runqueue_reset();
+    windows_k14c_task =
+        (windows_k14c_prepare == PE64_OK)
+            ? scheduler64_runqueue_register_process_task(
+                windows_k14c_pid,
+                process64_runtime_token(windows_k14c_pid),
+                process64_runtime_user_entry_token(windows_k14c_pid),
+                windows_k14c_entry_result.transfer_rip,
+                windows_k14c_entry_result.initial_rsp,
+                (u64)process64_runtime_user_entry_selectors(windows_k14c_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k14c_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k14c_runqueue_start =
+        (windows_k14c_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_start(windows_k14c_task)
+            : 0u;
+    windows_k14c_current_pid = scheduler64_runqueue_current_pid();
+    windows_k14c_console_before_count = console64_write_count();
+    windows_k14c_console_before_bytes = console64_byte_count();
+    windows_k14c_native_before = syscall64_native_count();
+    windows_k14c_persona_before = syscall64_native_persona_dispatch_count();
+    windows_k14c_windows_before = syscall64_native_persona_windows_dispatch_count();
+    windows_k14c_write_before = windows_abi64_write_count();
+    windows_k14c_audit_before = persona_audit64_count(windows_k14c_pid);
+    windows_k14c_transfer =
+        (windows_k14c_runqueue_start != 0u)
+            ? interrupts64_trigger_user_entry_probe_args(
+                windows_k14c_entry_result.transfer_rip,
+                windows_k14c_entry_result.initial_rsp,
+                (u64)windows_k14c_entry_result.transfer_selectors,
+                (u64)windows_k14c_entry_result.transfer_rflags,
+                windows_k14c_entry_result.arg_rcx,
+                windows_k14c_entry_result.arg_rdx,
+                windows_k14c_entry_result.arg_r8,
+                &windows_k14c_aux)
+            : 0u;
+    scheduler64_runqueue_stop();
+    windows_k14c_console_after_count = console64_write_count();
+    windows_k14c_console_after_bytes = console64_byte_count();
+    windows_k14c_native_after = syscall64_native_count();
+    windows_k14c_persona_after = syscall64_native_persona_dispatch_count();
+    windows_k14c_windows_after = syscall64_native_persona_windows_dispatch_count();
+    windows_k14c_write_after = windows_abi64_write_count();
+    windows_k14c_audit_after = persona_audit64_count(windows_k14c_pid);
+    windows_k14c_handle_value =
+        (paging64_user_page_present(windows_k14c_base + 0x00003080ull) != 0u)
+            ? *((volatile u64 *)(u64)(windows_k14c_base + 0x00003080ull))
+            : 0ull;
+    windows_k14c_return_value =
+        (paging64_user_page_present(windows_k14c_base + 0x00003088ull) != 0u)
+            ? *((volatile u64 *)(u64)(windows_k14c_base + 0x00003088ull))
+            : 0ull;
+    windows_k14c_written_value =
+        (paging64_user_page_present(windows_k14c_base + 0x00003090ull) != 0u)
+            ? *((volatile u32 *)(u64)(windows_k14c_base + 0x00003090ull))
+            : 0u;
+    windows_k14c_last_pid = syscall64_native_persona_last_pid();
+    windows_k14c_last_type = syscall64_native_persona_last_type();
+    windows_k14c_last_result = syscall64_native_persona_last_result();
+    windows_k14c_read_record =
+        (windows_k14c_audit_after > windows_k14c_audit_before)
+            ? persona_audit64_read(
+                windows_k14c_pid,
+                windows_k14c_audit_after - 1u,
+                &windows_k14c_record)
+            : 0u;
+    windows_k14c_return_match =
+        ((windows_k14c_transfer == 0x4B313443u)
+            && (windows_k14c_aux == 2u)
+            && (windows_k14c_handle_value == WINDOWS_ABI64_STDOUT_HANDLE)
+            && (windows_k14c_return_value == 1ull)
+            && (windows_k14c_written_value == 4u))
+            ? 1u
+            : 0u;
+    windows_k14c_dispatch_match =
+        (((windows_k14c_native_after - windows_k14c_native_before) == 1u)
+            && ((windows_k14c_persona_after - windows_k14c_persona_before) == 1u)
+            && ((windows_k14c_windows_after - windows_k14c_windows_before) == 1u)
+            && ((windows_k14c_write_after - windows_k14c_write_before) == 1u)
+            && ((windows_k14c_console_after_count - windows_k14c_console_before_count) == 1u)
+            && ((windows_k14c_console_after_bytes - windows_k14c_console_before_bytes) == 4u)
+            && (windows_k14c_last_pid == windows_k14c_pid)
+            && (windows_k14c_last_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (windows_k14c_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+            && ((windows_k14c_audit_after - windows_k14c_audit_before) == 1u)
+            && (windows_k14c_read_record != 0u)
+            && (windows_k14c_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (windows_k14c_record.event_code == WINDOWS_ABI64_SYSCALL_NTWRITEFILE)
+            && (windows_k14c_record.result == WINDOWS_ABI64_STATUS_SUCCESS))
+            ? 1u
+            : 0u;
+    scheduler64_runqueue_reset();
+    windows_k14c_unmap_ntdll_text =
+        (vma64_find(
+            windows_k14c_pid,
+            windows_k14c_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14c_pid,
+                windows_k14c_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k14c_pid,
+            windows_k14c_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14c_pid,
+                windows_k14c_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_kernel32_text =
+        (vma64_find(
+            windows_k14c_pid,
+            windows_k14c_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14c_pid,
+                windows_k14c_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k14c_pid,
+            windows_k14c_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14c_pid,
+                windows_k14c_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_text =
+        (vma64_find(windows_k14c_pid, windows_k14c_base + 0x00001000ull) != 0)
+            ? vma64_unmap(windows_k14c_pid, windows_k14c_base + 0x00001000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_rdata =
+        (vma64_find(windows_k14c_pid, windows_k14c_base + 0x00002000ull) != 0)
+            ? vma64_unmap(windows_k14c_pid, windows_k14c_base + 0x00002000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_data =
+        (vma64_find(windows_k14c_pid, windows_k14c_base + 0x00003000ull) != 0)
+            ? vma64_unmap(windows_k14c_pid, windows_k14c_base + 0x00003000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14c_unmap_stack =
+        (vma64_find(windows_k14c_pid, windows_k14c_stack_base) != 0)
+            ? vma64_unmap(windows_k14c_pid, windows_k14c_stack_base, PE64_ENTRY_STACK_BYTES)
+            : 1u;
+    windows_k14c_persona_release =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k14c_pid)
+            : 0u;
+    windows_k14c_audit_release =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k14c_pid)
+            : 0u;
+    windows_k14c_vma_release =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k14c_pid)
+            : 0u;
+    windows_k14c_clone_release =
+        (windows_k14c_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k14c_pid)
+            : 0u;
+    windows_k14c_cleanup =
+        ((windows_k14c_unmap_ntdll_text != 0u)
+            && (windows_k14c_unmap_ntdll_rdata != 0u)
+            && (windows_k14c_unmap_kernel32_text != 0u)
+            && (windows_k14c_unmap_kernel32_rdata != 0u)
+            && (windows_k14c_unmap_text != 0u)
+            && (windows_k14c_unmap_rdata != 0u)
+            && (windows_k14c_unmap_data != 0u)
+            && (windows_k14c_unmap_stack != 0u)
+            && (windows_k14c_persona_release != 0u)
+            && (windows_k14c_audit_release != 0u)
+            && (windows_k14c_vma_release == 0u)
+            && (windows_k14c_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k14c_positive =
+        ((windows_k14c_pid != PROCESS64_INVALID_PID)
+            && (windows_k14c_audit_attach != 0u)
+            && (windows_k14c_vma_init != 0u)
+            && (windows_k14c_bind == PERSONA64_ATTACH_OK)
+            && (windows_k14c_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k14c_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k14c_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k14c_header_parse == PE64_OK)
+            && (windows_k14c_header.import_directory_rva == 0x00002000u)
+            && (windows_k14c_parse == PE64_OK)
+            && (windows_k14c_summary.section_count == 3u)
+            && (windows_k14c_map == PE64_OK)
+            && (windows_k14c_map_result.mapped_count == 3u)
+            && (windows_k14c_get_iat_before == 0x00000000000020A0ull)
+            && (windows_k14c_write_iat_before == 0x00000000000020C0ull)
+            && (windows_k14c_resolve == PE64_OK)
+            && (windows_k14c_import_result.descriptor_count == 1u)
+            && (windows_k14c_import_result.resolved_count == 2u)
+            && (windows_k14c_get_iat_after == windows_k14c_kernel32_result.get_std_handle)
+            && (windows_k14c_write_iat_after == windows_k14c_kernel32_result.write_console_a)
+            && (windows_k14c_prepare == PE64_OK)
+            && (windows_k14c_entry_result.transfer_ready != 0u)
+            && (windows_k14c_entry_result.transfer_rip
+                == windows_k14c_ntdll_result.ldr_initialize_thunk)
+            && (windows_k14c_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k14c_runqueue_start != 0u)
+            && (windows_k14c_current_pid == windows_k14c_pid)
+            && (windows_k14c_return_match != 0u)
+            && (windows_k14c_dispatch_match != 0u)
+            && (windows_k14c_cleanup != 0u))
+            ? 1u
+            : 0u;
+    windows_k14_persona_release =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k14_pid)
+            : 0u;
+    windows_k14_audit_release =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k14_pid)
+            : 0u;
+    windows_k14_vma_release =
+        (windows_k14_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k14_pid)
+            : 0u;
+    windows_k14_cleanup =
+        ((windows_k14_unmap_ntdll_text != 0u)
+            && (windows_k14_unmap_ntdll_rdata != 0u)
+            && (windows_k14_unmap_kernel32_text != 0u)
+            && (windows_k14_unmap_kernel32_rdata != 0u)
+            && (windows_k14_unmap_import_text != 0u)
+            && (windows_k14_unmap_import_rdata != 0u)
+            && (windows_k14_unmap_import_data != 0u)
+            && (windows_k14_persona_release != 0u)
+            && (windows_k14_audit_release != 0u)
+            && (windows_k14_vma_release == 0u))
+            ? 1u
+            : 0u;
+    windows_k14_positive =
+        ((windows_k14_pid != PROCESS64_INVALID_PID)
+            && (windows_k14_audit_attach != 0u)
+            && (windows_k14_vma_init != 0u)
+            && (windows_k14_bind == PERSONA64_ATTACH_OK)
+            && (windows_k14_denied == WINDOWS_SHIM64_DENIED)
+            && (windows_k14_denied_error == WINDOWS_SHIM64_ERROR_DEPENDENCY)
+            && (windows_k14_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k14_load == WINDOWS_SHIM64_OK)
+            && (windows_k14_result.error == WINDOWS_SHIM64_ERROR_NONE)
+            && (windows_k14_result.image_base == WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE)
+            && (windows_k14_result.image_bytes == WINDOWS_SHIM64_KERNEL32_IMAGE_BYTES)
+            && (windows_k14_result.file_bytes == WINDOWS_SHIM64_KERNEL32_FILE_BYTES)
+            && (windows_k14_result.section_count == 2u)
+            && (windows_k14_result.mapped_count == 2u)
+            && (windows_k14_result.symbol_count == WINDOWS_SHIM64_KERNEL32_SYMBOL_COUNT)
+            && (windows_k14_result.write_console_a
+                == (WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RVA_WRITE_CONSOLE_A))
+            && (windows_k14_result.virtual_alloc
+                == (WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RVA_VIRTUAL_ALLOC))
+            && (windows_k14_result.image_checksum != 0u)
+            && (windows_k14_result.text_checksum != 0u)
+            && (windows_k14_result.rdata_checksum != 0u)
+            && (windows_k14_result.name_checksum != 0u)
+            && (windows_k14_result.text_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (windows_k14_result.rdata_protection == PAGING64_USER_PROT_READ)
+            && (windows_k14_result.ntdll_ready != 0u)
+            && (windows_k14_result.nt_call_bridge_mask == 0x000000FFu)
+            && (windows_k14_result.live_stub_count
+                == WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT)
+            && (windows_k14_result.unavailable_stub_count
+                == WINDOWS_SHIM64_KERNEL32_UNAVAILABLE_SYMBOL_COUNT)
+            && (windows_k14_result.context_stored != 0u)
+            && (windows_k14_text_pte != 0u)
+            && (windows_k14_rdata_pte != 0u)
+            && (windows_k14_context_match != 0u)
+            && (windows_k14_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k14_registry.registry.library_count == WINDOWS_SHIM64_COMBINED_LIBRARY_COUNT)
+            && (windows_k14_registry.libraries[0].symbol_count == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+            && (windows_k14_registry.libraries[1].symbol_count == WINDOWS_SHIM64_KERNEL32_SYMBOL_COUNT)
+            && (windows_k14_exit_export == windows_k14_result.exit_process)
+            && (windows_k14_write_console_export == windows_k14_result.write_console_a)
+            && (windows_k14_virtual_alloc_export == windows_k14_result.virtual_alloc)
+            && (windows_k14_missing_export == 0ull)
+            && (windows_k14_import_header_parse == PE64_OK)
+            && (windows_k14_import_parse == PE64_OK)
+            && (windows_k14_import_map == PE64_OK)
+            && (windows_k14_import_resolve == PE64_OK)
+            && (windows_k14_import_result.resolved_count == 1u)
+            && (windows_k14_import_result.first_function == windows_k14_result.write_console_a)
+            && (windows_k14_iat_before == 0x0000000000002070ull)
+            && (windows_k14_iat_after == windows_k14_result.write_console_a)
+            && (windows_k14_import_rdata_prot == PAGING64_USER_PROT_READ)
+            && (windows_k14_import_denied == PE64_DENIED)
+            && (windows_k14_import_denied_error == PE64_ERROR_IMPORT_LIBRARY)
+            && (windows_k14b_code_map == windows_k14b_code_addr)
+            && (windows_k14b_data_map == windows_k14b_data_addr)
+            && (windows_k14b_pid != PROCESS64_INVALID_PID)
+            && (windows_k14b_audit_attach != 0u)
+            && (windows_k14b_vma_init != 0u)
+            && (windows_k14b_bind == PERSONA64_ATTACH_OK)
+            && (windows_k14b_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k14b_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k14b_code_copy != 0u)
+            && (windows_k14b_data_init != 0u)
+            && (windows_k14b_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k14b_runqueue_start != 0u)
+            && (windows_k14b_current_pid == windows_k14b_pid)
+            && (windows_k14b_return_match != 0u)
+            && (windows_k14b_dispatch_match != 0u)
+            && (windows_k14b_cleanup != 0u)
+            && (windows_k14_load_count_snapshot == 1u)
+            && (windows_k14_denial_count_snapshot == 1u)
+            && (windows_k14_last_base_snapshot == WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE)
+            && (windows_k14_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_shim64_init();
+    windows_k15_pid = console_pid;
+    windows_k15_audit_attach =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k15_pid)
+            : 0u;
+    windows_k15_vma_init =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k15_pid)
+            : 0u;
+    windows_k15_bind =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k15_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k15_denied =
+        ((windows_k15_bind == PERSONA64_ATTACH_OK) && (windows_k15_vma_init != 0u))
+            ? windows_shim64_load_crt(
+                windows_k15_pid,
+                WINDOWS_SHIM64_CRT_DEFAULT_BASE,
+                &windows_k15_bad_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k15_denied_error = windows_k15_bad_result.error;
+    windows_k15_ntdll_load =
+        ((windows_k15_bind == PERSONA64_ATTACH_OK) && (windows_k15_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k15_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE,
+                &windows_k15_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k15_kernel32_load =
+        (windows_k15_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k15_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE,
+                &windows_k15_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    (void)windows_shim64_combined_registry(
+        windows_k15_pid,
+        &windows_k15_kernel_registry);
+    windows_k15_load =
+        (windows_k15_kernel32_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_crt(
+                windows_k15_pid,
+                WINDOWS_SHIM64_CRT_DEFAULT_BASE,
+                &windows_k15_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k15_registry_build =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_full_registry(windows_k15_pid, &windows_k15_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k15_crt_registry_build =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_registry(windows_k15_pid, &windows_k15_crt_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k15_printf_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "printf")
+            : 0ull;
+    windows_k15_malloc_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "malloc")
+            : 0ull;
+    windows_k15_memcpy_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "memcpy")
+            : 0ull;
+    windows_k15_fopen_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "fopen")
+            : 0ull;
+    windows_k15_exit_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "exit")
+            : 0ull;
+    windows_k15_missing_export =
+        (windows_k15_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_crt_export(windows_k15_pid, "missing_crt_export")
+            : 0ull;
+    windows_k15_text_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_CRT_TEXT_RVA);
+    windows_k15_rdata_pte =
+        paging64_user_page_present(
+            WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_CRT_RDATA_RVA);
+    windows_k15_context = persona64_context_for_process(windows_k15_pid);
+    windows_k15_context_match =
+        ((windows_k15_context != 0)
+            && (windows_k15_context->windows_crt_base
+                == WINDOWS_SHIM64_CRT_DEFAULT_BASE)
+            && (windows_k15_context->windows_crt_printf
+                == windows_k15_result.printf_fn)
+            && (windows_k15_context->windows_crt_symbol_count
+                == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_context->windows_crt_checksum
+                == windows_k15_result.image_checksum))
+            ? 1u
+            : 0u;
+
+    for (windows_k15_index = 0u;
+        windows_k15_index < (u32)sizeof(pe_j5_image_bytes);
+        ++windows_k15_index)
+    {
+        pe_j5_image_bytes[windows_k15_index] = 0u;
+    }
+    for (windows_k15_index = 0u;
+        windows_k15_index < (u32)sizeof(pe_j1_valid_bytes);
+        ++windows_k15_index)
+    {
+        pe_j5_image_bytes[windows_k15_index] = pe_j1_valid_bytes[windows_k15_index];
+    }
+    pe_j5_image_bytes[0x86u] = 0x02u;
+    pe_j5_image_bytes[0x110u] = 0x00u;
+    pe_j5_image_bytes[0x111u] = 0x20u;
+    pe_j5_image_bytes[0x114u] = 0xC0u;
+    for (windows_k15_index = 0u; windows_k15_index < 0x00000200u; ++windows_k15_index)
+    {
+        pe_j5_image_bytes[0x00000400u + windows_k15_index] =
+            (u8)(0x40u + (windows_k15_index & 0x0Fu));
+        pe_j5_image_bytes[0x00000800u + windows_k15_index] =
+            (u8)(0xB0u + (windows_k15_index & 0x0Fu));
+    }
+    pe_j5_image_bytes[0x00000600u] = 0x40u;
+    pe_j5_image_bytes[0x00000601u] = 0x20u;
+    pe_j5_image_bytes[0x0000060Cu] = 0x60u;
+    pe_j5_image_bytes[0x0000060Du] = 0x20u;
+    pe_j5_image_bytes[0x00000610u] = 0xA0u;
+    pe_j5_image_bytes[0x00000611u] = 0x20u;
+    pe_j5_image_bytes[0x00000614u] = 0x50u;
+    pe_j5_image_bytes[0x00000615u] = 0x20u;
+    pe_j5_image_bytes[0x00000620u] = 0x6Cu;
+    pe_j5_image_bytes[0x00000621u] = 0x20u;
+    pe_j5_image_bytes[0x00000624u] = 0xB0u;
+    pe_j5_image_bytes[0x00000625u] = 0x20u;
+    pe_j5_image_bytes[0x00000640u] = 0x80u;
+    pe_j5_image_bytes[0x00000641u] = 0x20u;
+    pe_j5_image_bytes[0x00000650u] = 0x90u;
+    pe_j5_image_bytes[0x00000651u] = 0x20u;
+    pe_j5_image_bytes[0x00000660u] = (u8)'m';
+    pe_j5_image_bytes[0x00000661u] = (u8)'s';
+    pe_j5_image_bytes[0x00000662u] = (u8)'v';
+    pe_j5_image_bytes[0x00000663u] = (u8)'c';
+    pe_j5_image_bytes[0x00000664u] = (u8)'r';
+    pe_j5_image_bytes[0x00000665u] = (u8)'t';
+    pe_j5_image_bytes[0x00000666u] = (u8)'.';
+    pe_j5_image_bytes[0x00000667u] = (u8)'d';
+    pe_j5_image_bytes[0x00000668u] = (u8)'l';
+    pe_j5_image_bytes[0x00000669u] = (u8)'l';
+    pe_j5_image_bytes[0x0000066Cu] = (u8)'u';
+    pe_j5_image_bytes[0x0000066Du] = (u8)'c';
+    pe_j5_image_bytes[0x0000066Eu] = (u8)'r';
+    pe_j5_image_bytes[0x0000066Fu] = (u8)'t';
+    pe_j5_image_bytes[0x00000670u] = (u8)'b';
+    pe_j5_image_bytes[0x00000671u] = (u8)'a';
+    pe_j5_image_bytes[0x00000672u] = (u8)'s';
+    pe_j5_image_bytes[0x00000673u] = (u8)'e';
+    pe_j5_image_bytes[0x00000674u] = (u8)'.';
+    pe_j5_image_bytes[0x00000675u] = (u8)'d';
+    pe_j5_image_bytes[0x00000676u] = (u8)'l';
+    pe_j5_image_bytes[0x00000677u] = (u8)'l';
+    pe_j5_image_bytes[0x00000682u] = (u8)'p';
+    pe_j5_image_bytes[0x00000683u] = (u8)'r';
+    pe_j5_image_bytes[0x00000684u] = (u8)'i';
+    pe_j5_image_bytes[0x00000685u] = (u8)'n';
+    pe_j5_image_bytes[0x00000686u] = (u8)'t';
+    pe_j5_image_bytes[0x00000687u] = (u8)'f';
+    pe_j5_image_bytes[0x00000692u] = (u8)'e';
+    pe_j5_image_bytes[0x00000693u] = (u8)'x';
+    pe_j5_image_bytes[0x00000694u] = (u8)'i';
+    pe_j5_image_bytes[0x00000695u] = (u8)'t';
+    pe_j5_image_bytes[0x000006A0u] = 0x80u;
+    pe_j5_image_bytes[0x000006A1u] = 0x20u;
+    pe_j5_image_bytes[0x000006B0u] = 0x90u;
+    pe_j5_image_bytes[0x000006B1u] = 0x20u;
+    windows_k15_import_base = 0x0000000045200000ull;
+    windows_k15_import_header_parse =
+        pe64_parse_header(
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            &windows_k15_import_header);
+    windows_k15_import_parse =
+        pe64_parse_sections(
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            &windows_k15_import_header,
+            windows_k15_import_sections,
+            PE64_MAX_SECTIONS,
+            &windows_k15_import_summary);
+    windows_k15_import_map =
+        pe64_map_sections(
+            windows_k15_pid,
+            &windows_k15_import_header,
+            windows_k15_import_sections,
+            windows_k15_import_summary.section_count,
+            pe_j5_image_bytes,
+            (u32)sizeof(pe_j5_image_bytes),
+            windows_k15_import_base,
+            &windows_k15_import_map_result);
+    windows_k15_printf_iat_va = windows_k15_import_base + 0x000020A0ull;
+    windows_k15_exit_iat_va = windows_k15_import_base + 0x000020B0ull;
+    windows_k15_printf_iat_before =
+        (paging64_user_page_present(windows_k15_printf_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k15_printf_iat_va)
+            : 0ull;
+    windows_k15_exit_iat_before =
+        (paging64_user_page_present(windows_k15_exit_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k15_exit_iat_va)
+            : 0ull;
+    windows_k15_import_resolve =
+        ((windows_k15_import_map == PE64_OK)
+            && (windows_k15_registry_build == WINDOWS_SHIM64_OK))
+            ? pe64_resolve_imports(
+                windows_k15_pid,
+                &windows_k15_import_header,
+                windows_k15_import_sections,
+                windows_k15_import_summary.section_count,
+                windows_k15_import_base,
+                &windows_k15_registry.registry,
+                &windows_k15_import_result)
+            : PE64_DENIED;
+    windows_k15_printf_iat_after =
+        (paging64_user_page_present(windows_k15_printf_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k15_printf_iat_va)
+            : 0ull;
+    windows_k15_exit_iat_after =
+        (paging64_user_page_present(windows_k15_exit_iat_va) != 0u)
+            ? *((volatile u64 *)(u64)windows_k15_exit_iat_va)
+            : 0ull;
+    windows_k15_import_rdata_prot =
+        paging64_user_page_protection(windows_k15_import_base + 0x00002000ull);
+    windows_k15_import_denied =
+        (windows_k15_import_map == PE64_OK)
+            ? pe64_resolve_imports(
+                windows_k15_pid,
+                &windows_k15_import_header,
+                windows_k15_import_sections,
+                windows_k15_import_summary.section_count,
+                windows_k15_import_base,
+                &windows_k15_kernel_registry.registry,
+                &windows_k15_bad_import_result)
+            : PE64_DENIED;
+    windows_k15_import_denied_error = windows_k15_bad_import_result.error;
+
+    windows_k15_unmap_ntdll_text =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_kernel32_text =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_crt_text =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_CRT_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_crt_rdata =
+        (vma64_find(
+            windows_k15_pid,
+            WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                + (u64)WINDOWS_SHIM64_CRT_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k15_pid,
+                WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_import_text =
+        (vma64_find(windows_k15_pid, windows_k15_import_base + 0x00001000ull) != 0)
+            ? vma64_unmap(windows_k15_pid, windows_k15_import_base + 0x00001000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_import_rdata =
+        (vma64_find(windows_k15_pid, windows_k15_import_base + 0x00002000ull) != 0)
+            ? vma64_unmap(windows_k15_pid, windows_k15_import_base + 0x00002000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_unmap_import_data =
+        (vma64_find(windows_k15_pid, windows_k15_import_base + 0x00003000ull) != 0)
+            ? vma64_unmap(windows_k15_pid, windows_k15_import_base + 0x00003000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k15_persona_release =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k15_pid)
+            : 0u;
+    windows_k15_audit_release =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k15_pid)
+            : 0u;
+    windows_k15_vma_release =
+        (windows_k15_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k15_pid)
+            : 0u;
+    windows_k15_cleanup =
+        ((windows_k15_unmap_ntdll_text != 0u)
+            && (windows_k15_unmap_ntdll_rdata != 0u)
+            && (windows_k15_unmap_kernel32_text != 0u)
+            && (windows_k15_unmap_kernel32_rdata != 0u)
+            && (windows_k15_unmap_crt_text != 0u)
+            && (windows_k15_unmap_crt_rdata != 0u)
+            && (windows_k15_unmap_import_text != 0u)
+            && (windows_k15_unmap_import_rdata != 0u)
+            && (windows_k15_unmap_import_data != 0u)
+            && (windows_k15_persona_release != 0u)
+            && (windows_k15_audit_release != 0u)
+            && (windows_k15_vma_release == 0u))
+            ? 1u
+            : 0u;
+    windows_k15_positive =
+        ((windows_k15_pid != PROCESS64_INVALID_PID)
+            && (windows_k15_audit_attach != 0u)
+            && (windows_k15_vma_init != 0u)
+            && (windows_k15_bind == PERSONA64_ATTACH_OK)
+            && (windows_k15_denied == WINDOWS_SHIM64_DENIED)
+            && (windows_k15_denied_error == WINDOWS_SHIM64_ERROR_DEPENDENCY)
+            && (windows_k15_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k15_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k15_load == WINDOWS_SHIM64_OK)
+            && (windows_k15_result.error == WINDOWS_SHIM64_ERROR_NONE)
+            && (windows_k15_result.image_base == WINDOWS_SHIM64_CRT_DEFAULT_BASE)
+            && (windows_k15_result.image_bytes == WINDOWS_SHIM64_CRT_IMAGE_BYTES)
+            && (windows_k15_result.file_bytes == WINDOWS_SHIM64_CRT_FILE_BYTES)
+            && (windows_k15_result.section_count == 2u)
+            && (windows_k15_result.mapped_count == 2u)
+            && (windows_k15_result.symbol_count == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_result.printf_fn
+                == (WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RVA_PRINTF))
+            && (windows_k15_result.malloc_fn
+                == (WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RVA_MALLOC))
+            && (windows_k15_result.memcpy_fn
+                == (WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RVA_MEMCPY))
+            && (windows_k15_result.fopen_fn
+                == (WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RVA_FOPEN))
+            && (windows_k15_result.exit_fn
+                == (WINDOWS_SHIM64_CRT_DEFAULT_BASE
+                    + (u64)WINDOWS_SHIM64_CRT_RVA_EXIT))
+            && (windows_k15_result.image_checksum != 0u)
+            && (windows_k15_result.text_checksum != 0u)
+            && (windows_k15_result.rdata_checksum != 0u)
+            && (windows_k15_result.name_checksum != 0u)
+            && (windows_k15_result.text_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (windows_k15_result.rdata_protection == PAGING64_USER_PROT_READ)
+            && (windows_k15_result.kernel32_ready != 0u)
+            && (windows_k15_result.kernel32_export_mask == 0x000000FFu)
+            && (windows_k15_result.live_stub_count == 0u)
+            && (windows_k15_result.unavailable_stub_count
+                == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_result.context_stored != 0u)
+            && (windows_k15_text_pte != 0u)
+            && (windows_k15_rdata_pte != 0u)
+            && (windows_k15_context_match != 0u)
+            && (windows_k15_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k15_registry.registry.library_count == WINDOWS_SHIM64_FULL_LIBRARY_COUNT)
+            && (windows_k15_registry.libraries[0].symbol_count == WINDOWS_SHIM64_NTDLL_SYMBOL_COUNT)
+            && (windows_k15_registry.libraries[1].symbol_count == WINDOWS_SHIM64_KERNEL32_SYMBOL_COUNT)
+            && (windows_k15_registry.libraries[2].symbol_count == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_registry.libraries[3].symbol_count == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_crt_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k15_crt_registry.registry.library_count == WINDOWS_SHIM64_CRT_LIBRARY_COUNT)
+            && (windows_k15_crt_registry.libraries[0].symbol_count == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_crt_registry.libraries[1].symbol_count == WINDOWS_SHIM64_CRT_SYMBOL_COUNT)
+            && (windows_k15_printf_export == windows_k15_result.printf_fn)
+            && (windows_k15_malloc_export == windows_k15_result.malloc_fn)
+            && (windows_k15_memcpy_export == windows_k15_result.memcpy_fn)
+            && (windows_k15_fopen_export == windows_k15_result.fopen_fn)
+            && (windows_k15_exit_export == windows_k15_result.exit_fn)
+            && (windows_k15_missing_export == 0ull)
+            && (windows_k15_import_header_parse == PE64_OK)
+            && (windows_k15_import_parse == PE64_OK)
+            && (windows_k15_import_map == PE64_OK)
+            && (windows_k15_import_resolve == PE64_OK)
+            && (windows_k15_import_result.descriptor_count == 2u)
+            && (windows_k15_import_result.resolved_count == 2u)
+            && (windows_k15_import_result.first_function == windows_k15_result.printf_fn)
+            && (windows_k15_import_result.last_function == windows_k15_result.exit_fn)
+            && (windows_k15_printf_iat_before == 0x0000000000002080ull)
+            && (windows_k15_printf_iat_after == windows_k15_result.printf_fn)
+            && (windows_k15_exit_iat_before == 0x0000000000002090ull)
+            && (windows_k15_exit_iat_after == windows_k15_result.exit_fn)
+            && (windows_k15_import_rdata_prot == PAGING64_USER_PROT_READ)
+            && (windows_k15_import_denied == PE64_DENIED)
+            && (windows_k15_import_denied_error == PE64_ERROR_IMPORT_LIBRARY)
+            && (windows_shim64_crt_load_count() == 1u)
+            && (windows_shim64_crt_denial_count() == 1u)
+            && (windows_shim64_crt_last_base() == WINDOWS_SHIM64_CRT_DEFAULT_BASE)
+            && (windows_k15_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_vfs64_init();
+    windows_l1_pid = console_pid;
+    windows_l1_bind =
+        (windows_l1_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_l1_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_l1_c_result =
+        (windows_l1_bind == PERSONA64_ATTACH_OK)
+            ? windows_vfs64_route_path(
+                windows_l1_pid,
+                windows_l1_c_path,
+                (u32)sizeof(windows_l1_c_path) - 1u,
+                &windows_l1_c_route)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l1_unc_result =
+        (windows_l1_bind == PERSONA64_ATTACH_OK)
+            ? windows_vfs64_route_path(
+                windows_l1_pid,
+                windows_l1_unc_path,
+                (u32)sizeof(windows_l1_unc_path) - 1u,
+                &windows_l1_unc_route)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l1_con_result =
+        (windows_l1_bind == PERSONA64_ATTACH_OK)
+            ? windows_vfs64_route_path(
+                windows_l1_pid,
+                windows_l1_con_path,
+                (u32)sizeof(windows_l1_con_path) - 1u,
+                &windows_l1_con_route)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l1_null_result =
+        (windows_l1_bind == PERSONA64_ATTACH_OK)
+            ? windows_vfs64_route_path(
+                windows_l1_pid,
+                windows_l1_null_path,
+                (u32)sizeof(windows_l1_null_path) - 1u,
+                &windows_l1_null_route)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l1_bad_result =
+        (windows_l1_bind == PERSONA64_ATTACH_OK)
+            ? windows_vfs64_route_path(
+                windows_l1_pid,
+                windows_l1_bad_path,
+                (u32)sizeof(windows_l1_bad_path) - 1u,
+                &windows_l1_bad_route)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l1_wrong_persona_result =
+        windows_vfs64_route_path(
+            init_pid,
+            windows_l1_c_path,
+            (u32)sizeof(windows_l1_c_path) - 1u,
+            &windows_l1_wrong_route);
+    windows_l1_route_count = windows_vfs64_route_count();
+    windows_l1_route_denials = windows_vfs64_route_denial_count();
+    windows_l1_last_route_type = windows_vfs64_last_route_type();
+    windows_l1_last_target_hash = windows_vfs64_last_target_hash();
+    windows_l1_last_target_bytes = windows_vfs64_last_target_bytes();
+    windows_l1_last_device_id = windows_vfs64_last_device_id();
+    windows_l1_last_unavailable = windows_vfs64_last_route_unavailable();
+    windows_l1_persona_release =
+        (windows_l1_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_l1_pid)
+            : 0u;
+    windows_l1_clone_release = 0u;
+    windows_l1_cleanup =
+        ((windows_l1_persona_release != 0u)
+            && (windows_l1_clone_release == 0u))
+            ? 1u
+            : 0u;
+    windows_l1_positive =
+        ((windows_l1_pid != PROCESS64_INVALID_PID)
+            && (windows_l1_bind == PERSONA64_ATTACH_OK)
+            && (windows_l1_c_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l1_c_route.route_type == WINDOWS_VFS64_ROUTE_DOS_C)
+            && (windows_l1_c_route.backend_endpoint
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_RAMFS))
+            && (windows_l1_c_route.target_hash != 0u)
+            && (windows_l1_c_route.target_bytes != 0u)
+            && (windows_l1_unc_result == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
+            && (windows_l1_unc_route.route_type == WINDOWS_VFS64_ROUTE_UNC)
+            && (windows_l1_unc_route.unavailable != 0u)
+            && (windows_l1_unc_route.backend_endpoint
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_NETWORK))
+            && (windows_l1_con_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l1_con_route.route_type == WINDOWS_VFS64_ROUTE_CONDRV)
+            && (windows_l1_con_route.device_id == WINDOWS_VFS64_DEVICE_CONSOLE)
+            && (windows_l1_con_route.backend_endpoint
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_CONSOLE))
+            && (windows_l1_null_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l1_null_route.route_type == WINDOWS_VFS64_ROUTE_NULL)
+            && (windows_l1_null_route.device_id == WINDOWS_VFS64_DEVICE_NULL)
+            && (windows_l1_null_route.target_hash != 0u)
+            && (windows_l1_bad_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l1_bad_route.route_type == WINDOWS_VFS64_ROUTE_UNKNOWN)
+            && (windows_l1_wrong_persona_result == WINDOWS_ABI64_STATUS_INVALID_PARAMETER)
+            && (windows_l1_wrong_route.route_type == WINDOWS_VFS64_ROUTE_UNKNOWN)
+            && (windows_l1_route_count == 4u)
+            && (windows_l1_route_denials == 3u)
+            && (windows_l1_last_route_type == WINDOWS_VFS64_ROUTE_UNKNOWN)
+            && (windows_l1_last_target_hash == 0u)
+            && (windows_l1_last_target_bytes == 0u)
+            && (windows_l1_last_device_id == WINDOWS_VFS64_DEVICE_NONE)
+            && (windows_l1_last_unavailable == 0u)
+            && (windows_l1_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_vfs64_init();
+    windows_l2_pid = process64_spawn_clone(init_pid);
+    windows_l2_bind =
+        (windows_l2_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_l2_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_l2_handle_init =
+        (windows_l2_pid != PROCESS64_INVALID_PID)
+            ? windows_handle64_init_process(windows_l2_pid)
+            : 0u;
+    windows_l2_owner =
+        (windows_l2_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(windows_l2_pid)
+            : 0u;
+    windows_l2_ramfs_endpoint =
+        services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_RAMFS);
+    windows_l2_ok_mask = 0u;
+    windows_l2_id_word = 0u;
+    windows_l2_type_mask = 0u;
+    windows_l2_cap_mask = 0u;
+    windows_l2_close_mask = 0u;
+    for (windows_l2_index = 0u; windows_l2_index < 5u; ++windows_l2_index)
+    {
+        windows_l2_path = windows_l2_ntdll_path;
+        windows_l2_path_bytes = (u32)sizeof(windows_l2_ntdll_path) - 1u;
+        if (windows_l2_index == 1u)
+        {
+            windows_l2_path = windows_l2_kernel32_path;
+            windows_l2_path_bytes = (u32)sizeof(windows_l2_kernel32_path) - 1u;
+        }
+        else if (windows_l2_index == 2u)
+        {
+            windows_l2_path = windows_l2_msvcrt_path;
+            windows_l2_path_bytes = (u32)sizeof(windows_l2_msvcrt_path) - 1u;
+        }
+        else if (windows_l2_index == 3u)
+        {
+            windows_l2_path = windows_l2_ucrtbase_path;
+            windows_l2_path_bytes = (u32)sizeof(windows_l2_ucrtbase_path) - 1u;
+        }
+        else if (windows_l2_index == 4u)
+        {
+            windows_l2_path = windows_l2_missing_path;
+            windows_l2_path_bytes = (u32)sizeof(windows_l2_missing_path) - 1u;
+        }
+        windows_l2_result[windows_l2_index] =
+            ((windows_l2_bind == PERSONA64_ATTACH_OK)
+                && (windows_l2_handle_init != 0u))
+                ? windows_vfs64_open_path(
+                    windows_l2_pid,
+                    windows_l2_path,
+                    windows_l2_path_bytes,
+                    0x001200A9u,
+                    WINDOWS_ABI64_FILE_OPEN,
+                    0u,
+                    &windows_l2_open[windows_l2_index])
+                : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    }
+    for (windows_l2_index = 0u; windows_l2_index < 4u; ++windows_l2_index)
+    {
+        if (windows_l2_result[windows_l2_index] == WINDOWS_ABI64_STATUS_SUCCESS)
+        {
+            windows_l2_ok_mask |= (1u << windows_l2_index);
+        }
+        windows_l2_id_word |=
+            (windows_l2_open[windows_l2_index].shim_id
+                << (windows_l2_index * 8u));
+        if (windows_handle64_entry_type(
+                windows_l2_pid,
+                windows_l2_open[windows_l2_index].handle)
+            == WINDOWS_HANDLE64_TYPE_FILE)
+        {
+            windows_l2_type_mask |= (1u << windows_l2_index);
+        }
+        if ((windows_l2_open[windows_l2_index].capability_handle
+                != CAPABILITY64_INVALID_HANDLE)
+            && (capability64_owner(
+                    windows_l2_open[windows_l2_index].capability_handle,
+                    windows_l2_owner) == windows_l2_owner)
+            && (capability64_route(
+                    windows_l2_open[windows_l2_index].capability_handle,
+                    CAPABILITY64_RIGHT_SEND,
+                    windows_l2_owner) == windows_l2_ramfs_endpoint))
+        {
+            windows_l2_cap_mask |= (1u << windows_l2_index);
+        }
+    }
+    windows_l2_live_before_close = windows_handle64_live_count(windows_l2_pid);
+    windows_l2_open_count = windows_vfs64_open_count();
+    windows_l2_open_denials = windows_vfs64_denial_count();
+    windows_l2_route_count = windows_vfs64_route_count();
+    windows_l2_route_denials = windows_vfs64_route_denial_count();
+    windows_l2_last_shim_id = windows_vfs64_last_shim_id();
+    windows_l2_last_result = windows_vfs64_last_result();
+    for (windows_l2_index = 0u; windows_l2_index < 4u; ++windows_l2_index)
+    {
+        if (windows_handle64_close(
+                windows_l2_pid,
+                windows_l2_open[windows_l2_index].handle) != 0u)
+        {
+            windows_l2_close_mask |= (1u << windows_l2_index);
+        }
+    }
+    windows_l2_live_after_close = windows_handle64_live_count(windows_l2_pid);
+    windows_l2_release_count = windows_handle64_release_process(windows_l2_pid);
+    windows_l2_table_clear =
+        (windows_handle64_table_for_process(windows_l2_pid) == 0) ? 1u : 0u;
+    windows_l2_persona_release =
+        (windows_l2_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_l2_pid)
+            : 0u;
+    windows_l2_clone_release =
+        (windows_l2_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_l2_pid)
+            : 0u;
+    windows_l2_cleanup =
+        ((windows_l2_close_mask == 0x0Fu)
+            && (windows_l2_live_after_close == 0u)
+            && (windows_l2_release_count == 0u)
+            && (windows_l2_table_clear != 0u)
+            && (windows_l2_persona_release != 0u)
+            && (windows_l2_clone_release != 0u)
+            && (process64_persona_ctx(windows_l2_pid) == 0))
+            ? 1u
+            : 0u;
+    windows_l2_positive =
+        ((windows_l2_pid != PROCESS64_INVALID_PID)
+            && (windows_l2_bind == PERSONA64_ATTACH_OK)
+            && (windows_l2_handle_init != 0u)
+            && (windows_l2_ok_mask == 0x0Fu)
+            && (windows_l2_result[4] == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l2_id_word == 0x04030201u)
+            && (windows_l2_type_mask == 0x0Fu)
+            && (windows_l2_cap_mask == 0x0Fu)
+            && (windows_l2_live_before_close == 4u)
+            && (windows_l2_open_count == 4u)
+            && (windows_l2_open_denials == 1u)
+            && (windows_l2_route_count == 5u)
+            && (windows_l2_route_denials == 0u)
+            && (windows_l2_last_shim_id == 0u)
+            && (windows_l2_last_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l2_close_mask == 0x0Fu)
+            && (windows_l2_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_vfs64_init();
+    windows_l3_pid = process64_spawn_clone(init_pid);
+    windows_l3_bind =
+        (windows_l3_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_l3_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_l3_handle_init =
+        (windows_l3_pid != PROCESS64_INVALID_PID)
+            ? windows_handle64_init_process(windows_l3_pid)
+            : 0u;
+    windows_l3_owner =
+        (windows_l3_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(windows_l3_pid)
+            : 0u;
+    windows_l3_result =
+        ((windows_l3_bind == PERSONA64_ATTACH_OK)
+            && (windows_l3_handle_init != 0u))
+            ? windows_vfs64_open_path(
+                windows_l3_pid,
+                windows_l3_profile_path,
+                (u32)sizeof(windows_l3_profile_path) - 1u,
+                0x001200A9u,
+                WINDOWS_ABI64_FILE_OVERWRITE_IF,
+                0u,
+                &windows_l3_open)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l3_node = windows_l3_open.node_id;
+    windows_l3_last_node = windows_vfs64_profile_last_node();
+    windows_l3_dir_mask = windows_vfs64_profile_last_dir_mask();
+    windows_l3_node_exists =
+        ((windows_l3_node != 0u) && (ramfs_node_exists(windows_l3_node) != 0))
+            ? 1u
+            : 0u;
+    windows_l3_type_ok =
+        (windows_handle64_entry_type(windows_l3_pid, windows_l3_open.handle)
+            == WINDOWS_HANDLE64_TYPE_FILE)
+            ? 1u
+            : 0u;
+    windows_l3_cap_ok =
+        ((windows_l3_open.capability_handle != CAPABILITY64_INVALID_HANDLE)
+            && (fs64_node_owner(
+                    windows_l3_open.capability_handle,
+                    windows_l3_owner) == windows_l3_owner)
+            && ((fs64_node_rights(
+                    windows_l3_open.capability_handle,
+                    windows_l3_owner) & FS64_RIGHT_WRITE) != 0u))
+            ? 1u
+            : 0u;
+    windows_l3_deny_result =
+        ((windows_l3_bind == PERSONA64_ATTACH_OK)
+            && (windows_l3_handle_init != 0u))
+            ? windows_vfs64_open_path(
+                windows_l3_pid,
+                windows_l3_other_user_path,
+                (u32)sizeof(windows_l3_other_user_path) - 1u,
+                0x001200A9u,
+                WINDOWS_ABI64_FILE_OVERWRITE_IF,
+                0u,
+                &windows_l3_deny_open)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l3_profile_count = windows_vfs64_profile_create_count();
+    windows_l3_profile_denials = windows_vfs64_profile_denial_count();
+    windows_l3_open_count = windows_vfs64_open_count();
+    windows_l3_open_denials = windows_vfs64_denial_count();
+    windows_l3_route_count = windows_vfs64_route_count();
+    windows_l3_route_denials = windows_vfs64_route_denial_count();
+    windows_l3_last_result = windows_vfs64_last_result();
+    windows_l3_last_route_type = windows_vfs64_last_route_type();
+    windows_l3_live_before_close = windows_handle64_live_count(windows_l3_pid);
+    windows_l3_close =
+        (windows_l3_open.handle != WINDOWS_HANDLE64_INVALID)
+            ? windows_handle64_close(windows_l3_pid, windows_l3_open.handle)
+            : 0u;
+    windows_l3_live_after_close = windows_handle64_live_count(windows_l3_pid);
+    windows_l3_release_count = windows_handle64_release_process(windows_l3_pid);
+    windows_l3_table_clear =
+        (windows_handle64_table_for_process(windows_l3_pid) == 0) ? 1u : 0u;
+    windows_l3_persona_release =
+        (windows_l3_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_l3_pid)
+            : 0u;
+    windows_l3_clone_release =
+        (windows_l3_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_l3_pid)
+            : 0u;
+    windows_l3_cleanup =
+        ((windows_l3_close != 0u)
+            && (windows_l3_live_after_close == 0u)
+            && (windows_l3_release_count == 0u)
+            && (windows_l3_table_clear != 0u)
+            && (windows_l3_persona_release != 0u)
+            && (windows_l3_clone_release != 0u)
+            && (process64_persona_ctx(windows_l3_pid) == 0))
+            ? 1u
+            : 0u;
+    windows_l3_positive =
+        ((windows_l3_pid != PROCESS64_INVALID_PID)
+            && (windows_l3_bind == PERSONA64_ATTACH_OK)
+            && (windows_l3_handle_init != 0u)
+            && (windows_l3_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l3_deny_result == WINDOWS_ABI64_STATUS_ACCESS_DENIED)
+            && (windows_l3_type_ok != 0u)
+            && (windows_l3_cap_ok != 0u)
+            && (windows_l3_node_exists != 0u)
+            && (windows_l3_node == windows_l3_last_node)
+            && (windows_l3_dir_mask == WINDOWS_VFS64_PROFILE_DIR_MASK_COMPLETE)
+            && (windows_l3_profile_count == 1u)
+            && (windows_l3_profile_denials == 1u)
+            && (windows_l3_open_count == 1u)
+            && (windows_l3_open_denials == 1u)
+            && (windows_l3_route_count == 2u)
+            && (windows_l3_route_denials == 1u)
+            && (windows_l3_last_result == WINDOWS_ABI64_STATUS_ACCESS_DENIED)
+            && (windows_l3_last_route_type == WINDOWS_VFS64_ROUTE_USERS)
+            && (windows_l3_live_before_close == 1u)
+            && (windows_l3_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_vfs64_init();
+    windows_l4_pid = process64_spawn_clone(init_pid);
+    windows_l4_bind =
+        (windows_l4_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_l4_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_l4_handle_init =
+        (windows_l4_pid != PROCESS64_INVALID_PID)
+            ? windows_handle64_init_process(windows_l4_pid)
+            : 0u;
+    windows_l4_owner =
+        (windows_l4_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(windows_l4_pid)
+            : 0u;
+    windows_l4_result =
+        ((windows_l4_bind == PERSONA64_ATTACH_OK)
+            && (windows_l4_handle_init != 0u))
+            ? windows_vfs64_open_path(
+                windows_l4_pid,
+                windows_l4_temp_path,
+                (u32)sizeof(windows_l4_temp_path) - 1u,
+                0x001200A9u,
+                WINDOWS_ABI64_FILE_OVERWRITE_IF,
+                0u,
+                &windows_l4_open)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l4_node = windows_l4_open.node_id;
+    windows_l4_last_node = windows_vfs64_temp_last_node();
+    windows_l4_dir_mask = windows_vfs64_temp_last_dir_mask();
+    windows_l4_node_exists =
+        ((windows_l4_node != 0u) && (ramfs_node_exists(windows_l4_node) != 0))
+            ? 1u
+            : 0u;
+    windows_l4_type_ok =
+        (windows_handle64_entry_type(windows_l4_pid, windows_l4_open.handle)
+            == WINDOWS_HANDLE64_TYPE_FILE)
+            ? 1u
+            : 0u;
+    windows_l4_cap_ok =
+        ((windows_l4_open.capability_handle != CAPABILITY64_INVALID_HANDLE)
+            && (fs64_node_owner(
+                    windows_l4_open.capability_handle,
+                    windows_l4_owner) == windows_l4_owner)
+            && ((fs64_node_rights(
+                    windows_l4_open.capability_handle,
+                    windows_l4_owner) & FS64_RIGHT_WRITE) != 0u))
+            ? 1u
+            : 0u;
+    windows_l4_write_result =
+        (windows_l4_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_vfs64_write_file(
+                windows_l4_pid,
+                windows_l4_open.handle,
+                windows_l4_payload,
+                (u32)sizeof(windows_l4_payload) - 1u,
+                0u,
+                &windows_l4_bytes_written)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l4_read_result =
+        (windows_l4_write_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_vfs64_read_file(
+                windows_l4_pid,
+                windows_l4_open.handle,
+                windows_l4_read_buffer,
+                (u32)sizeof(windows_l4_payload) - 1u,
+                0u,
+                &windows_l4_bytes_read)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l4_checksum = 0u;
+    for (windows_l2_index = 0u; windows_l2_index < windows_l4_bytes_read; ++windows_l2_index)
+    {
+        windows_l4_checksum =
+            (windows_l4_checksum << 5)
+            ^ (windows_l4_checksum >> 2)
+            ^ (u32)windows_l4_read_buffer[windows_l2_index];
+    }
+    windows_l4_match =
+        ((windows_l4_bytes_read == ((u32)sizeof(windows_l4_payload) - 1u))
+            && (windows_l4_read_buffer[0] == (u8)'t')
+            && (windows_l4_read_buffer[1] == (u8)'e')
+            && (windows_l4_read_buffer[5] == (u8)'o')
+            && (windows_l4_read_buffer[6] == (u8)'k'))
+            ? 1u
+            : 0u;
+    windows_l4_live_before_close = windows_handle64_live_count(windows_l4_pid);
+    windows_l4_close =
+        (windows_l4_open.handle != WINDOWS_HANDLE64_INVALID)
+            ? windows_handle64_close(windows_l4_pid, windows_l4_open.handle)
+            : 0u;
+    windows_l4_live_after_close = windows_handle64_live_count(windows_l4_pid);
+    windows_l4_delete_result =
+        (windows_l4_close != 0u)
+            ? windows_vfs64_delete_path(
+                windows_l4_pid,
+                windows_l4_temp_path,
+                (u32)sizeof(windows_l4_temp_path) - 1u)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l4_post_result =
+        (windows_l4_delete_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_vfs64_open_path(
+                windows_l4_pid,
+                windows_l4_temp_path,
+                (u32)sizeof(windows_l4_temp_path) - 1u,
+                0x001200A9u,
+                WINDOWS_ABI64_FILE_OPEN,
+                0u,
+                &windows_l4_post_open)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l4_create_count = windows_vfs64_temp_create_count();
+    windows_l4_write_count = windows_vfs64_temp_write_count();
+    windows_l4_read_count = windows_vfs64_temp_read_count();
+    windows_l4_delete_count = windows_vfs64_temp_delete_count();
+    windows_l4_temp_denials = windows_vfs64_temp_denial_count();
+    windows_l4_open_count = windows_vfs64_open_count();
+    windows_l4_open_denials = windows_vfs64_denial_count();
+    windows_l4_route_count = windows_vfs64_route_count();
+    windows_l4_route_denials = windows_vfs64_route_denial_count();
+    windows_l4_last_result = windows_vfs64_last_result();
+    windows_l4_last_route_type = windows_vfs64_last_route_type();
+    windows_l4_release_count = windows_handle64_release_process(windows_l4_pid);
+    windows_l4_table_clear =
+        (windows_handle64_table_for_process(windows_l4_pid) == 0) ? 1u : 0u;
+    windows_l4_persona_release =
+        (windows_l4_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_l4_pid)
+            : 0u;
+    windows_l4_clone_release =
+        (windows_l4_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_l4_pid)
+            : 0u;
+    windows_l4_cleanup =
+        ((windows_l4_close != 0u)
+            && (windows_l4_live_after_close == 0u)
+            && (windows_l4_release_count == 0u)
+            && (windows_l4_table_clear != 0u)
+            && (windows_l4_persona_release != 0u)
+            && (windows_l4_clone_release != 0u)
+            && (process64_persona_ctx(windows_l4_pid) == 0))
+            ? 1u
+            : 0u;
+    windows_l4_positive =
+        ((windows_l4_pid != PROCESS64_INVALID_PID)
+            && (windows_l4_bind == PERSONA64_ATTACH_OK)
+            && (windows_l4_handle_init != 0u)
+            && (windows_l4_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l4_write_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l4_read_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l4_delete_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l4_post_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l4_type_ok != 0u)
+            && (windows_l4_cap_ok != 0u)
+            && (windows_l4_node_exists != 0u)
+            && (windows_l4_node == windows_l4_last_node)
+            && (windows_l4_dir_mask == WINDOWS_VFS64_TEMP_DIR_MASK_COMPLETE)
+            && (windows_l4_bytes_written == ((u32)sizeof(windows_l4_payload) - 1u))
+            && (windows_l4_bytes_read == ((u32)sizeof(windows_l4_payload) - 1u))
+            && (windows_l4_checksum != 0u)
+            && (windows_l4_match != 0u)
+            && (windows_l4_create_count == 1u)
+            && (windows_l4_write_count == 1u)
+            && (windows_l4_read_count == 1u)
+            && (windows_l4_delete_count == 1u)
+            && (windows_l4_temp_denials == 1u)
+            && (windows_l4_open_count == 1u)
+            && (windows_l4_open_denials == 1u)
+            && (windows_l4_route_count == 3u)
+            && (windows_l4_route_denials == 0u)
+            && (windows_l4_last_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l4_last_route_type == WINDOWS_VFS64_ROUTE_TEMP)
+            && (windows_l4_live_before_close == 1u)
+            && (windows_l4_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_abi64_init();
+    windows_l5_pid = process64_spawn_clone(init_pid);
+    windows_l5_audit_attach =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_l5_pid)
+            : 0u;
+    windows_l5_vma_init =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_l5_pid)
+            : 0u;
+    windows_l5_bind =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_l5_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_l5_handle_init =
+        (windows_l5_bind == PERSONA64_ATTACH_OK)
+            ? windows_handle64_init_process(windows_l5_pid)
+            : 0u;
+    windows_l5_owner =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(windows_l5_pid)
+            : 0u;
+    windows_l5_init_endpoint =
+        services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INIT);
+    windows_l5_page = vma64_map_anon(
+        windows_l5_pid,
+        0x00000000451A0000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_l5_map_ok =
+        (windows_l5_page == 0x00000000451A0000ull) ? 1u : 0u;
+    windows_l5_key_handle_out = windows_l5_page + 0x40ull;
+    windows_l5_create_handle_out = windows_l5_page + 0x48ull;
+    windows_l5_disposition_out = windows_l5_page + 0x50ull;
+    windows_l5_result_length_out = windows_l5_page + 0x58ull;
+    windows_l5_query_info = windows_l5_page + 0x80ull;
+    windows_l5_object_attributes = windows_l5_page + 0x180ull;
+    windows_l5_unicode_string = windows_l5_page + 0x1C0ull;
+    windows_l5_path_buffer = windows_l5_page + 0x200ull;
+    windows_l5_value_unicode = windows_l5_page + 0x3A0ull;
+    windows_l5_value_buffer = windows_l5_page + 0x3C0ull;
+    windows_l5_create_object_attributes = windows_l5_page + 0x480ull;
+    windows_l5_create_unicode_string = windows_l5_page + 0x4C0ull;
+    windows_l5_create_path_buffer = windows_l5_page + 0x500ull;
+    if (windows_l5_map_ok != 0u)
+    {
+        volatile u8 *windows_l5_page_bytes = (volatile u8 *)(u64)windows_l5_page;
+
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index < VMA64_PAGE_BYTES;
+             ++windows_l5_path_index)
+        {
+            windows_l5_page_bytes[windows_l5_path_index] = 0u;
+        }
+
+        *((volatile u32 *)(u64)windows_l5_object_attributes) =
+            WINDOWS_ABI64_OBJECT_ATTRIBUTES_BYTES;
+        *((volatile u64 *)(u64)(windows_l5_object_attributes + 8ull)) = 0ull;
+        *((volatile u64 *)(u64)(windows_l5_object_attributes + 16ull)) =
+            windows_l5_unicode_string;
+        *((volatile u32 *)(u64)(windows_l5_object_attributes + 24ull)) = 0x40u;
+        *((volatile u64 *)(u64)(windows_l5_object_attributes + 32ull)) = 0ull;
+        *((volatile u64 *)(u64)(windows_l5_object_attributes + 40ull)) = 0ull;
+        *((volatile u16 *)(u64)windows_l5_unicode_string) =
+            (u16)(((u32)sizeof(windows_l5_key_path) - 1u) * 2u);
+        *((volatile u16 *)(u64)(windows_l5_unicode_string + 2ull)) =
+            (u16)(((u32)sizeof(windows_l5_key_path) - 1u) * 2u);
+        *((volatile u64 *)(u64)(windows_l5_unicode_string + 8ull)) =
+            windows_l5_path_buffer;
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index < ((u32)sizeof(windows_l5_key_path) - 1u);
+             ++windows_l5_path_index)
+        {
+            ((volatile u8 *)(u64)windows_l5_path_buffer)[
+                windows_l5_path_index * 2u] =
+                windows_l5_key_path[windows_l5_path_index];
+            ((volatile u8 *)(u64)windows_l5_path_buffer)[
+                (windows_l5_path_index * 2u) + 1u] = 0u;
+        }
+
+        *((volatile u32 *)(u64)windows_l5_create_object_attributes) =
+            WINDOWS_ABI64_OBJECT_ATTRIBUTES_BYTES;
+        *((volatile u64 *)(u64)(windows_l5_create_object_attributes + 8ull)) =
+            0ull;
+        *((volatile u64 *)(u64)(windows_l5_create_object_attributes + 16ull)) =
+            windows_l5_create_unicode_string;
+        *((volatile u32 *)(u64)(windows_l5_create_object_attributes + 24ull)) =
+            0x40u;
+        *((volatile u64 *)(u64)(windows_l5_create_object_attributes + 32ull)) =
+            0ull;
+        *((volatile u64 *)(u64)(windows_l5_create_object_attributes + 40ull)) =
+            0ull;
+        *((volatile u16 *)(u64)windows_l5_create_unicode_string) =
+            (u16)(((u32)sizeof(windows_l5_create_path) - 1u) * 2u);
+        *((volatile u16 *)(u64)(windows_l5_create_unicode_string + 2ull)) =
+            (u16)(((u32)sizeof(windows_l5_create_path) - 1u) * 2u);
+        *((volatile u64 *)(u64)(windows_l5_create_unicode_string + 8ull)) =
+            windows_l5_create_path_buffer;
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index < ((u32)sizeof(windows_l5_create_path) - 1u);
+             ++windows_l5_path_index)
+        {
+            ((volatile u8 *)(u64)windows_l5_create_path_buffer)[
+                windows_l5_path_index * 2u] =
+                windows_l5_create_path[windows_l5_path_index];
+            ((volatile u8 *)(u64)windows_l5_create_path_buffer)[
+                (windows_l5_path_index * 2u) + 1u] = 0u;
+        }
+
+        *((volatile u16 *)(u64)windows_l5_value_unicode) =
+            (u16)(((u32)sizeof(windows_l5_value_name) - 1u) * 2u);
+        *((volatile u16 *)(u64)(windows_l5_value_unicode + 2ull)) =
+            (u16)(((u32)sizeof(windows_l5_value_name) - 1u) * 2u);
+        *((volatile u64 *)(u64)(windows_l5_value_unicode + 8ull)) =
+            windows_l5_value_buffer;
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index < ((u32)sizeof(windows_l5_value_name) - 1u);
+             ++windows_l5_path_index)
+        {
+            ((volatile u8 *)(u64)windows_l5_value_buffer)[
+                windows_l5_path_index * 2u] =
+                windows_l5_value_name[windows_l5_path_index];
+            ((volatile u8 *)(u64)windows_l5_value_buffer)[
+                (windows_l5_path_index * 2u) + 1u] = 0u;
+        }
+    }
+    windows_l5_stack_args_query[0] = 96ull;
+    windows_l5_stack_args_query[1] = windows_l5_result_length_out;
+    windows_l5_stack_args_create[0] = 0ull;
+    windows_l5_stack_args_create[1] = 0ull;
+    windows_l5_stack_args_create[2] = windows_l5_disposition_out;
+    windows_l5_audit_before = persona_audit64_count(windows_l5_pid);
+    windows_l5_open_result =
+        ((windows_l5_map_ok != 0u)
+            && (windows_l5_bind == PERSONA64_ATTACH_OK)
+            && (windows_l5_handle_init != 0u))
+            ? windows_abi64_dispatch(
+                windows_l5_pid,
+                WINDOWS_ABI64_SYSCALL_NTOPENKEY,
+                windows_l5_key_handle_out,
+                0x00020019ull,
+                windows_l5_object_attributes,
+                0ull,
+                0,
+                0u,
+                0x00000000F2005012ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    if (windows_l5_map_ok != 0u)
+    {
+        windows_l5_handle =
+            *((volatile u64 *)(u64)windows_l5_key_handle_out);
+    }
+    windows_l5_query_result =
+        (windows_l5_open_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_abi64_dispatch(
+                windows_l5_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY,
+                windows_l5_handle,
+                windows_l5_value_unicode,
+                WINDOWS_REGISTRY64_VALUE_INFORMATION_PARTIAL,
+                windows_l5_query_info,
+                windows_l5_stack_args_query,
+                2u,
+                0x00000000F2005017ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    if (windows_l5_map_ok != 0u)
+    {
+        windows_l5_value_type =
+            *((volatile u32 *)(u64)(windows_l5_query_info + 4ull));
+        windows_l5_data_length =
+            *((volatile u32 *)(u64)(windows_l5_query_info + 8ull));
+        windows_l5_result_length_success =
+            *((volatile u32 *)(u64)windows_l5_result_length_out);
+        windows_l5_required_success =
+            windows_abi64_registry_last_required_bytes();
+        windows_l5_checksum = 2166136261u;
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index < windows_l5_data_length;
+             ++windows_l5_path_index)
+        {
+            windows_l5_checksum ^= ((volatile u8 *)(u64)(windows_l5_query_info + 12ull))[
+                windows_l5_path_index];
+            windows_l5_checksum *= 16777619u;
+        }
+        windows_l5_match =
+            ((windows_l5_data_length == 10u)
+                && (((volatile u8 *)(u64)(windows_l5_query_info + 12ull))[0] == (u8)'1')
+                && (((volatile u8 *)(u64)(windows_l5_query_info + 12ull))[2] == (u8)'0')
+                && (((volatile u8 *)(u64)(windows_l5_query_info + 12ull))[4] == (u8)'.')
+                && (((volatile u8 *)(u64)(windows_l5_query_info + 12ull))[6] == (u8)'0'))
+                ? 1u
+                : 0u;
+    }
+    windows_l5_create_result =
+        ((windows_l5_map_ok != 0u)
+            && (windows_l5_bind == PERSONA64_ATTACH_OK)
+            && (windows_l5_handle_init != 0u))
+            ? windows_abi64_dispatch(
+                windows_l5_pid,
+                WINDOWS_ABI64_SYSCALL_NTCREATEKEY,
+                windows_l5_create_handle_out,
+                0x00020019ull,
+                windows_l5_create_object_attributes,
+                0ull,
+                windows_l5_stack_args_create,
+                3u,
+                0x00000000F200501Dull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    if (windows_l5_map_ok != 0u)
+    {
+        windows_l5_create_handle =
+            *((volatile u64 *)(u64)windows_l5_create_handle_out);
+        windows_l5_disposition =
+            *((volatile u32 *)(u64)windows_l5_disposition_out);
+        *((volatile u16 *)(u64)windows_l5_value_unicode) =
+            (u16)(((u32)sizeof(windows_l5_missing_value_name) - 1u) * 2u);
+        *((volatile u16 *)(u64)(windows_l5_value_unicode + 2ull)) =
+            (u16)(((u32)sizeof(windows_l5_missing_value_name) - 1u) * 2u);
+        *((volatile u64 *)(u64)(windows_l5_value_unicode + 8ull)) =
+            windows_l5_value_buffer;
+        for (windows_l5_path_index = 0u;
+             windows_l5_path_index
+                < ((u32)sizeof(windows_l5_missing_value_name) - 1u);
+             ++windows_l5_path_index)
+        {
+            ((volatile u8 *)(u64)windows_l5_value_buffer)[
+                windows_l5_path_index * 2u] =
+                windows_l5_missing_value_name[windows_l5_path_index];
+            ((volatile u8 *)(u64)windows_l5_value_buffer)[
+                (windows_l5_path_index * 2u) + 1u] = 0u;
+        }
+    }
+    windows_l5_missing_result =
+        (windows_l5_open_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_abi64_dispatch(
+                windows_l5_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY,
+                windows_l5_handle,
+                windows_l5_value_unicode,
+                WINDOWS_REGISTRY64_VALUE_INFORMATION_PARTIAL,
+                windows_l5_query_info,
+                windows_l5_stack_args_query,
+                2u,
+                0x00000000F2006017ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_l5_audit_after = persona_audit64_count(windows_l5_pid);
+    windows_l5_read_record =
+        (windows_l5_audit_after > windows_l5_audit_before)
+            ? persona_audit64_read(
+                windows_l5_pid,
+                windows_l5_audit_after - 1u,
+                &windows_l5_record)
+            : 0u;
+    windows_l5_key_type =
+        windows_handle64_entry_type(windows_l5_pid, windows_l5_handle);
+    windows_l5_create_type =
+        windows_handle64_entry_type(windows_l5_pid, windows_l5_create_handle);
+    windows_l5_key_id =
+        windows_handle64_key_id(windows_l5_pid, windows_l5_handle);
+    windows_l5_create_key_id =
+        windows_handle64_key_id(windows_l5_pid, windows_l5_create_handle);
+    windows_l5_cap_ok =
+        (capability64_route(
+            windows_handle64_entry_capability(windows_l5_pid, windows_l5_handle),
+            CAPABILITY64_RIGHT_QUERY,
+            windows_l5_owner) == windows_l5_init_endpoint)
+            ? 1u
+            : 0u;
+    windows_l5_create_cap_ok =
+        (capability64_route(
+            windows_handle64_entry_capability(windows_l5_pid, windows_l5_create_handle),
+            CAPABILITY64_RIGHT_QUERY,
+            windows_l5_owner) == windows_l5_init_endpoint)
+            ? 1u
+            : 0u;
+    windows_l5_live_before_close = windows_handle64_live_count(windows_l5_pid);
+    windows_l5_abi_open_count = windows_abi64_registry_open_count();
+    windows_l5_abi_create_count = windows_abi64_registry_create_count();
+    windows_l5_abi_query_count = windows_abi64_registry_query_count();
+    windows_l5_abi_denial_count = windows_abi64_registry_denial_count();
+    windows_l5_abi_fault_count = windows_abi64_registry_fault_count();
+    windows_l5_reg_open_count = windows_registry64_open_count();
+    windows_l5_reg_create_count = windows_registry64_create_count();
+    windows_l5_reg_query_count = windows_registry64_query_count();
+    windows_l5_reg_denial_count = windows_registry64_denial_count();
+    windows_l5_reg_dynamic_count = windows_registry64_live_dynamic_count();
+    windows_l5_last_syscall = windows_abi64_registry_last_syscall();
+    windows_l5_last_result = windows_abi64_registry_last_result();
+    windows_l5_last_key_id = windows_abi64_registry_last_key_id();
+    windows_l5_last_required = windows_abi64_registry_last_required_bytes();
+    windows_l5_last_value_type = windows_abi64_registry_last_value_type();
+    windows_l5_close_key =
+        (windows_l5_handle != WINDOWS_HANDLE64_INVALID)
+            ? windows_handle64_close(windows_l5_pid, windows_l5_handle)
+            : 0u;
+    windows_l5_close_created =
+        (windows_l5_create_handle != WINDOWS_HANDLE64_INVALID)
+            ? windows_handle64_close(windows_l5_pid, windows_l5_create_handle)
+            : 0u;
+    windows_l5_live_after_close = windows_handle64_live_count(windows_l5_pid);
+    windows_l5_release_count = windows_handle64_release_process(windows_l5_pid);
+    windows_l5_table_clear =
+        (windows_handle64_table_for_process(windows_l5_pid) == 0) ? 1u : 0u;
+    windows_l5_unmap =
+        (windows_l5_map_ok != 0u)
+            ? vma64_unmap(windows_l5_pid, windows_l5_page, VMA64_PAGE_BYTES)
+            : 0u;
+    windows_l5_persona_release =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_l5_pid)
+            : 0u;
+    windows_l5_audit_release =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_l5_pid)
+            : 0u;
+    windows_l5_vma_release =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_l5_pid)
+            : 0u;
+    windows_l5_clone_release =
+        (windows_l5_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_l5_pid)
+            : 0u;
+    windows_l5_cleanup =
+        ((windows_l5_close_key != 0u)
+            && (windows_l5_close_created != 0u)
+            && (windows_l5_live_after_close == 0u)
+            && (windows_l5_release_count == 0u)
+            && (windows_l5_table_clear != 0u)
+            && (windows_l5_unmap != 0u)
+            && (windows_l5_persona_release != 0u)
+            && (windows_l5_audit_release != 0u)
+            && (windows_l5_vma_release == 0u)
+            && (windows_l5_clone_release != 0u)
+            && (process64_persona_ctx(windows_l5_pid) == 0)
+            && (process64_audit_ctx(windows_l5_pid) == 0)
+            && (process64_vma_root(windows_l5_pid) == 0))
+            ? 1u
+            : 0u;
+    windows_l5_positive =
+        ((windows_l5_pid != PROCESS64_INVALID_PID)
+            && (windows_l5_audit_attach != 0u)
+            && (windows_l5_vma_init != 0u)
+            && (windows_l5_bind == PERSONA64_ATTACH_OK)
+            && (windows_l5_handle_init != 0u)
+            && (windows_l5_map_ok != 0u)
+            && (windows_abi64_open_key_entry_installed() != 0u)
+            && (windows_abi64_create_key_entry_installed() != 0u)
+            && (windows_abi64_query_value_key_entry_installed() != 0u)
+            && (windows_l5_open_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l5_query_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l5_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_l5_missing_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l5_key_type == WINDOWS_HANDLE64_TYPE_KEY)
+            && (windows_l5_create_type == WINDOWS_HANDLE64_TYPE_KEY)
+            && (windows_l5_key_id == WINDOWS_REGISTRY64_KEY_CURRENT_VERSION)
+            && (windows_l5_create_key_id == WINDOWS_REGISTRY64_KEY_DYNAMIC_BASE)
+            && (windows_l5_cap_ok != 0u)
+            && (windows_l5_create_cap_ok != 0u)
+            && (windows_l5_value_type == WINDOWS_REGISTRY64_REG_SZ)
+            && (windows_l5_data_length == 10u)
+            && (windows_l5_required_success == 22u)
+            && (windows_l5_result_length_success == 22u)
+            && (windows_l5_checksum != 0u)
+            && (windows_l5_match != 0u)
+            && (windows_l5_disposition == WINDOWS_REGISTRY64_DISPOSITION_CREATED)
+            && (windows_l5_live_before_close == 2u)
+            && (windows_l5_abi_open_count == 1u)
+            && (windows_l5_abi_create_count == 1u)
+            && (windows_l5_abi_query_count == 1u)
+            && (windows_l5_abi_denial_count == 1u)
+            && (windows_l5_abi_fault_count == 0u)
+            && (windows_l5_reg_open_count == 1u)
+            && (windows_l5_reg_create_count == 1u)
+            && (windows_l5_reg_query_count == 1u)
+            && (windows_l5_reg_denial_count == 1u)
+            && (windows_l5_reg_dynamic_count == 1u)
+            && (windows_l5_last_syscall == WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY)
+            && (windows_l5_last_result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l5_last_key_id == WINDOWS_REGISTRY64_KEY_CURRENT_VERSION)
+            && (windows_l5_last_required == 0u)
+            && (windows_l5_last_value_type == 0u)
+            && (windows_l5_audit_after == (windows_l5_audit_before + 4u))
+            && (windows_l5_read_record != 0u)
+            && (windows_l5_record.event_type == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (windows_l5_record.event_code == WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY)
+            && (windows_l5_record.result == WINDOWS_ABI64_STATUS_OBJECT_NAME_NOT_FOUND)
+            && (windows_l5_record.persona_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (windows_l5_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    for (macho_m1_copy_index = 0u;
+        macho_m1_copy_index < (u32)sizeof(macho_m1_valid_bytes);
+        ++macho_m1_copy_index)
+    {
+        macho_m1_bad_cpu_bytes[macho_m1_copy_index] =
+            macho_m1_valid_bytes[macho_m1_copy_index];
+        macho_m1_bad_subtype_bytes[macho_m1_copy_index] =
+            macho_m1_valid_bytes[macho_m1_copy_index];
+        macho_m1_bad_filetype_bytes[macho_m1_copy_index] =
+            macho_m1_valid_bytes[macho_m1_copy_index];
+        macho_m1_bad_range_bytes[macho_m1_copy_index] =
+            macho_m1_valid_bytes[macho_m1_copy_index];
+    }
+    macho_m1_bad_cpu_bytes[0x04] = 0x0Cu;
+    macho_m1_bad_subtype_bytes[0x08] = 0x04u;
+    macho_m1_bad_filetype_bytes[0x0C] = 0x08u;
+    macho_m1_bad_range_bytes[0x14] = 0x80u;
+    macho_m1_bad_range_bytes[0x15] = 0x01u;
+    macho_m1_parse = macho64_parse_header(
+        macho_m1_valid_bytes,
+        (u32)sizeof(macho_m1_valid_bytes),
+        &macho_m1_header);
+    macho_m1_bad_magic = macho64_parse_header(
+        macho_m1_bad_magic_bytes,
+        (u32)sizeof(macho_m1_bad_magic_bytes),
+        &macho_m1_bad_header);
+    macho_m1_bad_magic_error = macho_m1_bad_header.error;
+    macho_m1_bad_cpu = macho64_parse_header(
+        macho_m1_bad_cpu_bytes,
+        (u32)sizeof(macho_m1_bad_cpu_bytes),
+        &macho_m1_bad_header);
+    macho_m1_bad_cpu_error = macho_m1_bad_header.error;
+    macho_m1_bad_subtype = macho64_parse_header(
+        macho_m1_bad_subtype_bytes,
+        (u32)sizeof(macho_m1_bad_subtype_bytes),
+        &macho_m1_bad_header);
+    macho_m1_bad_subtype_error = macho_m1_bad_header.error;
+    macho_m1_bad_filetype = macho64_parse_header(
+        macho_m1_bad_filetype_bytes,
+        (u32)sizeof(macho_m1_bad_filetype_bytes),
+        &macho_m1_bad_header);
+    macho_m1_bad_filetype_error = macho_m1_bad_header.error;
+    macho_m1_bad_range = macho64_parse_header(
+        macho_m1_bad_range_bytes,
+        (u32)sizeof(macho_m1_bad_range_bytes),
+        &macho_m1_bad_header);
+    macho_m1_bad_range_error = macho_m1_bad_header.error;
+    macho_m1_positive =
+        ((macho_m1_parse == MACHO64_OK)
+            && (macho_m1_header.error == MACHO64_ERROR_NONE)
+            && (macho_m1_header.magic == MACHO64_MAGIC_LE64)
+            && (macho_m1_header.cpu_type == MACHO64_CPU_TYPE_X86_64)
+            && (macho_m1_header.cpu_subtype == MACHO64_CPU_SUBTYPE_X86_64_ALL)
+            && (macho_m1_header.filetype == MACHO64_FILETYPE_EXECUTE)
+            && (macho_m1_header.ncmds == 3u)
+            && (macho_m1_header.sizeofcmds == 0x00000100u)
+            && (macho_m1_header.flags == 0x00200085u)
+            && (macho_m1_header.load_command_offset == MACHO64_HEADER_BYTES)
+            && (macho_m1_header.load_command_end == 0x00000120u)
+            && (macho_m1_bad_magic == MACHO64_DENIED)
+            && (macho_m1_bad_magic_error == MACHO64_ERROR_MAGIC)
+            && (macho_m1_bad_cpu == MACHO64_DENIED)
+            && (macho_m1_bad_cpu_error == MACHO64_ERROR_CPU_TYPE)
+            && (macho_m1_bad_subtype == MACHO64_DENIED)
+            && (macho_m1_bad_subtype_error == MACHO64_ERROR_CPU_SUBTYPE)
+            && (macho_m1_bad_filetype == MACHO64_DENIED)
+            && (macho_m1_bad_filetype_error == MACHO64_ERROR_FILETYPE)
+            && (macho_m1_bad_range == MACHO64_DENIED)
+            && (macho_m1_bad_range_error == MACHO64_ERROR_LOAD_COMMAND_RANGE))
+            ? 1u
+            : 0u;
+
+    macho_m2_slice_result = macho64_slice_fat_x86_64(
+        macho_m2_fat_valid_bytes,
+        (u32)sizeof(macho_m2_fat_valid_bytes),
+        &macho_m2_slice);
+    if (macho_m2_slice_result == MACHO64_OK)
+    {
+        macho_m2_header_result = macho64_parse_header(
+            macho_m2_fat_valid_bytes + macho_m2_slice.offset,
+            macho_m2_slice.size,
+            &macho_m2_header);
+    }
+    else
+    {
+        macho_m2_header_result = MACHO64_DENIED;
+    }
+    macho_m2_short = macho64_slice_fat_x86_64(
+        macho_m2_fat_valid_bytes,
+        7u,
+        &macho_m2_bad_slice);
+    macho_m2_short_error = macho_m2_bad_slice.error;
+    macho_m2_bad_magic = macho64_slice_fat_x86_64(
+        macho_m2_bad_magic_bytes,
+        (u32)sizeof(macho_m2_bad_magic_bytes),
+        &macho_m2_bad_slice);
+    macho_m2_bad_magic_error = macho_m2_bad_slice.error;
+    macho_m2_bad_count = macho64_slice_fat_x86_64(
+        macho_m2_bad_count_bytes,
+        (u32)sizeof(macho_m2_bad_count_bytes),
+        &macho_m2_bad_slice);
+    macho_m2_bad_count_error = macho_m2_bad_slice.error;
+    macho_m2_no_x64 = macho64_slice_fat_x86_64(
+        macho_m2_no_x64_bytes,
+        (u32)sizeof(macho_m2_no_x64_bytes),
+        &macho_m2_bad_slice);
+    macho_m2_no_x64_error = macho_m2_bad_slice.error;
+    macho_m2_bad_range = macho64_slice_fat_x86_64(
+        macho_m2_bad_range_bytes,
+        (u32)sizeof(macho_m2_bad_range_bytes),
+        &macho_m2_bad_slice);
+    macho_m2_bad_range_error = macho_m2_bad_slice.error;
+    macho_m2_positive =
+        ((macho_m2_slice_result == MACHO64_OK)
+            && (macho_m2_slice.error == MACHO64_ERROR_NONE)
+            && (macho_m2_slice.magic == MACHO64_FAT_MAGIC)
+            && (macho_m2_slice.arch_count == 2u)
+            && (macho_m2_slice.selected_index == 1u)
+            && (macho_m2_slice.cpu_type == MACHO64_CPU_TYPE_X86_64)
+            && (macho_m2_slice.cpu_subtype == MACHO64_CPU_SUBTYPE_X86_64_ALL)
+            && (macho_m2_slice.offset == 0x00000100u)
+            && (macho_m2_slice.size == 0x00000120u)
+            && (macho_m2_slice.align == 12u)
+            && (macho_m2_header_result == MACHO64_OK)
+            && (macho_m2_header.filetype == MACHO64_FILETYPE_DYLIB)
+            && (macho_m2_header.ncmds == 2u)
+            && (macho_m2_header.sizeofcmds == 0x00000080u)
+            && (macho_m2_header.load_command_end == 0x000000A0u)
+            && (macho_m2_short == MACHO64_DENIED)
+            && (macho_m2_short_error == MACHO64_ERROR_FAT_SHORT_HEADER)
+            && (macho_m2_bad_magic == MACHO64_DENIED)
+            && (macho_m2_bad_magic_error == MACHO64_ERROR_FAT_MAGIC)
+            && (macho_m2_bad_count == MACHO64_DENIED)
+            && (macho_m2_bad_count_error == MACHO64_ERROR_FAT_ARCH_COUNT)
+            && (macho_m2_no_x64 == MACHO64_DENIED)
+            && (macho_m2_no_x64_error == MACHO64_ERROR_FAT_NO_X86_64)
+            && (macho_m2_bad_range == MACHO64_DENIED)
+            && (macho_m2_bad_range_error == MACHO64_ERROR_FAT_SLICE_RANGE))
+            ? 1u
+            : 0u;
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m3_image_bytes);
+        ++macho_m3_index)
+    {
+        macho_m3_image_bytes[macho_m3_index] = 0u;
+    }
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x00u, MACHO64_MAGIC_LE64);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x04u, MACHO64_CPU_TYPE_X86_64);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x08u, MACHO64_CPU_SUBTYPE_X86_64_ALL);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x0Cu, MACHO64_FILETYPE_EXECUTE);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x10u, 8u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x14u, 0x000001A8u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x18u, 0x00200085u);
+
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x20u, MACHO64_LC_SEGMENT_64);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x24u, MACHO64_LC_SEGMENT_64_BYTES);
+    macho_m3_image_bytes[0x28u] = (u8)'_';
+    macho_m3_image_bytes[0x29u] = (u8)'_';
+    macho_m3_image_bytes[0x2Au] = (u8)'T';
+    macho_m3_image_bytes[0x2Bu] = (u8)'E';
+    macho_m3_image_bytes[0x2Cu] = (u8)'X';
+    macho_m3_image_bytes[0x2Du] = (u8)'T';
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x38u, 0x0000000046100000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x40u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x48u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x50u, 0x0000000000000020ull);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x58u, MACHO64_PROT_READ | MACHO64_PROT_EXECUTE);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x5Cu, MACHO64_PROT_READ | MACHO64_PROT_EXECUTE);
+
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x68u, MACHO64_LC_SEGMENT_64);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x6Cu, MACHO64_LC_SEGMENT_64_BYTES);
+    macho_m3_image_bytes[0x70u] = (u8)'_';
+    macho_m3_image_bytes[0x71u] = (u8)'_';
+    macho_m3_image_bytes[0x72u] = (u8)'D';
+    macho_m3_image_bytes[0x73u] = (u8)'A';
+    macho_m3_image_bytes[0x74u] = (u8)'T';
+    macho_m3_image_bytes[0x75u] = (u8)'A';
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x80u, 0x0000000046101000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x88u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x90u, 0x0000000000002000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x98u, 0x0000000000000030ull);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xA0u, MACHO64_PROT_READ | MACHO64_PROT_WRITE);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xA4u, MACHO64_PROT_READ | MACHO64_PROT_WRITE);
+
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xB0u, MACHO64_LC_SEGMENT_64);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xB4u, MACHO64_LC_SEGMENT_64_BYTES);
+    macho_m3_image_bytes[0xB8u] = (u8)'_';
+    macho_m3_image_bytes[0xB9u] = (u8)'_';
+    macho_m3_image_bytes[0xBAu] = (u8)'L';
+    macho_m3_image_bytes[0xBBu] = (u8)'I';
+    macho_m3_image_bytes[0xBCu] = (u8)'N';
+    macho_m3_image_bytes[0xBDu] = (u8)'K';
+    macho_m3_image_bytes[0xBEu] = (u8)'E';
+    macho_m3_image_bytes[0xBFu] = (u8)'D';
+    macho_m3_image_bytes[0xC0u] = (u8)'I';
+    macho_m3_image_bytes[0xC1u] = (u8)'T';
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0xC8u, 0x0000000046102000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0xD0u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0xD8u, 0x0000000000003000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0xE0u, 0x0000000000000080ull);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xE8u, MACHO64_PROT_READ);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xECu, MACHO64_PROT_READ);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xF8u, MACHO64_LC_MAIN);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0xFCu, MACHO64_LC_MAIN_BYTES);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x100u, 0x0000000000000010ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x108u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x110u, MACHO64_LC_LOAD_DYLIB);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x114u, 0x00000038u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x118u, MACHO64_DYLIB_COMMAND_BYTES);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x11Cu, 0x12345678u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x120u, 0x00010000u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x124u, 0x00010000u);
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m5_libsystem_path);
+        ++macho_m3_index)
+    {
+        macho_m3_image_bytes[0x128u + macho_m3_index] =
+            (u8)macho_m5_libsystem_path[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x148u, MACHO64_LC_LOAD_WEAK_DYLIB);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x14Cu, 0x00000040u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x150u, MACHO64_DYLIB_COMMAND_BYTES);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x154u, 0x00000000u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x158u, 0x00000000u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x15Cu, 0x00000000u);
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m5_optional_path);
+        ++macho_m3_index)
+    {
+        macho_m3_image_bytes[0x160u + macho_m3_index] =
+            (u8)macho_m5_optional_path[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x188u, MACHO64_LC_DYLD_INFO_ONLY);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x18Cu, MACHO64_DYLD_INFO_COMMAND_BYTES);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x190u, 0x00003020u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x194u, 0x00000008u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x198u, 0x00003040u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x19Cu, 0x00000010u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x1B8u, MACHO64_LC_DYLD_EXPORTS_TRIE);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x1BCu, MACHO64_LINKEDIT_DATA_COMMAND_BYTES);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x1C0u, 0x00003060u);
+    SCAFFOLD_STORE_LE32(macho_m3_image_bytes, 0x1C4u, 0x00000004u);
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m4_bad_image_bytes);
+        ++macho_m3_index)
+    {
+        macho_m4_bad_image_bytes[macho_m3_index] = macho_m3_image_bytes[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE64(macho_m4_bad_image_bytes, 0x100u, 0x0000000000002000ull);
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m5_missing_path);
+        ++macho_m3_index)
+    {
+        macho_m4_bad_image_bytes[0x128u + macho_m3_index] =
+            (u8)macho_m5_missing_path[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x190u, 0x00000000u);
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x194u, 0x00000000u);
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x198u, 0x000001D0u);
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x19Cu, 0x00000010u);
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x1C0u, 0x00000000u);
+    SCAFFOLD_STORE_LE32(macho_m4_bad_image_bytes, 0x1C4u, 0x00000000u);
+    macho_m4_bad_image_bytes[0x1D0u] = 0x11u;
+    macho_m4_bad_image_bytes[0x1D1u] = 0x51u;
+    macho_m4_bad_image_bytes[0x1D2u] = 0x40u;
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m6_missing_symbol);
+        ++macho_m3_index)
+    {
+        macho_m4_bad_image_bytes[0x1D3u + macho_m3_index] =
+            (u8)macho_m6_missing_symbol[macho_m3_index];
+    }
+    macho_m4_bad_image_bytes[0x1DBu] = 0x71u;
+    macho_m4_bad_image_bytes[0x1DCu] = 0x28u;
+    macho_m4_bad_image_bytes[0x1DDu] = 0x90u;
+    macho_m4_bad_image_bytes[0x1DEu] = 0x00u;
+
+    for (macho_m3_index = 0u; macho_m3_index < 0x20u; ++macho_m3_index)
+    {
+        macho_m3_image_bytes[0x1000u + macho_m3_index] =
+            (u8)(0xA0u + (macho_m3_index & 0x0Fu));
+    }
+    for (macho_m3_index = 0u; macho_m3_index < 0x10u; ++macho_m3_index)
+    {
+        macho_m3_image_bytes[0x2000u + macho_m3_index] =
+            (u8)(0xB0u + (macho_m3_index & 0x0Fu));
+    }
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x2020u, 0x0000000046100000ull);
+    SCAFFOLD_STORE_LE64(macho_m3_image_bytes, 0x2028u, 0x0000000000000000ull);
+    for (macho_m3_index = 0u; macho_m3_index < 0x18u; ++macho_m3_index)
+    {
+        macho_m3_image_bytes[0x3000u + macho_m3_index] =
+            (u8)(0xC0u + (macho_m3_index & 0x0Fu));
+    }
+    macho_m3_image_bytes[0x3020u] = 0x11u;
+    macho_m3_image_bytes[0x3021u] = 0x21u;
+    macho_m3_image_bytes[0x3022u] = 0x20u;
+    macho_m3_image_bytes[0x3023u] = 0x51u;
+    macho_m3_image_bytes[0x3024u] = 0x00u;
+    macho_m3_image_bytes[0x3040u] = 0x11u;
+    macho_m3_image_bytes[0x3041u] = 0x51u;
+    macho_m3_image_bytes[0x3042u] = 0x40u;
+    macho_m3_image_bytes[0x3043u] = (u8)'w';
+    macho_m3_image_bytes[0x3044u] = (u8)'r';
+    macho_m3_image_bytes[0x3045u] = (u8)'i';
+    macho_m3_image_bytes[0x3046u] = (u8)'t';
+    macho_m3_image_bytes[0x3047u] = (u8)'e';
+    macho_m3_image_bytes[0x3048u] = 0x00u;
+    macho_m3_image_bytes[0x3049u] = 0x71u;
+    macho_m3_image_bytes[0x304Au] = 0x28u;
+    macho_m3_image_bytes[0x304Bu] = 0x90u;
+    macho_m3_image_bytes[0x304Cu] = 0x00u;
+    macho_m3_image_bytes[0x3060u] = 0x01u;
+    macho_m3_image_bytes[0x3061u] = 0x02u;
+    macho_m3_image_bytes[0x3062u] = 0x03u;
+    macho_m3_image_bytes[0x3063u] = 0x04u;
+
+    macho_m3_text_va = 0x0000000046100000ull;
+    macho_m3_data_va = 0x0000000046101000ull;
+    macho_m3_linkedit_va = 0x0000000046102000ull;
+    macho_m3_parse = macho64_parse_header(
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header);
+    macho_m3_map = macho64_map_segments(
+        init_pid,
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header,
+        0ull,
+        &macho_m3_result);
+    macho_m3_text_pte = paging64_user_page_present(macho_m3_text_va);
+    macho_m3_data_pte = paging64_user_page_present(macho_m3_data_va);
+    macho_m3_linkedit_pte = paging64_user_page_present(macho_m3_linkedit_va);
+    macho_m3_text_prot = paging64_user_page_protection(macho_m3_text_va);
+    macho_m3_data_prot = paging64_user_page_protection(macho_m3_data_va);
+    macho_m3_linkedit_prot = paging64_user_page_protection(macho_m3_linkedit_va);
+    macho_m3_text_first = (macho_m3_text_pte != 0u)
+        ? (u32)(*((volatile const u8 *)(u64)macho_m3_text_va))
+        : 0u;
+    macho_m3_data_first = (macho_m3_data_pte != 0u)
+        ? (u32)(*((volatile const u8 *)(u64)macho_m3_data_va))
+        : 0u;
+    macho_m3_linkedit_first = (macho_m3_linkedit_pte != 0u)
+        ? (u32)(*((volatile const u8 *)(u64)macho_m3_linkedit_va))
+        : 0u;
+    macho_m3_bss_zero =
+        ((macho_m3_text_pte != 0u)
+            && (macho_m3_data_pte != 0u)
+            && (macho_m3_linkedit_pte != 0u))
+            ? 1u
+            : 0u;
+    if (macho_m3_bss_zero != 0u)
+    {
+        for (macho_m3_index = 0u; macho_m3_index < 0x20u; ++macho_m3_index)
+        {
+            if ((*((volatile const u8 *)(u64)(macho_m3_text_va + 0x20ull + macho_m3_index)) != 0u)
+                || (*((volatile const u8 *)(u64)(macho_m3_data_va + 0x30ull + macho_m3_index)) != 0u)
+                || (*((volatile const u8 *)(u64)(macho_m3_linkedit_va + 0x80ull + macho_m3_index)) != 0u))
+            {
+                macho_m3_bss_zero = 0u;
+                break;
+            }
+        }
+    }
+
+    macho_m5_walk = macho64_walk_dylib_dependencies(
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header,
+        &macho_m5_result);
+    macho_m6_slide = 0x0000000000001000ull;
+    macho_m6_rebase_slot = macho_m3_data_va + 0x20ull;
+    macho_m6_bind_slot = macho_m3_data_va + 0x28ull;
+    macho_m6_apply = macho64_apply_dyld_fixups(
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header,
+        &macho_m5_result,
+        macho_m6_slide,
+        &macho_m6_result);
+    macho_m6_rebase_readback = (macho_m3_data_pte != 0u)
+        ? *((volatile const u64 *)(u64)macho_m6_rebase_slot)
+        : 0ull;
+    macho_m6_bind_readback = (macho_m3_data_pte != 0u)
+        ? *((volatile const u64 *)(u64)macho_m6_bind_slot)
+        : 0ull;
+    macho_m4_bad_parse = macho64_parse_header(
+        macho_m4_bad_image_bytes,
+        (u32)sizeof(macho_m4_bad_image_bytes),
+        &macho_m4_bad_header);
+    macho_m6_bad_apply = macho64_apply_dyld_fixups(
+        macho_m4_bad_image_bytes,
+        (u32)sizeof(macho_m4_bad_image_bytes),
+        &macho_m4_bad_header,
+        &macho_m5_result,
+        macho_m6_slide,
+        &macho_m6_bad_result);
+    macho_m6_bad_error = macho_m6_bad_result.error;
+
+    macho_m4_stack_top = 0x0000000047200000ull;
+    macho_m4_segment_map = macho_m3_map;
+    macho_m4_prepare = macho64_prepare_main_entry(
+        init_pid,
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header,
+        0ull,
+        macho_m4_stack_top,
+        &macho_m4_result);
+    macho_m4_stack_page = (macho_m4_result.stack_top >= macho_m4_result.stack_mapped_bytes)
+        ? (macho_m4_result.stack_top - macho_m4_result.stack_mapped_bytes)
+        : 0ull;
+    macho_m4_entry_pte = macho_m4_result.entry_page_present;
+    macho_m4_entry_prot = macho_m4_result.entry_page_prot;
+    macho_m4_stack_pte = paging64_user_page_present(macho_m4_stack_page);
+    macho_m4_stack_prot = paging64_user_page_protection(macho_m4_stack_page);
+
+    macho_m3_cleanup = 0u;
+    if ((macho_m3_text_pte != 0u)
+        && (vma64_unmap(init_pid, macho_m3_text_va, VMA64_PAGE_BYTES) != 0u))
+    {
+        ++macho_m3_cleanup;
+    }
+    if ((macho_m3_data_pte != 0u)
+        && (vma64_unmap(init_pid, macho_m3_data_va, VMA64_PAGE_BYTES) != 0u))
+    {
+        ++macho_m3_cleanup;
+    }
+    if ((macho_m3_linkedit_pte != 0u)
+        && (vma64_unmap(init_pid, macho_m3_linkedit_va, VMA64_PAGE_BYTES) != 0u))
+    {
+        ++macho_m3_cleanup;
+    }
+    macho_m3_after_cleanup =
+        ((paging64_user_page_present(macho_m3_text_va) == 0u)
+            && (paging64_user_page_present(macho_m3_data_va) == 0u)
+            && (paging64_user_page_present(macho_m3_linkedit_va) == 0u))
+            ? 1u
+            : 0u;
+    macho_m3_denied = macho64_map_segments(
+        init_pid,
+        macho_m3_image_bytes,
+        0x00003010u,
+        &macho_m3_header,
+        0ull,
+        &macho_m3_bad_result);
+    macho_m3_denied_error = macho_m3_bad_result.error;
+    macho_m3_denial_cleanup =
+        ((paging64_user_page_present(macho_m3_text_va) == 0u)
+            && (paging64_user_page_present(macho_m3_data_va) == 0u)
+            && (paging64_user_page_present(macho_m3_linkedit_va) == 0u))
+            ? 1u
+            : 0u;
+    macho_m3_positive =
+        ((macho_m3_parse == MACHO64_OK)
+            && (macho_m3_map == MACHO64_OK)
+            && (macho_m3_result.error == MACHO64_ERROR_NONE)
+            && (macho_m3_result.segment_count == 3u)
+            && (macho_m3_result.mapped_count == 3u)
+            && (macho_m3_result.total_map_bytes == 0x0000000000003000ull)
+            && (macho_m3_result.total_file_bytes == 0x00000000000000D0ull)
+            && (macho_m3_result.total_bss_bytes == 0x0000000000002F30ull)
+            && (macho_m3_result.text_mapped == 1u)
+            && (macho_m3_result.data_mapped == 1u)
+            && (macho_m3_result.linkedit_mapped == 1u)
+            && (macho_m3_result.source_checksum != 0u)
+            && (macho_m3_result.mapped_checksum == macho_m3_result.source_checksum)
+            && (macho_m3_result.bss_nonzero_count == 0u)
+            && (macho_m3_text_pte != 0u)
+            && (macho_m3_data_pte != 0u)
+            && (macho_m3_linkedit_pte != 0u)
+            && (macho_m3_text_prot == (VMA64_PROT_READ | VMA64_PROT_EXECUTE))
+            && (macho_m3_data_prot == (VMA64_PROT_READ | VMA64_PROT_WRITE))
+            && (macho_m3_linkedit_prot == VMA64_PROT_READ)
+            && (macho_m3_text_first == 0xA0u)
+            && (macho_m3_data_first == 0xB0u)
+            && (macho_m3_linkedit_first == 0xC0u)
+            && (macho_m3_bss_zero == 1u)
+            && (macho_m3_cleanup == 3u)
+            && (macho_m3_after_cleanup == 1u)
+            && (macho_m3_denied == MACHO64_DENIED)
+            && (macho_m3_denied_error == MACHO64_ERROR_SEGMENT_RANGE)
+            && (macho_m3_denial_cleanup == 1u))
+            ? 1u
+            : 0u;
+
+    macho_m4_cleanup = 0u;
+    if (vma64_unmap(init_pid, macho_m3_text_va, VMA64_PAGE_BYTES) != 0u)
+    {
+        ++macho_m4_cleanup;
+    }
+    if (vma64_unmap(init_pid, macho_m3_data_va, VMA64_PAGE_BYTES) != 0u)
+    {
+        ++macho_m4_cleanup;
+    }
+    if (vma64_unmap(init_pid, macho_m3_linkedit_va, VMA64_PAGE_BYTES) != 0u)
+    {
+        ++macho_m4_cleanup;
+    }
+    if ((macho_m4_result.stack_mapped != 0u)
+        && (vma64_unmap(
+            init_pid,
+            macho_m4_stack_page,
+            macho_m4_result.stack_mapped_bytes) != 0u))
+    {
+        ++macho_m4_cleanup;
+    }
+    macho_m4_after_cleanup =
+        ((paging64_user_page_present(macho_m3_text_va) == 0u)
+            && (vma64_find(init_pid, macho_m3_text_va) == 0)
+            && (paging64_user_page_present(macho_m3_data_va) == 0u)
+            && (vma64_find(init_pid, macho_m3_data_va) == 0)
+            && (paging64_user_page_present(macho_m3_linkedit_va) == 0u)
+            && (vma64_find(init_pid, macho_m3_linkedit_va) == 0)
+            && (paging64_user_page_present(macho_m4_stack_page) == 0u)
+            && (vma64_find(init_pid, macho_m4_stack_page) == 0))
+            ? 1u
+            : 0u;
+    macho_m4_bad_parse = macho64_parse_header(
+        macho_m4_bad_image_bytes,
+        (u32)sizeof(macho_m4_bad_image_bytes),
+        &macho_m4_bad_header);
+    macho_m4_denied = macho64_prepare_main_entry(
+        init_pid,
+        macho_m4_bad_image_bytes,
+        (u32)sizeof(macho_m4_bad_image_bytes),
+        &macho_m4_bad_header,
+        0ull,
+        macho_m4_stack_top,
+        &macho_m4_bad_result);
+    macho_m4_denied_error = macho_m4_bad_result.error;
+    macho_m5_walk = macho64_walk_dylib_dependencies(
+        macho_m3_image_bytes,
+        (u32)sizeof(macho_m3_image_bytes),
+        &macho_m3_header,
+        &macho_m5_result);
+    macho_m5_bad_walk = macho64_walk_dylib_dependencies(
+        macho_m4_bad_image_bytes,
+        (u32)sizeof(macho_m4_bad_image_bytes),
+        &macho_m4_bad_header,
+        &macho_m5_bad_result);
+    macho_m5_bad_error = macho_m5_bad_result.error;
+    macho_m5_path_match = 1u;
+    if (macho_m5_result.dependencies[0].path_length
+        != ((u32)sizeof(macho_m5_libsystem_path) - 1u))
+    {
+        macho_m5_path_match = 0u;
+    }
+    else
+    {
+        for (macho_m3_index = 0u;
+            macho_m3_index < ((u32)sizeof(macho_m5_libsystem_path) - 1u);
+            ++macho_m3_index)
+        {
+            if (macho_m5_result.dependencies[0].path[macho_m3_index]
+                != macho_m5_libsystem_path[macho_m3_index])
+            {
+                macho_m5_path_match = 0u;
+                break;
+            }
+        }
+    }
+    macho_m4_positive =
+        ((macho_m4_segment_map == MACHO64_OK)
+            && (macho_m4_prepare == MACHO64_OK)
+            && (macho_m4_result.error == MACHO64_ERROR_NONE)
+            && (macho_m4_result.main_count == 1u)
+            && (macho_m4_result.text_found == 1u)
+            && (macho_m4_result.entry_within_text == 1u)
+            && (macho_m4_result.entryoff == 0x0000000000000010ull)
+            && (macho_m4_result.text_vmaddr == macho_m3_text_va)
+            && (macho_m4_result.text_vmsize == 0x0000000000001000ull)
+            && (macho_m4_result.entry_rip == 0x0000000046100010ull)
+            && (macho_m4_result.entry_page_present == 1u)
+            && (macho_m4_entry_pte == 1u)
+            && (macho_m4_entry_prot == (VMA64_PROT_READ | VMA64_PROT_EXECUTE))
+            && (macho_m4_result.stack_defaulted == 1u)
+            && (macho_m4_result.stack_mapped == 1u)
+            && (macho_m4_result.stack_size == MACHO64_DEFAULT_STACK_BYTES)
+            && (macho_m4_result.stack_mapped_bytes == MACHO64_STACK_COMMIT_BYTES)
+            && (macho_m4_result.stack_base == 0x0000000046A00000ull)
+            && (macho_m4_result.stack_top == macho_m4_stack_top)
+            && (macho_m4_result.initial_rsp == macho_m4_stack_top)
+            && (macho_m4_stack_pte == 1u)
+            && (macho_m4_stack_prot == (VMA64_PROT_READ | VMA64_PROT_WRITE))
+            && (macho_m3_cleanup == 3u)
+            && (macho_m4_cleanup == 1u)
+            && (macho_m4_after_cleanup == 1u)
+            && (macho_m4_bad_parse == MACHO64_OK)
+            && (macho_m4_denied == MACHO64_DENIED)
+            && (macho_m4_denied_error == MACHO64_ERROR_MAIN_RANGE)
+            && (paging64_user_page_present(macho_m4_stack_page) == 0u))
+            ? 1u
+            : 0u;
+    macho_m5_positive =
+        ((macho_m5_walk == MACHO64_OK)
+            && (macho_m5_result.error == MACHO64_ERROR_NONE)
+            && (macho_m5_result.load_command_count == 2u)
+            && (macho_m5_result.weak_command_count == 1u)
+            && (macho_m5_result.recorded_count == 1u)
+            && (macho_m5_result.shim_found_count == 1u)
+            && (macho_m5_result.weak_absent_count == 1u)
+            && (macho_m5_result.required_missing_count == 0u)
+            && (macho_m5_result.first_shim_id == MACHO64_SHIM_LIBSYSTEM)
+            && (macho_m5_result.first_path_checksum != 0u)
+            && (macho_m5_result.dependencies[0].present == 1u)
+            && (macho_m5_result.dependencies[0].weak == 0u)
+            && (macho_m5_result.dependencies[0].shim_found == 1u)
+            && (macho_m5_result.dependencies[0].shim_id == MACHO64_SHIM_LIBSYSTEM)
+            && (macho_m5_result.dependencies[0].name_offset == MACHO64_DYLIB_COMMAND_BYTES)
+            && (macho_m5_result.dependencies[0].timestamp == 0x12345678u)
+            && (macho_m5_result.dependencies[0].current_version == 0x00010000u)
+            && (macho_m5_result.dependencies[0].compatibility_version == 0x00010000u)
+            && (macho_m5_path_match == 1u)
+            && (macho_m5_bad_walk == MACHO64_DENIED)
+            && (macho_m5_bad_error == MACHO64_ERROR_DYLIB_REQUIRED)
+            && (macho_m5_bad_result.required_missing_count == 1u)
+            && (macho_m5_bad_result.load_command_count == 1u))
+            ? 1u
+            : 0u;
+    macho_m6_positive =
+        ((macho_m6_apply == MACHO64_OK)
+            && (macho_m6_result.error == MACHO64_ERROR_NONE)
+            && (macho_m6_result.dyld_info_found == 1u)
+            && (macho_m6_result.exports_trie_found == 1u)
+            && (macho_m6_result.rebase_count == 1u)
+            && (macho_m6_result.bind_count == 1u)
+            && (macho_m6_result.rebase_type == MACHO64_REBASE_TYPE_POINTER)
+            && (macho_m6_result.bind_type == MACHO64_BIND_TYPE_POINTER)
+            && (macho_m6_result.bind_ordinal == 1u)
+            && (macho_m6_result.bind_shim_id == MACHO64_SHIM_LIBSYSTEM)
+            && (macho_m6_result.bind_symbol_length == 5u)
+            && (macho_m6_result.bind_symbol_checksum != 0u)
+            && (macho_m6_result.rebase_target == macho_m6_rebase_slot)
+            && (macho_m6_result.rebase_before == 0x0000000046100000ull)
+            && (macho_m6_result.rebase_after == 0x0000000046101000ull)
+            && (macho_m6_rebase_readback == macho_m6_result.rebase_after)
+            && (macho_m6_result.bind_target == macho_m6_bind_slot)
+            && (macho_m6_result.bind_value == MACHO64_SHIM_LIBSYSTEM_WRITE_ADDR)
+            && (macho_m6_bind_readback == MACHO64_SHIM_LIBSYSTEM_WRITE_ADDR)
+            && (macho_m6_result.rebase_off == 0x00003020u)
+            && (macho_m6_result.rebase_size == 0x00000008u)
+            && (macho_m6_result.bind_off == 0x00003040u)
+            && (macho_m6_result.bind_size == 0x00000010u)
+            && (macho_m6_result.exports_trie_off == 0x00003060u)
+            && (macho_m6_result.exports_trie_size == 0x00000004u)
+            && (macho_m6_bad_apply == MACHO64_DENIED)
+            && (macho_m6_bad_error == MACHO64_ERROR_DYLD_DYLIB)
+            && (macho_m6_bad_result.bind_count == 0u))
+            ? 1u
+            : 0u;
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < (u32)sizeof(macho_m7_image_bytes);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[macho_m3_index] = 0u;
+    }
+    macho_m7_data_va = 0x0000000046210000ull;
+    macho_m7_tls_base = 0x0000000046220000ull;
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x00u, MACHO64_MAGIC_LE64);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x04u, MACHO64_CPU_TYPE_X86_64);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x08u, MACHO64_CPU_SUBTYPE_X86_64_ALL);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x0Cu, MACHO64_FILETYPE_EXECUTE);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x10u, 1u);
+    SCAFFOLD_STORE_LE32(
+        macho_m7_image_bytes,
+        0x14u,
+        MACHO64_LC_SEGMENT_64_BYTES + (3u * MACHO64_SECTION_64_BYTES));
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x18u, 0x00200085u);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x20u, MACHO64_LC_SEGMENT_64);
+    SCAFFOLD_STORE_LE32(
+        macho_m7_image_bytes,
+        0x24u,
+        MACHO64_LC_SEGMENT_64_BYTES + (3u * MACHO64_SECTION_64_BYTES));
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_data_segment_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x28u + macho_m3_index] =
+            (u8)macho_m7_data_segment_name[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x38u, macho_m7_data_va);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x40u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x48u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x50u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x58u, MACHO64_PROT_READ | MACHO64_PROT_WRITE);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x5Cu, MACHO64_PROT_READ | MACHO64_PROT_WRITE);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x60u, 3u);
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_variables_section_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x68u + macho_m3_index] =
+            (u8)macho_m7_variables_section_name[macho_m3_index];
+    }
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_data_segment_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x78u + macho_m3_index] =
+            (u8)macho_m7_data_segment_name[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x88u, macho_m7_data_va);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x90u, 0x0000000000000018ull);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x98u, 0x00001000u);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x9Cu, 3u);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0xA8u, MACHO64_SECTION_THREAD_LOCAL_VARIABLES);
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_regular_section_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0xB8u + macho_m3_index] =
+            (u8)macho_m7_regular_section_name[macho_m3_index];
+    }
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_data_segment_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0xC8u + macho_m3_index] =
+            (u8)macho_m7_data_segment_name[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0xD8u, macho_m7_data_va + 0x20ull);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0xE0u, 0x0000000000000010ull);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0xE8u, 0x00001020u);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0xECu, 3u);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0xF8u, MACHO64_SECTION_THREAD_LOCAL_REGULAR);
+
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_zerofill_section_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x108u + macho_m3_index] =
+            (u8)macho_m7_zerofill_section_name[macho_m3_index];
+    }
+    for (macho_m3_index = 0u;
+        macho_m3_index < ((u32)sizeof(macho_m7_data_segment_name) - 1u);
+        ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x118u + macho_m3_index] =
+            (u8)macho_m7_data_segment_name[macho_m3_index];
+    }
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x128u, macho_m7_data_va + 0x30ull);
+    SCAFFOLD_STORE_LE64(macho_m7_image_bytes, 0x130u, 0x0000000000000008ull);
+    SCAFFOLD_STORE_LE32(macho_m7_image_bytes, 0x148u, MACHO64_SECTION_THREAD_LOCAL_ZEROFILL);
+
+    for (macho_m3_index = 0u; macho_m3_index < 0x18u; ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x1000u + macho_m3_index] =
+            (u8)(0x70u + (macho_m3_index & 0x0Fu));
+    }
+    for (macho_m3_index = 0u; macho_m3_index < 0x10u; ++macho_m3_index)
+    {
+        macho_m7_image_bytes[0x1020u + macho_m3_index] =
+            (u8)(0x30u + (macho_m3_index & 0x0Fu));
+    }
+
+    macho_m7_pid = process64_spawn_clone(init_pid);
+    macho_m7_vma_init =
+        (macho_m7_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macho_m7_pid)
+            : 0u;
+    macho_m7_bind =
+        (macho_m7_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macho_m7_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macho_m7_type = persona64_type(macho_m7_pid);
+    macho_m7_parse = macho64_parse_header(
+        macho_m7_image_bytes,
+        (u32)sizeof(macho_m7_image_bytes),
+        &macho_m7_header);
+    macho_m7_map =
+        ((macho_m7_vma_init != 0u) && (macho_m7_bind == PERSONA64_ATTACH_OK))
+            ? macho64_map_segments(
+                macho_m7_pid,
+                macho_m7_image_bytes,
+                (u32)sizeof(macho_m7_image_bytes),
+                &macho_m7_header,
+                0ull,
+                &macho_m7_map_result)
+            : MACHO64_DENIED;
+    macho_m7_setup =
+        (macho_m7_map == MACHO64_OK)
+            ? macho64_setup_tls(
+                macho_m7_pid,
+                macho_m7_image_bytes,
+                (u32)sizeof(macho_m7_image_bytes),
+                &macho_m7_header,
+                macho_m7_tls_base,
+                &macho_m7_result)
+            : MACHO64_DENIED;
+    if (macho_m7_setup == MACHO64_OK)
+    {
+        __asm__ __volatile__("movq %%gs:0, %0" : "=r"(macho_m7_gs_zero));
+    }
+    macho_m7_present = paging64_user_page_present(macho_m7_tls_base);
+    macho_m7_prot = paging64_user_page_protection(macho_m7_tls_base);
+    macho_m7_template_first =
+        (macho_m7_present != 0u)
+            ? *((volatile u32 *)(u64)macho_m7_result.tls_template_base)
+            : 0u;
+    macho_m7_zero_ok =
+        ((macho_m7_present != 0u)
+            && (*((volatile u64 *)(u64)(macho_m7_result.tls_template_base
+                + macho_m7_result.tls_template_bytes)) == 0ull))
+            ? 1u
+            : 0u;
+    macho_m7_context = persona64_context_for_process(macho_m7_pid);
+    macho_m7_context_match =
+        ((macho_m7_context != 0)
+            && (macho_m7_context->persona_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macho_m7_context->tls_base == macho_m7_result.tls_block_base)
+            && (macho_m7_context->tls_size == macho_m7_result.tls_block_bytes))
+            ? 1u
+            : 0u;
+    macho_m7_denied = macho64_setup_tls(
+        macho_m7_pid,
+        macho_m7_image_bytes,
+        (u32)sizeof(macho_m7_image_bytes),
+        &macho_m7_header,
+        macho_m7_tls_base + 1ull,
+        &macho_m7_bad_result);
+    macho_m7_denied_error = macho_m7_bad_result.error;
+    if (macho_m7_setup == MACHO64_OK)
+    {
+        write_gs_base64(macho_m7_result.gs_base_before);
+        macho_m7_gs_restore = read_gs_base64();
+    }
+    macho_m7_unmap_data =
+        (paging64_user_page_present(macho_m7_data_va) != 0u)
+            ? vma64_unmap(macho_m7_pid, macho_m7_data_va, VMA64_PAGE_BYTES)
+            : 0u;
+    macho_m7_unmap_tls =
+        (paging64_user_page_present(macho_m7_tls_base) != 0u)
+            ? vma64_unmap(macho_m7_pid, macho_m7_tls_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macho_m7_persona_release =
+        (macho_m7_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(macho_m7_pid)
+            : 0u;
+    macho_m7_vma_release =
+        (macho_m7_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(macho_m7_pid)
+            : 0u;
+    macho_m7_clone_release =
+        (macho_m7_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macho_m7_pid)
+            : 0u;
+    macho_m7_cleanup =
+        ((macho_m7_unmap_data != 0u)
+            && (macho_m7_unmap_tls != 0u)
+            && (macho_m7_persona_release != 0u)
+            && (macho_m7_vma_release == 0u)
+            && (macho_m7_clone_release != 0u))
+            ? 1u
+            : 0u;
+    macho_m7_after_cleanup =
+        ((macho_m7_pid != PROCESS64_INVALID_PID)
+            && (process64_persona_ctx(macho_m7_pid) == 0)
+            && (process64_vma_root(macho_m7_pid) == 0)
+            && (process64_is_clone(macho_m7_pid) == 0u)
+            && (paging64_user_page_present(macho_m7_data_va) == 0u)
+            && (paging64_user_page_present(macho_m7_tls_base) == 0u))
+            ? 1u
+            : 0u;
+    macho_m7_positive =
+        ((macho_m7_pid != PROCESS64_INVALID_PID)
+            && (macho_m7_vma_init != 0u)
+            && (macho_m7_bind == PERSONA64_ATTACH_OK)
+            && (macho_m7_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macho_m7_parse == MACHO64_OK)
+            && (macho_m7_map == MACHO64_OK)
+            && (macho_m7_map_result.mapped_count == 1u)
+            && (macho_m7_setup == MACHO64_OK)
+            && (macho_m7_result.error == MACHO64_ERROR_NONE)
+            && (macho_m7_result.section_count == 3u)
+            && (macho_m7_result.variables_count == 1u)
+            && (macho_m7_result.regular_count == 1u)
+            && (macho_m7_result.zerofill_count == 1u)
+            && (macho_m7_result.variables_addr == macho_m7_data_va)
+            && (macho_m7_result.variables_bytes == 0x18ull)
+            && (macho_m7_result.regular_addr == (macho_m7_data_va + 0x20ull))
+            && (macho_m7_result.regular_bytes == 0x10ull)
+            && (macho_m7_result.zerofill_addr == (macho_m7_data_va + 0x30ull))
+            && (macho_m7_result.zerofill_bytes == 0x08ull)
+            && (macho_m7_result.tls_block_base == macho_m7_tls_base)
+            && (macho_m7_result.tls_block_bytes == VMA64_PAGE_BYTES)
+            && (macho_m7_result.tls_template_base
+                == (macho_m7_tls_base + (u64)MACHO64_TLS_SELF_POINTER_BYTES))
+            && (macho_m7_result.tls_template_bytes == 0x10ull)
+            && (macho_m7_result.gs_base_after == macho_m7_tls_base)
+            && (macho_m7_result.gs_zero_value == macho_m7_tls_base)
+            && (macho_m7_gs_zero == macho_m7_tls_base)
+            && (macho_m7_gs_restore == macho_m7_result.gs_base_before)
+            && (macho_m7_template_first == 0x33323130u)
+            && (macho_m7_result.first_template_word == 0x33323130u)
+            && (macho_m7_zero_ok != 0u)
+            && (macho_m7_result.zero_nonzero_count == 0u)
+            && (macho_m7_result.template_checksum != 0u)
+            && (macho_m7_result.block_checksum != 0u)
+            && (macho_m7_present != 0u)
+            && (macho_m7_prot == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE))
+            && (macho_m7_result.page_present == 1u)
+            && (macho_m7_result.page_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE))
+            && (macho_m7_result.context_stored != 0u)
+            && (macho_m7_context_match != 0u)
+            && (macho_m7_denied == MACHO64_DENIED)
+            && (macho_m7_denied_error == MACHO64_ERROR_TLS_ADDRESS)
+            && (macho_m7_cleanup != 0u)
+            && (macho_m7_after_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macho_m8_argv[0] = macho_m8_arg0;
+    macho_m8_argv[1] = macho_m8_arg1;
+    macho_m8_envp[0] = macho_m8_env0;
+    macho_m8_envp[1] = macho_m8_env1;
+    macho_m8_stack_base = 0x0000000046230000ull;
+    macho_m8_stack_top = macho_m8_stack_base + VMA64_PAGE_BYTES;
+    macho_m8_pid = process64_spawn_clone(init_pid);
+    macho_m8_vma_init =
+        (macho_m8_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macho_m8_pid)
+            : 0u;
+    macho_m8_bind =
+        (macho_m8_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macho_m8_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macho_m8_type = persona64_type(macho_m8_pid);
+    macho_m8_stack_map =
+        ((macho_m8_vma_init != 0u) && (macho_m8_bind == PERSONA64_ATTACH_OK))
+            ? vma64_map_anon(
+                macho_m8_pid,
+                macho_m8_stack_base,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    macho_m8_build =
+        (macho_m8_stack_map == macho_m8_stack_base)
+            ? macho64_build_initial_stack(
+                macho_m8_pid,
+                macho_m8_stack_base,
+                macho_m8_stack_top,
+                2u,
+                macho_m8_argv,
+                2u,
+                macho_m8_envp,
+                macho_m8_exec_path,
+                macho_m8_auxv,
+                &macho_m8_result)
+            : MACHO64_DENIED;
+    if (macho_m8_build == MACHO64_OK)
+    {
+        macho_m8_argc_value =
+            *((volatile const u64 *)(u64)macho_m8_result.argc_address);
+        macho_m8_argv0_ptr =
+            *((volatile const u64 *)(u64)macho_m8_result.argv_address);
+        macho_m8_env0_ptr =
+            *((volatile const u64 *)(u64)macho_m8_result.envp_address);
+        macho_m8_apple0_ptr =
+            *((volatile const u64 *)(u64)macho_m8_result.apple_address);
+        macho_m8_aux0_type =
+            *((volatile const u64 *)(u64)macho_m8_result.auxv_address);
+        macho_m8_aux0_value =
+            *((volatile const u64 *)(u64)(macho_m8_result.auxv_address + 8ull));
+        macho_m8_exec_prefix_match =
+            ((((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[0] == (u8)'e')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[1] == (u8)'x')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[2] == (u8)'e')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[3] == (u8)'c')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[4] == (u8)'_')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[5] == (u8)'p')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[6] == (u8)'a')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[7] == (u8)'t')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[8] == (u8)'h')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[9] == (u8)'=')
+                && (((volatile const u8 *)(u64)macho_m8_result.apple_exec_path_address)[10] == (u8)'/'))
+                ? 1u
+                : 0u;
+    }
+    macho_m8_context = persona64_context_for_process(macho_m8_pid);
+    macho_m8_context_match =
+        ((macho_m8_context != 0)
+            && (macho_m8_context->persona_type == PERSONA64_TYPE_MACOS_MACHO))
+            ? 1u
+            : 0u;
+    macho_m8_denied = macho64_build_initial_stack(
+        macho_m8_pid,
+        macho_m8_stack_base,
+        macho_m8_stack_top - 1ull,
+        2u,
+        macho_m8_argv,
+        2u,
+        macho_m8_envp,
+        macho_m8_exec_path,
+        macho_m8_auxv,
+        &macho_m8_bad_result);
+    macho_m8_denied_error = macho_m8_bad_result.error;
+    macho_m8_unmap_stack =
+        (paging64_user_page_present(macho_m8_stack_base) != 0u)
+            ? vma64_unmap(macho_m8_pid, macho_m8_stack_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macho_m8_persona_release =
+        (macho_m8_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(macho_m8_pid)
+            : 0u;
+    macho_m8_vma_release =
+        (macho_m8_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(macho_m8_pid)
+            : 0u;
+    macho_m8_clone_release =
+        (macho_m8_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macho_m8_pid)
+            : 0u;
+    macho_m8_cleanup =
+        ((macho_m8_unmap_stack != 0u)
+            && (macho_m8_persona_release != 0u)
+            && (macho_m8_vma_release == 0u)
+            && (macho_m8_clone_release != 0u))
+            ? 1u
+            : 0u;
+    macho_m8_after_cleanup =
+        ((macho_m8_pid != PROCESS64_INVALID_PID)
+            && (process64_persona_ctx(macho_m8_pid) == 0)
+            && (process64_vma_root(macho_m8_pid) == 0)
+            && (process64_is_clone(macho_m8_pid) == 0u)
+            && (paging64_user_page_present(macho_m8_stack_base) == 0u))
+            ? 1u
+            : 0u;
+    macho_m8_positive =
+        ((macho_m8_pid != PROCESS64_INVALID_PID)
+            && (macho_m8_vma_init != 0u)
+            && (macho_m8_bind == PERSONA64_ATTACH_OK)
+            && (macho_m8_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macho_m8_stack_map == macho_m8_stack_base)
+            && (macho_m8_build == MACHO64_OK)
+            && (macho_m8_result.error == MACHO64_ERROR_NONE)
+            && (macho_m8_result.initial_rsp == 0x0000000046230F10ull)
+            && (macho_m8_result.layout_bytes == 240u)
+            && (macho_m8_result.string_bytes == 110u)
+            && (macho_m8_result.pointer_slot_count == 16u)
+            && (macho_m8_result.argc == 2u)
+            && (macho_m8_result.envc == 2u)
+            && (macho_m8_result.apple_count == MACHO64_STACK_APPLE_COUNT)
+            && (macho_m8_result.aux_entry_count == 3u)
+            && (macho_m8_result.alignment_ok != 0u)
+            && (macho_m8_argc_value == 2ull)
+            && (macho_m8_argv0_ptr == macho_m8_result.argv0_address)
+            && (macho_m8_env0_ptr == macho_m8_result.env0_address)
+            && (macho_m8_apple0_ptr == macho_m8_result.apple_exec_path_address)
+            && (macho_m8_aux0_type == MACHO64_STACK_AUX_ENTRY)
+            && (macho_m8_aux0_value == 0x0000000046100010ull)
+            && (macho_m8_result.first_aux_type == MACHO64_STACK_AUX_ENTRY)
+            && (macho_m8_result.first_aux_value == 0x0000000046100010ull)
+            && (macho_m8_result.argv0_address == 0x0000000046230F92ull)
+            && (macho_m8_result.env0_address == 0x0000000046230FA9ull)
+            && (macho_m8_result.apple_exec_path_address == 0x0000000046230FCDull)
+            && (macho_m8_result.apple_persona_address == 0x0000000046230FE8ull)
+            && (macho_m8_result.auxv_address == 0x0000000046230F60ull)
+            && (macho_m8_result.argv_null_ok != 0u)
+            && (macho_m8_result.envp_null_ok != 0u)
+            && (macho_m8_result.apple_null_ok != 0u)
+            && (macho_m8_result.aux_null_ok != 0u)
+            && (macho_m8_exec_prefix_match != 0u)
+            && (macho_m8_result.exec_path_checksum != 0u)
+            && (macho_m8_result.persona_string_checksum != 0u)
+            && (macho_m8_result.stack_checksum != 0u)
+            && (macho_m8_result.stack_page_present != 0u)
+            && (macho_m8_result.stack_page_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE))
+            && (macho_m8_context_match != 0u)
+            && (macho_m8_denied == MACHO64_DENIED)
+            && (macho_m8_denied_error == MACHO64_ERROR_STACK_RANGE)
+            && (macho_m8_cleanup != 0u)
+            && (macho_m8_after_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macos_n1_pid = process64_spawn_clone(init_pid);
+    macos_n1_owner =
+        (macos_n1_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(macos_n1_pid)
+            : 0u;
+    macos_n1_vma_init =
+        (macos_n1_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macos_n1_pid)
+            : 0u;
+    macos_n1_audit_attach =
+        (macos_n1_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(macos_n1_pid)
+            : 0u;
+    macos_n1_stdin_cap =
+        (macos_n1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n1_stdout_cap =
+        (macos_n1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n1_stderr_cap =
+        (macos_n1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n1_fd_init =
+        ((macos_n1_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n1_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n1_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                macos_n1_pid,
+                macos_n1_owner,
+                macos_n1_stdin_cap,
+                macos_n1_stdout_cap,
+                macos_n1_stderr_cap)
+            : 0u;
+    macos_n1_bind =
+        (macos_n1_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macos_n1_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macos_n1_context = persona64_context_for_process(macos_n1_pid);
+    macos_n1_context_bound =
+        ((macos_n1_context != 0)
+            && (macos_n1_context->persona_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macos_n1_context->syscall_dispatch_table
+                == (void *)macos_abi64_dispatch_table()))
+            ? 1u
+            : 0u;
+    macos_n1_table_size = macos_abi64_table_size();
+    macos_n1_unimplemented_entries = macos_abi64_unimplemented_entry_count();
+    macos_n1_entries_installed =
+        macos_abi64_read_entry_installed()
+        + macos_abi64_write_entry_installed()
+        + macos_abi64_open_entry_installed()
+        + macos_abi64_close_entry_installed()
+        + macos_abi64_stat_entry_installed()
+        + macos_abi64_fstat_entry_installed()
+        + macos_abi64_mmap_entry_installed()
+        + macos_abi64_munmap_entry_installed()
+        + macos_abi64_mprotect_entry_installed()
+        + macos_abi64_exit_entry_installed()
+        + macos_abi64_getpid_entry_installed()
+        + macos_abi64_clock_gettime_entry_installed()
+        + macos_abi64_sysctl_entry_installed();
+    macos_n1_buffer_base = 0x0000000046240000ull;
+    macos_n1_path_addr = macos_n1_buffer_base + 0x40ull;
+    macos_n1_write_addr = macos_n1_buffer_base + 0x80ull;
+    macos_n1_read_addr = macos_n1_buffer_base + 0xC0ull;
+    macos_n1_stat_addr = macos_n1_buffer_base + 0x100ull;
+    macos_n1_time_addr = macos_n1_buffer_base + 0x1A0ull;
+    macos_n1_sysctl_name_addr = macos_n1_buffer_base + 0x200ull;
+    macos_n1_sysctl_len_addr = macos_n1_buffer_base + 0x210ull;
+    macos_n1_sysctl_out_addr = macos_n1_buffer_base + 0x220ull;
+    macos_n1_map_addr = 0x0000000046250000ull;
+    macos_n1_buffer_map =
+        ((macos_n1_vma_init != 0u) && (macos_n1_bind == PERSONA64_ATTACH_OK))
+            ? vma64_map_anon(
+                macos_n1_pid,
+                macos_n1_buffer_base,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (macos_n1_buffer_map == macos_n1_buffer_base)
+    {
+        u32 macos_n1_i;
+
+        for (macos_n1_i = 0u; macos_n1_i < (u32)sizeof(macos_n1_path); ++macos_n1_i)
+        {
+            ((volatile u8 *)(u64)macos_n1_path_addr)[macos_n1_i] =
+                macos_n1_path[macos_n1_i];
+        }
+        for (macos_n1_i = 0u;
+            macos_n1_i < ((u32)sizeof(macos_n1_write_bytes) - 1u);
+            ++macos_n1_i)
+        {
+            ((volatile u8 *)(u64)macos_n1_write_addr)[macos_n1_i] =
+                macos_n1_write_bytes[macos_n1_i];
+        }
+        ((volatile u32 *)(u64)macos_n1_sysctl_name_addr)[0] = MACOS_ABI64_CTL_KERN;
+        ((volatile u32 *)(u64)macos_n1_sysctl_name_addr)[1] = MACOS_ABI64_KERN_OSTYPE;
+        *((volatile u64 *)(u64)macos_n1_sysctl_len_addr) = 32ull;
+    }
+    macos_n1_audit_before = persona_audit64_count(macos_n1_pid);
+    macos_n1_getpid_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        (MACOS_ABI64_BSD_CLASS_UNIX << MACOS_ABI64_BSD_CLASS_SHIFT)
+            | MACOS_ABI64_SYSCALL_GETPID,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000014ull);
+    macos_n1_console_before_count = console64_write_count();
+    macos_n1_console_before_bytes = console64_byte_count();
+    macos_n1_write_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_WRITE,
+        FD64_STDOUT,
+        macos_n1_write_addr,
+        (u64)((u32)sizeof(macos_n1_write_bytes) - 1u),
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000004ull);
+    macos_n1_console_after_count = console64_write_count();
+    macos_n1_console_after_bytes = console64_byte_count();
+    macos_n1_stat_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_STAT,
+        macos_n1_path_addr,
+        macos_n1_stat_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A10000BCull);
+    macos_n1_open_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_OPEN,
+        macos_n1_path_addr,
+        MACOS_ABI64_O_RDONLY,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000005ull);
+    macos_n1_read_ret =
+        (macos_n1_open_ret < (u64)FD64_TABLE_LIMIT)
+            ? macos_abi64_dispatch(
+                macos_n1_pid,
+                MACOS_ABI64_SYSCALL_READ,
+                macos_n1_open_ret,
+                macos_n1_read_addr,
+                4ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000A1000003ull)
+            : MACOS_ABI64_ERROR_RETURN(MACOS_ABI64_EBADF);
+    macos_n1_read_checksum = 0u;
+    if (macos_n1_read_ret == 4ull)
+    {
+        u32 macos_n1_i;
+
+        for (macos_n1_i = 0u; macos_n1_i < 4u; ++macos_n1_i)
+        {
+            macos_n1_read_checksum =
+                (macos_n1_read_checksum << 5)
+                ^ (macos_n1_read_checksum >> 2)
+                ^ (u32)((volatile u8 *)(u64)macos_n1_read_addr)[macos_n1_i];
+        }
+    }
+    macos_n1_fstat_ret =
+        (macos_n1_open_ret < (u64)FD64_TABLE_LIMIT)
+            ? macos_abi64_dispatch(
+                macos_n1_pid,
+                MACOS_ABI64_SYSCALL_FSTAT,
+                macos_n1_open_ret,
+                macos_n1_stat_addr,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000A10000BDull)
+            : MACOS_ABI64_ERROR_RETURN(MACOS_ABI64_EBADF);
+    macos_n1_stat = (macos_abi64_stat_t *)(u64)macos_n1_stat_addr;
+    macos_n1_stat_size = (macos_n1_stat != 0) ? macos_n1_stat->st_size : 0ull;
+    macos_n1_stat_mode = (macos_n1_stat != 0) ? (u32)macos_n1_stat->st_mode : 0u;
+    macos_n1_close_ret =
+        (macos_n1_open_ret < (u64)FD64_TABLE_LIMIT)
+            ? macos_abi64_dispatch(
+                macos_n1_pid,
+                MACOS_ABI64_SYSCALL_CLOSE,
+                macos_n1_open_ret,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000A1000006ull)
+            : MACOS_ABI64_ERROR_RETURN(MACOS_ABI64_EBADF);
+    macos_n1_mmap_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_MMAP,
+        macos_n1_map_addr,
+        VMA64_PAGE_BYTES,
+        MACOS_ABI64_PROT_READ | MACOS_ABI64_PROT_WRITE,
+        MACOS_ABI64_MAP_PRIVATE | MACOS_ABI64_MAP_FIXED | MACOS_ABI64_MAP_ANON,
+        0xFFFFFFFFFFFFFFFFull,
+        0ull,
+        0x00000000A10000C5ull);
+    macos_n1_pte_mapped = paging64_user_page_present(macos_n1_map_addr);
+    macos_n1_prot_after_map = paging64_user_page_protection(macos_n1_map_addr);
+    macos_n1_mprotect_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_MPROTECT,
+        macos_n1_map_addr,
+        VMA64_PAGE_BYTES,
+        MACOS_ABI64_PROT_READ,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A100004Aull);
+    macos_n1_prot_after_protect = paging64_user_page_protection(macos_n1_map_addr);
+    macos_n1_munmap_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_MUNMAP,
+        macos_n1_map_addr,
+        VMA64_PAGE_BYTES,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000049ull);
+    macos_n1_pte_after_unmap = paging64_user_page_present(macos_n1_map_addr);
+    macos_n1_clock_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_CLOCK_GETTIME,
+        MACOS_ABI64_CLOCK_MONOTONIC,
+        macos_n1_time_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000074ull);
+    macos_n1_time = (macos_abi64_timespec_t *)(u64)macos_n1_time_addr;
+    macos_n1_time_sec = (macos_n1_time != 0) ? macos_n1_time->tv_sec : 0ull;
+    macos_n1_time_nsec = (macos_n1_time != 0) ? macos_n1_time->tv_nsec : 0ull;
+    macos_n1_sysctl_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_SYSCTL,
+        macos_n1_sysctl_name_addr,
+        2ull,
+        macos_n1_sysctl_out_addr,
+        macos_n1_sysctl_len_addr,
+        0ull,
+        0ull,
+        0x00000000A10000CAull);
+    macos_n1_sysctl_len = *((volatile const u64 *)(u64)macos_n1_sysctl_len_addr);
+    macos_n1_sysctl_prefix =
+        ((((volatile const u8 *)(u64)macos_n1_sysctl_out_addr)[0] == (u8)'L')
+            && (((volatile const u8 *)(u64)macos_n1_sysctl_out_addr)[1] == (u8)'i')
+            && (((volatile const u8 *)(u64)macos_n1_sysctl_out_addr)[2] == (u8)'m')
+            && (((volatile const u8 *)(u64)macos_n1_sysctl_out_addr)[3] == (u8)'i')
+            && (((volatile const u8 *)(u64)macos_n1_sysctl_out_addr)[4] == (u8)'t'))
+            ? 1u
+            : 0u;
+    macos_n1_bad_open_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_OPEN,
+        macos_n1_path_addr,
+        MACOS_ABI64_O_CREAT,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000BADull);
+    macos_n1_unimpl_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        511u,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A10001FFull);
+    macos_n1_audit_after_unimpl = persona_audit64_count(macos_n1_pid);
+    macos_n1_read_unimpl_record =
+        (macos_n1_audit_after_unimpl > macos_n1_audit_before)
+            ? persona_audit64_read(
+                macos_n1_pid,
+                macos_n1_audit_after_unimpl - 1u,
+                &macos_n1_unimpl_record)
+            : 0u;
+    macos_n1_exit_ret = macos_abi64_dispatch(
+        macos_n1_pid,
+        MACOS_ABI64_SYSCALL_EXIT,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A1000001ull);
+    macos_n1_clone_release =
+        (macos_n1_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macos_n1_pid)
+            : 0u;
+    macos_n1_after_cleanup =
+        ((macos_n1_pid != PROCESS64_INVALID_PID)
+            && (process64_persona_ctx(macos_n1_pid) == 0)
+            && (process64_audit_ctx(macos_n1_pid) == 0)
+            && (process64_fd_table(macos_n1_pid) == 0)
+            && (process64_vma_root(macos_n1_pid) == 0)
+            && (process64_is_clone(macos_n1_pid) == 0u)
+            && (paging64_user_page_present(macos_n1_buffer_base) == 0u)
+            && (paging64_user_page_present(macos_n1_map_addr) == 0u))
+            ? 1u
+            : 0u;
+    macos_n1_positive =
+        ((macos_n1_pid != PROCESS64_INVALID_PID)
+            && (macos_n1_vma_init != 0u)
+            && (macos_n1_audit_attach != 0u)
+            && (macos_n1_fd_init != 0u)
+            && (macos_n1_bind == PERSONA64_ATTACH_OK)
+            && (macos_n1_context_bound != 0u)
+            && (macos_n1_table_size == MACOS_ABI64_SYSCALL_LIMIT)
+            && (macos_n1_unimplemented_entries == 499u)
+            && (macos_n1_entries_installed == 13u)
+            && (macos_n1_buffer_map == macos_n1_buffer_base)
+            && (macos_n1_getpid_ret == (u64)macos_n1_pid)
+            && (macos_n1_write_ret == 3ull)
+            && ((macos_n1_console_after_count - macos_n1_console_before_count) == 1u)
+            && ((macos_n1_console_after_bytes - macos_n1_console_before_bytes) == 3u)
+            && (macos_n1_stat_ret == 0ull)
+            && (macos_n1_open_ret >= FD64_FIRST_DYNAMIC)
+            && (macos_n1_open_ret < (u64)FD64_TABLE_LIMIT)
+            && (macos_n1_read_ret == 4ull)
+            && (macos_n1_read_checksum != 0u)
+            && (macos_n1_fstat_ret == 0ull)
+            && (macos_n1_stat_size != 0ull)
+            && (macos_n1_stat_mode != 0u)
+            && (macos_n1_close_ret == 0ull)
+            && (fd64_entry_type(macos_n1_pid, (u32)macos_n1_open_ret) == FD64_TYPE_EMPTY)
+            && (macos_n1_mmap_ret == macos_n1_map_addr)
+            && (macos_n1_pte_mapped != 0u)
+            && (macos_n1_prot_after_map
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE))
+            && (macos_n1_mprotect_ret == 0ull)
+            && (macos_n1_prot_after_protect == PAGING64_USER_PROT_READ)
+            && (macos_n1_munmap_ret == 0ull)
+            && (macos_n1_pte_after_unmap == 0u)
+            && (macos_n1_clock_ret == 0ull)
+            && (macos_n1_time_nsec < 1000000000ull)
+            && (macos_n1_sysctl_ret == 0ull)
+            && (macos_n1_sysctl_len == 12ull)
+            && (macos_n1_sysctl_prefix != 0u)
+            && (macos_abi64_last_sysctl_name0() == MACOS_ABI64_CTL_KERN)
+            && (macos_abi64_last_sysctl_name1() == MACOS_ABI64_KERN_OSTYPE)
+            && (macos_abi64_last_sysctl_bytes() == 12u)
+            && (macos_n1_bad_open_ret == MACOS_ABI64_ERROR_RETURN(MACOS_ABI64_EINVAL))
+            && (macos_n1_unimpl_ret == MACOS_ABI64_ERROR_RETURN(MACOS_ABI64_ENOSYS))
+            && (macos_n1_read_unimpl_record != 0u)
+            && (macos_n1_unimpl_record.event_type
+                == PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED)
+            && (macos_n1_unimpl_record.event_code == 511u)
+            && (macos_n1_unimpl_record.result == MACOS_ABI64_ENOSYS)
+            && (macos_n1_unimpl_record.persona_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macos_n1_exit_ret == 0ull)
+            && (macos_abi64_last_exit_vma_regions() == 1u)
+            && (macos_abi64_last_exit_fd_entries() == 3u)
+            && (macos_abi64_last_exit_persona_released() != 0u)
+            && (macos_abi64_last_exit_audit_released() != 0u)
+            && (macos_n1_clone_release != 0u)
+            && (macos_n1_after_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macos_n2_pid = process64_spawn_clone(init_pid);
+    macos_n2_vma_init =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macos_n2_pid)
+            : 0u;
+    macos_n2_audit_attach =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(macos_n2_pid)
+            : 0u;
+    macos_n2_bind =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macos_n2_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macos_n2_table_size = macos_mach64_table_size();
+    macos_n2_unimplemented_entries = macos_mach64_unimplemented_entry_count();
+    macos_n2_entries_installed =
+        macos_mach64_mach_msg_entry_installed()
+        + macos_mach64_task_self_entry_installed()
+        + macos_mach64_thread_self_entry_installed()
+        + macos_mach64_host_self_entry_installed()
+        + macos_mach64_reply_port_entry_installed();
+    macos_n2_buffer_base = 0x0000000046260000ull;
+    macos_n2_send_addr = macos_n2_buffer_base + 0x100ull;
+    macos_n2_recv_addr = macos_n2_buffer_base + 0x200ull;
+    macos_n2_buffer_map =
+        ((macos_n2_vma_init != 0u) && (macos_n2_bind == PERSONA64_ATTACH_OK))
+            ? vma64_map_anon(
+                macos_n2_pid,
+                macos_n2_buffer_base,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    macos_n2_audit_before = persona_audit64_count(macos_n2_pid);
+    macos_n2_task_port = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_TASK_SELF),
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A200001Cull);
+    macos_n2_thread_port = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_THREAD_SELF),
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A200001Bull);
+    macos_n2_host_port = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_HOST_SELF),
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A2000014ull);
+    macos_n2_reply_port = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_MACH_REPLY_PORT),
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A200001Aull);
+    macos_n2_live_after_ports = macos_mach64_live_port_count(macos_n2_pid);
+    macos_n2_task_kind =
+        (macos_n2_task_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_kind(macos_n2_pid, (u32)macos_n2_task_port)
+            : 0u;
+    macos_n2_thread_kind =
+        (macos_n2_thread_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_kind(macos_n2_pid, (u32)macos_n2_thread_port)
+            : 0u;
+    macos_n2_host_kind =
+        (macos_n2_host_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_kind(macos_n2_pid, (u32)macos_n2_host_port)
+            : 0u;
+    macos_n2_reply_rights =
+        (macos_n2_reply_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_rights(macos_n2_pid, (u32)macos_n2_reply_port)
+            : 0u;
+    macos_n2_task_endpoint =
+        (macos_n2_task_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_backing_endpoint(macos_n2_pid, (u32)macos_n2_task_port)
+            : 0xFFFFFFFFu;
+    macos_n2_reply_endpoint =
+        (macos_n2_reply_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_backing_endpoint(macos_n2_pid, (u32)macos_n2_reply_port)
+            : 0xFFFFFFFFu;
+    macos_n2_reply_capability =
+        (macos_n2_reply_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_backing_capability(
+                macos_n2_pid,
+                (u32)macos_n2_reply_port)
+            : CAPABILITY64_INVALID_HANDLE;
+    if ((macos_n2_buffer_map == macos_n2_buffer_base)
+        && (macos_n2_reply_port <= 0xFFFFFFFFull)
+        && (macos_n2_task_port <= 0xFFFFFFFFull))
+    {
+        macos_n2_send_header = (macos_mach64_msg_header_t *)(u64)macos_n2_send_addr;
+        macos_n2_send_header->msgh_bits = 0u;
+        macos_n2_send_header->msgh_size = MACOS_MACH64_MSG_HEADER_BYTES + 4u;
+        macos_n2_send_header->msgh_remote_port = (u32)macos_n2_reply_port;
+        macos_n2_send_header->msgh_local_port = (u32)macos_n2_task_port;
+        macos_n2_send_header->msgh_voucher_port = 0u;
+        macos_n2_send_header->msgh_id = 0x4D32;
+        ((volatile u8 *)(u64)(macos_n2_send_addr + MACOS_MACH64_MSG_HEADER_BYTES))[0] =
+            (u8)'N';
+        ((volatile u8 *)(u64)(macos_n2_send_addr + MACOS_MACH64_MSG_HEADER_BYTES))[1] =
+            (u8)'2';
+        ((volatile u8 *)(u64)(macos_n2_send_addr + MACOS_MACH64_MSG_HEADER_BYTES))[2] =
+            (u8)'!';
+        ((volatile u8 *)(u64)(macos_n2_send_addr + MACOS_MACH64_MSG_HEADER_BYTES))[3] =
+            0u;
+    }
+    macos_n2_send_count_before = macos_mach64_send_count();
+    macos_n2_recv_count_before = macos_mach64_receive_count();
+    macos_n2_denial_before = macos_mach64_denial_count();
+    macos_n2_send_ret = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_MACH_MSG),
+        macos_n2_send_addr,
+        MACOS_MACH64_MSG_OPTION_SEND,
+        MACOS_MACH64_MSG_HEADER_BYTES + 4u,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A20000E1ull);
+    macos_n2_pending_after_send =
+        (macos_n2_reply_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_pending_count(macos_n2_pid, (u32)macos_n2_reply_port)
+            : 0u;
+    macos_n2_recv_ret = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_MACH_MSG),
+        macos_n2_recv_addr,
+        MACOS_MACH64_MSG_OPTION_RCV,
+        0ull,
+        MACOS_MACH64_MAX_MESSAGE_BYTES,
+        macos_n2_reply_port,
+        0ull,
+        0x00000000A20000E2ull);
+    macos_n2_pending_after_recv =
+        (macos_n2_reply_port <= 0xFFFFFFFFull)
+            ? macos_mach64_port_pending_count(macos_n2_pid, (u32)macos_n2_reply_port)
+            : 0u;
+    macos_n2_recv_header = (macos_mach64_msg_header_t *)(u64)macos_n2_recv_addr;
+    macos_n2_recv_id = (u32)macos_n2_recv_header->msgh_id;
+    macos_n2_recv_size = macos_n2_recv_header->msgh_size;
+    macos_n2_recv_local = macos_n2_recv_header->msgh_local_port;
+    macos_n2_recv_remote = macos_n2_recv_header->msgh_remote_port;
+    macos_n2_body_checksum = 0u;
+    if (macos_n2_recv_ret == MACOS_MACH64_MACH_MSG_SUCCESS)
+    {
+        u32 macos_n2_i;
+
+        for (macos_n2_i = 0u; macos_n2_i < 4u; ++macos_n2_i)
+        {
+            macos_n2_body_checksum =
+                (macos_n2_body_checksum << 5)
+                ^ (macos_n2_body_checksum >> 2)
+                ^ (u32)((volatile u8 *)(u64)
+                    (macos_n2_recv_addr + MACOS_MACH64_MSG_HEADER_BYTES))[macos_n2_i];
+        }
+    }
+    if (macos_n2_buffer_map == macos_n2_buffer_base)
+    {
+        macos_n2_send_header = (macos_mach64_msg_header_t *)(u64)macos_n2_send_addr;
+        macos_n2_send_header->msgh_remote_port = 0x0000DEADu;
+        macos_n2_send_header->msgh_local_port = (u32)macos_n2_task_port;
+    }
+    macos_n2_bad_send_ret = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)MACOS_MACH64_TRAP_MACH_MSG),
+        macos_n2_send_addr,
+        MACOS_MACH64_MSG_OPTION_SEND,
+        MACOS_MACH64_MSG_HEADER_BYTES + 4u,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A2000BADull);
+    macos_n2_unimpl_ret = macos_abi64_dispatch(
+        macos_n2_pid,
+        (u32)((s32)-63),
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A200003Full);
+    macos_n2_send_count_after = macos_mach64_send_count();
+    macos_n2_recv_count_after = macos_mach64_receive_count();
+    macos_n2_denial_after = macos_mach64_denial_count();
+    macos_n2_audit_after_unimpl = persona_audit64_count(macos_n2_pid);
+    macos_n2_read_unimpl_record =
+        (macos_n2_audit_after_unimpl > macos_n2_audit_before)
+            ? persona_audit64_read(
+                macos_n2_pid,
+                macos_n2_audit_after_unimpl - 1u,
+                &macos_n2_unimpl_record)
+            : 0u;
+    macos_n2_release_ports =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? macos_mach64_release_process(macos_n2_pid)
+            : 0u;
+    macos_n2_unmap_buffer =
+        (paging64_user_page_present(macos_n2_buffer_base) != 0u)
+            ? vma64_unmap(macos_n2_pid, macos_n2_buffer_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macos_n2_persona_release =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(macos_n2_pid)
+            : 0u;
+    macos_n2_audit_release =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(macos_n2_pid)
+            : 0u;
+    macos_n2_vma_release =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(macos_n2_pid)
+            : 0u;
+    macos_n2_clone_release =
+        (macos_n2_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macos_n2_pid)
+            : 0u;
+    macos_n2_after_cleanup =
+        ((macos_n2_pid != PROCESS64_INVALID_PID)
+            && (macos_mach64_live_port_count(macos_n2_pid) == 0u)
+            && (process64_persona_ctx(macos_n2_pid) == 0)
+            && (process64_audit_ctx(macos_n2_pid) == 0)
+            && (process64_vma_root(macos_n2_pid) == 0)
+            && (process64_is_clone(macos_n2_pid) == 0u)
+            && (paging64_user_page_present(macos_n2_buffer_base) == 0u))
+            ? 1u
+            : 0u;
+    macos_n2_positive =
+        ((macos_n2_pid != PROCESS64_INVALID_PID)
+            && (macos_n2_vma_init != 0u)
+            && (macos_n2_audit_attach != 0u)
+            && (macos_n2_bind == PERSONA64_ATTACH_OK)
+            && (macos_n2_buffer_map == macos_n2_buffer_base)
+            && (macos_n2_table_size == MACOS_MACH64_TRAP_TABLE_SIZE)
+            && (macos_n2_unimplemented_entries == 59u)
+            && (macos_n2_entries_installed == 5u)
+            && (macos_n2_task_port >= MACOS_MACH64_PORT_NAME_BASE)
+            && (macos_n2_thread_port >= MACOS_MACH64_PORT_NAME_BASE)
+            && (macos_n2_host_port >= MACOS_MACH64_PORT_NAME_BASE)
+            && (macos_n2_reply_port >= MACOS_MACH64_PORT_NAME_BASE)
+            && (macos_n2_live_after_ports == 4u)
+            && (macos_n2_task_kind == MACOS_MACH64_PORT_KIND_TASK)
+            && (macos_n2_thread_kind == MACOS_MACH64_PORT_KIND_THREAD)
+            && (macos_n2_host_kind == MACOS_MACH64_PORT_KIND_HOST)
+            && ((macos_n2_reply_rights & MACOS_MACH64_PORT_RIGHT_RECEIVE) != 0u)
+            && (macos_n2_task_endpoint
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INIT))
+            && (macos_n2_reply_endpoint
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INIT))
+            && (macos_n2_reply_capability != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n2_send_ret == MACOS_MACH64_MACH_MSG_SUCCESS)
+            && (macos_n2_pending_after_send == 1u)
+            && (macos_n2_recv_ret == MACOS_MACH64_MACH_MSG_SUCCESS)
+            && (macos_n2_pending_after_recv == 0u)
+            && (macos_n2_recv_id == 0x4D32u)
+            && (macos_n2_recv_size == (MACOS_MACH64_MSG_HEADER_BYTES + 4u))
+            && (macos_n2_recv_local == (u32)macos_n2_reply_port)
+            && (macos_n2_recv_remote == (u32)macos_n2_reply_port)
+            && (macos_n2_body_checksum != 0u)
+            && ((macos_n2_send_count_after - macos_n2_send_count_before) == 1u)
+            && ((macos_n2_recv_count_after - macos_n2_recv_count_before) == 1u)
+            && (macos_n2_bad_send_ret == MACOS_MACH64_MACH_SEND_INVALID_DEST)
+            && ((macos_n2_denial_after - macos_n2_denial_before) == 1u)
+            && (macos_n2_unimpl_ret == MACOS_MACH64_KERN_INVALID_ARGUMENT)
+            && (macos_n2_read_unimpl_record != 0u)
+            && (macos_n2_unimpl_record.event_type
+                == PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED)
+            && (macos_n2_unimpl_record.event_code == 63u)
+            && (macos_n2_unimpl_record.result == MACOS_MACH64_KERN_INVALID_ARGUMENT)
+            && (macos_n2_unimpl_record.persona_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (macos_n2_release_ports == 4u)
+            && (macos_n2_unmap_buffer != 0u)
+            && (macos_n2_persona_release != 0u)
+            && (macos_n2_audit_release != 0u)
+            && (macos_n2_vma_release == 0u)
+            && (macos_n2_clone_release != 0u)
+            && (macos_n2_after_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macos_n3_pid = process64_spawn_clone(init_pid);
+    macos_n3_owner =
+        (macos_n3_pid != PROCESS64_INVALID_PID) ? process64_principal(macos_n3_pid) : 0u;
+    macos_n3_vma_init =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macos_n3_pid)
+            : 0u;
+    macos_n3_audit_attach =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(macos_n3_pid)
+            : 0u;
+    macos_n3_stdin_cap =
+        (macos_n3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n3_stdout_cap =
+        (macos_n3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n3_stderr_cap =
+        (macos_n3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n3_fd_init =
+        ((macos_n3_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n3_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n3_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                macos_n3_pid,
+                macos_n3_owner,
+                macos_n3_stdin_cap,
+                macos_n3_stdout_cap,
+                macos_n3_stderr_cap)
+            : 0u;
+    macos_n3_bind =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macos_n3_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macos_n3_buffer_base = 0x0000000046270000ull;
+    macos_n3_message_addr = macos_n3_buffer_base + 0x40ull;
+    macos_n3_path_addr = macos_n3_buffer_base + 0x100ull;
+    macos_n3_time_addr = macos_n3_buffer_base + 0x180ull;
+    macos_n3_mmap_addr = 0x0000000046280000ull;
+    macos_n3_load_before = macos_shim64_load_count();
+    macos_n3_call_before = macos_shim64_call_count();
+    macos_n3_bridge_before = macos_shim64_syscall_bridge_count();
+    macos_n3_memory_before = macos_shim64_memory_call_count();
+    macos_n3_denial_before = macos_shim64_denial_count();
+    macos_n3_fault_before = macos_shim64_fault_count();
+    macos_n3_audit_before = persona_audit64_count(macos_n3_pid);
+    macos_n3_load = macos_shim64_load_libsystem(
+        macos_n3_pid,
+        MACOS_SHIM64_LIBSYSTEM_DEFAULT_BASE,
+        &macos_n3_load_result);
+    macos_n3_bad_load = macos_shim64_load_libsystem(
+        macos_n3_pid,
+        MACOS_SHIM64_LIBSYSTEM_DEFAULT_BASE + VMA64_PAGE_BYTES,
+        &macos_n3_bad_load_result);
+    macos_n3_symbol_count = macos_shim64_symbol_count();
+    macos_n3_write_addr = macos_shim64_resolve_libsystem_symbol("_write", 6u);
+    macos_n3_read_addr = macos_shim64_resolve_libsystem_symbol("_read", 5u);
+    macos_n3_open_addr = macos_shim64_resolve_libsystem_symbol("_open", 5u);
+    macos_n3_close_addr = macos_shim64_resolve_libsystem_symbol("_close", 6u);
+    macos_n3_exit_addr = macos_shim64_resolve_libsystem_symbol("_exit", 5u);
+    macos_n3_mmap_fn_addr = macos_shim64_resolve_libsystem_symbol("_mmap", 5u);
+    macos_n3_munmap_addr = macos_shim64_resolve_libsystem_symbol("_munmap", 7u);
+    macos_n3_mprotect_addr = macos_shim64_resolve_libsystem_symbol("_mprotect", 9u);
+    macos_n3_malloc_addr = macos_shim64_resolve_libsystem_symbol("_malloc", 7u);
+    macos_n3_free_addr = macos_shim64_resolve_libsystem_symbol("_free", 5u);
+    macos_n3_realloc_addr = macos_shim64_resolve_libsystem_symbol("_realloc", 8u);
+    macos_n3_memcpy_addr = macos_shim64_resolve_libsystem_symbol("_memcpy", 7u);
+    macos_n3_memset_addr = macos_shim64_resolve_libsystem_symbol("_memset", 7u);
+    macos_n3_strlen_addr = macos_shim64_resolve_libsystem_symbol("_strlen", 7u);
+    macos_n3_printf_addr = macos_shim64_resolve_libsystem_symbol("_printf", 7u);
+    macos_n3_clock_addr = macos_shim64_resolve_libsystem_symbol("_clock_gettime", 14u);
+    macos_n3_missing_addr = macos_shim64_resolve_libsystem_symbol("_fork", 5u);
+    macos_n3_resolved_count =
+        ((macos_n3_write_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_read_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_open_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_close_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_exit_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_mmap_fn_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_munmap_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_mprotect_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_malloc_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_free_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_realloc_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_memcpy_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_memset_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_strlen_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_printf_addr != 0ull) ? 1u : 0u)
+        + ((macos_n3_clock_addr != 0ull) ? 1u : 0u);
+    macos_n3_text_present = paging64_user_page_present(MACOS_SHIM64_ADDR_WRITE);
+    macos_n3_rodata_present = paging64_user_page_present(
+        MACOS_SHIM64_LIBSYSTEM_DEFAULT_BASE + (u64)MACOS_SHIM64_LIBSYSTEM_RODATA_RVA);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_mmap_fn_addr,
+        macos_n3_mmap_addr,
+        VMA64_PAGE_BYTES,
+        MACOS_ABI64_PROT_READ | MACOS_ABI64_PROT_WRITE,
+        MACOS_ABI64_MAP_PRIVATE | MACOS_ABI64_MAP_FIXED | MACOS_ABI64_MAP_ANON,
+        0xFFFFFFFFFFFFFFFFull,
+        0ull,
+        0x00000000A30000A7ull,
+        &macos_n3_mmap_result);
+    macos_n3_mmap_present = paging64_user_page_present(macos_n3_mmap_addr);
+    if (macos_n3_mmap_result.value == macos_n3_mmap_addr)
+    {
+        u32 macos_n3_i;
+
+        macos_n3_message_addr = macos_n3_mmap_result.value + 0x40ull;
+        macos_n3_path_addr = macos_n3_mmap_result.value + 0x100ull;
+        macos_n3_time_addr = macos_n3_mmap_result.value + 0x180ull;
+        for (macos_n3_i = 0u; macos_n3_i < (u32)sizeof(macos_n3_message); ++macos_n3_i)
+        {
+            ((volatile u8 *)(u64)macos_n3_message_addr)[macos_n3_i] =
+                macos_n3_message[macos_n3_i];
+        }
+        for (macos_n3_i = 0u; macos_n3_i < (u32)sizeof(macos_n1_path); ++macos_n3_i)
+        {
+            ((volatile u8 *)(u64)macos_n3_path_addr)[macos_n3_i] = macos_n1_path[macos_n3_i];
+        }
+    }
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_mprotect_addr,
+        macos_n3_mmap_addr,
+        VMA64_PAGE_BYTES,
+        MACOS_ABI64_PROT_READ,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A8ull,
+        &macos_n3_mprotect_result);
+    macos_n3_mprotect_prot = paging64_user_page_protection(macos_n3_mmap_addr);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_munmap_addr,
+        macos_n3_mmap_addr,
+        VMA64_PAGE_BYTES,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A9ull,
+        &macos_n3_munmap_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_malloc_addr,
+        192ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A2ull,
+        &macos_n3_malloc_result);
+    if (macos_n3_malloc_result.value != 0ull)
+    {
+        u32 macos_n3_i;
+
+        macos_n3_message_addr = macos_n3_malloc_result.value + 0x20ull;
+        macos_n3_path_addr = macos_n3_malloc_result.value + 0x40ull;
+        macos_n3_time_addr = macos_n3_malloc_result.value + 0x80ull;
+        for (macos_n3_i = 0u; macos_n3_i < (u32)sizeof(macos_n3_message); ++macos_n3_i)
+        {
+            ((volatile u8 *)(u64)macos_n3_message_addr)[macos_n3_i] =
+                macos_n3_message[macos_n3_i];
+        }
+        for (macos_n3_i = 0u; macos_n3_i < (u32)sizeof(macos_n1_path); ++macos_n3_i)
+        {
+            ((volatile u8 *)(u64)macos_n3_path_addr)[macos_n3_i] = macos_n1_path[macos_n3_i];
+        }
+        for (macos_n3_i = 0u; macos_n3_i < MACOS_ABI64_TIMESPEC_BYTES; ++macos_n3_i)
+        {
+            ((volatile u8 *)(u64)macos_n3_time_addr)[macos_n3_i] = 0u;
+        }
+    }
+    macos_n3_console_before_count = console64_write_count();
+    macos_n3_console_before_bytes = console64_byte_count();
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_printf_addr,
+        macos_n3_message_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A0ull,
+        &macos_n3_printf_result);
+    macos_n3_console_after_count = console64_write_count();
+    macos_n3_console_after_bytes = console64_byte_count();
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_strlen_addr,
+        macos_n3_message_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A1ull,
+        &macos_n3_strlen_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_memset_addr,
+        macos_n3_malloc_result.value,
+        (u64)'Z',
+        8ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A3ull,
+        &macos_n3_memset_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_memcpy_addr,
+        macos_n3_malloc_result.value,
+        macos_n3_message_addr,
+        4ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A4ull,
+        &macos_n3_memcpy_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_open_addr,
+        macos_n3_path_addr,
+        MACOS_ABI64_O_RDONLY,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000AAull,
+        &macos_n3_open_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_close_addr,
+        macos_n3_open_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000ABull,
+        &macos_n3_close_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_clock_addr,
+        MACOS_ABI64_CLOCK_MONOTONIC,
+        macos_n3_time_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000ACull,
+        &macos_n3_clock_result);
+    macos_n3_time_written =
+        ((macos_n3_clock_result.value == 0ull)
+            && (*((volatile u64 *)(u64)(macos_n3_time_addr + 8ull)) < 1000000000ull))
+            ? 1u
+            : 0u;
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_realloc_addr,
+        macos_n3_malloc_result.value,
+        256ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A5ull,
+        &macos_n3_realloc_result);
+    macos_n3_copied_match =
+        ((macos_n3_realloc_result.value != 0ull)
+            && (((volatile u8 *)(u64)macos_n3_realloc_result.value)[0] == (u8)'n')
+            && (((volatile u8 *)(u64)macos_n3_realloc_result.value)[1] == (u8)'3')
+            && (((volatile u8 *)(u64)macos_n3_realloc_result.value)[2] == (u8)'-')
+            && (((volatile u8 *)(u64)macos_n3_realloc_result.value)[3] == (u8)'l'))
+            ? 1u
+            : 0u;
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        macos_n3_free_addr,
+        macos_n3_realloc_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A30000A6ull,
+        &macos_n3_free_result);
+    (void)macos_shim64_call(
+        macos_n3_pid,
+        MACOS_SHIM64_LIBSYSTEM_DEFAULT_BASE + 0x2F00ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A3000BADull,
+        &macos_n3_bad_result);
+    macos_n3_audit_after = persona_audit64_count(macos_n3_pid);
+    macos_n3_last_symbol = macos_shim64_last_symbol();
+    macos_n3_last_error = macos_shim64_last_error();
+    macos_n3_last_result = macos_shim64_last_result();
+    macos_n3_load_delta = macos_shim64_load_count() - macos_n3_load_before;
+    macos_n3_call_delta = macos_shim64_call_count() - macos_n3_call_before;
+    macos_n3_bridge_delta = macos_shim64_syscall_bridge_count() - macos_n3_bridge_before;
+    macos_n3_memory_delta = macos_shim64_memory_call_count() - macos_n3_memory_before;
+    macos_n3_denial_delta = macos_shim64_denial_count() - macos_n3_denial_before;
+    macos_n3_fault_delta = macos_shim64_fault_count() - macos_n3_fault_before;
+    macos_n3_release_shim = macos_shim64_release_process(macos_n3_pid);
+    macos_n3_unmap_buffer =
+        (paging64_user_page_present(macos_n3_buffer_base) != 0u)
+            ? vma64_unmap(macos_n3_pid, macos_n3_buffer_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macos_n3_fd_release =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? fd64_release_process(macos_n3_pid)
+            : 0u;
+    macos_n3_persona_release =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(macos_n3_pid)
+            : 0u;
+    macos_n3_audit_release =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(macos_n3_pid)
+            : 0u;
+    macos_n3_vma_release =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(macos_n3_pid)
+            : 0u;
+    macos_n3_clone_release =
+        (macos_n3_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macos_n3_pid)
+            : 0u;
+    macos_n3_cleanup =
+        ((macos_n3_pid != PROCESS64_INVALID_PID)
+            && (process64_fd_table(macos_n3_pid) == 0)
+            && (process64_persona_ctx(macos_n3_pid) == 0)
+            && (process64_audit_ctx(macos_n3_pid) == 0)
+            && (process64_vma_root(macos_n3_pid) == 0)
+            && (process64_is_clone(macos_n3_pid) == 0u)
+            && (paging64_user_page_present(macos_n3_buffer_base) == 0u)
+            && (paging64_user_page_present(MACOS_SHIM64_ADDR_WRITE) == 0u)
+            && (paging64_user_page_present(macos_n3_mmap_addr) == 0u))
+            ? 1u
+            : 0u;
+    macos_n3_positive =
+        ((macos_n3_pid != PROCESS64_INVALID_PID)
+            && (macos_n3_vma_init != 0u)
+            && (macos_n3_audit_attach != 0u)
+            && (macos_n3_fd_init != 0u)
+            && (macos_n3_bind == PERSONA64_ATTACH_OK)
+            && (macos_n3_load == MACOS_SHIM64_OK)
+            && (macos_n3_bad_load == MACOS_SHIM64_DENIED)
+            && (macos_n3_bad_load_result.error == MACOS_SHIM64_ERROR_BASE)
+            && (macos_n3_symbol_count == MACOS_SHIM64_LIBSYSTEM_SYMBOL_COUNT)
+            && (macos_n3_resolved_count == MACOS_SHIM64_LIBSYSTEM_SYMBOL_COUNT)
+            && (macos_n3_missing_addr == 0ull)
+            && (macos_n3_write_addr == MACOS_SHIM64_ADDR_WRITE)
+            && (macos_n3_printf_addr == macos_n3_load_result.printf_fn)
+            && (macos_n3_text_present != 0u)
+            && (macos_n3_rodata_present != 0u)
+            && (macos_n3_load_result.mapped_count == 2u)
+            && (macos_n3_load_result.text_checksum != 2166136261u)
+            && (macos_n3_load_result.rodata_checksum != 2166136261u)
+            && ((macos_n3_load_result.text_protection
+                    & (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (macos_n3_load_result.rodata_protection == PAGING64_USER_PROT_READ)
+            && (macos_n3_printf_result.error == MACOS_SHIM64_ERROR_NONE)
+            && (macos_n3_printf_result.value == ((u64)sizeof(macos_n3_message) - 1ull))
+            && ((macos_n3_console_after_count - macos_n3_console_before_count) == 1u)
+            && ((macos_n3_console_after_bytes - macos_n3_console_before_bytes)
+                == ((u32)sizeof(macos_n3_message) - 1u))
+            && (macos_n3_strlen_result.value == ((u64)sizeof(macos_n3_message) - 1ull))
+            && (macos_n3_malloc_result.value != 0ull)
+            && (macos_n3_memset_result.value == macos_n3_malloc_result.value)
+            && (macos_n3_memcpy_result.value == macos_n3_malloc_result.value)
+            && (macos_n3_realloc_result.value != 0ull)
+            && (macos_n3_copied_match != 0u)
+            && (macos_n3_free_result.error == MACOS_SHIM64_ERROR_NONE)
+            && (macos_n3_mmap_result.value == macos_n3_mmap_addr)
+            && (macos_n3_mmap_present != 0u)
+            && (macos_n3_mprotect_result.value == 0ull)
+            && (macos_n3_mprotect_prot == PAGING64_USER_PROT_READ)
+            && (macos_n3_munmap_result.value == 0ull)
+            && (macos_n3_open_result.value >= FD64_FIRST_DYNAMIC)
+            && (macos_n3_open_result.value < (u64)FD64_TABLE_LIMIT)
+            && (macos_n3_close_result.value == 0ull)
+            && (macos_n3_clock_result.value == 0ull)
+            && (macos_n3_time_written != 0u)
+            && (macos_n3_bad_result.error == MACOS_SHIM64_ERROR_SYMBOL)
+            && (macos_n3_load_delta == 1u)
+            && (macos_n3_call_delta == 13u)
+            && (macos_n3_bridge_delta == 7u)
+            && (macos_n3_memory_delta == 7u)
+            && (macos_n3_denial_delta == 2u)
+            && (macos_n3_fault_delta == 0u)
+            && (macos_n3_audit_after >= (macos_n3_audit_before + 7u))
+            && (macos_n3_release_shim >= 3u)
+            && (macos_n3_unmap_buffer == 0u)
+            && (macos_n3_fd_release == 3u)
+            && (macos_n3_persona_release != 0u)
+            && (macos_n3_audit_release != 0u)
+            && (macos_n3_vma_release == 0u)
+            && (macos_n3_clone_release != 0u)
+            && (macos_n3_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macos_n4_pid = process64_spawn_clone(init_pid);
+    macos_n4_owner =
+        (macos_n4_pid != PROCESS64_INVALID_PID) ? process64_principal(macos_n4_pid) : 0u;
+    macos_n4_vma_init =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macos_n4_pid)
+            : 0u;
+    macos_n4_audit_attach =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(macos_n4_pid)
+            : 0u;
+    macos_n4_bind =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macos_n4_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macos_n4_buffer_base = 0x0000000046290000ull;
+    macos_n4_slot_addr = macos_n4_buffer_base + 0x40ull;
+    macos_n4_symbol_addr = macos_n4_buffer_base + 0x80ull;
+    macos_n4_load_before = macos_dyld64_load_count();
+    macos_n4_call_before = macos_dyld64_call_count();
+    macos_n4_lazy_before = macos_dyld64_lazy_bind_count();
+    macos_n4_image_before = macos_dyld64_image_query_count();
+    macos_n4_denial_before = macos_dyld64_denial_count();
+    macos_n4_fault_before = macos_dyld64_fault_count();
+    macos_n4_audit_before = persona_audit64_count(macos_n4_pid);
+    macos_n4_load = macos_dyld64_load(
+        macos_n4_pid,
+        MACOS_DYLD64_DEFAULT_BASE,
+        &macos_n4_load_result);
+    macos_n4_bad_load = macos_dyld64_load(
+        macos_n4_pid,
+        MACOS_DYLD64_DEFAULT_BASE + VMA64_PAGE_BYTES,
+        &macos_n4_bad_load_result);
+    macos_n4_symbol_count = macos_dyld64_symbol_count();
+    macos_n4_stub_addr = macos_dyld64_resolve_symbol("dyld_stub_binder", 16u);
+    macos_n4_get_name_addr = macos_dyld64_resolve_symbol("_dyld_get_image_name", 20u);
+    macos_n4_image_count_addr = macos_dyld64_resolve_symbol("_dyld_image_count", 17u);
+    macos_n4_missing_addr = macos_dyld64_resolve_symbol("_dyld_missing", 13u);
+    macos_n4_resolved_count =
+        ((macos_n4_stub_addr != 0ull) ? 1u : 0u)
+        + ((macos_n4_get_name_addr != 0ull) ? 1u : 0u)
+        + ((macos_n4_image_count_addr != 0ull) ? 1u : 0u);
+    macos_n4_text_present = paging64_user_page_present(MACOS_DYLD64_ADDR_STUB_BINDER);
+    macos_n4_rodata_present = paging64_user_page_present(
+        MACOS_DYLD64_DEFAULT_BASE + (u64)MACOS_DYLD64_RODATA_RVA);
+    macos_n4_buffer_map =
+        (vma64_map_anon(
+            macos_n4_pid,
+            macos_n4_buffer_base,
+            VMA64_PAGE_BYTES,
+            VMA64_PROT_READ | VMA64_PROT_WRITE,
+            VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            == macos_n4_buffer_base)
+            ? 1u
+            : 0u;
+    if (macos_n4_buffer_map != 0u)
+    {
+        u32 macos_n4_i;
+
+        *((volatile u64 *)(u64)macos_n4_slot_addr) = MACOS_DYLD64_ADDR_STUB_BINDER;
+        for (macos_n4_i = 0u; macos_n4_i < (u32)sizeof(macos_n4_symbol_write);
+             ++macos_n4_i)
+        {
+            ((volatile u8 *)(u64)macos_n4_symbol_addr)[macos_n4_i] =
+                macos_n4_symbol_write[macos_n4_i];
+        }
+    }
+    (void)macos_dyld64_call(
+        macos_n4_pid,
+        macos_n4_stub_addr,
+        macos_n4_slot_addr,
+        MACHO64_SHIM_LIBSYSTEM,
+        macos_n4_symbol_addr,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A40000A0ull,
+        &macos_n4_binder_result);
+    macos_n4_slot_after =
+        (macos_n4_buffer_map != 0u) ? *((volatile u64 *)(u64)macos_n4_slot_addr) : 0ull;
+    (void)macos_dyld64_call(
+        macos_n4_pid,
+        macos_n4_image_count_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A40000A1ull,
+        &macos_n4_count_result);
+    (void)macos_dyld64_call(
+        macos_n4_pid,
+        macos_n4_get_name_addr,
+        2ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A40000A2ull,
+        &macos_n4_name_result);
+    macos_n4_name_prefix =
+        ((macos_n4_name_result.value != 0ull)
+            && (macos_n4_name_result.value
+                == (MACOS_DYLD64_DEFAULT_BASE + (u64)MACOS_DYLD64_RODATA_RVA + 0x100ull))
+            && (macos_n4_name_result.byte_count == 30u))
+            ? 1u
+            : 0u;
+    (void)macos_dyld64_bind_lazy(
+        macos_n4_pid,
+        macos_n4_slot_addr,
+        MACHO64_SHIM_LIBSYSTEM,
+        "_fork",
+        5u,
+        &macos_n4_missing_bind_result);
+    (void)macos_dyld64_call(
+        macos_n4_pid,
+        MACOS_DYLD64_DEFAULT_BASE + 0x2F00ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A4000BADull,
+        &macos_n4_bad_call_result);
+    macos_n4_audit_after = persona_audit64_count(macos_n4_pid);
+    macos_n4_load_delta = macos_dyld64_load_count() - macos_n4_load_before;
+    macos_n4_call_delta = macos_dyld64_call_count() - macos_n4_call_before;
+    macos_n4_lazy_delta = macos_dyld64_lazy_bind_count() - macos_n4_lazy_before;
+    macos_n4_image_delta = macos_dyld64_image_query_count() - macos_n4_image_before;
+    macos_n4_denial_delta = macos_dyld64_denial_count() - macos_n4_denial_before;
+    macos_n4_fault_delta = macos_dyld64_fault_count() - macos_n4_fault_before;
+    macos_n4_release_shim = macos_dyld64_release_process(macos_n4_pid);
+    macos_n4_unmap_buffer =
+        (paging64_user_page_present(macos_n4_buffer_base) != 0u)
+            ? vma64_unmap(macos_n4_pid, macos_n4_buffer_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macos_n4_persona_release =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(macos_n4_pid)
+            : 0u;
+    macos_n4_audit_release =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(macos_n4_pid)
+            : 0u;
+    macos_n4_vma_release =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(macos_n4_pid)
+            : 0u;
+    macos_n4_clone_release =
+        (macos_n4_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macos_n4_pid)
+            : 0u;
+    macos_n4_cleanup =
+        ((macos_n4_pid != PROCESS64_INVALID_PID)
+            && (process64_persona_ctx(macos_n4_pid) == 0)
+            && (process64_audit_ctx(macos_n4_pid) == 0)
+            && (process64_vma_root(macos_n4_pid) == 0)
+            && (process64_is_clone(macos_n4_pid) == 0u)
+            && (paging64_user_page_present(macos_n4_buffer_base) == 0u)
+            && (paging64_user_page_present(MACOS_DYLD64_ADDR_STUB_BINDER) == 0u))
+            ? 1u
+            : 0u;
+    macos_n4_positive =
+        ((macos_n4_pid != PROCESS64_INVALID_PID)
+            && (macos_n4_owner != 0u)
+            && (macos_n4_vma_init != 0u)
+            && (macos_n4_audit_attach != 0u)
+            && (macos_n4_bind == PERSONA64_ATTACH_OK)
+            && (macos_n4_load == MACOS_DYLD64_OK)
+            && (macos_n4_bad_load == MACOS_DYLD64_DENIED)
+            && (macos_n4_bad_load_result.error == MACOS_DYLD64_ERROR_BASE)
+            && (macos_n4_symbol_count == MACOS_DYLD64_SYMBOL_COUNT)
+            && (macos_n4_resolved_count == MACOS_DYLD64_SYMBOL_COUNT)
+            && (macos_n4_missing_addr == 0ull)
+            && (macos_n4_stub_addr == MACOS_DYLD64_ADDR_STUB_BINDER)
+            && (macos_n4_image_count_addr == macos_n4_load_result.image_count_fn)
+            && (macos_n4_text_present != 0u)
+            && (macos_n4_rodata_present != 0u)
+            && (macos_n4_buffer_map != 0u)
+            && (macos_n4_load_result.mapped_count == 2u)
+            && (macos_n4_load_result.text_checksum != 2166136261u)
+            && (macos_n4_load_result.rodata_checksum != 2166136261u)
+            && ((macos_n4_load_result.text_protection
+                    & (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (macos_n4_load_result.rodata_protection == PAGING64_USER_PROT_READ)
+            && (macos_n4_binder_result.error == MACOS_DYLD64_ERROR_NONE)
+            && (macos_n4_binder_result.value == MACOS_SHIM64_ADDR_WRITE)
+            && (macos_n4_slot_after == MACOS_SHIM64_ADDR_WRITE)
+            && (macos_n4_binder_result.byte_count == 8u)
+            && (macos_n4_count_result.value == (u64)MACOS_DYLD64_IMAGE_COUNT)
+            && (macos_n4_name_result.value != 0ull)
+            && (macos_n4_name_result.byte_count == 30u)
+            && (macos_n4_name_prefix != 0u)
+            && (macos_n4_missing_bind_result.error == MACOS_DYLD64_ERROR_SYMBOL)
+            && (macos_n4_bad_call_result.error == MACOS_DYLD64_ERROR_SYMBOL)
+            && (macos_n4_load_delta == 1u)
+            && (macos_n4_call_delta == 3u)
+            && (macos_n4_lazy_delta == 1u)
+            && (macos_n4_image_delta == 2u)
+            && (macos_n4_denial_delta == 3u)
+            && (macos_n4_fault_delta == 0u)
+            && (macos_n4_audit_after >= (macos_n4_audit_before + 3u))
+            && (macos_n4_release_shim == 2u)
+            && (macos_n4_unmap_buffer != 0u)
+            && (macos_n4_persona_release != 0u)
+            && (macos_n4_audit_release != 0u)
+            && (macos_n4_vma_release == 0u)
+            && (macos_n4_clone_release != 0u)
+            && (macos_n4_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    macos_n5_pid = process64_spawn_clone(init_pid);
+    macos_n5_owner =
+        (macos_n5_pid != PROCESS64_INVALID_PID) ? process64_principal(macos_n5_pid) : 0u;
+    macos_n5_vma_init =
+        (macos_n5_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(macos_n5_pid)
+            : 0u;
+    macos_n5_audit_attach =
+        (macos_n5_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(macos_n5_pid)
+            : 0u;
+    macos_n5_stdin_cap =
+        (macos_n5_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n5_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n5_stdout_cap =
+        (macos_n5_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n5_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n5_stderr_cap =
+        (macos_n5_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                macos_n5_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    macos_n5_fd_init =
+        ((macos_n5_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n5_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (macos_n5_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                macos_n5_pid,
+                macos_n5_owner,
+                macos_n5_stdin_cap,
+                macos_n5_stdout_cap,
+                macos_n5_stderr_cap)
+            : 0u;
+    macos_n5_bind =
+        (macos_n5_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(macos_n5_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    macos_n5_buffer_base = 0x00000000462A0000ull;
+    macos_n5_message_addr = macos_n5_buffer_base + 0x40ull;
+    macos_n5_output_addr = macos_n5_buffer_base + 0x100ull;
+    macos_n5_load_before = macos_cf64_load_count();
+    macos_n5_call_before = macos_cf64_call_count();
+    macos_n5_create_before = macos_cf64_string_create_count();
+    macos_n5_get_before = macos_cf64_get_cstring_count();
+    macos_n5_show_before = macos_cf64_show_count();
+    macos_n5_retain_before = macos_cf64_retain_count();
+    macos_n5_release_before = macos_cf64_release_count();
+    macos_n5_denial_before = macos_cf64_denial_count();
+    macos_n5_fault_before = macos_cf64_fault_count();
+    macos_n5_scratch_before = macos_cf64_scratch_map_count();
+    macos_n5_shim_call_before = macos_shim64_call_count();
+    macos_n5_shim_bridge_before = macos_shim64_syscall_bridge_count();
+    macos_n5_audit_before = persona_audit64_count(macos_n5_pid);
+    macos_n5_libsystem_load = macos_shim64_load_libsystem(
+        macos_n5_pid,
+        MACOS_SHIM64_LIBSYSTEM_DEFAULT_BASE,
+        &macos_n5_libsystem_result);
+    macos_n5_load = macos_cf64_load(
+        macos_n5_pid,
+        MACOS_CF64_DEFAULT_BASE,
+        &macos_n5_load_result);
+    macos_n5_bad_load = macos_cf64_load(
+        macos_n5_pid,
+        MACOS_CF64_DEFAULT_BASE + VMA64_PAGE_BYTES,
+        &macos_n5_bad_load_result);
+    macos_n5_symbol_count = macos_cf64_symbol_count();
+    macos_n5_allocator_addr = macos_cf64_resolve_symbol("CFAllocatorGetDefault", 21u);
+    macos_n5_release_addr = macos_cf64_resolve_symbol("CFRelease", 9u);
+    macos_n5_retain_addr = macos_cf64_resolve_symbol("CFRetain", 8u);
+    macos_n5_create_addr = macos_cf64_resolve_symbol("CFStringCreateWithCString", 25u);
+    macos_n5_get_addr = macos_cf64_resolve_symbol("CFStringGetCString", 18u);
+    macos_n5_show_addr = macos_cf64_resolve_symbol("_CFShow", 7u);
+    macos_n5_missing_addr = macos_cf64_resolve_symbol("CFMissing", 9u);
+    macos_n5_resolved_count =
+        ((macos_n5_allocator_addr != 0ull) ? 1u : 0u)
+        + ((macos_n5_release_addr != 0ull) ? 1u : 0u)
+        + ((macos_n5_retain_addr != 0ull) ? 1u : 0u)
+        + ((macos_n5_create_addr != 0ull) ? 1u : 0u)
+        + ((macos_n5_get_addr != 0ull) ? 1u : 0u)
+        + ((macos_n5_show_addr != 0ull) ? 1u : 0u);
+    macos_n5_text_present = paging64_user_page_present(MACOS_CF64_ADDR_ALLOCATOR_GET_DEFAULT);
+    macos_n5_rodata_present = paging64_user_page_present(
+        MACOS_CF64_DEFAULT_BASE + (u64)MACOS_CF64_RODATA_RVA);
+    macos_n5_buffer_map =
+        (vma64_map_anon(
+            macos_n5_pid,
+            macos_n5_buffer_base,
+            VMA64_PAGE_BYTES,
+            VMA64_PROT_READ | VMA64_PROT_WRITE,
+            VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            == macos_n5_buffer_base)
+            ? 1u
+            : 0u;
+    if (macos_n5_buffer_map != 0u)
+    {
+        u32 macos_n5_i;
+
+        for (macos_n5_i = 0u; macos_n5_i < (u32)sizeof(macos_n5_message);
+             ++macos_n5_i)
+        {
+            ((volatile u8 *)(u64)macos_n5_message_addr)[macos_n5_i] =
+                macos_n5_message[macos_n5_i];
+            ((volatile u8 *)(u64)macos_n5_output_addr)[macos_n5_i] = 0u;
+        }
+    }
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_allocator_addr,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A0ull,
+        &macos_n5_allocator_result);
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_create_addr,
+        macos_n5_allocator_result.value,
+        macos_n5_message_addr,
+        MACOS_CF64_ENCODING_UTF8,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A1ull,
+        &macos_n5_create_result);
+    macos_n5_live_after_create = macos_cf64_live_object_count(macos_n5_pid);
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_retain_addr,
+        macos_n5_create_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A2ull,
+        &macos_n5_retain_result);
+    macos_n5_live_after_retain = macos_cf64_live_object_count(macos_n5_pid);
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_get_addr,
+        macos_n5_create_result.value,
+        macos_n5_output_addr,
+        (u64)sizeof(macos_n5_message),
+        MACOS_CF64_ENCODING_UTF8,
+        0ull,
+        0ull,
+        0x00000000A50000A3ull,
+        &macos_n5_get_result);
+    macos_n5_output_match = 0u;
+    macos_n5_output_nul = 0u;
+    if (macos_n5_buffer_map != 0u)
+    {
+        u32 macos_n5_i;
+        u32 macos_n5_match = 1u;
+
+        for (macos_n5_i = 0u; macos_n5_i < ((u32)sizeof(macos_n5_message) - 1u);
+             ++macos_n5_i)
+        {
+            if (((volatile u8 *)(u64)macos_n5_output_addr)[macos_n5_i]
+                != macos_n5_message[macos_n5_i])
+            {
+                macos_n5_match = 0u;
+            }
+        }
+        macos_n5_output_match = macos_n5_match;
+        macos_n5_output_nul =
+            (((volatile u8 *)(u64)macos_n5_output_addr)[
+                (u32)sizeof(macos_n5_message) - 1u] == 0u)
+                ? 1u
+                : 0u;
+    }
+    macos_n5_console_before_count = console64_write_count();
+    macos_n5_console_before_bytes = console64_byte_count();
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_show_addr,
+        macos_n5_create_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A4ull,
+        &macos_n5_show_result);
+    macos_n5_console_after_count = console64_write_count();
+    macos_n5_console_after_bytes = console64_byte_count();
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_release_addr,
+        macos_n5_create_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A5ull,
+        &macos_n5_release1_result);
+    macos_n5_live_after_release1 = macos_cf64_live_object_count(macos_n5_pid);
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        macos_n5_release_addr,
+        macos_n5_create_result.value,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A50000A6ull,
+        &macos_n5_release2_result);
+    macos_n5_live_after_release2 = macos_cf64_live_object_count(macos_n5_pid);
+    (void)macos_cf64_call(
+        macos_n5_pid,
+        MACOS_CF64_DEFAULT_BASE + 0x2F00ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0x00000000A5000BADull,
+        &macos_n5_bad_result);
+    macos_n5_audit_after = persona_audit64_count(macos_n5_pid);
+    macos_n5_load_delta = macos_cf64_load_count() - macos_n5_load_before;
+    macos_n5_call_delta = macos_cf64_call_count() - macos_n5_call_before;
+    macos_n5_create_delta = macos_cf64_string_create_count() - macos_n5_create_before;
+    macos_n5_get_delta = macos_cf64_get_cstring_count() - macos_n5_get_before;
+    macos_n5_show_delta = macos_cf64_show_count() - macos_n5_show_before;
+    macos_n5_retain_delta = macos_cf64_retain_count() - macos_n5_retain_before;
+    macos_n5_release_delta = macos_cf64_release_count() - macos_n5_release_before;
+    macos_n5_denial_delta = macos_cf64_denial_count() - macos_n5_denial_before;
+    macos_n5_fault_delta = macos_cf64_fault_count() - macos_n5_fault_before;
+    macos_n5_scratch_delta = macos_cf64_scratch_map_count() - macos_n5_scratch_before;
+    macos_n5_shim_call_delta = macos_shim64_call_count() - macos_n5_shim_call_before;
+    macos_n5_shim_bridge_delta =
+        macos_shim64_syscall_bridge_count() - macos_n5_shim_bridge_before;
+    macos_n5_release_cf = macos_cf64_release_process(macos_n5_pid);
+    macos_n5_release_shim = macos_shim64_release_process(macos_n5_pid);
+    macos_n5_unmap_buffer =
+        (vma64_find(macos_n5_pid, macos_n5_buffer_base) != 0)
+            ? vma64_unmap(macos_n5_pid, macos_n5_buffer_base, VMA64_PAGE_BYTES)
+            : 0u;
+    macos_n5_fd_release =
+        (macos_n5_pid != PROCESS64_INVALID_PID) ? fd64_release_process(macos_n5_pid) : 0u;
+    macos_n5_persona_release =
+        (macos_n5_pid != PROCESS64_INVALID_PID) ? persona64_release(macos_n5_pid) : 0u;
+    macos_n5_audit_release =
+        (macos_n5_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(macos_n5_pid)
+            : 0u;
+    macos_n5_vma_release =
+        (macos_n5_pid != PROCESS64_INVALID_PID) ? vma64_release_process(macos_n5_pid) : 0u;
+    macos_n5_clone_release =
+        (macos_n5_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(macos_n5_pid)
+            : 0u;
+    macos_n5_cleanup =
+        ((macos_n5_pid != PROCESS64_INVALID_PID)
+            && (process64_fd_table(macos_n5_pid) == 0)
+            && (process64_persona_ctx(macos_n5_pid) == 0)
+            && (process64_audit_ctx(macos_n5_pid) == 0)
+            && (process64_vma_root(macos_n5_pid) == 0)
+            && (process64_is_clone(macos_n5_pid) == 0u)
+            && (paging64_user_page_present(macos_n5_buffer_base) == 0u)
+            && (paging64_user_page_present(MACOS_CF64_ADDR_ALLOCATOR_GET_DEFAULT) == 0u)
+            && (paging64_user_page_present(MACOS_CF64_SCRATCH_BASE) == 0u)
+            && (paging64_user_page_present(MACOS_SHIM64_ADDR_WRITE) == 0u))
+            ? 1u
+            : 0u;
+    macos_n5_positive =
+        ((macos_n5_pid != PROCESS64_INVALID_PID)
+            && (macos_n5_owner != 0u)
+            && (macos_n5_vma_init != 0u)
+            && (macos_n5_audit_attach != 0u)
+            && (macos_n5_fd_init != 0u)
+            && (macos_n5_bind == PERSONA64_ATTACH_OK)
+            && (macos_n5_libsystem_load == MACOS_SHIM64_OK)
+            && (macos_n5_load == MACOS_CF64_OK)
+            && (macos_n5_bad_load == MACOS_CF64_DENIED)
+            && (macos_n5_bad_load_result.error == MACOS_CF64_ERROR_BASE)
+            && (macos_n5_symbol_count == MACOS_CF64_SYMBOL_COUNT)
+            && (macos_n5_resolved_count == MACOS_CF64_SYMBOL_COUNT)
+            && (macos_n5_missing_addr == 0ull)
+            && (macos_n5_allocator_addr == MACOS_CF64_ADDR_ALLOCATOR_GET_DEFAULT)
+            && (macos_n5_show_addr == MACOS_CF64_ADDR_SHOW)
+            && (macos_n5_text_present != 0u)
+            && (macos_n5_rodata_present != 0u)
+            && (macos_n5_buffer_map != 0u)
+            && (macos_n5_load_result.mapped_count == 2u)
+            && (macos_n5_load_result.text_checksum != 2166136261u)
+            && (macos_n5_load_result.rodata_checksum != 2166136261u)
+            && ((macos_n5_load_result.text_protection
+                    & (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (macos_n5_load_result.rodata_protection == PAGING64_USER_PROT_READ)
+            && (macos_n5_allocator_result.value == MACOS_CF64_ALLOCATOR_DEFAULT)
+            && (macos_n5_create_result.error == MACOS_CF64_ERROR_NONE)
+            && (macos_n5_create_result.value == MACOS_CF64_OBJECT_HANDLE_BASE)
+            && (macos_n5_create_result.byte_count == ((u32)sizeof(macos_n5_message) - 1u))
+            && (macos_n5_live_after_create == 1u)
+            && (macos_n5_retain_result.value == macos_n5_create_result.value)
+            && (macos_n5_retain_result.byte_count == 2u)
+            && (macos_n5_live_after_retain == 1u)
+            && (macos_n5_get_result.value == 1ull)
+            && (macos_n5_get_result.byte_count == ((u32)sizeof(macos_n5_message) - 1u))
+            && (macos_n5_output_match != 0u)
+            && (macos_n5_output_nul != 0u)
+            && (macos_n5_show_result.value == ((u64)sizeof(macos_n5_message) - 1ull))
+            && ((macos_n5_console_after_count - macos_n5_console_before_count) == 1u)
+            && ((macos_n5_console_after_bytes - macos_n5_console_before_bytes)
+                == ((u32)sizeof(macos_n5_message) - 1u))
+            && (macos_n5_release1_result.value == 1ull)
+            && (macos_n5_live_after_release1 == 1u)
+            && (macos_n5_release2_result.value == 0ull)
+            && (macos_n5_live_after_release2 == 0u)
+            && (macos_n5_bad_result.error == MACOS_CF64_ERROR_SYMBOL)
+            && (macos_n5_load_delta == 1u)
+            && (macos_n5_call_delta == 7u)
+            && (macos_n5_create_delta == 1u)
+            && (macos_n5_get_delta == 1u)
+            && (macos_n5_show_delta == 1u)
+            && (macos_n5_retain_delta == 1u)
+            && (macos_n5_release_delta == 2u)
+            && (macos_n5_denial_delta == 2u)
+            && (macos_n5_fault_delta == 0u)
+            && (macos_n5_scratch_delta == 1u)
+            && (macos_n5_shim_call_delta == 1u)
+            && (macos_n5_shim_bridge_delta == 1u)
+            && (macos_n5_audit_after >= (macos_n5_audit_before + 2u))
+            && (macos_n5_release_cf == 3u)
+            && (macos_n5_release_shim == 2u)
+            && (macos_n5_unmap_buffer != 0u)
+            && (macos_n5_fd_release == 3u)
+            && (macos_n5_persona_release != 0u)
+            && (macos_n5_audit_release != 0u)
+            && (macos_n5_vma_release == 0u)
+            && (macos_n5_clone_release != 0u)
+            && (macos_n5_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    persona_o1_linux_pid = init_pid;
+    persona_o1_windows_pid = policy_pid;
+    persona_o1_linux_owner = process64_principal(persona_o1_linux_pid);
+    persona_o1_windows_owner = process64_principal(persona_o1_windows_pid);
+    persona_o1_audit_attach = persona_audit64_attach(persona_o1_windows_pid);
+    persona_o1_linux_bind = persona64_init_linux_elf(
+        persona_o1_linux_pid,
+        linux_abi64_dispatch_table());
+    persona_o1_windows_bind = persona64_init_windows_pe(persona_o1_windows_pid, 0);
+    persona_o1_linux_mask = persona64_capability_mask(persona_o1_linux_pid);
+    persona_o1_windows_mask = persona64_capability_mask(persona_o1_windows_pid);
+    persona_o1_denial_before = capability64_persona_denial_count();
+    persona_o1_transfer_before = capability64_persona_transfer_denial_count();
+    persona_o1_audit_before = persona_audit64_count(persona_o1_windows_pid);
+    persona_o1_tagged_cap = capability64_grant_service_for_process(
+        SERVICE_ENDPOINT_CLASS_CONSOLE,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY | CAPABILITY64_RIGHT_DELEGATE,
+        persona_o1_linux_pid);
+    persona_o1_untagged_cap = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_CONSOLE,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY | CAPABILITY64_RIGHT_DELEGATE,
+        persona_o1_linux_owner);
+    persona_o1_self_delegate = capability64_delegate_persistent(
+        persona_o1_tagged_cap,
+        CAPABILITY64_RIGHT_SEND,
+        CAPABILITY64_CONTEXT(persona_o1_linux_owner, persona_o1_linux_owner));
+    persona_o1_cross_delegate = capability64_delegate_persistent(
+        persona_o1_tagged_cap,
+        CAPABILITY64_RIGHT_SEND,
+        CAPABILITY64_CONTEXT(persona_o1_linux_owner, persona_o1_windows_owner));
+    persona_o1_legacy_delegate = capability64_delegate_persistent(
+        persona_o1_untagged_cap,
+        CAPABILITY64_RIGHT_SEND,
+        CAPABILITY64_CONTEXT(persona_o1_linux_owner, persona_o1_windows_owner));
+    persona_o1_denial_after = capability64_persona_denial_count();
+    persona_o1_transfer_after = capability64_persona_transfer_denial_count();
+    persona_o1_audit_after = persona_audit64_count(persona_o1_windows_pid);
+    persona_o1_audit_read =
+        (persona_o1_audit_after > persona_o1_audit_before)
+            ? persona_audit64_read(
+                persona_o1_windows_pid,
+                persona_o1_audit_after - 1u,
+                &persona_o1_record)
+            : 0u;
+    persona_o1_tag =
+        capability64_persona_tag(persona_o1_tagged_cap, persona_o1_linux_owner);
+    persona_o1_tag_mask =
+        capability64_persona_mask(persona_o1_tagged_cap, persona_o1_linux_owner);
+    persona_o1_self_tag =
+        capability64_persona_tag(persona_o1_self_delegate, persona_o1_linux_owner);
+    persona_o1_self_mask =
+        capability64_persona_mask(persona_o1_self_delegate, persona_o1_linux_owner);
+    persona_o1_legacy_tag =
+        capability64_persona_tag(persona_o1_legacy_delegate, persona_o1_windows_owner);
+    persona_o1_legacy_mask =
+        capability64_persona_mask(persona_o1_legacy_delegate, persona_o1_windows_owner);
+    persona_o1_self_route =
+        capability64_route(
+            persona_o1_self_delegate,
+            CAPABILITY64_RIGHT_SEND,
+            persona_o1_linux_owner);
+    persona_o1_legacy_route =
+        capability64_route(
+            persona_o1_legacy_delegate,
+            CAPABILITY64_RIGHT_SEND,
+            persona_o1_windows_owner);
+    persona_o1_revoke_tagged =
+        capability64_revoke(persona_o1_tagged_cap, persona_o1_linux_owner);
+    persona_o1_revoke_legacy =
+        capability64_revoke(persona_o1_untagged_cap, persona_o1_linux_owner);
+    persona_o1_windows_release = persona64_release(persona_o1_windows_pid);
+    persona_o1_linux_release = persona64_release(persona_o1_linux_pid);
+    persona_o1_audit_release = persona_audit64_release(persona_o1_windows_pid);
+    persona_o1_cleanup =
+        ((process64_persona_ctx(persona_o1_linux_pid) == 0)
+            && (process64_persona_ctx(persona_o1_windows_pid) == 0)
+            && (process64_audit_ctx(persona_o1_windows_pid) == 0))
+            ? 1u
+            : 0u;
+    persona_o1_positive =
+        ((persona_o1_linux_owner != 0u)
+            && (persona_o1_windows_owner != 0u)
+            && (persona_o1_audit_attach != 0u)
+            && (persona_o1_linux_bind == PERSONA64_ATTACH_OK)
+            && (persona_o1_windows_bind == PERSONA64_ATTACH_OK)
+            && (persona_o1_linux_mask == PERSONA64_CAPABILITY_MASK_LINUX)
+            && (persona_o1_windows_mask == PERSONA64_CAPABILITY_MASK_WINDOWS)
+            && (persona_o1_tagged_cap != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o1_untagged_cap != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o1_self_delegate != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o1_cross_delegate == CAPABILITY64_INVALID_HANDLE)
+            && (persona_o1_legacy_delegate != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o1_tag == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o1_tag_mask == PERSONA64_CAPABILITY_MASK_LINUX)
+            && (persona_o1_self_tag == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o1_self_mask == PERSONA64_CAPABILITY_MASK_LINUX)
+            && (persona_o1_legacy_tag == CAPABILITY64_PERSONA_UNTAGGED)
+            && (persona_o1_legacy_mask == 0u)
+            && (persona_o1_self_route
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_CONSOLE))
+            && (persona_o1_legacy_route
+                == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_CONSOLE))
+            && (persona_o1_denial_after == (persona_o1_denial_before + 1u))
+            && (persona_o1_transfer_after == (persona_o1_transfer_before + 1u))
+            && (persona_o1_audit_after == (persona_o1_audit_before + 1u))
+            && (persona_o1_audit_read != 0u)
+            && (persona_o1_record.pid == persona_o1_windows_pid)
+            && (persona_o1_record.persona_type == (u8)PERSONA64_TYPE_WINDOWS_PE)
+            && (persona_o1_record.event_type
+                == (u8)PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (persona_o1_record.event_code == (u16)SERVICE_ENDPOINT_CLASS_CONSOLE)
+            && (persona_o1_record.result == PERSONA_AUDIT64_RESULT_DENY)
+            && (persona_o1_revoke_tagged != 0u)
+            && (persona_o1_revoke_legacy != 0u)
+            && (persona_o1_windows_release != 0u)
+            && (persona_o1_linux_release != 0u)
+            && (persona_o1_audit_release != 0u)
+            && (persona_o1_cleanup != 0u))
+            ? 1u
+            : 0u;
+#endif
 
     elf_e2_header_parse = elf64_parse_header(
         elf_e1_valid_bytes,
@@ -16255,19 +25503,48 @@ static void log_process_namespace(void)
     linux_f25_denial_count_before = linux_abi64_futex_denial_count();
     linux_f25_fault_count_before = linux_abi64_futex_fault_count();
     linux_f25_audit_before = persona_audit64_count(init_pid);
-    linux_f25_wait_return = (linux_f25_word != 0)
-        ? linux_abi64_dispatch(
+    scheduler64_runqueue_reset();
+    linux_f25_wait_task = (linux_f25_map_ok != 0u)
+        ? scheduler64_runqueue_register_process_task(
             init_pid,
-            LINUX_ABI64_SYSCALL_FUTEX,
-            linux_f25_buffer + 128ull,
-            (u64)(LINUX_ABI64_FUTEX_WAIT | LINUX_ABI64_FUTEX_PRIVATE_FLAG),
-            42ull,
-            0ull,
-            0ull,
-            0ull,
-            0x00000000F25000A0ull)
-        : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+            process64_runtime_token(init_pid),
+            process64_runtime_user_entry_token(init_pid),
+            0x00000000F2500100ull,
+            linux_f25_buffer + 2048ull,
+            (u64)process64_runtime_user_entry_selectors(init_pid),
+            (u64)process64_runtime_user_entry_rflags(init_pid))
+        : SCHEDULER64_INVALID_TASK;
+    linux_f25_peer_task = (linux_f25_wait_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_register_user_task(
+            0x00000000F2500200ull,
+            linux_f25_buffer + 3072ull,
+            (u64)process64_runtime_user_entry_selectors(init_pid),
+            (u64)process64_runtime_user_entry_rflags(init_pid))
+        : SCHEDULER64_INVALID_TASK;
+    linux_f25_runqueue_start = (linux_f25_peer_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(linux_f25_wait_task)
+        : 0u;
+    linux_f25_task_id_before_wait = scheduler64_runqueue_current_task_id();
+    linux_f25_sched_block_count_before = scheduler64_runqueue_block_count();
+    linux_f25_sched_wake_count_before = scheduler64_runqueue_wake_count();
+    linux_f25_sched_denial_count_before = scheduler64_runqueue_block_denial_count();
+    linux_f25_wait_return =
+        ((linux_f25_word != 0) && (linux_f25_runqueue_start != 0u))
+            ? linux_abi64_dispatch(
+                init_pid,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                linux_f25_buffer + 128ull,
+                (u64)(LINUX_ABI64_FUTEX_WAIT | LINUX_ABI64_FUTEX_PRIVATE_FLAG),
+                42ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F25000A0ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     linux_f25_waiters_after_wait = linux_abi64_futex_waiter_count();
+    linux_f25_wait_task_state_after_wait =
+        scheduler64_runqueue_task_state(linux_f25_wait_task);
+    linux_f25_sched_block_count_after_wait = scheduler64_runqueue_block_count();
     linux_f25_audit_after_wait = persona_audit64_count(init_pid);
     linux_f25_read_wait_record =
         (linux_f25_audit_after_wait > linux_f25_audit_before)
@@ -16289,6 +25566,9 @@ static void log_process_namespace(void)
             0x00000000F25000B0ull)
         : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
     linux_f25_waiters_after_wake = linux_abi64_futex_waiter_count();
+    linux_f25_wait_task_state_after_wake =
+        scheduler64_runqueue_task_state(linux_f25_wait_task);
+    linux_f25_sched_wake_count_after_wake = scheduler64_runqueue_wake_count();
     linux_f25_audit_after_wake = persona_audit64_count(init_pid);
     linux_f25_read_wake_record =
         (linux_f25_audit_after_wake > linux_f25_audit_after_wait)
@@ -16296,6 +25576,27 @@ static void log_process_namespace(void)
                 init_pid,
                 linux_f25_audit_after_wake - 1u,
                 &linux_f25_wake_record)
+            : 0u;
+    scheduler64_runqueue_stop();
+    linux_f25_direct_return = (linux_f25_word != 0)
+        ? linux_abi64_dispatch(
+            init_pid,
+            LINUX_ABI64_SYSCALL_FUTEX,
+            linux_f25_buffer + 128ull,
+            (u64)(LINUX_ABI64_FUTEX_WAIT | LINUX_ABI64_FUTEX_PRIVATE_FLAG),
+            42ull,
+            0ull,
+            0ull,
+            0ull,
+            0x00000000F2500D10ull)
+        : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    linux_f25_audit_after_direct = persona_audit64_count(init_pid);
+    linux_f25_read_direct_record =
+        (linux_f25_audit_after_direct > linux_f25_audit_after_wake)
+            ? persona_audit64_read(
+                init_pid,
+                linux_f25_audit_after_direct - 1u,
+                &linux_f25_direct_record)
             : 0u;
     if (linux_f25_word != 0)
     {
@@ -16315,7 +25616,7 @@ static void log_process_namespace(void)
         : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
     linux_f25_audit_after_eagain = persona_audit64_count(init_pid);
     linux_f25_read_eagain_record =
-        (linux_f25_audit_after_eagain > linux_f25_audit_after_wake)
+        (linux_f25_audit_after_eagain > linux_f25_audit_after_direct)
             ? persona_audit64_read(
                 init_pid,
                 linux_f25_audit_after_eagain - 1u,
@@ -16365,10 +25666,13 @@ static void log_process_namespace(void)
     linux_f25_eagain_count_after = linux_abi64_futex_eagain_count();
     linux_f25_denial_count_after = linux_abi64_futex_denial_count();
     linux_f25_fault_count_after = linux_abi64_futex_fault_count();
+    linux_f25_sched_denial_count_after = scheduler64_runqueue_block_denial_count();
     linux_f25_last_pid = linux_abi64_futex_last_wait_pid();
     linux_f25_last_address = linux_abi64_futex_last_wait_address();
     linux_f25_last_value = linux_abi64_futex_last_wait_value();
+    linux_f25_last_task = linux_abi64_futex_last_wait_task_id();
     linux_f25_last_wake = linux_abi64_futex_last_wake_count();
+    scheduler64_runqueue_reset();
     linux_f25_cleanup_unmap = (linux_f25_buffer != 0ull)
         ? vma64_unmap(init_pid, linux_f25_buffer, VMA64_PAGE_BYTES)
         : 0u;
@@ -16376,10 +25680,20 @@ static void log_process_namespace(void)
         ((linux_f25_entry != 0u)
             && (linux_f25_map_ok != 0u)
             && (linux_f25_initial_value == 42u)
+            && (linux_f25_wait_task != SCHEDULER64_INVALID_TASK)
+            && (linux_f25_peer_task != SCHEDULER64_INVALID_TASK)
+            && (linux_f25_runqueue_start != 0u)
+            && (linux_f25_task_id_before_wait == linux_f25_wait_task)
             && (linux_f25_wait_return == 0ull)
             && (linux_f25_waiters_after_wait == 1u)
+            && (linux_f25_wait_task_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            && ((linux_f25_sched_block_count_after_wait - linux_f25_sched_block_count_before) == 1u)
             && (linux_f25_wake_return == 1ull)
             && (linux_f25_waiters_after_wake == 0u)
+            && (linux_f25_wait_task_state_after_wake == SCHEDULER64_TASK_READY)
+            && ((linux_f25_sched_wake_count_after_wake - linux_f25_sched_wake_count_before) == 1u)
+            && ((linux_f25_sched_denial_count_after - linux_f25_sched_denial_count_before) == 0u)
+            && (linux_f25_direct_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL))
             && (linux_f25_eagain_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN))
             && (linux_f25_fault_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT))
             && (linux_f25_badop_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL))
@@ -16393,6 +25707,11 @@ static void log_process_namespace(void)
             && (linux_f25_wake_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
             && (linux_f25_wake_record.result == PERSONA_AUDIT64_RESULT_OK)
             && (linux_f25_wake_record.rip == 0x00000000F25000B0ull)
+            && (linux_f25_read_direct_record != 0u)
+            && (linux_f25_direct_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_f25_direct_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
+            && (linux_f25_direct_record.result == LINUX_ABI64_EINVAL)
+            && (linux_f25_direct_record.rip == 0x00000000F2500D10ull)
             && (linux_f25_read_eagain_record != 0u)
             && (linux_f25_eagain_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
             && (linux_f25_eagain_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
@@ -16407,21 +25726,276 @@ static void log_process_namespace(void)
             && (linux_f25_badop_record.result == LINUX_ABI64_EINVAL)
             && (linux_f25_audit_after_wait == (linux_f25_audit_before + 1u))
             && (linux_f25_audit_after_wake == (linux_f25_audit_after_wait + 1u))
-            && (linux_f25_audit_after_eagain == (linux_f25_audit_after_wake + 1u))
+            && (linux_f25_audit_after_direct == (linux_f25_audit_after_wake + 1u))
+            && (linux_f25_audit_after_eagain == (linux_f25_audit_after_direct + 1u))
             && (linux_f25_audit_after_fault == (linux_f25_audit_after_eagain + 1u))
             && (linux_f25_audit_after_badop == (linux_f25_audit_after_fault + 1u))
             && ((linux_f25_wait_count_after - linux_f25_wait_count_before) == 1u)
             && ((linux_f25_wake_count_after - linux_f25_wake_count_before) == 1u)
             && ((linux_f25_woken_count_after - linux_f25_woken_count_before) == 1u)
             && ((linux_f25_eagain_count_after - linux_f25_eagain_count_before) == 1u)
-            && ((linux_f25_denial_count_after - linux_f25_denial_count_before) == 1u)
+            && ((linux_f25_denial_count_after - linux_f25_denial_count_before) == 2u)
             && ((linux_f25_fault_count_after - linux_f25_fault_count_before) == 1u)
             && (linux_f25_last_pid == init_pid)
             && (linux_f25_last_address == (linux_f25_buffer + 128ull))
             && (linux_f25_last_value == 42u)
+            && (linux_f25_last_task == linux_f25_wait_task)
             && (linux_f25_last_wake == 1u)
             && (linux_abi64_futex_waiter_count() == 0u)
             && (linux_f25_cleanup_unmap != 0u)
+            && (vma64_region_count(init_pid) == 0u))
+            ? 1u
+            : 0u;
+    linux_f25b_buffer = vma64_map_anon(
+        init_pid,
+        0x00000000441C0000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    linux_f25b_map_ok = (linux_f25b_buffer != 0ull) ? 1u : 0u;
+    linux_f25b_word = (linux_f25b_map_ok != 0u)
+        ? (volatile u32 *)(u64)(linux_f25b_buffer + 128ull)
+        : 0;
+    linux_f25b_timeout = (linux_f25b_map_ok != 0u)
+        ? (volatile linux_abi64_timespec_t *)(u64)(linux_f25b_buffer + 256ull)
+        : 0;
+    if ((linux_f25b_word != 0) && (linux_f25b_timeout != 0))
+    {
+        *linux_f25b_word = 55u;
+        linux_f25b_timeout->tv_sec = 0ull;
+        linux_f25b_timeout->tv_nsec = 30000000ull;
+    }
+
+    linux_f25b_timed_before = linux_abi64_futex_timed_wait_count();
+    linux_f25b_timeout_before = linux_abi64_futex_timeout_count();
+    linux_f25b_wait_before = linux_abi64_futex_wait_count();
+    linux_f25b_denial_before = linux_abi64_futex_denial_count();
+    linux_f25b_fault_before = linux_abi64_futex_fault_count();
+    linux_f25b_sched_block_before = scheduler64_runqueue_block_count();
+    linux_f25b_sched_wake_before = scheduler64_runqueue_wake_count();
+    linux_f25b_sleep_count_before = scheduler64_sleep_count();
+    linux_f25b_sleep_wake_before = scheduler64_sleep_wake_count();
+    linux_f25b_audit_before = persona_audit64_count(init_pid);
+    scheduler64_runqueue_reset();
+    linux_f25b_wait_task = (linux_f25b_map_ok != 0u)
+        ? scheduler64_runqueue_register_process_task(
+            init_pid,
+            process64_runtime_token(init_pid),
+            process64_runtime_user_entry_token(init_pid),
+            0x00000000F25B0100ull,
+            linux_f25b_buffer + 2048ull,
+            (u64)process64_runtime_user_entry_selectors(init_pid),
+            (u64)process64_runtime_user_entry_rflags(init_pid))
+        : SCHEDULER64_INVALID_TASK;
+    linux_f25b_peer_task = (linux_f25b_wait_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_register_user_task(
+            0x00000000F25B0200ull,
+            linux_f25b_buffer + 3072ull,
+            (u64)process64_runtime_user_entry_selectors(init_pid),
+            (u64)process64_runtime_user_entry_rflags(init_pid))
+        : SCHEDULER64_INVALID_TASK;
+    linux_f25b_start = (linux_f25b_peer_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(linux_f25b_wait_task)
+        : 0u;
+    linux_f25b_wait_return =
+        ((linux_f25b_word != 0) && (linux_f25b_timeout != 0) && (linux_f25b_start != 0u))
+            ? linux_abi64_dispatch(
+                init_pid,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                linux_f25b_buffer + 128ull,
+                (u64)(LINUX_ABI64_FUTEX_WAIT | LINUX_ABI64_FUTEX_PRIVATE_FLAG),
+                55ull,
+                linux_f25b_buffer + 256ull,
+                0ull,
+                0ull,
+                0x00000000F25B00A0ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+    linux_f25b_waiters_after_wait = linux_abi64_futex_waiter_count();
+    linux_f25b_sleep_pending_after_wait = scheduler64_sleep_pending_count();
+    linux_f25b_state_after_wait =
+        (linux_f25b_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(linux_f25b_wait_task)
+            : 0u;
+    linux_f25b_wake_tick = scheduler64_sleep_last_wake_tick();
+    linux_f25b_audit_after_wait = persona_audit64_count(init_pid);
+    linux_f25b_wait_frame.rip = 0x00000000F25B0100ull;
+    linux_f25b_wait_frame.rsp = linux_f25b_buffer + 2048ull;
+    linux_f25b_wait_frame.rflags = process64_runtime_user_entry_rflags(init_pid);
+    linux_f25b_wait_frame.cs =
+        process64_runtime_user_entry_selectors(init_pid) & 0xFFFFull;
+    linux_f25b_wait_frame.ss =
+        (process64_runtime_user_entry_selectors(init_pid) >> 16) & 0xFFFFull;
+    linux_f25b_switch_peer =
+        (linux_f25b_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            ? scheduler64_runqueue_on_timer(&linux_f25b_wait_frame)
+            : 0u;
+    if (linux_f25b_wake_tick > pit_get_ticks())
+    {
+        interrupts64_enable();
+        wait_for_timer_ticks(linux_f25b_wake_tick);
+        interrupts64_disable();
+    }
+    linux_f25b_peer_frame.rip = 0x00000000F25B0200ull;
+    linux_f25b_peer_frame.rsp = linux_f25b_buffer + 3072ull;
+    linux_f25b_peer_frame.rflags = process64_runtime_user_entry_rflags(init_pid);
+    linux_f25b_peer_frame.cs =
+        process64_runtime_user_entry_selectors(init_pid) & 0xFFFFull;
+    linux_f25b_peer_frame.ss =
+        (process64_runtime_user_entry_selectors(init_pid) >> 16) & 0xFFFFull;
+    linux_f25b_switch_waiter = scheduler64_runqueue_on_timer(&linux_f25b_peer_frame);
+    linux_f25b_resume_return = linux_f25b_peer_frame.rax;
+    linux_f25b_waiters_after_timeout = linux_abi64_futex_waiter_count();
+    linux_f25b_sleep_pending_after_timeout = scheduler64_sleep_pending_count();
+    linux_f25b_state_after_timeout =
+        (linux_f25b_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(linux_f25b_wait_task)
+            : 0u;
+    linux_f25b_elapsed = scheduler64_sleep_last_elapsed_ticks();
+    linux_f25b_sched_block_after = scheduler64_runqueue_block_count();
+    linux_f25b_sched_wake_after = scheduler64_runqueue_wake_count();
+    linux_f25b_audit_after_timeout = persona_audit64_count(init_pid);
+    linux_f25b_read_timeout_record =
+        (linux_f25b_audit_after_timeout > linux_f25b_audit_after_wait)
+            ? persona_audit64_read(
+                init_pid,
+                linux_f25b_audit_after_timeout - 1u,
+                &linux_f25b_timeout_record)
+            : 0u;
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+
+    if (linux_f25b_timeout != 0)
+    {
+        linux_f25b_timeout->tv_sec = 0ull;
+        linux_f25b_timeout->tv_nsec = 0ull;
+    }
+    linux_f25b_zero_return =
+        ((linux_f25b_word != 0) && (linux_f25b_timeout != 0))
+            ? linux_abi64_dispatch(
+                init_pid,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                linux_f25b_buffer + 128ull,
+                (u64)LINUX_ABI64_FUTEX_WAIT,
+                55ull,
+                linux_f25b_buffer + 256ull,
+                0ull,
+                0ull,
+                0x00000000F25B00B0ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    linux_f25b_audit_after_zero = persona_audit64_count(init_pid);
+    linux_f25b_read_zero_record =
+        (linux_f25b_audit_after_zero > linux_f25b_audit_after_timeout)
+            ? persona_audit64_read(
+                init_pid,
+                linux_f25b_audit_after_zero - 1u,
+                &linux_f25b_zero_record)
+            : 0u;
+    if (linux_f25b_timeout != 0)
+    {
+        linux_f25b_timeout->tv_sec = 0ull;
+        linux_f25b_timeout->tv_nsec = 1000000000ull;
+    }
+    linux_f25b_invalid_return =
+        ((linux_f25b_word != 0) && (linux_f25b_timeout != 0))
+            ? linux_abi64_dispatch(
+                init_pid,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                linux_f25b_buffer + 128ull,
+                (u64)LINUX_ABI64_FUTEX_WAIT,
+                55ull,
+                linux_f25b_buffer + 256ull,
+                0ull,
+                0ull,
+                0x00000000F25B00C0ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    linux_f25b_audit_after_invalid = persona_audit64_count(init_pid);
+    linux_f25b_read_invalid_record =
+        (linux_f25b_audit_after_invalid > linux_f25b_audit_after_zero)
+            ? persona_audit64_read(
+                init_pid,
+                linux_f25b_audit_after_invalid - 1u,
+                &linux_f25b_invalid_record)
+            : 0u;
+    linux_f25b_fault_return = (linux_f25b_word != 0)
+        ? linux_abi64_dispatch(
+            init_pid,
+            LINUX_ABI64_SYSCALL_FUTEX,
+            linux_f25b_buffer + 128ull,
+            (u64)LINUX_ABI64_FUTEX_WAIT,
+            55ull,
+            0x00000000441D0000ull,
+            0ull,
+            0ull,
+            0x00000000F25B00D0ull)
+        : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    linux_f25b_audit_after_fault = persona_audit64_count(init_pid);
+    linux_f25b_read_fault_record =
+        (linux_f25b_audit_after_fault > linux_f25b_audit_after_invalid)
+            ? persona_audit64_read(
+                init_pid,
+                linux_f25b_audit_after_fault - 1u,
+                &linux_f25b_fault_record)
+            : 0u;
+    linux_f25b_timed_after = linux_abi64_futex_timed_wait_count();
+    linux_f25b_timeout_after = linux_abi64_futex_timeout_count();
+    linux_f25b_wait_after = linux_abi64_futex_wait_count();
+    linux_f25b_denial_after = linux_abi64_futex_denial_count();
+    linux_f25b_fault_after = linux_abi64_futex_fault_count();
+    linux_f25b_sleep_count_after = scheduler64_sleep_count();
+    linux_f25b_sleep_wake_after = scheduler64_sleep_wake_count();
+    linux_f25b_last_timeout_task = linux_abi64_futex_last_timeout_task_id();
+    linux_f25b_last_timeout_ticks = linux_abi64_futex_last_timeout_ticks();
+    linux_f25b_last_timeout_result = linux_abi64_futex_last_timeout_result();
+    linux_f25b_cleanup_unmap = (linux_f25b_buffer != 0ull)
+        ? vma64_unmap(init_pid, linux_f25b_buffer, VMA64_PAGE_BYTES)
+        : 0u;
+    linux_f25b_positive =
+        ((linux_f25b_map_ok != 0u)
+            && (linux_f25b_wait_task != SCHEDULER64_INVALID_TASK)
+            && (linux_f25b_peer_task != SCHEDULER64_INVALID_TASK)
+            && (linux_f25b_start != 0u)
+            && (linux_f25b_wait_return == 0ull)
+            && (linux_f25b_waiters_after_wait == 1u)
+            && (linux_f25b_sleep_pending_after_wait == 1u)
+            && (linux_f25b_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            && (linux_f25b_switch_peer != 0u)
+            && (linux_f25b_switch_waiter != 0u)
+            && (linux_f25b_resume_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ETIMEDOUT))
+            && (linux_f25b_waiters_after_timeout == 0u)
+            && (linux_f25b_sleep_pending_after_timeout == 0u)
+            && (linux_f25b_state_after_timeout == SCHEDULER64_TASK_RUNNING)
+            && (linux_f25b_elapsed >= 3u)
+            && (linux_f25b_zero_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ETIMEDOUT))
+            && (linux_f25b_invalid_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL))
+            && (linux_f25b_fault_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT))
+            && (linux_f25b_read_timeout_record != 0u)
+            && (linux_f25b_timeout_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_f25b_timeout_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
+            && (linux_f25b_timeout_record.result == LINUX_ABI64_ETIMEDOUT)
+            && (linux_f25b_read_zero_record != 0u)
+            && (linux_f25b_zero_record.result == LINUX_ABI64_ETIMEDOUT)
+            && (linux_f25b_read_invalid_record != 0u)
+            && (linux_f25b_invalid_record.result == LINUX_ABI64_EINVAL)
+            && (linux_f25b_read_fault_record != 0u)
+            && (linux_f25b_fault_record.result == LINUX_ABI64_EFAULT)
+            && (linux_f25b_audit_after_wait == (linux_f25b_audit_before + 1u))
+            && (linux_f25b_audit_after_timeout == (linux_f25b_audit_after_wait + 1u))
+            && (linux_f25b_audit_after_zero == (linux_f25b_audit_after_timeout + 1u))
+            && (linux_f25b_audit_after_invalid == (linux_f25b_audit_after_zero + 1u))
+            && (linux_f25b_audit_after_fault == (linux_f25b_audit_after_invalid + 1u))
+            && ((linux_f25b_timed_after - linux_f25b_timed_before) == 1u)
+            && ((linux_f25b_timeout_after - linux_f25b_timeout_before) == 2u)
+            && ((linux_f25b_wait_after - linux_f25b_wait_before) == 1u)
+            && ((linux_f25b_denial_after - linux_f25b_denial_before) == 1u)
+            && ((linux_f25b_fault_after - linux_f25b_fault_before) == 1u)
+            && ((linux_f25b_sched_block_after - linux_f25b_sched_block_before) == 1u)
+            && ((linux_f25b_sched_wake_after - linux_f25b_sched_wake_before) == 1u)
+            && ((linux_f25b_sleep_count_after - linux_f25b_sleep_count_before) == 1u)
+            && ((linux_f25b_sleep_wake_after - linux_f25b_sleep_wake_before) == 1u)
+            && (linux_f25b_last_timeout_task == SCHEDULER64_INVALID_TASK)
+            && (linux_f25b_last_timeout_ticks == 0u)
+            && (linux_f25b_last_timeout_result == LINUX_ABI64_ETIMEDOUT)
+            && (linux_f25b_cleanup_unmap != 0u)
             && (vma64_region_count(init_pid) == 0u))
             ? 1u
             : 0u;
@@ -18644,6 +28218,19 @@ static void log_process_namespace(void)
         windows_abi64_entry_is_unimplemented(WINDOWS_ABI64_SYSCALL_NTCREATEMUTANT);
     windows_k1_entry_release_mutant =
         windows_abi64_entry_is_unimplemented(WINDOWS_ABI64_SYSCALL_NTRELEASEMUTANT);
+    windows_k1_entry_query_process =
+        windows_abi64_entry_is_unimplemented(
+            WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS);
+    windows_k1_entry_query_system =
+        windows_abi64_entry_is_unimplemented(
+            WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION);
+    windows_k1_entry_open_key =
+        windows_abi64_entry_is_unimplemented(WINDOWS_ABI64_SYSCALL_NTOPENKEY);
+    windows_k1_entry_create_key =
+        windows_abi64_entry_is_unimplemented(WINDOWS_ABI64_SYSCALL_NTCREATEKEY);
+    windows_k1_entry_query_value_key =
+        windows_abi64_entry_is_unimplemented(
+            WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY);
     windows_k1_audit_before = persona_audit64_count(windows_k1_pid);
     windows_k1_result = windows_abi64_dispatch(
         windows_k1_pid,
@@ -18707,7 +28294,7 @@ static void log_process_namespace(void)
             && (windows_k1_context_match != 0u)
             && (windows_k1_table_size == WINDOWS_ABI64_SYSCALL_LIMIT)
             && (windows_k1_table_ready != 0u)
-            && (windows_k1_unimplemented_entries == (WINDOWS_ABI64_SYSCALL_LIMIT - 11u))
+            && (windows_k1_unimplemented_entries == (WINDOWS_ABI64_SYSCALL_LIMIT - 16u))
             && (windows_k1_entry_read == 0u)
             && (windows_k1_entry_write == 0u)
             && (windows_k1_entry_allocate == 0u)
@@ -18719,6 +28306,11 @@ static void log_process_namespace(void)
             && (windows_k1_entry_set_event == 0u)
             && (windows_k1_entry_create_mutant == 0u)
             && (windows_k1_entry_release_mutant == 0u)
+            && (windows_k1_entry_query_process == 0u)
+            && (windows_k1_entry_query_system == 0u)
+            && (windows_k1_entry_open_key == 0u)
+            && (windows_k1_entry_create_key == 0u)
+            && (windows_k1_entry_query_value_key == 0u)
             && (windows_k1_result == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
             && (windows_k1_audit_after_write == (windows_k1_audit_before + 1u))
             && (windows_k1_read_record != 0u)
@@ -19190,6 +28782,12 @@ static void log_process_namespace(void)
             ? 1u
             : 0u;
     windows_handle64_init();
+    windows_k4_install_count_before = windows_handle64_install_count();
+    windows_k4_duplicate_count_before = windows_handle64_duplicate_count();
+    windows_k4_inherit_count_before = windows_handle64_inherit_count();
+    windows_k4_close_count_before = windows_handle64_close_count();
+    windows_k4_pseudo_count_before = windows_handle64_pseudo_count();
+    windows_k4_global_denials_before = windows_handle64_global_denial_count();
     windows_k4_pid = process64_spawn_clone(init_pid);
     windows_k4_child_pid = process64_spawn_clone(init_pid);
     windows_k4_audit_attach =
@@ -19369,12 +28967,18 @@ static void log_process_namespace(void)
             windows_k4_owner) == CAPABILITY64_INVALID_HANDLE)
             ? 1u
             : 0u;
-    windows_k4_install_count = windows_handle64_install_count();
-    windows_k4_duplicate_count = windows_handle64_duplicate_count();
-    windows_k4_inherit_total = windows_handle64_inherit_count();
-    windows_k4_close_count = windows_handle64_close_count();
-    windows_k4_pseudo_count = windows_handle64_pseudo_count();
-    windows_k4_global_denials = windows_handle64_global_denial_count();
+    windows_k4_install_count =
+        windows_handle64_install_count() - windows_k4_install_count_before;
+    windows_k4_duplicate_count =
+        windows_handle64_duplicate_count() - windows_k4_duplicate_count_before;
+    windows_k4_inherit_total =
+        windows_handle64_inherit_count() - windows_k4_inherit_count_before;
+    windows_k4_close_count =
+        windows_handle64_close_count() - windows_k4_close_count_before;
+    windows_k4_pseudo_count =
+        windows_handle64_pseudo_count() - windows_k4_pseudo_count_before;
+    windows_k4_global_denials =
+        windows_handle64_global_denial_count() - windows_k4_global_denials_before;
     windows_k4_high_water = windows_handle64_high_water_handle(windows_k4_pid);
     windows_k4_last_handle = windows_handle64_last_handle();
     windows_k4_last_cap = windows_handle64_last_capability();
@@ -21263,6 +30867,1328 @@ static void log_process_namespace(void)
             && (windows_k10_cleanup != 0u))
             ? 1u
             : 0u;
+    windows_abi64_init();
+    scheduler64_runqueue_reset();
+    windows_k10b_owner_pid = process64_spawn_clone(init_pid);
+    windows_k10b_waiter_pid = process64_spawn_clone(init_pid);
+    windows_k10b_owner_audit_attach =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_audit_attach =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_vma_init =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_vma_init =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_bind =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k10b_owner_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k10b_waiter_bind =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k10b_waiter_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k10b_owner_handle_init =
+        (windows_k10b_owner_bind == PERSONA64_ATTACH_OK)
+            ? windows_handle64_init_process(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_handle_init =
+        (windows_k10b_waiter_bind == PERSONA64_ATTACH_OK)
+            ? windows_handle64_init_process(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_page = vma64_map_anon(
+        windows_k10b_owner_pid,
+        0x0000000045080000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_k10b_waiter_page = vma64_map_anon(
+        windows_k10b_waiter_pid,
+        0x0000000045081000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_k10b_owner_map_ok =
+        (windows_k10b_owner_page == 0x0000000045080000ull) ? 1u : 0u;
+    windows_k10b_waiter_map_ok =
+        (windows_k10b_waiter_page == 0x0000000045081000ull) ? 1u : 0u;
+    windows_k10b_handle_ptr = windows_k10b_owner_page + 0x40ull;
+    windows_k10b_owner_prev_ptr = windows_k10b_owner_page + 0x80ull;
+    windows_k10b_waiter_prev_ptr = windows_k10b_waiter_page + 0x80ull;
+    if (windows_k10b_owner_map_ok != 0u)
+    {
+        *((volatile u64 *)(u64)windows_k10b_handle_ptr) = 0ull;
+        *((volatile u32 *)(u64)windows_k10b_owner_prev_ptr) = 0xFFFFFFFFu;
+    }
+    if (windows_k10b_waiter_map_ok != 0u)
+    {
+        *((volatile u32 *)(u64)windows_k10b_waiter_prev_ptr) = 0xFFFFFFFFu;
+    }
+    windows_k10b_create_result =
+        ((windows_k10b_owner_map_ok != 0u)
+            && (windows_k10b_owner_bind == PERSONA64_ATTACH_OK)
+            && (windows_k10b_owner_handle_init != 0u))
+            ? windows_abi64_dispatch(
+                windows_k10b_owner_pid,
+                WINDOWS_ABI64_SYSCALL_NTCREATEMUTANT,
+                windows_k10b_handle_ptr,
+                0x001F0001ull,
+                0ull,
+                1ull,
+                0,
+                0u,
+                0x00000000F20A4057ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10b_audit_owner_after_create =
+        persona_audit64_count(windows_k10b_owner_pid);
+    if (windows_k10b_owner_map_ok != 0u)
+    {
+        windows_k10b_owner_handle =
+            *((volatile u64 *)(u64)windows_k10b_handle_ptr);
+    }
+    windows_k10b_waiter_handle =
+        ((windows_k10b_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_waiter_handle_init != 0u))
+            ? windows_handle64_duplicate(
+                windows_k10b_owner_pid,
+                windows_k10b_owner_handle,
+                windows_k10b_waiter_pid,
+                0u)
+            : WINDOWS_HANDLE64_INVALID;
+    windows_k10b_audit_waiter_before =
+        persona_audit64_count(windows_k10b_waiter_pid);
+    windows_k10b_wait_count_before = windows_abi64_mutant_wait_count();
+    windows_k10b_release_count_before = windows_abi64_mutant_release_count();
+    windows_k10b_denial_count_before = windows_abi64_mutant_denial_count();
+    windows_k10b_handle_wait_count_before = windows_handle64_mutant_wait_count();
+    windows_k10b_handle_release_count_before = windows_handle64_mutant_release_count();
+    windows_k10b_handle_denial_count_before = windows_handle64_mutant_denial_count();
+    windows_k10b_direct_result =
+        (windows_k10b_waiter_handle != WINDOWS_HANDLE64_INVALID)
+            ? windows_abi64_dispatch(
+                windows_k10b_waiter_pid,
+                WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT,
+                windows_k10b_waiter_handle,
+                0ull,
+                0ull,
+                0ull,
+                0,
+                0u,
+                0x00000000F20A0D10ull)
+            : WINDOWS_ABI64_STATUS_INVALID_HANDLE;
+    windows_k10b_audit_waiter_after_direct =
+        persona_audit64_count(windows_k10b_waiter_pid);
+    windows_k10b_read_direct_record =
+        (windows_k10b_audit_waiter_after_direct > windows_k10b_audit_waiter_before)
+            ? persona_audit64_read(
+                windows_k10b_waiter_pid,
+                windows_k10b_audit_waiter_after_direct - 1u,
+                &windows_k10b_direct_record)
+            : 0u;
+    scheduler64_runqueue_reset();
+    windows_k10b_wait_task =
+        ((windows_k10b_waiter_handle != WINDOWS_HANDLE64_INVALID)
+            && (windows_k10b_waiter_map_ok != 0u))
+            ? scheduler64_runqueue_register_process_task(
+                windows_k10b_waiter_pid,
+                process64_runtime_token(windows_k10b_waiter_pid),
+                process64_runtime_user_entry_token(windows_k10b_waiter_pid),
+                0x00000000F20A1004ull,
+                windows_k10b_waiter_page + 0x800ull,
+                (u64)process64_runtime_user_entry_selectors(windows_k10b_waiter_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k10b_waiter_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k10b_owner_task =
+        (windows_k10b_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_register_process_task(
+                windows_k10b_owner_pid,
+                process64_runtime_token(windows_k10b_owner_pid),
+                process64_runtime_user_entry_token(windows_k10b_owner_pid),
+                0x00000000F20A2000ull,
+                windows_k10b_owner_page + 0x800ull,
+                (u64)process64_runtime_user_entry_selectors(windows_k10b_owner_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k10b_owner_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k10b_runqueue_start =
+        (windows_k10b_owner_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_start(windows_k10b_wait_task)
+            : 0u;
+    windows_k10b_current_before_wait = scheduler64_runqueue_current_task_id();
+    windows_k10b_block_count_before = scheduler64_runqueue_block_count();
+    windows_k10b_wake_count_before = scheduler64_runqueue_wake_count();
+    windows_k10b_sched_denial_before = scheduler64_runqueue_block_denial_count();
+    windows_k10b_wait_result =
+        (windows_k10b_runqueue_start != 0u)
+            ? windows_abi64_dispatch(
+                windows_k10b_waiter_pid,
+                WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT,
+                windows_k10b_waiter_handle,
+                0ull,
+                0ull,
+                0ull,
+                0,
+                0u,
+                0x00000000F20A5004ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10b_audit_waiter_after_wait =
+        persona_audit64_count(windows_k10b_waiter_pid);
+    windows_k10b_read_wait_record =
+        (windows_k10b_audit_waiter_after_wait > windows_k10b_audit_waiter_after_direct)
+            ? persona_audit64_read(
+                windows_k10b_waiter_pid,
+                windows_k10b_audit_waiter_after_wait - 1u,
+                &windows_k10b_wait_record)
+            : 0u;
+    windows_k10b_waiter_slot_after_wait =
+        windows_handle64_mutant_waiter_task(
+            windows_k10b_waiter_pid,
+            windows_k10b_waiter_handle);
+    windows_k10b_waiter_pid_after_wait =
+        windows_handle64_mutant_waiter_pid(
+            windows_k10b_waiter_pid,
+            windows_k10b_waiter_handle);
+    windows_k10b_waiter_state_after_wait =
+        scheduler64_runqueue_task_state(windows_k10b_wait_task);
+    windows_k10b_block_count_after = scheduler64_runqueue_block_count();
+    windows_k10b_waiter_frame.rip = 0x00000000F20A1004ull;
+    windows_k10b_waiter_frame.rsp = windows_k10b_waiter_page + 0x800ull;
+    windows_k10b_waiter_frame.rflags =
+        (u64)process64_runtime_user_entry_rflags(windows_k10b_waiter_pid);
+    windows_k10b_waiter_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(windows_k10b_waiter_pid)
+        & 0xFFFFull;
+    windows_k10b_waiter_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(windows_k10b_waiter_pid) >> 16)
+        & 0xFFFFull;
+    windows_k10b_switch_to_owner =
+        (windows_k10b_waiter_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            ? scheduler64_runqueue_on_timer(&windows_k10b_waiter_frame)
+            : 0u;
+    windows_k10b_owner_state_after_switch =
+        scheduler64_runqueue_task_state(windows_k10b_owner_task);
+    windows_k10b_release_result =
+        (windows_k10b_switch_to_owner != 0u)
+            ? windows_abi64_dispatch(
+                windows_k10b_owner_pid,
+                WINDOWS_ABI64_SYSCALL_NTRELEASEMUTANT,
+                windows_k10b_owner_handle,
+                windows_k10b_owner_prev_ptr,
+                0ull,
+                0ull,
+                0,
+                0u,
+                0x00000000F20A50ACull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10b_audit_owner_after_release =
+        persona_audit64_count(windows_k10b_owner_pid);
+    windows_k10b_read_release_record =
+        (windows_k10b_audit_owner_after_release > windows_k10b_audit_owner_after_create)
+            ? persona_audit64_read(
+                windows_k10b_owner_pid,
+                windows_k10b_audit_owner_after_release - 1u,
+                &windows_k10b_release_record)
+            : 0u;
+    if (windows_k10b_owner_map_ok != 0u)
+    {
+        windows_k10b_owner_prev =
+            *((volatile u32 *)(u64)windows_k10b_owner_prev_ptr);
+    }
+    windows_k10b_owner_after_release =
+        (windows_handle64_mutant_owner(windows_k10b_owner_pid, windows_k10b_owner_handle)
+            == windows_k10b_waiter_pid)
+            ? 1u
+            : 0u;
+    windows_k10b_count_after_release =
+        windows_handle64_mutant_recursion(windows_k10b_owner_pid, windows_k10b_owner_handle);
+    windows_k10b_waiter_state_after_wake =
+        scheduler64_runqueue_task_state(windows_k10b_wait_task);
+    windows_k10b_waiter_slot_after_release =
+        windows_handle64_mutant_waiter_task(
+            windows_k10b_waiter_pid,
+            windows_k10b_waiter_handle);
+    windows_k10b_wake_count_after = scheduler64_runqueue_wake_count();
+    windows_k10b_owner_frame.rip = 0x00000000F20A2000ull;
+    windows_k10b_owner_frame.rsp = windows_k10b_owner_page + 0x800ull;
+    windows_k10b_owner_frame.rflags =
+        (u64)process64_runtime_user_entry_rflags(windows_k10b_owner_pid);
+    windows_k10b_owner_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(windows_k10b_owner_pid)
+        & 0xFFFFull;
+    windows_k10b_owner_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(windows_k10b_owner_pid) >> 16)
+        & 0xFFFFull;
+    windows_k10b_switch_to_waiter =
+        (windows_k10b_waiter_state_after_wake == SCHEDULER64_TASK_READY)
+            ? scheduler64_runqueue_on_timer(&windows_k10b_owner_frame)
+            : 0u;
+    windows_k10b_current_after_switch = scheduler64_runqueue_current_task_id();
+    windows_k10b_waiter_state_after_switch =
+        scheduler64_runqueue_task_state(windows_k10b_wait_task);
+    windows_k10b_child_release_result =
+        (windows_k10b_current_after_switch == windows_k10b_wait_task)
+            ? windows_abi64_dispatch(
+                windows_k10b_waiter_pid,
+                WINDOWS_ABI64_SYSCALL_NTRELEASEMUTANT,
+                windows_k10b_waiter_handle,
+                windows_k10b_waiter_prev_ptr,
+                0ull,
+                0ull,
+                0,
+                0u,
+                0x00000000F20A60ACull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10b_audit_waiter_after_release =
+        persona_audit64_count(windows_k10b_waiter_pid);
+    windows_k10b_read_child_release_record =
+        (windows_k10b_audit_waiter_after_release > windows_k10b_audit_waiter_after_wait)
+            ? persona_audit64_read(
+                windows_k10b_waiter_pid,
+                windows_k10b_audit_waiter_after_release - 1u,
+                &windows_k10b_child_release_record)
+            : 0u;
+    if (windows_k10b_waiter_map_ok != 0u)
+    {
+        windows_k10b_waiter_prev =
+            *((volatile u32 *)(u64)windows_k10b_waiter_prev_ptr);
+    }
+    windows_k10b_owner_after_child_release =
+        (windows_handle64_mutant_owner(windows_k10b_owner_pid, windows_k10b_owner_handle)
+            == PROCESS64_INVALID_PID)
+            ? 1u
+            : 0u;
+    windows_k10b_count_after_child_release =
+        windows_handle64_mutant_recursion(windows_k10b_owner_pid, windows_k10b_owner_handle);
+    windows_k10b_sched_denial_after = scheduler64_runqueue_block_denial_count();
+    windows_k10b_wait_count =
+        windows_abi64_mutant_wait_count() - windows_k10b_wait_count_before;
+    windows_k10b_release_count =
+        windows_abi64_mutant_release_count() - windows_k10b_release_count_before;
+    windows_k10b_denial_count =
+        windows_abi64_mutant_denial_count() - windows_k10b_denial_count_before;
+    windows_k10b_handle_wait_count =
+        windows_handle64_mutant_wait_count() - windows_k10b_handle_wait_count_before;
+    windows_k10b_handle_release_count =
+        windows_handle64_mutant_release_count() - windows_k10b_handle_release_count_before;
+    windows_k10b_handle_denial_count =
+        windows_handle64_mutant_denial_count() - windows_k10b_handle_denial_count_before;
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+    windows_k10b_close_waiter =
+        windows_handle64_close(windows_k10b_waiter_pid, windows_k10b_waiter_handle);
+    windows_k10b_close_owner =
+        windows_handle64_close(windows_k10b_owner_pid, windows_k10b_owner_handle);
+    windows_k10b_live_after_close = windows_handle64_mutant_live_count();
+    windows_k10b_waiter_release_count =
+        windows_handle64_release_process(windows_k10b_waiter_pid);
+    windows_k10b_owner_release_count =
+        windows_handle64_release_process(windows_k10b_owner_pid);
+    windows_k10b_unmap_waiter =
+        (windows_k10b_waiter_map_ok != 0u)
+            ? vma64_unmap(
+                windows_k10b_waiter_pid,
+                windows_k10b_waiter_page,
+                VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k10b_unmap_owner =
+        (windows_k10b_owner_map_ok != 0u)
+            ? vma64_unmap(
+                windows_k10b_owner_pid,
+                windows_k10b_owner_page,
+                VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k10b_waiter_persona_release =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_persona_release =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_audit_release =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_audit_release =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_vma_release =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_vma_release =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_waiter_clone_release =
+        (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k10b_waiter_pid)
+            : 0u;
+    windows_k10b_owner_clone_release =
+        (windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k10b_owner_pid)
+            : 0u;
+    windows_k10b_cleanup =
+        ((windows_k10b_close_waiter != 0u)
+            && (windows_k10b_close_owner != 0u)
+            && (windows_k10b_live_after_close == 0u)
+            && (windows_k10b_waiter_release_count == 0u)
+            && (windows_k10b_owner_release_count == 0u)
+            && (windows_k10b_unmap_waiter != 0u)
+            && (windows_k10b_unmap_owner != 0u)
+            && (windows_k10b_waiter_persona_release != 0u)
+            && (windows_k10b_owner_persona_release != 0u)
+            && (windows_k10b_waiter_audit_release != 0u)
+            && (windows_k10b_owner_audit_release != 0u)
+            && (windows_k10b_waiter_vma_release == 0u)
+            && (windows_k10b_owner_vma_release == 0u)
+            && (windows_k10b_waiter_clone_release != 0u)
+            && (windows_k10b_owner_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k10b_positive =
+        ((windows_k10b_owner_pid != PROCESS64_INVALID_PID)
+            && (windows_k10b_waiter_pid != PROCESS64_INVALID_PID)
+            && (windows_k10b_owner_audit_attach != 0u)
+            && (windows_k10b_waiter_audit_attach != 0u)
+            && (windows_k10b_owner_vma_init != 0u)
+            && (windows_k10b_waiter_vma_init != 0u)
+            && (windows_k10b_owner_bind == PERSONA64_ATTACH_OK)
+            && (windows_k10b_waiter_bind == PERSONA64_ATTACH_OK)
+            && (windows_k10b_owner_handle_init != 0u)
+            && (windows_k10b_waiter_handle_init != 0u)
+            && (windows_k10b_owner_map_ok != 0u)
+            && (windows_k10b_waiter_map_ok != 0u)
+            && (windows_k10b_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_direct_result == WINDOWS_ABI64_STATUS_INVALID_PARAMETER)
+            && (windows_k10b_wait_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_release_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_child_release_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_owner_prev == 1u)
+            && (windows_k10b_waiter_prev == 1u)
+            && (windows_k10b_wait_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k10b_owner_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k10b_runqueue_start != 0u)
+            && (windows_k10b_current_before_wait == windows_k10b_wait_task)
+            && (windows_k10b_waiter_slot_after_wait == windows_k10b_wait_task)
+            && (windows_k10b_waiter_pid_after_wait == windows_k10b_waiter_pid)
+            && (windows_k10b_waiter_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            && ((windows_k10b_block_count_after - windows_k10b_block_count_before) == 1u)
+            && (windows_k10b_switch_to_owner != 0u)
+            && (windows_k10b_owner_state_after_switch == SCHEDULER64_TASK_RUNNING)
+            && (windows_k10b_owner_after_release != 0u)
+            && (windows_k10b_count_after_release == 1u)
+            && (windows_k10b_waiter_state_after_wake == SCHEDULER64_TASK_READY)
+            && (windows_k10b_waiter_slot_after_release == SCHEDULER64_INVALID_TASK)
+            && ((windows_k10b_wake_count_after - windows_k10b_wake_count_before) == 1u)
+            && (windows_k10b_switch_to_waiter != 0u)
+            && (windows_k10b_current_after_switch == windows_k10b_wait_task)
+            && (windows_k10b_waiter_state_after_switch == SCHEDULER64_TASK_RUNNING)
+            && (windows_k10b_owner_after_child_release != 0u)
+            && (windows_k10b_count_after_child_release == 0u)
+            && ((windows_k10b_sched_denial_after - windows_k10b_sched_denial_before) == 0u)
+            && (windows_k10b_read_direct_record != 0u)
+            && (windows_k10b_direct_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT)
+            && (windows_k10b_direct_record.result == WINDOWS_ABI64_STATUS_INVALID_PARAMETER)
+            && (windows_k10b_read_wait_record != 0u)
+            && (windows_k10b_wait_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT)
+            && (windows_k10b_wait_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_read_release_record != 0u)
+            && (windows_k10b_release_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTRELEASEMUTANT)
+            && (windows_k10b_release_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_read_child_release_record != 0u)
+            && (windows_k10b_child_release_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10b_audit_waiter_after_direct
+                == (windows_k10b_audit_waiter_before + 1u))
+            && (windows_k10b_audit_waiter_after_wait
+                == (windows_k10b_audit_waiter_after_direct + 1u))
+            && (windows_k10b_audit_owner_after_release
+                == (windows_k10b_audit_owner_after_create + 1u))
+            && (windows_k10b_audit_waiter_after_release
+                == (windows_k10b_audit_waiter_after_wait + 1u))
+            && (windows_k10b_wait_count == 2u)
+            && (windows_k10b_release_count == 2u)
+            && (windows_k10b_denial_count == 1u)
+            && (windows_k10b_handle_wait_count == 2u)
+            && (windows_k10b_handle_release_count == 2u)
+            && (windows_k10b_handle_denial_count == 0u)
+            && (windows_k10b_cleanup != 0u))
+            ? 1u
+            : 0u;
+    windows_abi64_init();
+    scheduler64_runqueue_reset();
+    windows_k10c_pid = process64_spawn_clone(init_pid);
+    windows_k10c_audit_attach =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k10c_pid)
+            : 0u;
+    windows_k10c_vma_init =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k10c_pid)
+            : 0u;
+    windows_k10c_bind =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k10c_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k10c_handle_init =
+        (windows_k10c_bind == PERSONA64_ATTACH_OK)
+            ? windows_handle64_init_process(windows_k10c_pid)
+            : 0u;
+    windows_k10c_page = vma64_map_anon(
+        windows_k10c_pid,
+        0x0000000045082000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_k10c_map_ok =
+        (windows_k10c_page == 0x0000000045082000ull) ? 1u : 0u;
+    windows_k10c_handle_ptr = windows_k10c_page + 0x40ull;
+    windows_k10c_timeout_ptr = windows_k10c_page + 0x80ull;
+    if (windows_k10c_map_ok != 0u)
+    {
+        *((volatile u64 *)(u64)windows_k10c_handle_ptr) = 0ull;
+        *((volatile u64 *)(u64)windows_k10c_timeout_ptr) = 0ull - 300000ull;
+    }
+    windows_k10c_stack_args[0] = 0ull;
+    windows_k10c_audit_before = persona_audit64_count(windows_k10c_pid);
+    windows_k10c_create_result =
+        ((windows_k10c_map_ok != 0u)
+            && (windows_k10c_handle_init != 0u))
+            ? windows_abi64_dispatch(
+                windows_k10c_pid,
+                WINDOWS_ABI64_SYSCALL_NTCREATEEVENT,
+                windows_k10c_handle_ptr,
+                0x001F0003ull,
+                0ull,
+                WINDOWS_ABI64_SYNCHRONIZATION_EVENT,
+                windows_k10c_stack_args,
+                1u,
+                0x00000000F20C1048ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    if (windows_k10c_map_ok != 0u)
+    {
+        windows_k10c_handle = *((volatile u64 *)(u64)windows_k10c_handle_ptr);
+    }
+    windows_k10c_timed_before = windows_abi64_wait_timed_count();
+    windows_k10c_timeout_before = windows_abi64_wait_timeout_count();
+    windows_k10c_timeout_denial_before =
+        windows_abi64_wait_timeout_denial_count();
+    scheduler64_runqueue_reset();
+    windows_k10c_wait_task =
+        ((windows_k10c_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10c_map_ok != 0u))
+            ? scheduler64_runqueue_register_process_task(
+                windows_k10c_pid,
+                process64_runtime_token(windows_k10c_pid),
+                process64_runtime_user_entry_token(windows_k10c_pid),
+                0x00000000F20C2004ull,
+                windows_k10c_page + 0x800ull,
+                (u64)process64_runtime_user_entry_selectors(windows_k10c_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k10c_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k10c_peer_task =
+        (windows_k10c_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_register_user_task(
+                0x00000000F20C3000ull,
+                windows_k10c_page + 0xC00ull,
+                (u64)process64_runtime_user_entry_selectors(windows_k10c_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k10c_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k10c_runqueue_start =
+        (windows_k10c_peer_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_start(windows_k10c_wait_task)
+            : 0u;
+    windows_k10c_sched_block_before = scheduler64_runqueue_block_count();
+    windows_k10c_sched_wake_before = scheduler64_runqueue_wake_count();
+    windows_k10c_sleep_count_before = scheduler64_sleep_count();
+    windows_k10c_sleep_wake_before = scheduler64_sleep_wake_count();
+    windows_k10c_wait_result =
+        (windows_k10c_runqueue_start != 0u)
+            ? windows_abi64_dispatch(
+                windows_k10c_pid,
+                WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT,
+                windows_k10c_handle,
+                0ull,
+                windows_k10c_timeout_ptr,
+                0ull,
+                0,
+                0u,
+                0x00000000F20C5004ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10c_waiter_slot_after_wait =
+        windows_handle64_event_waiter_task(windows_k10c_pid, windows_k10c_handle);
+    windows_k10c_state_after_wait =
+        (windows_k10c_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(windows_k10c_wait_task)
+            : 0u;
+    windows_k10c_sleep_pending_after_wait = scheduler64_sleep_pending_count();
+    windows_k10c_wake_tick = scheduler64_sleep_last_wake_tick();
+    windows_k10c_wait_frame.rip = 0x00000000F20C2004ull;
+    windows_k10c_wait_frame.rsp = windows_k10c_page + 0x800ull;
+    windows_k10c_wait_frame.rflags =
+        (u64)process64_runtime_user_entry_rflags(windows_k10c_pid);
+    windows_k10c_wait_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(windows_k10c_pid)
+        & 0xFFFFull;
+    windows_k10c_wait_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(windows_k10c_pid) >> 16)
+        & 0xFFFFull;
+    windows_k10c_switch_peer =
+        (windows_k10c_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            ? scheduler64_runqueue_on_timer(&windows_k10c_wait_frame)
+            : 0u;
+    if (windows_k10c_wake_tick > pit_get_ticks())
+    {
+        interrupts64_enable();
+        wait_for_timer_ticks(windows_k10c_wake_tick);
+        interrupts64_disable();
+    }
+    windows_k10c_peer_frame.rip = 0x00000000F20C3000ull;
+    windows_k10c_peer_frame.rsp = windows_k10c_page + 0xC00ull;
+    windows_k10c_peer_frame.rflags =
+        (u64)process64_runtime_user_entry_rflags(windows_k10c_pid);
+    windows_k10c_peer_frame.cs =
+        (u64)process64_runtime_user_entry_selectors(windows_k10c_pid)
+        & 0xFFFFull;
+    windows_k10c_peer_frame.ss =
+        ((u64)process64_runtime_user_entry_selectors(windows_k10c_pid) >> 16)
+        & 0xFFFFull;
+    windows_k10c_switch_waiter =
+        (windows_k10c_switch_peer != 0u)
+            ? scheduler64_runqueue_on_timer(&windows_k10c_peer_frame)
+            : 0u;
+    windows_k10c_resume_result = windows_k10c_peer_frame.rax;
+    windows_k10c_state_after_timeout =
+        (windows_k10c_wait_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_task_state(windows_k10c_wait_task)
+            : 0u;
+    windows_k10c_waiter_slot_after_timeout =
+        windows_handle64_event_waiter_task(windows_k10c_pid, windows_k10c_handle);
+    windows_k10c_sleep_pending_after_timeout = scheduler64_sleep_pending_count();
+    windows_k10c_sleep_elapsed = scheduler64_sleep_last_elapsed_ticks();
+    windows_k10c_audit_after_timeout = persona_audit64_count(windows_k10c_pid);
+    windows_k10c_read_timeout_record =
+        (windows_k10c_audit_after_timeout > windows_k10c_audit_before)
+            ? persona_audit64_read(
+                windows_k10c_pid,
+                windows_k10c_audit_after_timeout - 1u,
+                &windows_k10c_timeout_record)
+            : 0u;
+    windows_k10c_timed_delta =
+        windows_abi64_wait_timed_count() - windows_k10c_timed_before;
+    windows_k10c_timeout_delta =
+        windows_abi64_wait_timeout_count() - windows_k10c_timeout_before;
+    windows_k10c_sched_block_delta =
+        scheduler64_runqueue_block_count() - windows_k10c_sched_block_before;
+    windows_k10c_sched_wake_delta =
+        scheduler64_runqueue_wake_count() - windows_k10c_sched_wake_before;
+    windows_k10c_sleep_count_delta =
+        scheduler64_sleep_count() - windows_k10c_sleep_count_before;
+    windows_k10c_sleep_wake_delta =
+        scheduler64_sleep_wake_count() - windows_k10c_sleep_wake_before;
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+    if (windows_k10c_map_ok != 0u)
+    {
+        *((volatile u64 *)(u64)windows_k10c_timeout_ptr) = 300000ull;
+    }
+    windows_k10c_deny_result =
+        (windows_k10c_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            ? windows_abi64_dispatch(
+                windows_k10c_pid,
+                WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT,
+                windows_k10c_handle,
+                0ull,
+                windows_k10c_timeout_ptr,
+                0ull,
+                0,
+                0u,
+                0x00000000F20C6004ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k10c_audit_after_deny = persona_audit64_count(windows_k10c_pid);
+    windows_k10c_read_deny_record =
+        (windows_k10c_audit_after_deny > windows_k10c_audit_after_timeout)
+            ? persona_audit64_read(
+                windows_k10c_pid,
+                windows_k10c_audit_after_deny - 1u,
+                &windows_k10c_deny_record)
+            : 0u;
+    windows_k10c_timeout_denial_delta =
+        windows_abi64_wait_timeout_denial_count()
+        - windows_k10c_timeout_denial_before;
+    windows_k10c_last_timeout_task = windows_abi64_wait_last_timeout_task();
+    windows_k10c_last_timeout_ticks = windows_abi64_wait_last_timeout_ticks();
+    windows_k10c_last_timeout_result = windows_abi64_wait_last_timeout_result();
+    windows_k10c_close =
+        windows_handle64_close(windows_k10c_pid, windows_k10c_handle);
+    windows_k10c_release_count = windows_handle64_release_process(windows_k10c_pid);
+    windows_k10c_unmap =
+        (windows_k10c_map_ok != 0u)
+            ? vma64_unmap(windows_k10c_pid, windows_k10c_page, VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k10c_persona_release =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k10c_pid)
+            : 0u;
+    windows_k10c_audit_release =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k10c_pid)
+            : 0u;
+    windows_k10c_vma_release =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k10c_pid)
+            : 0u;
+    windows_k10c_clone_release =
+        (windows_k10c_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k10c_pid)
+            : 0u;
+    windows_k10c_cleanup =
+        ((windows_k10c_close != 0u)
+            && (windows_k10c_release_count == 0u)
+            && (windows_k10c_unmap != 0u)
+            && (windows_k10c_persona_release != 0u)
+            && (windows_k10c_audit_release != 0u)
+            && (windows_k10c_vma_release == 0u)
+            && (windows_k10c_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k10c_positive =
+        ((windows_k10c_pid != PROCESS64_INVALID_PID)
+            && (windows_k10c_audit_attach != 0u)
+            && (windows_k10c_vma_init != 0u)
+            && (windows_k10c_bind == PERSONA64_ATTACH_OK)
+            && (windows_k10c_handle_init != 0u)
+            && (windows_k10c_map_ok != 0u)
+            && (windows_k10c_create_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10c_wait_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k10c_resume_result == WINDOWS_ABI64_STATUS_TIMEOUT)
+            && (windows_k10c_deny_result == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
+            && (windows_k10c_wait_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k10c_peer_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k10c_runqueue_start != 0u)
+            && (windows_k10c_waiter_slot_after_wait == windows_k10c_wait_task)
+            && (windows_k10c_state_after_wait == SCHEDULER64_TASK_BLOCKED)
+            && (windows_k10c_sleep_pending_after_wait == 1u)
+            && (windows_k10c_switch_peer != 0u)
+            && (windows_k10c_switch_waiter != 0u)
+            && (windows_k10c_state_after_timeout == SCHEDULER64_TASK_RUNNING)
+            && (windows_k10c_waiter_slot_after_timeout == SCHEDULER64_INVALID_TASK)
+            && (windows_k10c_sleep_pending_after_timeout == 0u)
+            && (windows_k10c_sleep_elapsed >= 3u)
+            && (windows_k10c_read_timeout_record != 0u)
+            && (windows_k10c_timeout_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTWAITFORSINGLEOBJECT)
+            && (windows_k10c_timeout_record.result == WINDOWS_ABI64_STATUS_TIMEOUT)
+            && (windows_k10c_read_deny_record != 0u)
+            && (windows_k10c_deny_record.result
+                == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
+            && (windows_k10c_audit_after_timeout >= (windows_k10c_audit_before + 3u))
+            && (windows_k10c_audit_after_deny == (windows_k10c_audit_after_timeout + 1u))
+            && (windows_k10c_timed_delta == 1u)
+            && (windows_k10c_timeout_delta == 1u)
+            && (windows_k10c_timeout_denial_delta == 1u)
+            && (windows_k10c_sched_block_delta == 1u)
+            && (windows_k10c_sched_wake_delta == 1u)
+            && (windows_k10c_sleep_count_delta == 1u)
+            && (windows_k10c_sleep_wake_delta == 1u)
+            && (windows_k10c_last_timeout_task == windows_k10c_wait_task)
+            && (windows_k10c_last_timeout_ticks == 3u)
+            && (windows_k10c_last_timeout_result == WINDOWS_ABI64_STATUS_TIMEOUT)
+            && (windows_k10c_cleanup != 0u))
+            ? 1u
+            : 0u;
+    windows_abi64_init();
+    windows_k11_pid = process64_spawn_clone(init_pid);
+    windows_k11_audit_attach =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k11_pid)
+            : 0u;
+    windows_k11_vma_init =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k11_pid)
+            : 0u;
+    windows_k11_bind =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k11_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k11_entry_query = windows_abi64_query_process_entry_installed();
+    windows_k11_setup_teb =
+        (windows_k11_bind == PERSONA64_ATTACH_OK)
+            ? pe64_setup_teb(
+                windows_k11_pid,
+                PE64_TEB_DEFAULT_BASE,
+                0x0000000044280000ull,
+                0x0000000044270000ull,
+                0ull,
+                &windows_k11_teb_result)
+            : PE64_DENIED;
+    windows_k11_setup_peb =
+        (windows_k11_setup_teb == PE64_OK)
+            ? pe64_setup_peb(
+                windows_k11_pid,
+                0x0000000140000000ull,
+                "\\SystemRoot\\System32\\limitless-pe.exe",
+                "limitless-pe.exe",
+                "SystemRoot=\\SystemRoot",
+                &windows_k11_peb_result)
+            : PE64_DENIED;
+    windows_k11_page = vma64_map_anon(
+        windows_k11_pid,
+        0x0000000045080000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_k11_map_ok =
+        (windows_k11_page == 0x0000000045080000ull) ? 1u : 0u;
+    windows_k11_basic_ptr = windows_k11_page + 0x40ull;
+    windows_k11_debug_ptr = windows_k11_page + 0x100ull;
+    windows_k11_image_ptr = windows_k11_page + 0x180ull;
+    windows_k11_ret_basic_ptr = windows_k11_page + 0x20ull;
+    windows_k11_ret_debug_ptr = windows_k11_page + 0x24ull;
+    windows_k11_ret_image_ptr = windows_k11_page + 0x28ull;
+    if (windows_k11_map_ok != 0u)
+    {
+        *((volatile u32 *)(u64)windows_k11_ret_basic_ptr) = 0u;
+        *((volatile u32 *)(u64)windows_k11_ret_debug_ptr) = 0u;
+        *((volatile u32 *)(u64)windows_k11_ret_image_ptr) = 0u;
+    }
+    windows_k11_audit_before = persona_audit64_count(windows_k11_pid);
+    windows_k11_stack_args[0] = windows_k11_ret_basic_ptr;
+    windows_k11_basic_result =
+        ((windows_k11_setup_peb == PE64_OK)
+            && (windows_k11_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k11_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS,
+                WINDOWS_ABI64_CURRENT_PROCESS_HANDLE,
+                WINDOWS_ABI64_PROCESS_BASIC_INFORMATION_CLASS,
+                windows_k11_basic_ptr,
+                WINDOWS_ABI64_PROCESS_BASIC_INFORMATION_BYTES,
+                windows_k11_stack_args,
+                1u,
+                0x00000000F2007019ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k11_audit_after_basic = persona_audit64_count(windows_k11_pid);
+    windows_k11_read_basic_record =
+        (windows_k11_audit_after_basic > windows_k11_audit_before)
+            ? persona_audit64_read(
+                windows_k11_pid,
+                windows_k11_audit_after_basic - 1u,
+                &windows_k11_basic_record)
+            : 0u;
+    if (windows_k11_map_ok != 0u)
+    {
+        windows_k11_basic_peb =
+            *((volatile u64 *)(u64)(windows_k11_basic_ptr + 8ull));
+        windows_k11_basic_pid_value =
+            *((volatile u64 *)(u64)(windows_k11_basic_ptr + 32ull));
+        windows_k11_basic_parent_value =
+            *((volatile u64 *)(u64)(windows_k11_basic_ptr + 40ull));
+        windows_k11_basic_return_length =
+            *((volatile u32 *)(u64)windows_k11_ret_basic_ptr);
+    }
+    windows_k11_stack_args[0] = windows_k11_ret_debug_ptr;
+    windows_k11_debug_result =
+        ((windows_k11_setup_peb == PE64_OK)
+            && (windows_k11_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k11_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS,
+                WINDOWS_ABI64_CURRENT_PROCESS_HANDLE,
+                WINDOWS_ABI64_PROCESS_DEBUG_PORT_CLASS,
+                windows_k11_debug_ptr,
+                WINDOWS_ABI64_PROCESS_DEBUG_PORT_BYTES,
+                windows_k11_stack_args,
+                1u,
+                0x00000000F2007119ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k11_audit_after_debug = persona_audit64_count(windows_k11_pid);
+    if (windows_k11_map_ok != 0u)
+    {
+        windows_k11_debug_port =
+            *((volatile u64 *)(u64)windows_k11_debug_ptr);
+        windows_k11_debug_return_length =
+            *((volatile u32 *)(u64)windows_k11_ret_debug_ptr);
+    }
+    windows_k11_stack_args[0] = windows_k11_ret_image_ptr;
+    windows_k11_image_result =
+        ((windows_k11_setup_peb == PE64_OK)
+            && (windows_k11_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k11_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS,
+                WINDOWS_ABI64_CURRENT_PROCESS_HANDLE,
+                WINDOWS_ABI64_PROCESS_IMAGE_FILE_NAME_CLASS,
+                windows_k11_image_ptr,
+                0x180ull,
+                windows_k11_stack_args,
+                1u,
+                0x00000000F2007219ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k11_audit_after_image = persona_audit64_count(windows_k11_pid);
+    windows_k11_read_image_record =
+        (windows_k11_audit_after_image > windows_k11_audit_after_debug)
+            ? persona_audit64_read(
+                windows_k11_pid,
+                windows_k11_audit_after_image - 1u,
+                &windows_k11_image_record)
+            : 0u;
+    windows_k11_last_class = windows_abi64_query_process_last_class();
+    windows_k11_last_result = windows_abi64_query_process_last_result();
+    windows_k11_last_peb = windows_abi64_query_process_last_peb();
+    windows_k11_last_return_length =
+        windows_abi64_query_process_last_return_length();
+    if (windows_k11_map_ok != 0u)
+    {
+        windows_k11_image_length =
+            (u32)(*((volatile u16 *)(u64)windows_k11_image_ptr));
+        windows_k11_image_maximum_length =
+            (u32)(*((volatile u16 *)(u64)(windows_k11_image_ptr + 2ull)));
+        windows_k11_image_buffer =
+            *((volatile u64 *)(u64)(windows_k11_image_ptr + 8ull));
+        windows_k11_image_return_length =
+            *((volatile u32 *)(u64)windows_k11_ret_image_ptr);
+        if ((windows_k11_image_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_image_buffer != 0ull)
+            && (windows_k11_image_length != 0u))
+        {
+            volatile const u8 *windows_k11_image_bytes =
+                (volatile const u8 *)(u64)windows_k11_image_buffer;
+            u32 windows_k11_index;
+
+            windows_k11_image_checksum = 2166136261u;
+            for (windows_k11_index = 0u;
+                 windows_k11_index < windows_k11_image_length;
+                 ++windows_k11_index)
+            {
+                windows_k11_image_checksum ^= (u32)windows_k11_image_bytes[windows_k11_index];
+                windows_k11_image_checksum *= 16777619u;
+            }
+            if (windows_k11_image_checksum == 0u)
+            {
+                windows_k11_image_checksum = 1u;
+            }
+        }
+    }
+    windows_k11_stack_args[0] = windows_k11_ret_basic_ptr;
+    windows_k11_deny_result =
+        ((windows_k11_setup_peb == PE64_OK)
+            && (windows_k11_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k11_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS,
+                0x1234ull,
+                WINDOWS_ABI64_PROCESS_BASIC_INFORMATION_CLASS,
+                windows_k11_basic_ptr,
+                WINDOWS_ABI64_PROCESS_BASIC_INFORMATION_BYTES,
+                windows_k11_stack_args,
+                1u,
+                0x00000000F2007319ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k11_audit_after_deny = persona_audit64_count(windows_k11_pid);
+    windows_k11_read_deny_record =
+        (windows_k11_audit_after_deny > windows_k11_audit_after_image)
+            ? persona_audit64_read(
+                windows_k11_pid,
+                windows_k11_audit_after_deny - 1u,
+                &windows_k11_deny_record)
+            : 0u;
+    windows_k11_query_count = windows_abi64_query_process_count();
+    windows_k11_denial_count = windows_abi64_query_process_denial_count();
+    windows_k11_fault_count = windows_abi64_query_process_fault_count();
+    if (windows_k11_setup_teb == PE64_OK)
+    {
+        write_gs_base64(windows_k11_teb_result.gs_base_before);
+        windows_k11_gs_restore = read_gs_base64();
+    }
+    windows_k11_unmap_info =
+        (windows_k11_map_ok != 0u)
+            ? vma64_unmap(windows_k11_pid, windows_k11_page, VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k11_unmap_teb =
+        (windows_k11_setup_teb == PE64_OK)
+            ? vma64_unmap(windows_k11_pid, windows_k11_teb_result.teb_base, VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k11_persona_release =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k11_pid)
+            : 0u;
+    windows_k11_audit_release =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k11_pid)
+            : 0u;
+    windows_k11_vma_release =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k11_pid)
+            : 0u;
+    windows_k11_clone_release =
+        (windows_k11_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k11_pid)
+            : 0u;
+    windows_k11_cleanup =
+        ((windows_k11_unmap_info != 0u)
+            && (windows_k11_unmap_teb != 0u)
+            && (windows_k11_gs_restore == windows_k11_teb_result.gs_base_before)
+            && (windows_k11_persona_release != 0u)
+            && (windows_k11_audit_release != 0u)
+            && (windows_k11_vma_release == 0u)
+            && (windows_k11_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k11_positive =
+        ((windows_k11_pid != PROCESS64_INVALID_PID)
+            && (windows_k11_audit_attach != 0u)
+            && (windows_k11_vma_init != 0u)
+            && (windows_k11_bind == PERSONA64_ATTACH_OK)
+            && (windows_k11_entry_query != 0u)
+            && (windows_k11_setup_teb == PE64_OK)
+            && (windows_k11_setup_peb == PE64_OK)
+            && (windows_k11_map_ok != 0u)
+            && (windows_k11_basic_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_debug_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_image_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_deny_result == WINDOWS_ABI64_STATUS_INVALID_HANDLE)
+            && (windows_k11_basic_peb == windows_k11_peb_result.peb_base)
+            && (windows_k11_basic_pid_value == (u64)windows_k11_pid)
+            && (windows_k11_basic_parent_value == 0ull)
+            && (windows_k11_basic_return_length
+                == WINDOWS_ABI64_PROCESS_BASIC_INFORMATION_BYTES)
+            && (windows_k11_debug_port == 0ull)
+            && (windows_k11_debug_return_length == WINDOWS_ABI64_PROCESS_DEBUG_PORT_BYTES)
+            && (windows_k11_image_length == windows_k11_peb_result.image_path_bytes)
+            && (windows_k11_image_maximum_length == (windows_k11_image_length + 2u))
+            && (windows_k11_image_buffer
+                == (windows_k11_image_ptr + (u64)WINDOWS_ABI64_UNICODE_STRING_BYTES))
+            && (windows_k11_image_return_length
+                == (WINDOWS_ABI64_UNICODE_STRING_BYTES + windows_k11_image_length + 2u))
+            && (windows_k11_image_checksum != 0u)
+            && (windows_k11_audit_before == 0u)
+            && (windows_k11_audit_after_basic == 1u)
+            && (windows_k11_audit_after_debug == 2u)
+            && (windows_k11_audit_after_image == 3u)
+            && (windows_k11_audit_after_deny == 4u)
+            && (windows_k11_read_basic_record != 0u)
+            && (windows_k11_basic_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS)
+            && (windows_k11_basic_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_read_image_record != 0u)
+            && (windows_k11_image_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_read_deny_record != 0u)
+            && (windows_k11_deny_record.event_type
+                == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (windows_k11_deny_record.result == WINDOWS_ABI64_STATUS_INVALID_HANDLE)
+            && (windows_k11_query_count == 3u)
+            && (windows_k11_denial_count == 1u)
+            && (windows_k11_fault_count == 0u)
+            && (windows_k11_last_class == WINDOWS_ABI64_PROCESS_IMAGE_FILE_NAME_CLASS)
+            && (windows_k11_last_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k11_last_peb == windows_k11_peb_result.peb_base)
+            && (windows_k11_last_return_length == windows_k11_image_return_length)
+            && (windows_k11_cleanup != 0u))
+            ? 1u
+            : 0u;
+    windows_abi64_init();
+    windows_k12_pid = process64_spawn_clone(init_pid);
+    windows_k12_audit_attach =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k12_pid)
+            : 0u;
+    windows_k12_vma_init =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k12_pid)
+            : 0u;
+    windows_k12_bind =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k12_pid, 0)
+            : PERSONA64_ATTACH_DENIED;
+    windows_k12_entry_query = windows_abi64_query_system_entry_installed();
+    windows_k12_page = vma64_map_anon(
+        windows_k12_pid,
+        0x0000000045090000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    windows_k12_map_ok =
+        (windows_k12_page == 0x0000000045090000ull) ? 1u : 0u;
+    windows_k12_basic_ptr = windows_k12_page + 0x40ull;
+    windows_k12_processor_ptr = windows_k12_page + 0x100ull;
+    windows_k12_perf_ptr = windows_k12_page + 0x180ull;
+    windows_k12_ret_basic_ptr = windows_k12_page + 0x20ull;
+    windows_k12_ret_processor_ptr = windows_k12_page + 0x24ull;
+    windows_k12_ret_perf_ptr = windows_k12_page + 0x28ull;
+    if (windows_k12_map_ok != 0u)
+    {
+        *((volatile u32 *)(u64)windows_k12_ret_basic_ptr) = 0u;
+        *((volatile u32 *)(u64)windows_k12_ret_processor_ptr) = 0u;
+        *((volatile u32 *)(u64)windows_k12_ret_perf_ptr) = 0u;
+    }
+    windows_k12_audit_before = persona_audit64_count(windows_k12_pid);
+    windows_k12_basic_result =
+        ((windows_k12_bind == PERSONA64_ATTACH_OK)
+            && (windows_k12_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k12_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION,
+                WINDOWS_ABI64_SYSTEM_BASIC_INFORMATION_CLASS,
+                windows_k12_basic_ptr,
+                WINDOWS_ABI64_SYSTEM_BASIC_INFORMATION_BYTES,
+                windows_k12_ret_basic_ptr,
+                0,
+                0u,
+                0x00000000F2008036ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k12_audit_after_basic = persona_audit64_count(windows_k12_pid);
+    windows_k12_read_basic_record =
+        (windows_k12_audit_after_basic > windows_k12_audit_before)
+            ? persona_audit64_read(
+                windows_k12_pid,
+                windows_k12_audit_after_basic - 1u,
+                &windows_k12_basic_record)
+            : 0u;
+    if (windows_k12_map_ok != 0u)
+    {
+        windows_k12_basic_page_size =
+            *((volatile u32 *)(u64)(windows_k12_basic_ptr + 8ull));
+        windows_k12_basic_physical_pages =
+            *((volatile u32 *)(u64)(windows_k12_basic_ptr + 12ull));
+        windows_k12_basic_highest_page =
+            *((volatile u32 *)(u64)(windows_k12_basic_ptr + 20ull));
+        windows_k12_basic_granularity =
+            *((volatile u32 *)(u64)(windows_k12_basic_ptr + 24ull));
+        windows_k12_basic_min_user =
+            *((volatile u64 *)(u64)(windows_k12_basic_ptr + 32ull));
+        windows_k12_basic_max_user =
+            *((volatile u64 *)(u64)(windows_k12_basic_ptr + 40ull));
+        windows_k12_basic_affinity =
+            *((volatile u64 *)(u64)(windows_k12_basic_ptr + 48ull));
+        windows_k12_basic_processor_count =
+            *((volatile u32 *)(u64)(windows_k12_basic_ptr + 56ull));
+        windows_k12_basic_return_length =
+            *((volatile u32 *)(u64)windows_k12_ret_basic_ptr);
+    }
+    windows_k12_processor_result =
+        ((windows_k12_bind == PERSONA64_ATTACH_OK)
+            && (windows_k12_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k12_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION,
+                WINDOWS_ABI64_SYSTEM_PROCESSOR_INFORMATION_CLASS,
+                windows_k12_processor_ptr,
+                WINDOWS_ABI64_SYSTEM_PROCESSOR_INFORMATION_BYTES,
+                windows_k12_ret_processor_ptr,
+                0,
+                0u,
+                0x00000000F2008136ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k12_audit_after_processor = persona_audit64_count(windows_k12_pid);
+    if (windows_k12_map_ok != 0u)
+    {
+        windows_k12_processor_arch =
+            (u32)(*((volatile u16 *)(u64)windows_k12_processor_ptr));
+        windows_k12_processor_level =
+            (u32)(*((volatile u16 *)(u64)(windows_k12_processor_ptr + 2ull)));
+        windows_k12_processor_revision =
+            (u32)(*((volatile u16 *)(u64)(windows_k12_processor_ptr + 4ull)));
+        windows_k12_processor_maximum =
+            (u32)(*((volatile u16 *)(u64)(windows_k12_processor_ptr + 6ull)));
+        windows_k12_processor_features =
+            *((volatile u32 *)(u64)(windows_k12_processor_ptr + 8ull));
+        windows_k12_processor_return_length =
+            *((volatile u32 *)(u64)windows_k12_ret_processor_ptr);
+    }
+    windows_k12_perf_result =
+        ((windows_k12_bind == PERSONA64_ATTACH_OK)
+            && (windows_k12_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k12_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION,
+                WINDOWS_ABI64_SYSTEM_PERFORMANCE_INFORMATION_CLASS,
+                windows_k12_perf_ptr,
+                WINDOWS_ABI64_SYSTEM_PERFORMANCE_INFORMATION_BYTES,
+                windows_k12_ret_perf_ptr,
+                0,
+                0u,
+                0x00000000F2008236ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k12_audit_after_perf = persona_audit64_count(windows_k12_pid);
+    windows_k12_last_class = windows_abi64_query_system_last_class();
+    windows_k12_last_result = windows_abi64_query_system_last_result();
+    windows_k12_last_return_length =
+        windows_abi64_query_system_last_return_length();
+    windows_k12_last_page_size = windows_abi64_query_system_last_page_size();
+    windows_k12_last_processor_count =
+        windows_abi64_query_system_last_processor_count();
+    windows_k12_last_physical_pages =
+        windows_abi64_query_system_last_physical_pages();
+    windows_k12_last_free_pages =
+        windows_abi64_query_system_last_free_pages();
+    if (windows_k12_map_ok != 0u)
+    {
+        windows_k12_perf_available_pages =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 48ull));
+        windows_k12_perf_committed_pages =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 52ull));
+        windows_k12_perf_commit_limit =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 56ull));
+        windows_k12_perf_peak_commit =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 60ull));
+        windows_k12_perf_vma_claimed =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 64ull));
+        windows_k12_perf_vma_free =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 68ull));
+        windows_k12_perf_page_size =
+            *((volatile u32 *)(u64)(windows_k12_perf_ptr + 76ull));
+        windows_k12_perf_return_length =
+            *((volatile u32 *)(u64)windows_k12_ret_perf_ptr);
+        if (windows_k12_perf_result == WINDOWS_ABI64_STATUS_SUCCESS)
+        {
+            volatile const u8 *windows_k12_perf_bytes =
+                (volatile const u8 *)(u64)windows_k12_perf_ptr;
+            u32 windows_k12_index;
+
+            windows_k12_perf_checksum = 2166136261u;
+            for (windows_k12_index = 0u;
+                 windows_k12_index < WINDOWS_ABI64_SYSTEM_PERFORMANCE_INFORMATION_BYTES;
+                 ++windows_k12_index)
+            {
+                windows_k12_perf_checksum ^= (u32)windows_k12_perf_bytes[windows_k12_index];
+                windows_k12_perf_checksum *= 16777619u;
+            }
+            if (windows_k12_perf_checksum == 0u)
+            {
+                windows_k12_perf_checksum = 1u;
+            }
+        }
+    }
+    windows_k12_deny_result =
+        ((windows_k12_bind == PERSONA64_ATTACH_OK)
+            && (windows_k12_map_ok != 0u))
+            ? windows_abi64_dispatch(
+                windows_k12_pid,
+                WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION,
+                0x0000007Full,
+                windows_k12_basic_ptr,
+                WINDOWS_ABI64_SYSTEM_BASIC_INFORMATION_BYTES,
+                windows_k12_ret_basic_ptr,
+                0,
+                0u,
+                0x00000000F2008336ull)
+            : WINDOWS_ABI64_STATUS_INVALID_PARAMETER;
+    windows_k12_audit_after_deny = persona_audit64_count(windows_k12_pid);
+    windows_k12_read_deny_record =
+        (windows_k12_audit_after_deny > windows_k12_audit_after_perf)
+            ? persona_audit64_read(
+                windows_k12_pid,
+                windows_k12_audit_after_deny - 1u,
+                &windows_k12_deny_record)
+            : 0u;
+    windows_k12_query_count = windows_abi64_query_system_count();
+    windows_k12_denial_count = windows_abi64_query_system_denial_count();
+    windows_k12_fault_count = windows_abi64_query_system_fault_count();
+    windows_k12_unmap_info =
+        (windows_k12_map_ok != 0u)
+            ? vma64_unmap(windows_k12_pid, windows_k12_page, VMA64_PAGE_BYTES)
+            : 0u;
+    windows_k12_persona_release =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k12_pid)
+            : 0u;
+    windows_k12_audit_release =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k12_pid)
+            : 0u;
+    windows_k12_vma_release =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k12_pid)
+            : 0u;
+    windows_k12_clone_release =
+        (windows_k12_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k12_pid)
+            : 0u;
+    windows_k12_cleanup =
+        ((windows_k12_unmap_info != 0u)
+            && (windows_k12_persona_release != 0u)
+            && (windows_k12_audit_release != 0u)
+            && (windows_k12_vma_release == 0u)
+            && (windows_k12_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k12_positive =
+        ((windows_k12_pid != PROCESS64_INVALID_PID)
+            && (windows_k12_audit_attach != 0u)
+            && (windows_k12_vma_init != 0u)
+            && (windows_k12_bind == PERSONA64_ATTACH_OK)
+            && (windows_k12_entry_query != 0u)
+            && (windows_k12_map_ok != 0u)
+            && (windows_k12_basic_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k12_processor_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k12_perf_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k12_deny_result == WINDOWS_ABI64_STATUS_INVALID_INFO_CLASS)
+            && (windows_k12_basic_page_size == VMA64_PAGE_BYTES)
+            && (windows_k12_basic_physical_pages != 0u)
+            && (windows_k12_basic_highest_page == (windows_k12_basic_physical_pages - 1u))
+            && (windows_k12_basic_granularity
+                == WINDOWS_ABI64_ALLOCATION_GRANULARITY_BYTES)
+            && (windows_k12_basic_min_user == 0x0000000000010000ull)
+            && (windows_k12_basic_max_user == 0x00007FFFFFFFFFFFull)
+            && (windows_k12_basic_affinity == 1ull)
+            && (windows_k12_basic_processor_count == 1u)
+            && (windows_k12_processor_arch
+                == WINDOWS_ABI64_PROCESSOR_ARCHITECTURE_AMD64)
+            && (windows_k12_processor_level != 0u)
+            && (windows_k12_processor_maximum == 1u)
+            && (windows_k12_processor_features != 0u)
+            && (windows_k12_perf_commit_limit == windows_k12_basic_physical_pages)
+            && ((windows_k12_perf_available_pages
+                    + windows_k12_perf_committed_pages)
+                == windows_k12_perf_commit_limit)
+            && (windows_k12_perf_peak_commit == windows_k12_perf_committed_pages)
+            && (windows_k12_perf_vma_claimed != 0u)
+            && (windows_k12_perf_page_size == VMA64_PAGE_BYTES)
+            && (windows_k12_basic_return_length
+                == WINDOWS_ABI64_SYSTEM_BASIC_INFORMATION_BYTES)
+            && (windows_k12_processor_return_length
+                == WINDOWS_ABI64_SYSTEM_PROCESSOR_INFORMATION_BYTES)
+            && (windows_k12_perf_return_length
+                == WINDOWS_ABI64_SYSTEM_PERFORMANCE_INFORMATION_BYTES)
+            && (windows_k12_perf_checksum != 0u)
+            && (windows_k12_audit_before == 0u)
+            && (windows_k12_audit_after_basic == 1u)
+            && (windows_k12_audit_after_processor == 2u)
+            && (windows_k12_audit_after_perf == 3u)
+            && (windows_k12_audit_after_deny == 4u)
+            && (windows_k12_read_basic_record != 0u)
+            && (windows_k12_basic_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION)
+            && (windows_k12_basic_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k12_read_deny_record != 0u)
+            && (windows_k12_deny_record.event_code
+                == WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION)
+            && (windows_k12_deny_record.result == WINDOWS_ABI64_STATUS_INVALID_INFO_CLASS)
+            && (windows_k12_query_count == 3u)
+            && (windows_k12_denial_count == 1u)
+            && (windows_k12_fault_count == 0u)
+            && (windows_k12_last_class
+                == WINDOWS_ABI64_SYSTEM_PERFORMANCE_INFORMATION_CLASS)
+            && (windows_k12_last_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k12_last_return_length == windows_k12_perf_return_length)
+            && (windows_k12_last_page_size == VMA64_PAGE_BYTES)
+            && (windows_k12_last_processor_count == windows_k12_basic_processor_count)
+            && (windows_k12_last_physical_pages == windows_k12_basic_physical_pages)
+            && (windows_k12_last_free_pages == windows_k12_perf_available_pages)
+            && (windows_k12_cleanup != 0u))
+            ? 1u
+            : 0u;
     linux_f1_persona_release = persona64_release(init_pid);
     linux_f1_audit_release = persona_audit64_release(init_pid);
     linux_f1_after_release =
@@ -21334,6 +32260,5072 @@ static void log_process_namespace(void)
             && (linux_f1_after_release != 0u))
             ? 1u
             : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    persona_o2_pid = init_pid;
+    persona_o2_audit_attach = persona_audit64_attach(persona_o2_pid);
+    persona_o2_bind =
+        persona64_init_linux_elf(persona_o2_pid, linux_abi64_dispatch_table());
+    persona_o2_audit_before = persona_audit64_count(persona_o2_pid);
+    persona_o2_fs_before = read_fs_base64();
+    persona_o2_page = vma64_map_anon(
+        persona_o2_pid,
+        0x00000000472B0000ull,
+        VMA64_PAGE_BYTES,
+        VMA64_PROT_READ | VMA64_PROT_WRITE,
+        VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS);
+    persona_o2_map_ok = (persona_o2_page != 0ull) ? 1u : 0u;
+    if (persona_o2_map_ok != 0u)
+    {
+        volatile linux_abi64_timespec_t *persona_o2_timespec =
+            (volatile linux_abi64_timespec_t *)(u64)(persona_o2_page + 0x80ull);
+        persona_o2_timespec->tv_sec = 0xFFFFFFFFFFFFFFFFull;
+        persona_o2_timespec->tv_nsec = 0xFFFFFFFFFFFFFFFFull;
+    }
+
+    persona_o2_returns[0] = linux_abi64_dispatch(
+        persona_o2_pid,
+        LINUX_ABI64_SYSCALL_GETPID,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        persona_o2_expected_rips[0]);
+    persona_o2_returns[1] = linux_abi64_dispatch(
+        persona_o2_pid,
+        LINUX_ABI64_SYSCALL_GETTID,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        persona_o2_expected_rips[1]);
+    persona_o2_returns[2] = linux_abi64_dispatch(
+        persona_o2_pid,
+        LINUX_ABI64_SYSCALL_ARCH_PRCTL,
+        (u64)LINUX_ABI64_ARCH_SET_FS,
+        0x000000007F020000ull,
+        0ull,
+        0ull,
+        0ull,
+        0ull,
+        persona_o2_expected_rips[2]);
+    persona_o2_returns[3] = (persona_o2_map_ok != 0u)
+        ? linux_abi64_dispatch(
+            persona_o2_pid,
+            LINUX_ABI64_SYSCALL_SET_TID_ADDRESS,
+            persona_o2_page + 0x40ull,
+            0ull,
+            0ull,
+            0ull,
+            0ull,
+            0ull,
+            persona_o2_expected_rips[3])
+        : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    persona_o2_returns[4] = (persona_o2_map_ok != 0u)
+        ? linux_abi64_dispatch(
+            persona_o2_pid,
+            LINUX_ABI64_SYSCALL_CLOCK_GETTIME,
+            (u64)LINUX_ABI64_CLOCK_MONOTONIC,
+            persona_o2_page + 0x80ull,
+            0ull,
+            0ull,
+            0ull,
+            0ull,
+            persona_o2_expected_rips[4])
+        : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    persona_o2_audit_after = persona_audit64_count(persona_o2_pid);
+    persona_o2_audit_delta =
+        (persona_o2_audit_after >= persona_o2_audit_before)
+            ? (persona_o2_audit_after - persona_o2_audit_before)
+            : 0u;
+    persona_o2_event_match = 1u;
+    persona_o2_code_match = 1u;
+    persona_o2_persona_match = 1u;
+    persona_o2_result_match = 1u;
+    persona_o2_rip_match = 1u;
+    persona_o2_token_match = 1u;
+    persona_o2_operation_match = 1u;
+    persona_o2_timestamp_match = 1u;
+    for (persona_o2_index = 0u; persona_o2_index < 5u; ++persona_o2_index)
+    {
+        persona_o2_expected_tokens[persona_o2_index] =
+            persona_audit64_syscall_name_token(
+                PERSONA64_TYPE_LINUX_ELF,
+                persona_o2_expected_codes[persona_o2_index]);
+        persona_o2_read[persona_o2_index] =
+            (persona_o2_audit_after
+                > (persona_o2_audit_before + persona_o2_index))
+                ? persona_audit64_read(
+                    persona_o2_pid,
+                    persona_o2_audit_before + persona_o2_index,
+                    &persona_o2_records[persona_o2_index])
+                : 0u;
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].event_type
+                != PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED))
+        {
+            persona_o2_event_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].event_code
+                != (u16)persona_o2_expected_codes[persona_o2_index]))
+        {
+            persona_o2_code_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].persona_type
+                != (u8)PERSONA64_TYPE_LINUX_ELF))
+        {
+            persona_o2_persona_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].result
+                != PERSONA_AUDIT64_RESULT_OK))
+        {
+            persona_o2_result_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].rip
+                != persona_o2_expected_rips[persona_o2_index]))
+        {
+            persona_o2_rip_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].syscall_name_token == 0u)
+            || (persona_o2_records[persona_o2_index].syscall_name_token
+                != persona_o2_expected_tokens[persona_o2_index]))
+        {
+            persona_o2_token_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].translated_operation
+                != persona_o2_expected_ops[persona_o2_index]))
+        {
+            persona_o2_operation_match = 0u;
+        }
+        if ((persona_o2_read[persona_o2_index] == 0u)
+            || (persona_o2_records[persona_o2_index].timestamp == 0ull)
+            || ((persona_o2_index != 0u)
+                && (persona_o2_records[persona_o2_index].timestamp
+                    <= persona_o2_records[persona_o2_index - 1u].timestamp)))
+        {
+            persona_o2_timestamp_match = 0u;
+        }
+    }
+    persona_o2_return_match =
+        ((persona_o2_returns[0] == (u64)persona_o2_pid)
+            && (persona_o2_returns[1] == (u64)persona_o2_pid)
+            && (persona_o2_returns[2] == 0ull)
+            && (persona_o2_returns[3] == (u64)persona_o2_pid)
+            && (persona_o2_returns[4] == 0ull))
+            ? 1u
+            : 0u;
+    if (persona_o2_map_ok != 0u)
+    {
+        volatile linux_abi64_timespec_t *persona_o2_timespec =
+            (volatile linux_abi64_timespec_t *)(u64)(persona_o2_page + 0x80ull);
+        persona_o2_time_match =
+            (persona_o2_timespec->tv_nsec < 1000000000ull) ? 1u : 0u;
+    }
+    else
+    {
+        persona_o2_time_match = 0u;
+    }
+    persona_o2_last_token = persona_audit64_last_syscall_name_token(persona_o2_pid);
+    persona_o2_last_operation =
+        persona_audit64_last_translated_operation(persona_o2_pid);
+    write_fs_base64(persona_o2_fs_before);
+    persona_o2_fs_after_restore = read_fs_base64();
+    persona_o2_cleanup_unmap = (persona_o2_page != 0ull)
+        ? vma64_unmap(persona_o2_pid, persona_o2_page, VMA64_PAGE_BYTES)
+        : 0u;
+    persona_o2_persona_release = persona64_release(persona_o2_pid);
+    persona_o2_audit_release = persona_audit64_release(persona_o2_pid);
+    persona_o2_cleanup =
+        ((process64_persona_ctx(persona_o2_pid) == 0)
+            && (process64_audit_ctx(persona_o2_pid) == 0)
+            && (vma64_region_count(persona_o2_pid) == 0u)
+            && (persona_o2_fs_after_restore == persona_o2_fs_before))
+            ? 1u
+            : 0u;
+    persona_o2_positive =
+        ((persona_o2_audit_attach != 0u)
+            && (persona_o2_bind == PERSONA64_ATTACH_OK)
+            && (persona_o2_map_ok != 0u)
+            && (persona_o2_return_match != 0u)
+            && (persona_o2_audit_before == 0u)
+            && (persona_o2_audit_after == 5u)
+            && (persona_o2_audit_delta == 5u)
+            && (persona_o2_event_match != 0u)
+            && (persona_o2_code_match != 0u)
+            && (persona_o2_persona_match != 0u)
+            && (persona_o2_result_match != 0u)
+            && (persona_o2_rip_match != 0u)
+            && (persona_o2_token_match != 0u)
+            && (persona_o2_operation_match != 0u)
+            && (persona_o2_timestamp_match != 0u)
+            && (persona_o2_time_match != 0u)
+            && (persona_o2_last_token == persona_o2_expected_tokens[4])
+            && (persona_o2_last_operation == persona_o2_expected_ops[4])
+            && (persona_o2_cleanup_unmap != 0u)
+            && (persona_o2_persona_release != 0u)
+            && (persona_o2_audit_release != 0u)
+            && (persona_o2_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    persona_o3_pid = process64_spawn_clone(init_pid);
+    persona_o3_owner =
+        (persona_o3_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(persona_o3_pid)
+            : 0u;
+    persona_o3_vma_init =
+        (persona_o3_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(persona_o3_pid)
+            : 0u;
+    persona_o3_audit_attach =
+        (persona_o3_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o3_pid)
+            : 0u;
+    persona_o3_stdin_cap =
+        (persona_o3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                persona_o3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    persona_o3_stdout_cap =
+        (persona_o3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                persona_o3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    persona_o3_stderr_cap =
+        (persona_o3_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                persona_o3_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    persona_o3_fd_init =
+        ((persona_o3_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o3_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (persona_o3_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                persona_o3_pid,
+                persona_o3_owner,
+                persona_o3_stdin_cap,
+                persona_o3_stdout_cap,
+                persona_o3_stderr_cap)
+            : 0u;
+    persona_o3_bind =
+        (persona_o3_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(persona_o3_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o3_default_vma_budget = persona64_vma_page_budget(persona_o3_pid);
+    persona_o3_default_fd_budget = persona64_fd_budget(persona_o3_pid);
+    persona_o3_default_pipe_budget = persona64_pipe_budget(persona_o3_pid);
+    persona_o3_config_fd =
+        persona64_configure_resource_budgets(persona_o3_pid, 1u, 4u, 1u);
+    persona_o3_audit_before = persona_audit64_count(persona_o3_pid);
+    persona_o3_mmap_ok =
+        (persona_o3_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_MMAP,
+                0x00000000472C0000ull,
+                VMA64_PAGE_BYTES,
+                LINUX_ABI64_PROT_READ | LINUX_ABI64_PROT_WRITE,
+                LINUX_ABI64_MAP_PRIVATE | LINUX_ABI64_MAP_FIXED | LINUX_ABI64_MAP_ANONYMOUS,
+                0ull,
+                0ull,
+                0x00000000F0300009ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o3_pages_after_map =
+        (u32)(vma64_mapped_bytes(persona_o3_pid) / VMA64_PAGE_BYTES);
+    persona_o3_mmap_denied =
+        (persona_o3_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_MMAP,
+                0x00000000472C1000ull,
+                VMA64_PAGE_BYTES,
+                LINUX_ABI64_PROT_READ | LINUX_ABI64_PROT_WRITE,
+                LINUX_ABI64_MAP_PRIVATE | LINUX_ABI64_MAP_FIXED | LINUX_ABI64_MAP_ANONYMOUS,
+                0ull,
+                0ull,
+                0x00000000F0301009ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o3_vma_kind = persona64_budget_last_kind(persona_o3_pid);
+    persona_o3_vma_requested = persona64_budget_last_requested(persona_o3_pid);
+    persona_o3_vma_limit = persona64_budget_last_limit(persona_o3_pid);
+    persona_o3_dup_ok =
+        (persona_o3_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_DUP,
+                FD64_STDOUT,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F0300020ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o3_fd_live_after_dup = fd64_live_count(persona_o3_pid);
+    persona_o3_dup_denied =
+        (persona_o3_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_DUP,
+                FD64_STDERR,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F0301020ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o3_fd_kind = persona64_budget_last_kind(persona_o3_pid);
+    persona_o3_fd_requested = persona64_budget_last_requested(persona_o3_pid);
+    persona_o3_fd_limit = persona64_budget_last_limit(persona_o3_pid);
+    persona_o3_config_pipe =
+        persona64_configure_resource_budgets(persona_o3_pid, 1u, 8u, 1u);
+    persona_o3_pipe_user_addr =
+        (persona_o3_mmap_ok == 0x00000000472C0000ull)
+            ? (persona_o3_mmap_ok + 0x100ull)
+            : 0ull;
+    if (persona_o3_pipe_user_addr != 0ull)
+    {
+        ((volatile u32 *)(u64)persona_o3_pipe_user_addr)[0] = FD64_INVALID_FD;
+        ((volatile u32 *)(u64)persona_o3_pipe_user_addr)[1] = FD64_INVALID_FD;
+    }
+    persona_o3_pipe_ok =
+        ((persona_o3_bind == PERSONA64_ATTACH_OK) && (persona_o3_pipe_user_addr != 0ull))
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_PIPE2,
+                persona_o3_pipe_user_addr,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F0300125ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    if (persona_o3_pipe_user_addr != 0ull)
+    {
+        persona_o3_pipefd_words[0] =
+            ((volatile u32 *)(u64)persona_o3_pipe_user_addr)[0];
+        persona_o3_pipefd_words[1] =
+            ((volatile u32 *)(u64)persona_o3_pipe_user_addr)[1];
+    }
+    else
+    {
+        persona_o3_pipefd_words[0] = FD64_INVALID_FD;
+        persona_o3_pipefd_words[1] = FD64_INVALID_FD;
+    }
+    persona_o3_pipe_read_fd = persona_o3_pipefd_words[0];
+    persona_o3_pipe_write_fd = persona_o3_pipefd_words[1];
+    persona_o3_pipe_count_after_create = persona64_pipe_count(persona_o3_pid);
+    persona_o3_pipe_denied =
+        ((persona_o3_bind == PERSONA64_ATTACH_OK) && (persona_o3_pipe_user_addr != 0ull))
+            ? linux_abi64_dispatch(
+                persona_o3_pid,
+                LINUX_ABI64_SYSCALL_PIPE2,
+                persona_o3_pipe_user_addr,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F0301125ull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o3_pipe_kind = persona64_budget_last_kind(persona_o3_pid);
+    persona_o3_pipe_requested = persona64_budget_last_requested(persona_o3_pid);
+    persona_o3_pipe_limit = persona64_budget_last_limit(persona_o3_pid);
+    persona_o3_budget_denials = persona64_budget_denial_count(persona_o3_pid);
+    persona_o3_audit_after = persona_audit64_count(persona_o3_pid);
+    persona_o3_close_pipe_read =
+        (persona_o3_pipe_read_fd != FD64_INVALID_FD)
+            ? fd64_close(persona_o3_pid, persona_o3_pipe_read_fd)
+            : 0u;
+    persona_o3_close_pipe_write =
+        (persona_o3_pipe_write_fd != FD64_INVALID_FD)
+            ? fd64_close(persona_o3_pid, persona_o3_pipe_write_fd)
+            : 0u;
+    persona_o3_pipe_count_after_close = persona64_pipe_count(persona_o3_pid);
+    persona_o3_close_dup =
+        ((persona_o3_dup_ok < (u64)FD64_TABLE_LIMIT)
+            && (persona_o3_dup_ok >= (u64)FD64_FIRST_DYNAMIC))
+            ? fd64_close(persona_o3_pid, (u32)persona_o3_dup_ok)
+            : 0u;
+    persona_o3_unmap =
+        (persona_o3_mmap_ok == 0x00000000472C0000ull)
+            ? vma64_unmap(persona_o3_pid, persona_o3_mmap_ok, VMA64_PAGE_BYTES)
+            : 0u;
+    persona_o3_fd_release = fd64_release_process(persona_o3_pid);
+    persona_o3_persona_release = persona64_release(persona_o3_pid);
+    persona_o3_audit_release = persona_audit64_release(persona_o3_pid);
+    persona_o3_vma_release = vma64_release_process(persona_o3_pid);
+    persona_o3_clone_release =
+        (persona_o3_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o3_pid)
+            : 0u;
+    persona_o3_cleanup =
+        ((process64_fd_table(persona_o3_pid) == 0)
+            && (process64_persona_ctx(persona_o3_pid) == 0)
+            && (process64_audit_ctx(persona_o3_pid) == 0)
+            && (process64_vma_root(persona_o3_pid) == 0)
+            && (persona_o3_pipe_count_after_close == 0u)
+            && (persona_o3_clone_release != 0u))
+            ? 1u
+            : 0u;
+    persona_o3_positive =
+        ((persona_o3_pid != PROCESS64_INVALID_PID)
+            && (persona_o3_owner != 0u)
+            && (persona_o3_vma_init != 0u)
+            && (persona_o3_audit_attach != 0u)
+            && (persona_o3_fd_init != 0u)
+            && (persona_o3_bind == PERSONA64_ATTACH_OK)
+            && (persona_o3_default_vma_budget == PERSONA64_DEFAULT_VMA_PAGE_BUDGET)
+            && (persona_o3_default_fd_budget == PERSONA64_DEFAULT_FD_BUDGET)
+            && (persona_o3_default_pipe_budget == PERSONA64_DEFAULT_PIPE_BUDGET)
+            && (persona_o3_config_fd != 0u)
+            && (persona_o3_mmap_ok == 0x00000000472C0000ull)
+            && (persona_o3_pages_after_map == 1u)
+            && (persona_o3_mmap_denied == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM))
+            && (persona_o3_vma_kind == PERSONA64_BUDGET_KIND_VMA_PAGE)
+            && (persona_o3_vma_requested == 2u)
+            && (persona_o3_vma_limit == 1u)
+            && (persona_o3_dup_ok == (u64)FD64_FIRST_DYNAMIC)
+            && (persona_o3_fd_live_after_dup == 4u)
+            && (persona_o3_dup_denied == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE))
+            && (persona_o3_fd_kind == PERSONA64_BUDGET_KIND_FD)
+            && (persona_o3_fd_requested == 5u)
+            && (persona_o3_fd_limit == 4u)
+            && (persona_o3_config_pipe != 0u)
+            && (persona_o3_pipe_ok == 0ull)
+            && (persona_o3_pipe_read_fd != FD64_INVALID_FD)
+            && (persona_o3_pipe_write_fd != FD64_INVALID_FD)
+            && (persona_o3_pipe_count_after_create == 1u)
+            && (persona_o3_pipe_denied == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE))
+            && (persona_o3_pipe_kind == PERSONA64_BUDGET_KIND_PIPE)
+            && (persona_o3_pipe_requested == 2u)
+            && (persona_o3_pipe_limit == 1u)
+            && (persona_o3_budget_denials == 3u)
+            && (persona_o3_audit_before == 0u)
+            && (persona_o3_audit_after == 6u)
+            && (persona_o3_close_pipe_read != 0u)
+            && (persona_o3_close_pipe_write != 0u)
+            && (persona_o3_pipe_count_after_close == 0u)
+            && (persona_o3_close_dup != 0u)
+            && (persona_o3_unmap != 0u)
+            && (persona_o3_fd_release == 3u)
+            && (persona_o3_persona_release != 0u)
+            && (persona_o3_audit_release != 0u)
+            && (persona_o3_vma_release == 0u)
+            && (persona_o3_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    persona_o4_linux_pid = process64_spawn_clone(init_pid);
+    persona_o4_windows_pid = process64_spawn_clone(init_pid);
+    persona_o4_linux_owner =
+        (persona_o4_linux_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(persona_o4_linux_pid)
+            : 0u;
+    persona_o4_windows_owner =
+        (persona_o4_windows_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(persona_o4_windows_pid)
+            : 0u;
+    persona_o4_audit_attach =
+        (persona_o4_linux_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o4_linux_pid)
+            : 0u;
+    persona_o4_linux_bind =
+        (persona_o4_linux_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(persona_o4_linux_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o4_windows_bind =
+        (persona_o4_windows_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(persona_o4_windows_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o4_linux_group = persona64_process_group(persona_o4_linux_pid);
+    persona_o4_windows_group = persona64_process_group(persona_o4_windows_pid);
+    persona_o4_audit_before = persona_audit64_count(persona_o4_linux_pid);
+    persona_o4_self_ret =
+        (persona_o4_linux_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o4_linux_pid,
+                LINUX_ABI64_SYSCALL_KILL,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F040003Eull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o4_cross_ret =
+        ((persona_o4_linux_bind == PERSONA64_ATTACH_OK)
+            && (persona_o4_windows_bind == PERSONA64_ATTACH_OK))
+            ? linux_abi64_dispatch(
+                persona_o4_linux_pid,
+                LINUX_ABI64_SYSCALL_KILL,
+                persona_o4_windows_pid,
+                LINUX_SIGNAL64_SIGUSR1,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F040103Eull)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    persona_o4_audit_after = persona_audit64_count(persona_o4_linux_pid);
+    persona_o4_audit_read =
+        (persona_o4_audit_after > persona_o4_audit_before)
+            ? persona_audit64_read(
+                persona_o4_linux_pid,
+                persona_o4_audit_after - 1u,
+                &persona_o4_record)
+            : 0u;
+    persona_o4_event = persona_o4_record.event_type;
+    persona_o4_code = persona_o4_record.event_code;
+    persona_o4_result = persona_o4_record.result;
+    persona_o4_persona = persona_o4_record.persona_type;
+    persona_o4_rip_match =
+        (persona_o4_record.rip == 0x00000000F040103Eull) ? 1u : 0u;
+    persona_o4_windows_type = persona64_type(persona_o4_windows_pid);
+    persona_o4_denials = persona64_isolation_denial_count(persona_o4_linux_pid);
+    persona_o4_last_source = persona64_isolation_last_source_pid(persona_o4_linux_pid);
+    persona_o4_last_target = persona64_isolation_last_target_pid(persona_o4_linux_pid);
+    persona_o4_last_source_group =
+        persona64_isolation_last_source_group(persona_o4_linux_pid);
+    persona_o4_last_target_group =
+        persona64_isolation_last_target_group(persona_o4_linux_pid);
+    persona_o4_last_result = persona64_isolation_last_result(persona_o4_linux_pid);
+    persona_o4_windows_release = persona64_release(persona_o4_windows_pid);
+    persona_o4_linux_release = persona64_release(persona_o4_linux_pid);
+    persona_o4_audit_release = persona_audit64_release(persona_o4_linux_pid);
+    persona_o4_windows_clone_release =
+        (persona_o4_windows_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o4_windows_pid)
+            : 0u;
+    persona_o4_linux_clone_release =
+        (persona_o4_linux_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o4_linux_pid)
+            : 0u;
+    persona_o4_cleanup =
+        ((process64_persona_ctx(persona_o4_linux_pid) == 0)
+            && (process64_persona_ctx(persona_o4_windows_pid) == 0)
+            && (process64_audit_ctx(persona_o4_linux_pid) == 0)
+            && (persona_o4_windows_clone_release != 0u)
+            && (persona_o4_linux_clone_release != 0u))
+            ? 1u
+            : 0u;
+    persona_o4_positive =
+        ((persona_o4_linux_pid != PROCESS64_INVALID_PID)
+            && (persona_o4_windows_pid != PROCESS64_INVALID_PID)
+            && (persona_o4_linux_owner != 0u)
+            && (persona_o4_windows_owner != 0u)
+            && (persona_o4_audit_attach != 0u)
+            && (persona_o4_linux_bind == PERSONA64_ATTACH_OK)
+            && (persona_o4_windows_bind == PERSONA64_ATTACH_OK)
+            && (persona_o4_linux_group != PERSONA64_PROCESS_GROUP_NONE)
+            && (persona_o4_windows_group != PERSONA64_PROCESS_GROUP_NONE)
+            && (persona_o4_linux_group != persona_o4_windows_group)
+            && (persona_o4_self_ret == 0ull)
+            && (persona_o4_cross_ret == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH))
+            && (persona_o4_audit_before == 0u)
+            && (persona_o4_audit_after == 2u)
+            && (persona_o4_audit_read != 0u)
+            && (persona_o4_event == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (persona_o4_code == LINUX_ABI64_SYSCALL_KILL)
+            && (persona_o4_result == LINUX_ABI64_ESRCH)
+            && (persona_o4_persona == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o4_rip_match != 0u)
+            && (persona_o4_windows_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (persona_o4_denials == 1u)
+            && (persona_o4_last_source == persona_o4_linux_pid)
+            && (persona_o4_last_target == persona_o4_windows_pid)
+            && (persona_o4_last_source_group == persona_o4_linux_group)
+            && (persona_o4_last_target_group == persona_o4_windows_group)
+            && (persona_o4_last_result == PERSONA64_ISOLATION_RESULT_DENIED)
+            && (persona_o4_windows_release != 0u)
+            && (persona_o4_linux_release != 0u)
+            && (persona_o4_audit_release != 0u)
+            && (persona_o4_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    persona_o5_linux_pid = process64_spawn_clone(init_pid);
+    persona_o5_windows_pid = process64_spawn_clone(init_pid);
+    persona_o5_macos_pid = process64_spawn_clone(init_pid);
+    persona_o5_linux_audit_attach =
+        (persona_o5_linux_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o5_linux_pid)
+            : 0u;
+    persona_o5_windows_audit_attach =
+        (persona_o5_windows_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o5_windows_pid)
+            : 0u;
+    persona_o5_macos_audit_attach =
+        (persona_o5_macos_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o5_macos_pid)
+            : 0u;
+    persona_o5_linux_bind =
+        (persona_o5_linux_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(persona_o5_linux_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o5_windows_bind =
+        (persona_o5_windows_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(persona_o5_windows_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o5_macos_bind =
+        (persona_o5_macos_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_macos_macho(persona_o5_macos_pid, macos_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o5_linux_before = persona_audit64_count(persona_o5_linux_pid);
+    persona_o5_windows_before = persona_audit64_count(persona_o5_windows_pid);
+    persona_o5_macos_before = persona_audit64_count(persona_o5_macos_pid);
+    persona_o5_linux_unimpl_before = linux_abi64_unimplemented_count();
+    persona_o5_windows_unimpl_before = windows_abi64_unimplemented_count();
+    persona_o5_macos_unimpl_before = macos_abi64_unimplemented_count();
+    persona_o5_linux_abi_result =
+        persona64_unavailable_result_for_type(PERSONA64_TYPE_LINUX_ELF);
+    persona_o5_windows_abi_result =
+        persona64_unavailable_result_for_type(PERSONA64_TYPE_WINDOWS_PE);
+    persona_o5_macos_abi_result =
+        persona64_unavailable_result_for_type(PERSONA64_TYPE_MACOS_MACHO);
+    persona_o5_linux_expected_return =
+        persona64_unavailable_return_for_type(PERSONA64_TYPE_LINUX_ELF);
+    persona_o5_windows_expected_return =
+        persona64_unavailable_return_for_type(PERSONA64_TYPE_WINDOWS_PE);
+    persona_o5_macos_expected_return =
+        persona64_unavailable_return_for_type(PERSONA64_TYPE_MACOS_MACHO);
+    persona_o5_linux_return =
+        (persona_o5_linux_bind == PERSONA64_ATTACH_OK)
+            ? linux_abi64_dispatch(
+                persona_o5_linux_pid,
+                LINUX_ABI64_SYSCALL_LIMIT - 1u,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F05001FFull)
+            : 0ull;
+    persona_o5_windows_return =
+        (persona_o5_windows_bind == PERSONA64_ATTACH_OK)
+            ? (u64)windows_abi64_dispatch(
+                persona_o5_windows_pid,
+                WINDOWS_ABI64_SYSCALL_UNIMPLEMENTED_PROBE,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0,
+                0u,
+                0x00000000F0500007ull)
+            : 0ull;
+    persona_o5_macos_return =
+        (persona_o5_macos_bind == PERSONA64_ATTACH_OK)
+            ? macos_abi64_dispatch(
+                persona_o5_macos_pid,
+                MACOS_ABI64_SYSCALL_LIMIT - 1u,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0ull,
+                0x00000000F05011FFull)
+            : 0ull;
+    persona_o5_linux_after = persona_audit64_count(persona_o5_linux_pid);
+    persona_o5_windows_after = persona_audit64_count(persona_o5_windows_pid);
+    persona_o5_macos_after = persona_audit64_count(persona_o5_macos_pid);
+    persona_o5_linux_unimpl_after = linux_abi64_unimplemented_count();
+    persona_o5_windows_unimpl_after = windows_abi64_unimplemented_count();
+    persona_o5_macos_unimpl_after = macos_abi64_unimplemented_count();
+    persona_o5_linux_read =
+        (persona_o5_linux_after > persona_o5_linux_before)
+            ? persona_audit64_read(
+                persona_o5_linux_pid,
+                persona_o5_linux_after - 1u,
+                &persona_o5_linux_record)
+            : 0u;
+    persona_o5_windows_read =
+        (persona_o5_windows_after > persona_o5_windows_before)
+            ? persona_audit64_read(
+                persona_o5_windows_pid,
+                persona_o5_windows_after - 1u,
+                &persona_o5_windows_record)
+            : 0u;
+    persona_o5_macos_read =
+        (persona_o5_macos_after > persona_o5_macos_before)
+            ? persona_audit64_read(
+                persona_o5_macos_pid,
+                persona_o5_macos_after - 1u,
+                &persona_o5_macos_record)
+            : 0u;
+    persona_o5_linux_release = persona64_release(persona_o5_linux_pid);
+    persona_o5_windows_release = persona64_release(persona_o5_windows_pid);
+    persona_o5_macos_release = persona64_release(persona_o5_macos_pid);
+    persona_o5_linux_audit_release = persona_audit64_release(persona_o5_linux_pid);
+    persona_o5_windows_audit_release = persona_audit64_release(persona_o5_windows_pid);
+    persona_o5_macos_audit_release = persona_audit64_release(persona_o5_macos_pid);
+    persona_o5_linux_clone_release =
+        (persona_o5_linux_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o5_linux_pid)
+            : 0u;
+    persona_o5_windows_clone_release =
+        (persona_o5_windows_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o5_windows_pid)
+            : 0u;
+    persona_o5_macos_clone_release =
+        (persona_o5_macos_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o5_macos_pid)
+            : 0u;
+    persona_o5_cleanup =
+        ((process64_persona_ctx(persona_o5_linux_pid) == 0)
+            && (process64_persona_ctx(persona_o5_windows_pid) == 0)
+            && (process64_persona_ctx(persona_o5_macos_pid) == 0)
+            && (process64_audit_ctx(persona_o5_linux_pid) == 0)
+            && (process64_audit_ctx(persona_o5_windows_pid) == 0)
+            && (process64_audit_ctx(persona_o5_macos_pid) == 0)
+            && (persona_o5_linux_clone_release != 0u)
+            && (persona_o5_windows_clone_release != 0u)
+            && (persona_o5_macos_clone_release != 0u))
+            ? 1u
+            : 0u;
+    persona_o5_positive =
+        ((persona_o5_linux_pid != PROCESS64_INVALID_PID)
+            && (persona_o5_windows_pid != PROCESS64_INVALID_PID)
+            && (persona_o5_macos_pid != PROCESS64_INVALID_PID)
+            && (persona_o5_linux_audit_attach != 0u)
+            && (persona_o5_windows_audit_attach != 0u)
+            && (persona_o5_macos_audit_attach != 0u)
+            && (persona_o5_linux_bind == PERSONA64_ATTACH_OK)
+            && (persona_o5_windows_bind == PERSONA64_ATTACH_OK)
+            && (persona_o5_macos_bind == PERSONA64_ATTACH_OK)
+            && (persona_o5_linux_abi_result == LINUX_ABI64_ENOSYS)
+            && (persona_o5_windows_abi_result == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
+            && (persona_o5_macos_abi_result == MACOS_ABI64_ENOSYS)
+            && (persona_o5_linux_return == persona_o5_linux_expected_return)
+            && (persona_o5_windows_return == persona_o5_windows_expected_return)
+            && (persona_o5_macos_return == persona_o5_macos_expected_return)
+            && (persona_o5_linux_after == (persona_o5_linux_before + 1u))
+            && (persona_o5_windows_after == (persona_o5_windows_before + 1u))
+            && (persona_o5_macos_after == (persona_o5_macos_before + 1u))
+            && (persona_o5_linux_read != 0u)
+            && (persona_o5_windows_read != 0u)
+            && (persona_o5_macos_read != 0u)
+            && ((persona_o5_linux_unimpl_after - persona_o5_linux_unimpl_before) == 1u)
+            && ((persona_o5_windows_unimpl_after - persona_o5_windows_unimpl_before) == 1u)
+            && ((persona_o5_macos_unimpl_after - persona_o5_macos_unimpl_before) == 1u)
+            && (persona_o5_linux_record.event_type
+                == PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED)
+            && (persona_o5_windows_record.event_type
+                == PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED)
+            && (persona_o5_macos_record.event_type
+                == PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED)
+            && (persona_o5_linux_record.event_code == (LINUX_ABI64_SYSCALL_LIMIT - 1u))
+            && (persona_o5_windows_record.event_code
+                == WINDOWS_ABI64_SYSCALL_UNIMPLEMENTED_PROBE)
+            && (persona_o5_macos_record.event_code == (MACOS_ABI64_SYSCALL_LIMIT - 1u))
+            && (persona_o5_linux_record.result == LINUX_ABI64_ENOSYS)
+            && (persona_o5_windows_record.result == WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED)
+            && (persona_o5_macos_record.result == MACOS_ABI64_ENOSYS)
+            && (persona_o5_linux_record.persona_type == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o5_windows_record.persona_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (persona_o5_macos_record.persona_type == PERSONA64_TYPE_MACOS_MACHO)
+            && (persona_o5_linux_record.translated_operation
+                == PERSONA_AUDIT64_OP_UNAVAILABLE)
+            && (persona_o5_windows_record.translated_operation
+                == PERSONA_AUDIT64_OP_UNAVAILABLE)
+            && (persona_o5_macos_record.translated_operation
+                == PERSONA_AUDIT64_OP_UNAVAILABLE)
+            && (persona_o5_linux_release != 0u)
+            && (persona_o5_windows_release != 0u)
+            && (persona_o5_macos_release != 0u)
+            && (persona_o5_linux_audit_release != 0u)
+            && (persona_o5_windows_audit_release != 0u)
+            && (persona_o5_macos_audit_release != 0u)
+            && (persona_o5_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    persona_o6_pid = process64_spawn_clone(init_pid);
+    persona_o6_vma_init =
+        (persona_o6_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(persona_o6_pid)
+            : 0u;
+    persona_o6_audit_attach =
+        (persona_o6_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(persona_o6_pid)
+            : 0u;
+    persona_o6_bind =
+        (persona_o6_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(persona_o6_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    persona_o6_stack =
+        ((persona_o6_vma_init != 0u) && (persona_o6_bind == PERSONA64_ATTACH_OK))
+            ? vma64_map_anon(
+                persona_o6_pid,
+                0x0000000047600000ull,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    persona_o6_frame.r15 = 0ull;
+    persona_o6_frame.r14 = 0ull;
+    persona_o6_frame.r13 = 0ull;
+    persona_o6_frame.r12 = 0ull;
+    persona_o6_frame.r11 = 0ull;
+    persona_o6_frame.r10 = 0ull;
+    persona_o6_frame.r9 = 0ull;
+    persona_o6_frame.r8 = 0ull;
+    persona_o6_frame.rdi = 0ull;
+    persona_o6_frame.rsi = 0ull;
+    persona_o6_frame.rbp = 0ull;
+    persona_o6_frame.rbx = 0ull;
+    persona_o6_frame.rdx = 0ull;
+    persona_o6_frame.rcx = 0ull;
+    persona_o6_frame.rax = 0ull;
+    persona_o6_frame.vector = PERSONA_AUDIT64_CRASH_VECTOR_PAGE_FAULT;
+    persona_o6_frame.error_code = VMA64_FAULT_USER;
+    persona_o6_frame.rip = 0x0000000044600BADull;
+    persona_o6_frame.cs = 0x33ull;
+    persona_o6_frame.rflags = 0x202ull;
+    persona_o6_frame.rsp = persona_o6_stack + 0xF00ull;
+    persona_o6_frame.ss = 0x2Bull;
+    persona_o6_audit_before = persona_audit64_count(persona_o6_pid);
+    persona_o6_crash_before = persona_audit64_crash_count(persona_o6_pid);
+    persona_o6_record_result =
+        (persona_o6_stack == 0x0000000047600000ull)
+            ? persona_audit64_record_crash(
+                persona_o6_pid,
+                (u32)persona_o6_frame.vector,
+                persona_o6_frame.error_code,
+                persona_o6_frame.rip,
+                persona_o6_frame.rsp,
+                0ull)
+            : 0u;
+    persona_o6_bad_record_result =
+        persona_audit64_record_crash(
+            PROCESS64_INVALID_PID,
+            PERSONA_AUDIT64_CRASH_VECTOR_PAGE_FAULT,
+            VMA64_FAULT_USER,
+            0x0000000044600BADull,
+            0ull,
+            0ull);
+    persona_o6_audit_after = persona_audit64_count(persona_o6_pid);
+    persona_o6_crash_after = persona_audit64_crash_count(persona_o6_pid);
+    persona_o6_read_record =
+        (persona_o6_audit_after > persona_o6_audit_before)
+            ? persona_audit64_read(
+                persona_o6_pid,
+                persona_o6_audit_after - 1u,
+                &persona_o6_record)
+            : 0u;
+    persona_o6_read_report =
+        persona_audit64_read_last_crash(persona_o6_pid, &persona_o6_report);
+    persona_o6_unmap =
+        (persona_o6_stack == 0x0000000047600000ull)
+            ? vma64_unmap(persona_o6_pid, persona_o6_stack, VMA64_PAGE_BYTES)
+            : 0u;
+    persona_o6_persona_release = persona64_release(persona_o6_pid);
+    persona_o6_audit_release = persona_audit64_release(persona_o6_pid);
+    persona_o6_vma_release = vma64_release_process(persona_o6_pid);
+    persona_o6_clone_release =
+        (persona_o6_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(persona_o6_pid)
+            : 0u;
+    persona_o6_cleanup =
+        ((process64_persona_ctx(persona_o6_pid) == 0)
+            && (process64_audit_ctx(persona_o6_pid) == 0)
+            && (process64_vma_root(persona_o6_pid) == 0)
+            && (persona_o6_clone_release != 0u))
+            ? 1u
+            : 0u;
+    persona_o6_positive =
+        ((persona_o6_pid != PROCESS64_INVALID_PID)
+            && (persona_o6_vma_init != 0u)
+            && (persona_o6_audit_attach != 0u)
+            && (persona_o6_bind == PERSONA64_ATTACH_OK)
+            && (persona_o6_stack == 0x0000000047600000ull)
+            && (persona_o6_record_result != 0u)
+            && (persona_o6_bad_record_result == 0u)
+            && (persona_o6_audit_after == (persona_o6_audit_before + 1u))
+            && (persona_o6_crash_after == (persona_o6_crash_before + 1u))
+            && (persona_o6_read_record != 0u)
+            && (persona_o6_read_report != 0u)
+            && (persona_o6_record.event_type == PERSONA_AUDIT64_EVENT_CRASH)
+            && (persona_o6_record.event_code == PERSONA_AUDIT64_CRASH_SIGSEGV)
+            && (persona_o6_record.result == PERSONA_AUDIT64_CRASH_SIGSEGV)
+            && (persona_o6_record.persona_type == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o6_record.rip == persona_o6_frame.rip)
+            && (persona_o6_report.pid == persona_o6_pid)
+            && (persona_o6_report.persona_type == PERSONA64_TYPE_LINUX_ELF)
+            && (persona_o6_report.vector == PERSONA_AUDIT64_CRASH_VECTOR_PAGE_FAULT)
+            && (persona_o6_report.abi_code == PERSONA_AUDIT64_CRASH_SIGSEGV)
+            && (persona_o6_report.result == PERSONA_AUDIT64_CRASH_SIGSEGV)
+            && (persona_o6_report.rip == persona_o6_frame.rip)
+            && (persona_o6_report.rsp == persona_o6_frame.rsp)
+            && (persona_o6_report.error_code == VMA64_FAULT_USER)
+            && (persona_o6_report.fault_address == 0ull)
+            && (persona_o6_report.vma_region_count == 1u)
+            && (persona_o6_report.vma_dump_count == 1u)
+            && (persona_o6_report.vma_mapped_bytes == VMA64_PAGE_BYTES)
+            && (persona_o6_report.vma_first_base == persona_o6_stack)
+            && (persona_o6_report.vma_first_end == (persona_o6_stack + VMA64_PAGE_BYTES))
+            && (persona_o6_report.vma_first_prot == (VMA64_PROT_READ | VMA64_PROT_WRITE))
+            && (persona_o6_report.fault_region_present == 0u)
+            && (persona_o6_unmap != 0u)
+            && (persona_o6_persona_release != 0u)
+            && (persona_o6_audit_release != 0u)
+            && (persona_o6_vma_release == 0u)
+            && (persona_o6_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    for (linux_p1_build_i = 0u;
+         linux_p1_build_i < (u32)sizeof(linux_p1_app_bytes);
+         ++linux_p1_build_i)
+    {
+        linux_p1_app_bytes[linux_p1_build_i] = 0u;
+        linux_p1_missing_bytes[linux_p1_build_i] = 0u;
+    }
+    linux_p1_app_bytes[0] = 0x7Fu;
+    linux_p1_app_bytes[1] = (u8)'E';
+    linux_p1_app_bytes[2] = (u8)'L';
+    linux_p1_app_bytes[3] = (u8)'F';
+    linux_p1_app_bytes[ELF64_EI_CLASS] = ELF64_CLASS_64;
+    linux_p1_app_bytes[ELF64_EI_DATA] = ELF64_DATA_LSB;
+    linux_p1_app_bytes[ELF64_EI_VERSION] = ELF64_VERSION_CURRENT;
+    linux_p1_app_bytes[ELF64_EI_OSABI] = ELF64_OSABI_LINUX;
+    SCAFFOLD_STORE_LE32(
+        linux_p1_app_bytes,
+        16u,
+        ((u32)ELF64_MACHINE_X86_64 << 16) | (u32)ELF64_TYPE_DYN);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 20u, ELF64_VERSION_CURRENT);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 24u, 0x0000000000000200ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 32u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE32(
+        linux_p1_app_bytes,
+        52u,
+        ((u32)ELF64_PHDR_BYTES << 16) | (u32)ELF64_EHDR_BYTES);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 56u, 3u);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0x40u, ELF64_PT_LOAD);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0x44u, ELF64_PF_R | ELF64_PF_X);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x48u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x50u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x58u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x60u, 0x0000000000000400ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x68u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x70u, 0x0000000000001000ull);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0x78u, ELF64_PT_DYNAMIC);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0x7Cu, ELF64_PF_R);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x80u, 0x0000000000000280ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x88u, 0x0000000000000280ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x90u, 0x0000000000000280ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x98u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xA0u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xA8u, 0x0000000000000008ull);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0xB0u, ELF64_PT_INTERP);
+    SCAFFOLD_STORE_LE32(linux_p1_app_bytes, 0xB4u, ELF64_PF_R);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xB8u, 0x0000000000000340ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xC0u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xC8u, 0x0000000000000000ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xD0u, 0x0000000000000015ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xD8u, 0x0000000000000015ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0xE0u, 0x0000000000000001ull);
+    linux_p1_app_bytes[0x200u] = 0x48u;
+    linux_p1_app_bytes[0x201u] = 0xC7u;
+    linux_p1_app_bytes[0x202u] = 0xC0u;
+    linux_p1_app_bytes[0x203u] = 0xDAu;
+    linux_p1_app_bytes[0x204u] = 0xFFu;
+    linux_p1_app_bytes[0x205u] = 0xFFu;
+    linux_p1_app_bytes[0x206u] = 0xFFu;
+    linux_p1_app_bytes[0x207u] = 0xC3u;
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x280u, LINUX_DYNAMIC64_DT_STRTAB);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x288u, 0x0000000000000300ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x290u, LINUX_DYNAMIC64_DT_STRSZ);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x298u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x2A0u, LINUX_DYNAMIC64_DT_NULL);
+    SCAFFOLD_STORE_LE64(linux_p1_app_bytes, 0x2A8u, 0x0000000000000000ull);
+    linux_p1_app_bytes[0x340u] = (u8)'/';
+    linux_p1_app_bytes[0x341u] = (u8)'l';
+    linux_p1_app_bytes[0x342u] = (u8)'i';
+    linux_p1_app_bytes[0x343u] = (u8)'b';
+    linux_p1_app_bytes[0x344u] = (u8)'/';
+    linux_p1_app_bytes[0x345u] = (u8)'l';
+    linux_p1_app_bytes[0x346u] = (u8)'d';
+    linux_p1_app_bytes[0x347u] = (u8)'-';
+    linux_p1_app_bytes[0x348u] = (u8)'l';
+    linux_p1_app_bytes[0x349u] = (u8)'i';
+    linux_p1_app_bytes[0x34Au] = (u8)'m';
+    linux_p1_app_bytes[0x34Bu] = (u8)'i';
+    linux_p1_app_bytes[0x34Cu] = (u8)'t';
+    linux_p1_app_bytes[0x34Du] = (u8)'l';
+    linux_p1_app_bytes[0x34Eu] = (u8)'e';
+    linux_p1_app_bytes[0x34Fu] = (u8)'s';
+    linux_p1_app_bytes[0x350u] = (u8)'s';
+    linux_p1_app_bytes[0x351u] = (u8)'.';
+    linux_p1_app_bytes[0x352u] = (u8)'s';
+    linux_p1_app_bytes[0x353u] = (u8)'o';
+    linux_p1_app_bytes[0x354u] = 0u;
+    for (linux_p1_build_i = 0u;
+         linux_p1_build_i < (u32)sizeof(linux_p1_app_bytes);
+         ++linux_p1_build_i)
+    {
+        linux_p1_missing_bytes[linux_p1_build_i] =
+            linux_p1_app_bytes[linux_p1_build_i];
+    }
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x280u, LINUX_DYNAMIC64_DT_NEEDED);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x288u, 0x0000000000000001ull);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x290u, LINUX_DYNAMIC64_DT_STRTAB);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x298u, 0x0000000000000300ull);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x2A0u, LINUX_DYNAMIC64_DT_STRSZ);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x2A8u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x2B0u, LINUX_DYNAMIC64_DT_NULL);
+    SCAFFOLD_STORE_LE64(linux_p1_missing_bytes, 0x2B8u, 0x0000000000000000ull);
+    linux_p1_missing_bytes[0x300u] = 0u;
+    linux_p1_missing_bytes[0x301u] = (u8)'l';
+    linux_p1_missing_bytes[0x302u] = (u8)'i';
+    linux_p1_missing_bytes[0x303u] = (u8)'b';
+    linux_p1_missing_bytes[0x304u] = (u8)'g';
+    linux_p1_missing_bytes[0x305u] = (u8)'h';
+    linux_p1_missing_bytes[0x306u] = (u8)'o';
+    linux_p1_missing_bytes[0x307u] = (u8)'s';
+    linux_p1_missing_bytes[0x308u] = (u8)'t';
+    linux_p1_missing_bytes[0x309u] = (u8)'.';
+    linux_p1_missing_bytes[0x30Au] = (u8)'s';
+    linux_p1_missing_bytes[0x30Bu] = (u8)'o';
+    linux_p1_missing_bytes[0x30Cu] = 0u;
+
+    linux_p1_pid = process64_spawn_clone(init_pid);
+    linux_p1_vma_init =
+        (linux_p1_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p1_pid)
+            : 0u;
+    linux_p1_audit_attach =
+        (linux_p1_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p1_pid)
+            : 0u;
+    linux_p1_bind =
+        (linux_p1_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p1_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_dynamic64_init();
+    linux_p1_ld_image = linux_dynamic64_interpreter_image();
+    linux_p1_init =
+        ((linux_p1_ld_image != 0)
+            && (linux_dynamic64_interpreter_file_bytes() == LINUX_DYNAMIC64_FILE_BYTES))
+            ? 1u
+            : 0u;
+    linux_p1_prepare_before = linux_dynamic64_prepare_count();
+    linux_p1_load_before = linux_dynamic64_load_count();
+    linux_p1_denial_before = linux_dynamic64_denial_count();
+    linux_p1_dep_before = linux_dynamic64_dependency_denial_count();
+    linux_p1_audit_before = persona_audit64_count(linux_p1_pid);
+    linux_p1_prepare =
+        ((linux_p1_vma_init != 0u)
+            && (linux_p1_audit_attach != 0u)
+            && (linux_p1_bind == PERSONA64_ATTACH_OK))
+            ? linux_dynamic64_prepare(
+                linux_p1_pid,
+                linux_p1_app_bytes,
+                (u32)sizeof(linux_p1_app_bytes),
+                0x0000000047900000ull,
+                LINUX_DYNAMIC64_DEFAULT_BASE,
+                0x0000000047940000ull,
+                LINUX_DYNAMIC64_STACK_BYTES,
+                1u,
+                linux_p1_argv,
+                1u,
+                linux_p1_envp,
+                &linux_p1_result)
+            : LINUX_DYNAMIC64_DENIED;
+    linux_p1_export_match =
+        (linux_p1_prepare == LINUX_DYNAMIC64_OK)
+            ? ((linux_dynamic64_export(linux_p1_pid, "_dl_start")
+                    == linux_p1_result.interpreter_result.dl_start)
+                && (linux_dynamic64_export(linux_p1_pid, "dlsym")
+                    == linux_p1_result.interpreter_result.dlsym_fn))
+                ? 1u
+                : 0u
+            : 0u;
+    linux_p1_missing_export =
+        (linux_p1_prepare == LINUX_DYNAMIC64_OK)
+            ? (linux_dynamic64_export(linux_p1_pid, "pthread_create") == 0ull)
+            : 0u;
+    linux_p1_missing_prepare =
+        ((linux_p1_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p1_audit_attach != 0u))
+            ? linux_dynamic64_prepare(
+                linux_p1_pid,
+                linux_p1_missing_bytes,
+                (u32)sizeof(linux_p1_missing_bytes),
+                0x0000000047A00000ull,
+                LINUX_DYNAMIC64_DEFAULT_BASE + 0x0000000000010000ull,
+                0x0000000047A40000ull,
+                LINUX_DYNAMIC64_STACK_BYTES,
+                1u,
+                linux_p1_argv,
+                1u,
+                linux_p1_envp,
+                &linux_p1_missing_result)
+            : LINUX_DYNAMIC64_DENIED;
+    linux_p1_prepare_after = linux_dynamic64_prepare_count();
+    linux_p1_load_after = linux_dynamic64_load_count();
+    linux_p1_denial_after = linux_dynamic64_denial_count();
+    linux_p1_dep_after = linux_dynamic64_dependency_denial_count();
+    linux_p1_audit_after = persona_audit64_count(linux_p1_pid);
+    linux_p1_read_audit =
+        (linux_p1_audit_after > linux_p1_audit_before)
+            ? persona_audit64_read(
+                linux_p1_pid,
+                linux_p1_audit_after - 1u,
+                &linux_p1_audit_record)
+            : 0u;
+    linux_p1_context = persona64_context_for_process(linux_p1_pid);
+    linux_p1_context_match =
+        ((linux_p1_context != 0)
+            && (linux_p1_context->linux_dynamic_base == LINUX_DYNAMIC64_DEFAULT_BASE)
+            && (linux_p1_context->linux_dynamic_dl_start
+                == linux_p1_result.interpreter_result.dl_start)
+            && (linux_p1_context->linux_dynamic_dlsym
+                == linux_p1_result.interpreter_result.dlsym_fn)
+            && (linux_p1_context->linux_dynamic_symbol_count
+                == LINUX_DYNAMIC64_SYMBOL_COUNT)
+            && (linux_p1_context->linux_dynamic_needed_count == 0u)
+            && (linux_p1_context->linux_dynamic_missing_count == 0u))
+            ? 1u
+            : 0u;
+    linux_p1_release = linux_dynamic64_release_launch(linux_p1_pid, &linux_p1_result);
+    linux_p1_pages_clear =
+        ((paging64_user_page_present(0x0000000047900000ull) == 0u)
+            && (paging64_user_page_present(LINUX_DYNAMIC64_DEFAULT_BASE + LINUX_DYNAMIC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(0x0000000047940000ull) == 0u))
+            ? 1u
+            : 0u;
+    linux_p1_persona_release = persona64_release(linux_p1_pid);
+    linux_p1_audit_release = persona_audit64_release(linux_p1_pid);
+    linux_p1_vma_release = vma64_release_process(linux_p1_pid);
+    linux_p1_clone_release =
+        (linux_p1_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p1_pid)
+            : 0u;
+    linux_p1_cleanup =
+        ((process64_persona_ctx(linux_p1_pid) == 0)
+            && (process64_audit_ctx(linux_p1_pid) == 0)
+            && (process64_vma_root(linux_p1_pid) == 0)
+            && (linux_p1_clone_release != 0u))
+            ? 1u
+            : 0u;
+    linux_p1_positive =
+        ((linux_p1_pid != PROCESS64_INVALID_PID)
+            && (linux_p1_vma_init != 0u)
+            && (linux_p1_audit_attach != 0u)
+            && (linux_p1_bind == PERSONA64_ATTACH_OK)
+            && (linux_p1_init != 0u)
+            && (linux_p1_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p1_result.error == LINUX_DYNAMIC64_ERROR_NONE)
+            && (linux_p1_result.app_phdr_summary.interp_count == 1u)
+            && (linux_p1_result.app_phdr_summary.dynamic_count == 1u)
+            && (linux_p1_result.needed_result.dynamic_found == 1u)
+            && (linux_p1_result.needed_result.needed_count == 0u)
+            && (linux_p1_result.interpreter_result.header.type == ELF64_TYPE_DYN)
+            && (linux_p1_result.interpreter_result.phdr_summary.load_count == 1u)
+            && (linux_p1_result.interpreter_result.phdr_summary.dynamic_count == 1u)
+            && (linux_p1_result.interpreter_result.symbol_count == LINUX_DYNAMIC64_SYMBOL_COUNT)
+            && (linux_p1_result.interpreter_result.image_checksum != 0u)
+            && (linux_p1_result.interpreter_result.text_checksum != 0u)
+            && (linux_p1_result.interpreter_result.rodata_checksum != 0u)
+            && (linux_p1_result.interpreter_result.text_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (linux_p1_result.interpreter_result.rodata_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (elf64_auxv_value(&linux_p1_result.auxv, ELF64_AT_BASE)
+                == LINUX_DYNAMIC64_DEFAULT_BASE)
+            && (linux_p1_result.transfer_rip
+                == (LINUX_DYNAMIC64_DEFAULT_BASE + LINUX_DYNAMIC64_RVA_DL_START))
+            && (linux_p1_result.transfer_ready != 0u)
+            && (linux_p1_result.stack_result.alignment_ok != 0u)
+            && (linux_p1_export_match != 0u)
+            && (linux_p1_missing_export != 0u)
+            && (linux_p1_context_match != 0u)
+            && (linux_p1_missing_prepare == LINUX_DYNAMIC64_DENIED)
+            && (linux_p1_missing_result.error == LINUX_DYNAMIC64_ERROR_DEPENDENCY)
+            && (linux_p1_missing_result.needed_result.needed_count == 1u)
+            && (linux_p1_missing_result.needed_result.missing_count == 1u)
+            && (linux_p1_prepare_after == (linux_p1_prepare_before + 1u))
+            && (linux_p1_load_after == (linux_p1_load_before + 1u))
+            && (linux_p1_denial_after == (linux_p1_denial_before + 1u))
+            && (linux_p1_dep_after == (linux_p1_dep_before + 1u))
+            && (linux_p1_audit_after == (linux_p1_audit_before + 1u))
+            && (linux_p1_read_audit != 0u)
+            && (linux_p1_audit_record.event_type == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (linux_p1_audit_record.event_code == LINUX_DYNAMIC64_ERROR_DEPENDENCY)
+            && (linux_p1_release >= 3u)
+            && (linux_p1_pages_clear != 0u)
+            && (linux_p1_persona_release != 0u)
+            && (linux_p1_audit_release != 0u)
+            && (linux_p1_vma_release == 0u)
+            && (linux_p1_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    for (linux_p2_build_i = 0u;
+         linux_p2_build_i < (u32)sizeof(linux_p2_app_bytes);
+         ++linux_p2_build_i)
+    {
+        linux_p2_app_bytes[linux_p2_build_i] = linux_p1_app_bytes[linux_p2_build_i];
+    }
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x280u, LINUX_DYNAMIC64_DT_NEEDED);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x288u, 0x0000000000000001ull);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x290u, LINUX_DYNAMIC64_DT_STRTAB);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x298u, 0x0000000000000300ull);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x2A0u, LINUX_DYNAMIC64_DT_STRSZ);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x2A8u, 0x0000000000000040ull);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x2B0u, LINUX_DYNAMIC64_DT_NULL);
+    SCAFFOLD_STORE_LE64(linux_p2_app_bytes, 0x2B8u, 0x0000000000000000ull);
+    linux_p2_app_bytes[0x300u] = 0u;
+    linux_p2_app_bytes[0x301u] = (u8)'l';
+    linux_p2_app_bytes[0x302u] = (u8)'i';
+    linux_p2_app_bytes[0x303u] = (u8)'b';
+    linux_p2_app_bytes[0x304u] = (u8)'c';
+    linux_p2_app_bytes[0x305u] = (u8)'.';
+    linux_p2_app_bytes[0x306u] = (u8)'s';
+    linux_p2_app_bytes[0x307u] = (u8)'o';
+    linux_p2_app_bytes[0x308u] = (u8)'.';
+    linux_p2_app_bytes[0x309u] = (u8)'6';
+    linux_p2_app_bytes[0x30Au] = 0u;
+
+    linux_p2_pid = process64_spawn_clone(init_pid);
+    linux_p2_vma_init =
+        (linux_p2_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p2_pid)
+            : 0u;
+    linux_p2_audit_attach =
+        (linux_p2_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p2_pid)
+            : 0u;
+    linux_p2_owner = (linux_p2_pid != PROCESS64_INVALID_PID)
+        ? process64_principal(linux_p2_pid)
+        : 0u;
+    linux_p2_stdin_cap =
+        (linux_p2_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2_stdout_cap =
+        (linux_p2_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2_stderr_cap =
+        (linux_p2_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2_fd_init =
+        ((linux_p2_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                linux_p2_pid,
+                linux_p2_owner,
+                linux_p2_stdin_cap,
+                linux_p2_stdout_cap,
+                linux_p2_stderr_cap)
+            : 0u;
+    linux_p2_bind =
+        (linux_p2_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p2_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_libc64_init();
+    linux_p2_libc_image = linux_libc64_image();
+    linux_p2_init =
+        ((linux_p2_libc_image != 0)
+            && (linux_libc64_file_bytes() == LINUX_LIBC64_FILE_BYTES)
+            && (linux_libc64_symbol_count() == LINUX_LIBC64_SYMBOL_COUNT)
+            && (linux_libc64_syscall_symbol_count() == LINUX_LIBC64_SYSCALL_SYMBOL_COUNT)
+            && (linux_libc64_memory_symbol_count() == LINUX_LIBC64_MEMORY_SYMBOL_COUNT)
+            && (linux_libc64_string_symbol_count() == LINUX_LIBC64_STRING_SYMBOL_COUNT)
+            && (linux_libc64_stdio_symbol_count() == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_libc64_heap_symbol_count() == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_libc64_abort_symbol_count() == LINUX_LIBC64_ABORT_SYMBOL_COUNT)
+            && (linux_libc64_env_symbol_count() == LINUX_LIBC64_ENV_SYMBOL_COUNT)
+            && (linux_libc64_errno_symbol_count() == LINUX_LIBC64_ERRNO_SYMBOL_COUNT)
+            && (linux_libc64_pthread_create_symbol_count() == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+            && (linux_libc64_pthread_join_symbol_count() == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+            && (linux_libc64_pthread_exit_symbol_count() == LINUX_LIBC64_PTHREAD_EXIT_SYMBOL_COUNT)
+            && (linux_libc64_pthread_mutex_symbol_count() == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+            && (linux_libc64_pthread_cond_symbol_count() == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+            && (linux_libc64_pthread_tls_symbol_count() == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+            && (linux_libc64_unavailable_symbol_count() == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+            ? 1u
+            : 0u;
+    linux_p2_prepare_before = linux_dynamic64_prepare_count();
+    linux_p2_dynamic_load_before = linux_dynamic64_load_count();
+    linux_p2_libc_load_before = linux_libc64_load_count();
+    linux_p2_libc_denial_before = linux_libc64_denial_count();
+    linux_p2_dep_supported_before = linux_libc64_dependency_supported_count();
+    linux_p2_audit_before = persona_audit64_count(linux_p2_pid);
+    linux_p2_prepare =
+        ((linux_p2_vma_init != 0u)
+            && (linux_p2_audit_attach != 0u)
+            && (linux_p2_fd_init != 0u)
+            && (linux_p2_bind == PERSONA64_ATTACH_OK))
+            ? linux_dynamic64_prepare(
+                linux_p2_pid,
+                linux_p2_app_bytes,
+                (u32)sizeof(linux_p2_app_bytes),
+                0x0000000047880000ull,
+                LINUX_DYNAMIC64_DEFAULT_BASE,
+                0x0000000047980000ull,
+                LINUX_DYNAMIC64_STACK_BYTES,
+                1u,
+                linux_p2_argv,
+                1u,
+                linux_p2_envp,
+                &linux_p2_result)
+            : LINUX_DYNAMIC64_DENIED;
+    linux_p2_dep_libc = linux_libc64_dependency_supported("libc.so.6", 9u);
+    linux_p2_dep_unknown = linux_libc64_dependency_supported("libghost.so", 11u);
+    linux_p2_export_match =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? ((linux_libc64_export(linux_p2_pid, "write")
+                    == linux_p2_result.libc_result.write_fn)
+                && (linux_libc64_export(linux_p2_pid, "strlen")
+                    == linux_p2_result.libc_result.strlen_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_create")
+                    == linux_p2_result.libc_result.pthread_create_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_exit")
+                    == linux_p2_result.libc_result.pthread_exit_fn)
+                && (linux_libc64_export(linux_p2_pid, "abort")
+                    == linux_p2_result.libc_result.abort_fn)
+                && (linux_libc64_export(linux_p2_pid, "getenv")
+                    == linux_p2_result.libc_result.getenv_fn)
+                && (linux_libc64_export(linux_p2_pid, "setenv")
+                    == linux_p2_result.libc_result.setenv_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_mutex_lock")
+                    == linux_p2_result.libc_result.pthread_mutex_lock_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_mutex_unlock")
+                    == linux_p2_result.libc_result.pthread_mutex_unlock_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_init")
+                    == linux_p2_result.libc_result.pthread_cond_init_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_destroy")
+                    == linux_p2_result.libc_result.pthread_cond_destroy_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_wait")
+                    == linux_p2_result.libc_result.pthread_cond_wait_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_signal")
+                    == linux_p2_result.libc_result.pthread_cond_signal_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_broadcast")
+                    == linux_p2_result.libc_result.pthread_cond_broadcast_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_key_create")
+                    == linux_p2_result.libc_result.pthread_key_create_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_setspecific")
+                    == linux_p2_result.libc_result.pthread_setspecific_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_getspecific")
+                    == linux_p2_result.libc_result.pthread_getspecific_fn))
+                ? 1u
+                : 0u
+            : 0u;
+    linux_p2_missing_export =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? (linux_libc64_export(linux_p2_pid, "forkpty") == 0ull)
+            : 0u;
+    linux_p2_bad_load =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? linux_libc64_load(linux_p2_pid, 0ull, &linux_p2_bad_load_result)
+            : LINUX_LIBC64_DENIED;
+    linux_p2_audit_after = persona_audit64_count(linux_p2_pid);
+    linux_p2_read_audit =
+        (linux_p2_audit_after > linux_p2_audit_before)
+            ? persona_audit64_read(
+                linux_p2_pid,
+                linux_p2_audit_after - 1u,
+                &linux_p2_audit_record)
+            : 0u;
+    linux_p2b_code_addr = 0x00000000479A0000ull;
+    linux_p2b_data_addr = 0x00000000479B0000ull;
+    linux_p2b_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2b_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2b_data_map =
+        (linux_p2b_code_map == linux_p2b_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2b_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2b_data_map == linux_p2b_data_addr)
+    {
+        volatile u8 *linux_p2b_code = (volatile u8 *)(u64)linux_p2b_code_addr;
+        volatile u8 *linux_p2b_data = (volatile u8 *)(u64)linux_p2b_data_addr;
+
+        for (linux_p2b_i = 0u; linux_p2b_i < VMA64_PAGE_BYTES; ++linux_p2b_i)
+        {
+            linux_p2b_data[linux_p2b_i] = 0u;
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_harness_template); ++linux_p2b_i)
+        {
+            linux_p2b_code[linux_p2b_i] = linux_p2b_harness_template[linux_p2b_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0x02u, linux_p2b_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0x15u, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRCPY);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0x38u, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRNCPY);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0x5Cu, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRCMP);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0x85u, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRNCMP);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0xAEu, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRNCMP);
+        SCAFFOLD_STORE_LE64(linux_p2b_code, 0xD7u, linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_MEMMOVE);
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_src_copy); ++linux_p2b_i)
+        {
+            linux_p2b_data[0x00u + linux_p2b_i] = linux_p2b_src_copy[linux_p2b_i];
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_src_ncopy); ++linux_p2b_i)
+        {
+            linux_p2b_data[0x40u + linux_p2b_i] = linux_p2b_src_ncopy[linux_p2b_i];
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_cmp_left); ++linux_p2b_i)
+        {
+            linux_p2b_data[0x80u + linux_p2b_i] = linux_p2b_cmp_left[linux_p2b_i];
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_cmp_right); ++linux_p2b_i)
+        {
+            linux_p2b_data[0x90u + linux_p2b_i] = linux_p2b_cmp_right[linux_p2b_i];
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_move_seed); ++linux_p2b_i)
+        {
+            linux_p2b_data[0xA0u + linux_p2b_i] = linux_p2b_move_seed[linux_p2b_i];
+        }
+        for (linux_p2b_i = 0u; linux_p2b_i < 16u; ++linux_p2b_i)
+        {
+            linux_p2b_data[0x20u + linux_p2b_i] = 0xA5u;
+            linux_p2b_data[0x60u + linux_p2b_i] = 0xA5u;
+        }
+        linux_p2b_code_prot = paging64_user_page_protection(linux_p2b_code_addr);
+        linux_p2b_code_copy =
+            ((linux_p2b_code[0] == 0x49u)
+                && (linux_p2b_code[0xFAu] == 0xF4u)
+                && (linux_p2b_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2b_data_init =
+            ((linux_p2b_data[0] == (u8)'l')
+                && (linux_p2b_data[0x40u] == (u8)'o')
+                && (linux_p2b_data[0x80u] == (u8)'a')
+                && (linux_p2b_data[0x90u] == (u8)'a')
+                && (linux_p2b_data[0xA0u] == (u8)'0'))
+                ? 1u
+                : 0u;
+        linux_p2b_transfer =
+            interrupts64_trigger_user_entry_probe(
+                linux_p2b_code_addr,
+                linux_p2_result.stack_top,
+                0x002B0033ull,
+                0x0000000000000002ull);
+        linux_p2b_aux = interrupts64_user_entry_probe_aux();
+        linux_p2b_strcpy_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x120ull));
+        linux_p2b_strncpy_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x128ull));
+        linux_p2b_strcmp_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x130ull));
+        linux_p2b_strncmp2_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x138ull));
+        linux_p2b_strncmp3_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x140ull));
+        linux_p2b_memmove_ret = *((volatile u64 *)(u64)(linux_p2b_data_addr + 0x148ull));
+        linux_p2b_strcpy_match = 1u;
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_src_copy); ++linux_p2b_i)
+        {
+            if (linux_p2b_data[0x20u + linux_p2b_i] != linux_p2b_src_copy[linux_p2b_i])
+            {
+                linux_p2b_strcpy_match = 0u;
+            }
+        }
+        linux_p2b_strncpy_match =
+            ((linux_p2b_data[0x60u] == (u8)'o')
+                && (linux_p2b_data[0x61u] == (u8)'s')
+                && (linux_p2b_data[0x62u] == 0u)
+                && (linux_p2b_data[0x63u] == 0u)
+                && (linux_p2b_data[0x64u] == 0u)
+                && (linux_p2b_data[0x65u] == 0xA5u))
+                ? 1u
+                : 0u;
+        linux_p2b_strcmp_match = (((u32)linux_p2b_strcmp_ret) == 0xFFFFFFFFu) ? 1u : 0u;
+        linux_p2b_strncmp_match =
+            ((linux_p2b_strncmp2_ret == 0ull)
+                && (((u32)linux_p2b_strncmp3_ret) == 0xFFFFFFFFu))
+                ? 1u
+                : 0u;
+        linux_p2b_memmove_match = 1u;
+        for (linux_p2b_i = 0u; linux_p2b_i < (u32)sizeof(linux_p2b_move_expected); ++linux_p2b_i)
+        {
+            if (linux_p2b_data[0xA0u + linux_p2b_i] != linux_p2b_move_expected[linux_p2b_i])
+            {
+                linux_p2b_memmove_match = 0u;
+            }
+        }
+        linux_p2b_return_match =
+            ((linux_p2b_strcpy_ret == (linux_p2b_data_addr + 0x20ull))
+                && (linux_p2b_strncpy_ret == (linux_p2b_data_addr + 0x60ull))
+                && (linux_p2b_memmove_ret == (linux_p2b_data_addr + 0xA2ull)))
+                ? 1u
+                : 0u;
+        linux_p2b_export_match =
+            ((linux_libc64_export(linux_p2_pid, "strcpy")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRCPY))
+                && (linux_libc64_export(linux_p2_pid, "strncpy")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRNCPY))
+                && (linux_libc64_export(linux_p2_pid, "strcmp")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRCMP))
+                && (linux_libc64_export(linux_p2_pid, "strncmp")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_STRNCMP))
+                && (linux_libc64_export(linux_p2_pid, "memmove")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_MEMMOVE)))
+                ? 1u
+                : 0u;
+        linux_p2b_checksum = 2166136261u;
+        for (linux_p2b_j = 0u; linux_p2b_j < 0x150u; ++linux_p2b_j)
+        {
+            linux_p2b_checksum ^= (u32)linux_p2b_data[linux_p2b_j];
+            linux_p2b_checksum *= 16777619u;
+        }
+    }
+    linux_p2b_unmap_code =
+        (linux_p2b_code_map == linux_p2b_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2b_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2b_unmap_data =
+        (linux_p2b_data_map == linux_p2b_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2b_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2b_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.string_symbol_count == LINUX_LIBC64_STRING_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2b_code_map == linux_p2b_code_addr)
+            && (linux_p2b_data_map == linux_p2b_data_addr)
+            && (linux_p2b_code_copy != 0u)
+            && (linux_p2b_data_init != 0u)
+            && (linux_p2b_transfer == 0x50324231u)
+            && (linux_p2b_aux == LINUX_LIBC64_STRING_SYMBOL_COUNT)
+            && (linux_p2b_strcpy_match != 0u)
+            && (linux_p2b_strncpy_match != 0u)
+            && (linux_p2b_strcmp_match != 0u)
+            && (linux_p2b_strncmp_match != 0u)
+            && (linux_p2b_memmove_match != 0u)
+            && (linux_p2b_return_match != 0u)
+            && (linux_p2b_export_match != 0u)
+            && (linux_p2b_checksum != 0u)
+            && (linux_p2b_unmap_code != 0u)
+            && (linux_p2b_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2b_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2b_data_addr) == 0u))
+            ? 1u
+            : 0u;
+    linux_p2c_code_addr = 0x00000000479C0000ull;
+    linux_p2c_data_addr = 0x00000000479D0000ull;
+    linux_p2c_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2c_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2c_data_map =
+        (linux_p2c_code_map == linux_p2c_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2c_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2c_data_map == linux_p2c_data_addr)
+    {
+        volatile u8 *linux_p2c_code = (volatile u8 *)(u64)linux_p2c_code_addr;
+        volatile u8 *linux_p2c_data = (volatile u8 *)(u64)linux_p2c_data_addr;
+
+        for (linux_p2c_i = 0u; linux_p2c_i < VMA64_PAGE_BYTES; ++linux_p2c_i)
+        {
+            linux_p2c_data[linux_p2c_i] = 0u;
+        }
+        for (linux_p2c_i = 0u; linux_p2c_i < (u32)sizeof(linux_p2c_harness_template); ++linux_p2c_i)
+        {
+            linux_p2c_code[linux_p2c_i] = linux_p2c_harness_template[linux_p2c_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2c_code, 0x02u, linux_p2c_data_addr);
+        SCAFFOLD_STORE_LE64(
+            linux_p2c_code,
+            0x0Cu,
+            linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PUTS);
+        SCAFFOLD_STORE_LE64(linux_p2c_code, 0x18u, linux_p2c_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE32(linux_p2c_code, 0x2Eu, LINUX_LIBC64_STDIO_SYMBOL_COUNT);
+        for (linux_p2c_i = 0u; linux_p2c_i < (u32)sizeof(linux_p2c_message); ++linux_p2c_i)
+        {
+            linux_p2c_data[linux_p2c_i] = linux_p2c_message[linux_p2c_i];
+        }
+        linux_p2c_code_prot = paging64_user_page_protection(linux_p2c_code_addr);
+        linux_p2c_code_copy =
+            ((linux_p2c_code[0] == 0x48u)
+                && (linux_p2c_code[0x34u] == 0xF4u)
+                && (linux_p2c_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2c_data_init =
+            ((linux_p2c_data[0] == (u8)'p')
+                && (linux_p2c_data[3] == (u8)'-')
+                && (linux_p2c_data[8] == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2c_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2c_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2c_runqueue_start =
+            (linux_p2c_task != SCHEDULER64_INVALID_TASK)
+                ? scheduler64_runqueue_start(linux_p2c_task)
+                : 0u;
+        linux_p2c_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2c_console_before_count = console64_write_count();
+        linux_p2c_console_before_bytes = console64_byte_count();
+        linux_p2c_native_before = syscall64_native_count();
+        linux_p2c_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2c_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2c_write_before = linux_abi64_write_count();
+        linux_p2c_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2c_transfer =
+            (linux_p2c_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2c_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2c_aux = interrupts64_user_entry_probe_aux();
+        linux_p2c_native_after = syscall64_native_count();
+        linux_p2c_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2c_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2c_write_after = linux_abi64_write_count();
+        linux_p2c_console_after_count = console64_write_count();
+        linux_p2c_console_after_bytes = console64_byte_count();
+        linux_p2c_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2c_puts_return = *((volatile u64 *)(u64)(linux_p2c_data_addr + 0x80ull));
+        linux_p2c_last_pid = syscall64_native_persona_last_pid();
+        linux_p2c_last_type = syscall64_native_persona_last_type();
+        linux_p2c_last_result = syscall64_native_persona_last_result();
+        linux_p2c_audit_read =
+            (linux_p2c_audit_after > linux_p2c_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2c_audit_after - 1u,
+                    &linux_p2c_audit_record)
+                : 0u;
+        linux_p2c_return_match =
+            (linux_p2c_puts_return == ((u64)sizeof(linux_p2c_message)))
+                ? 1u
+                : 0u;
+        linux_p2c_console_match =
+            (((linux_p2c_console_after_count - linux_p2c_console_before_count) == 2u)
+                && ((linux_p2c_console_after_bytes - linux_p2c_console_before_bytes)
+                    == (u32)sizeof(linux_p2c_message)))
+                ? 1u
+                : 0u;
+        linux_p2c_dispatch_match =
+            (((linux_p2c_native_after - linux_p2c_native_before) == 2u)
+                && ((linux_p2c_persona_after - linux_p2c_persona_before) == 2u)
+                && ((linux_p2c_linux_after - linux_p2c_linux_before) == 2u)
+                && ((linux_p2c_write_after - linux_p2c_write_before) == 2u)
+                && (linux_p2c_last_pid == linux_p2_pid)
+                && (linux_p2c_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2c_last_result == 1ull))
+                ? 1u
+                : 0u;
+        linux_p2c_export_match =
+            (linux_libc64_export(linux_p2_pid, "puts")
+                == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PUTS))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2c_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2c_unmap_code =
+        (linux_p2c_code_map == linux_p2c_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2c_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2c_unmap_data =
+        (linux_p2c_data_map == linux_p2c_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2c_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2c_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.stdio_symbol_count == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2c_code_map == linux_p2c_code_addr)
+            && (linux_p2c_data_map == linux_p2c_data_addr)
+            && (linux_p2c_code_copy != 0u)
+            && (linux_p2c_data_init != 0u)
+            && (linux_p2c_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2c_runqueue_start != 0u)
+            && (linux_p2c_current_pid == linux_p2_pid)
+            && (linux_p2c_transfer == 0x50324331u)
+            && (linux_p2c_aux == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2c_return_match != 0u)
+            && (linux_p2c_console_match != 0u)
+            && (linux_p2c_dispatch_match != 0u)
+            && (linux_p2c_export_match != 0u)
+            && (linux_p2c_audit_after == (linux_p2c_audit_before + 2u))
+            && (linux_p2c_audit_read != 0u)
+            && (linux_p2c_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2c_audit_record.event_code == LINUX_ABI64_SYSCALL_WRITE)
+            && (linux_p2c_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2c_unmap_code != 0u)
+            && (linux_p2c_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2c_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2c_data_addr) == 0u)
+            && (linux_p2c_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2d_code_addr = 0x00000000479E0000ull;
+    linux_p2d_data_addr = 0x00000000479F0000ull;
+    linux_p2d_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2d_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2d_data_map =
+        (linux_p2d_code_map == linux_p2d_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2d_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2d_data_map == linux_p2d_data_addr)
+    {
+        volatile u8 *linux_p2d_code = (volatile u8 *)(u64)linux_p2d_code_addr;
+        volatile u8 *linux_p2d_data = (volatile u8 *)(u64)linux_p2d_data_addr;
+
+        for (linux_p2d_i = 0u; linux_p2d_i < VMA64_PAGE_BYTES; ++linux_p2d_i)
+        {
+            linux_p2d_data[linux_p2d_i] = 0u;
+        }
+        for (linux_p2d_i = 0u; linux_p2d_i < (u32)sizeof(linux_p2d_harness_template); ++linux_p2d_i)
+        {
+            linux_p2d_code[linux_p2d_i] = linux_p2d_harness_template[linux_p2d_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x02u, linux_p2d_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x0Cu, linux_p2_result.libc_result.printf_fn);
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x18u, linux_p2d_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x25u, linux_p2d_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x2Fu, linux_p2_result.libc_result.printf_fn);
+        SCAFFOLD_STORE_LE64(linux_p2d_code, 0x3Bu, linux_p2d_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE32(linux_p2d_code, 0x51u, LINUX_LIBC64_STDIO_SYMBOL_COUNT);
+        for (linux_p2d_i = 0u; linux_p2d_i < (u32)sizeof(linux_p2d_literal); ++linux_p2d_i)
+        {
+            linux_p2d_data[linux_p2d_i] = linux_p2d_literal[linux_p2d_i];
+        }
+        for (linux_p2d_i = 0u; linux_p2d_i < (u32)sizeof(linux_p2d_format); ++linux_p2d_i)
+        {
+            linux_p2d_data[0x40u + linux_p2d_i] = linux_p2d_format[linux_p2d_i];
+        }
+        linux_p2d_code_prot = paging64_user_page_protection(linux_p2d_code_addr);
+        linux_p2d_code_copy =
+            ((linux_p2d_code[0] == 0x48u)
+                && (linux_p2d_code[0x57u] == 0xF4u)
+                && (linux_p2d_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2d_data_init =
+            ((linux_p2d_data[0] == (u8)'p')
+                && (linux_p2d_data[3] == (u8)'-')
+                && (linux_p2d_data[10] == (u8)'\n')
+                && (linux_p2d_data[0x44u] == (u8)'%'))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2d_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2d_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2d_runqueue_start =
+            (linux_p2d_task != SCHEDULER64_INVALID_TASK)
+                ? scheduler64_runqueue_start(linux_p2d_task)
+                : 0u;
+        linux_p2d_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2d_console_before_count = console64_write_count();
+        linux_p2d_console_before_bytes = console64_byte_count();
+        linux_p2d_native_before = syscall64_native_count();
+        linux_p2d_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2d_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2d_write_before = linux_abi64_write_count();
+        linux_p2d_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2d_transfer =
+            (linux_p2d_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2d_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2d_aux = interrupts64_user_entry_probe_aux();
+        linux_p2d_native_after = syscall64_native_count();
+        linux_p2d_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2d_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2d_write_after = linux_abi64_write_count();
+        linux_p2d_console_after_count = console64_write_count();
+        linux_p2d_console_after_bytes = console64_byte_count();
+        linux_p2d_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2d_printf_return = *((volatile u64 *)(u64)(linux_p2d_data_addr + 0x80ull));
+        linux_p2d_deny_return = *((volatile u64 *)(u64)(linux_p2d_data_addr + 0x88ull));
+        linux_p2d_last_pid = syscall64_native_persona_last_pid();
+        linux_p2d_last_type = syscall64_native_persona_last_type();
+        linux_p2d_last_result = syscall64_native_persona_last_result();
+        linux_p2d_audit_read =
+            (linux_p2d_audit_after > linux_p2d_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2d_audit_after - 1u,
+                    &linux_p2d_audit_record)
+                : 0u;
+        linux_p2d_return_match =
+            (linux_p2d_printf_return == ((u64)sizeof(linux_p2d_literal) - 1ull))
+                ? 1u
+                : 0u;
+        linux_p2d_deny_match =
+            (linux_p2d_deny_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOSYS))
+                ? 1u
+                : 0u;
+        linux_p2d_console_match =
+            (((linux_p2d_console_after_count - linux_p2d_console_before_count) == 1u)
+                && ((linux_p2d_console_after_bytes - linux_p2d_console_before_bytes)
+                    == ((u32)sizeof(linux_p2d_literal) - 1u)))
+                ? 1u
+                : 0u;
+        linux_p2d_dispatch_match =
+            (((linux_p2d_native_after - linux_p2d_native_before) == 1u)
+                && ((linux_p2d_persona_after - linux_p2d_persona_before) == 1u)
+                && ((linux_p2d_linux_after - linux_p2d_linux_before) == 1u)
+                && ((linux_p2d_write_after - linux_p2d_write_before) == 1u)
+                && (linux_p2d_last_pid == linux_p2_pid)
+                && (linux_p2d_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2d_last_result == ((u64)sizeof(linux_p2d_literal) - 1ull)))
+                ? 1u
+                : 0u;
+        linux_p2d_export_match =
+            ((linux_libc64_export(linux_p2_pid, "printf")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PRINTF))
+                && (linux_p2_result.libc_result.printf_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PRINTF)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2d_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2d_unmap_code =
+        (linux_p2d_code_map == linux_p2d_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2d_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2d_unmap_data =
+        (linux_p2d_data_map == linux_p2d_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2d_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2e_pid = linux_p2_pid;
+    linux_p2e_vma_init = linux_p2_vma_init;
+    linux_p2e_audit_attach = linux_p2_audit_attach;
+    linux_p2e_bind = linux_p2_bind;
+    linux_p2e_load = (linux_p2_prepare == LINUX_DYNAMIC64_OK) ? LINUX_LIBC64_OK : LINUX_LIBC64_DENIED;
+    linux_p2e_result = linux_p2_result.libc_result;
+    linux_p2e_code_addr = 0x00000000479A0000ull;
+    linux_p2e_data_addr = 0x00000000479B0000ull;
+    linux_p2e_stack_addr = 0x00000000479C0000ull;
+    linux_p2e_stack_top = linux_p2e_stack_addr + ((u64)VMA64_PAGE_BYTES * 3ull);
+    linux_p2e_stack_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2e_pid,
+                linux_p2e_stack_addr,
+                ((u64)VMA64_PAGE_BYTES * 3ull),
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2e_code_map =
+        (linux_p2e_stack_map == linux_p2e_stack_addr)
+            ? vma64_map_anon(
+                linux_p2e_pid,
+                linux_p2e_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2e_data_map =
+        (linux_p2e_code_map == linux_p2e_code_addr)
+            ? vma64_map_anon(
+                linux_p2e_pid,
+                linux_p2e_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2e_data_map == linux_p2e_data_addr)
+    {
+        volatile u8 *linux_p2e_code = (volatile u8 *)(u64)linux_p2e_code_addr;
+        volatile u8 *linux_p2e_data = (volatile u8 *)(u64)linux_p2e_data_addr;
+
+        for (linux_p2e_i = 0u; linux_p2e_i < VMA64_PAGE_BYTES; ++linux_p2e_i)
+        {
+            linux_p2e_data[linux_p2e_i] = 0u;
+        }
+        for (linux_p2e_i = 0u; linux_p2e_i < (u32)sizeof(linux_p2e_harness_template); ++linux_p2e_i)
+        {
+            linux_p2e_code[linux_p2e_i] = linux_p2e_harness_template[linux_p2e_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x07u, linux_libc64_export(linux_p2e_pid, "malloc"));
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x13u, linux_p2e_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x28u, 0x3265706165682D70ull);
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x35u, linux_p2e_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x45u, linux_libc64_export(linux_p2e_pid, "free"));
+        SCAFFOLD_STORE_LE64(linux_p2e_code, 0x51u, linux_p2e_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE32(linux_p2e_code, 0x67u, LINUX_LIBC64_HEAP_SYMBOL_COUNT);
+        linux_p2e_code_prot = paging64_user_page_protection(linux_p2e_code_addr);
+        linux_p2e_libc_page_present =
+            paging64_user_page_present(linux_p2e_result.image_base + LINUX_LIBC64_TEXT_RVA);
+        linux_p2e_code_copy =
+            ((linux_p2e_code[0] == 0xBFu)
+                && (linux_p2e_code[0x6Du] == 0xF4u)
+                && (linux_p2e_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2e_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2e_pid,
+                process64_runtime_token(linux_p2e_pid),
+                process64_runtime_user_entry_token(linux_p2e_pid),
+                linux_p2e_code_addr,
+                linux_p2e_stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2e_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2e_pid));
+        linux_p2e_runqueue_start =
+            ((linux_p2e_code_copy != 0u) && (linux_p2e_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2e_task)
+                : 0u;
+        linux_p2e_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2e_native_before = syscall64_native_count();
+        linux_p2e_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2e_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2e_mmap_before = linux_abi64_mmap_count();
+        linux_p2e_mmap_bytes_before = linux_abi64_mmap_byte_count();
+        linux_p2e_munmap_before = linux_abi64_munmap_count();
+        linux_p2e_munmap_bytes_before = linux_abi64_munmap_byte_count();
+        linux_p2e_audit_before = persona_audit64_count(linux_p2e_pid);
+        linux_p2e_transfer =
+            (linux_p2e_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2e_code_addr,
+                    linux_p2e_stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2e_aux = interrupts64_user_entry_probe_aux();
+        linux_p2e_native_after = syscall64_native_count();
+        linux_p2e_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2e_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2e_mmap_after = linux_abi64_mmap_count();
+        linux_p2e_mmap_bytes_after = linux_abi64_mmap_byte_count();
+        linux_p2e_munmap_after = linux_abi64_munmap_count();
+        linux_p2e_munmap_bytes_after = linux_abi64_munmap_byte_count();
+        linux_p2e_audit_after = persona_audit64_count(linux_p2e_pid);
+        linux_p2e_malloc_ptr = *((volatile u64 *)(u64)(linux_p2e_data_addr + 0x80ull));
+        linux_p2e_free_return = *((volatile u64 *)(u64)(linux_p2e_data_addr + 0x88ull));
+        linux_p2e_heap_magic = *((volatile u64 *)(u64)(linux_p2e_data_addr + 0x90ull));
+        linux_p2e_heap_base = linux_p2e_malloc_ptr;
+        linux_p2e_last_pid = syscall64_native_persona_last_pid();
+        linux_p2e_last_type = syscall64_native_persona_last_type();
+        linux_p2e_last_result = syscall64_native_persona_last_result();
+        linux_p2e_audit_read =
+            (linux_p2e_audit_after > linux_p2e_audit_before)
+                ? persona_audit64_read(
+                    linux_p2e_pid,
+                    linux_p2e_audit_after - 1u,
+                    &linux_p2e_audit_record)
+                : 0u;
+        linux_p2e_pointer_match =
+            ((linux_p2e_malloc_ptr != 0ull)
+                && ((linux_p2e_malloc_ptr & 0xFull) == 0ull)
+                && ((linux_p2e_heap_base & ((u64)VMA64_PAGE_BYTES - 1ull)) == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2e_magic_match =
+            (linux_p2e_heap_magic == 0x3265706165682D70ull) ? 1u : 0u;
+        linux_p2e_free_match =
+            (linux_p2e_free_return == 0ull) ? 1u : 0u;
+        linux_p2e_heap_unmapped =
+            ((linux_p2e_heap_base != 0ull)
+                && (paging64_user_page_present(linux_p2e_heap_base) == 0u)
+                && (vma64_find(linux_p2e_pid, linux_p2e_heap_base) == 0))
+                ? 1u
+                : 0u;
+        linux_p2e_dispatch_match =
+            (((linux_p2e_native_after - linux_p2e_native_before) == 2u)
+                && ((linux_p2e_persona_after - linux_p2e_persona_before) == 2u)
+                && ((linux_p2e_linux_after - linux_p2e_linux_before) == 2u)
+                && ((linux_p2e_mmap_after - linux_p2e_mmap_before) == 1u)
+                && ((linux_p2e_mmap_bytes_after - linux_p2e_mmap_bytes_before) == VMA64_PAGE_BYTES)
+                && ((linux_p2e_munmap_after - linux_p2e_munmap_before) == 1u)
+                && ((linux_p2e_munmap_bytes_after - linux_p2e_munmap_bytes_before) == VMA64_PAGE_BYTES)
+                && (linux_p2e_last_pid == linux_p2e_pid)
+                && (linux_p2e_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2e_last_result == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2e_export_match =
+            ((linux_libc64_export(linux_p2e_pid, "malloc")
+                    == (linux_p2e_result.image_base + LINUX_LIBC64_RVA_MALLOC))
+                && (linux_libc64_export(linux_p2e_pid, "free")
+                    == (linux_p2e_result.image_base + LINUX_LIBC64_RVA_FREE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2e_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2e_unmap_code =
+        (linux_p2e_code_map == linux_p2e_code_addr)
+            ? vma64_unmap(linux_p2e_pid, linux_p2e_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2e_unmap_data =
+        (linux_p2e_data_map == linux_p2e_data_addr)
+            ? vma64_unmap(linux_p2e_pid, linux_p2e_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2e_unmap_stack =
+        (linux_p2e_stack_map == linux_p2e_stack_addr)
+            ? vma64_unmap(linux_p2e_pid, linux_p2e_stack_addr, ((u64)VMA64_PAGE_BYTES * 3ull))
+            : 0u;
+    linux_p2e_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2e_vma_init != 0u)
+            && (linux_p2e_audit_attach != 0u)
+            && (linux_p2e_bind == PERSONA64_ATTACH_OK)
+            && (linux_p2e_load == LINUX_LIBC64_OK)
+            && (linux_p2e_result.heap_symbol_count == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_p2e_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2e_code_map == linux_p2e_code_addr)
+            && (linux_p2e_data_map == linux_p2e_data_addr)
+            && (linux_p2e_stack_map == linux_p2e_stack_addr)
+            && (linux_p2e_code_copy != 0u)
+            && (linux_p2e_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2e_runqueue_start != 0u)
+            && (linux_p2e_current_pid == linux_p2e_pid)
+            && (linux_p2e_transfer == 0x50324531u)
+            && (linux_p2e_aux == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_p2e_pointer_match != 0u)
+            && (linux_p2e_magic_match != 0u)
+            && (linux_p2e_free_match != 0u)
+            && (linux_p2e_heap_unmapped != 0u)
+            && (linux_p2e_dispatch_match != 0u)
+            && (linux_p2e_export_match != 0u)
+            && (linux_p2e_audit_after == (linux_p2e_audit_before + 2u))
+            && (linux_p2e_audit_read != 0u)
+            && (linux_p2e_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2e_audit_record.event_code == LINUX_ABI64_SYSCALL_MUNMAP)
+            && (linux_p2e_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2e_unmap_code != 0u)
+            && (linux_p2e_unmap_data != 0u)
+            && (linux_p2e_unmap_stack != 0u)
+            && (paging64_user_page_present(linux_p2e_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2e_data_addr) == 0u)
+            && (paging64_user_page_present(linux_p2e_stack_addr) == 0u)
+            && (linux_p2e_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2f_code_addr = 0x00000000479A0000ull;
+    linux_p2f_data_addr = 0x00000000479B0000ull;
+    linux_p2f_stack_addr = 0x00000000479C0000ull;
+    linux_p2f_stack_top = linux_p2f_stack_addr + (u64)VMA64_PAGE_BYTES;
+    linux_p2f_stack_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2f_stack_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2f_code_map =
+        (linux_p2f_stack_map == linux_p2f_stack_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2f_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2f_data_map =
+        (linux_p2f_code_map == linux_p2f_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2f_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2f_data_map == linux_p2f_data_addr)
+    {
+        volatile u8 *linux_p2f_code = (volatile u8 *)(u64)linux_p2f_code_addr;
+        volatile u8 *linux_p2f_data = (volatile u8 *)(u64)linux_p2f_data_addr;
+
+        for (linux_p2f_i = 0u; linux_p2f_i < VMA64_PAGE_BYTES; ++linux_p2f_i)
+        {
+            linux_p2f_data[linux_p2f_i] = 0u;
+        }
+        for (linux_p2f_i = 0u; linux_p2f_i < (u32)sizeof(linux_p2f_harness_template); ++linux_p2f_i)
+        {
+            linux_p2f_code[linux_p2f_i] = linux_p2f_harness_template[linux_p2f_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x0Cu, linux_libc64_export(linux_p2_pid, "calloc"));
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x18u, linux_p2f_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x4Cu, linux_p2f_data_addr + 0x98ull);
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x59u, 0x2170616568663270ull);
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x6Eu, linux_libc64_export(linux_p2_pid, "realloc"));
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x7Au, linux_p2f_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0x94u, linux_p2f_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0xA4u, linux_libc64_export(linux_p2_pid, "free"));
+        SCAFFOLD_STORE_LE64(linux_p2f_code, 0xB0u, linux_p2f_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE32(linux_p2f_code, 0xC6u, LINUX_LIBC64_HEAP_SYMBOL_COUNT);
+        linux_p2f_code_prot = paging64_user_page_protection(linux_p2f_code_addr);
+        linux_p2f_code_copy =
+            ((linux_p2f_code[0] == 0xBFu)
+                && (linux_p2f_code[0xCCu] == 0xF4u)
+                && (linux_p2f_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2f_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2f_code_addr,
+                linux_p2f_stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2f_runqueue_start =
+            ((linux_p2f_code_copy != 0u) && (linux_p2f_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2f_task)
+                : 0u;
+        linux_p2f_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2f_native_before = syscall64_native_count();
+        linux_p2f_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2f_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2f_mmap_before = linux_abi64_mmap_count();
+        linux_p2f_mmap_bytes_before = linux_abi64_mmap_byte_count();
+        linux_p2f_munmap_before = linux_abi64_munmap_count();
+        linux_p2f_munmap_bytes_before = linux_abi64_munmap_byte_count();
+        linux_p2f_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2f_transfer =
+            (linux_p2f_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2f_code_addr,
+                    linux_p2f_stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2f_aux = interrupts64_user_entry_probe_aux();
+        linux_p2f_native_after = syscall64_native_count();
+        linux_p2f_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2f_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2f_mmap_after = linux_abi64_mmap_count();
+        linux_p2f_mmap_bytes_after = linux_abi64_mmap_byte_count();
+        linux_p2f_munmap_after = linux_abi64_munmap_count();
+        linux_p2f_munmap_bytes_after = linux_abi64_munmap_byte_count();
+        linux_p2f_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2f_calloc_ptr = *((volatile u64 *)(u64)(linux_p2f_data_addr + 0x80ull));
+        linux_p2f_realloc_ptr = *((volatile u64 *)(u64)(linux_p2f_data_addr + 0x88ull));
+        linux_p2f_free_return = *((volatile u64 *)(u64)(linux_p2f_data_addr + 0x90ull));
+        linux_p2f_zero_qwords = *((volatile u64 *)(u64)(linux_p2f_data_addr + 0x98ull));
+        linux_p2f_copied_magic = *((volatile u64 *)(u64)(linux_p2f_data_addr + 0xA0ull));
+        linux_p2f_last_pid = syscall64_native_persona_last_pid();
+        linux_p2f_last_type = syscall64_native_persona_last_type();
+        linux_p2f_last_result = syscall64_native_persona_last_result();
+        linux_p2f_audit_read =
+            (linux_p2f_audit_after > linux_p2f_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2f_audit_after - 1u,
+                    &linux_p2f_audit_record)
+                : 0u;
+        linux_p2f_pointer_match =
+            ((linux_p2f_calloc_ptr == 0x00000000479D0000ull)
+                && (linux_p2f_realloc_ptr == 0x00000000479E0000ull))
+                ? 1u
+                : 0u;
+        linux_p2f_zero_match = (linux_p2f_zero_qwords == 4ull) ? 1u : 0u;
+        linux_p2f_copy_match =
+            (linux_p2f_copied_magic == 0x2170616568663270ull) ? 1u : 0u;
+        linux_p2f_free_match = (linux_p2f_free_return == 0ull) ? 1u : 0u;
+        linux_p2f_calloc_unmapped =
+            ((linux_p2f_calloc_ptr != 0ull)
+                && (paging64_user_page_present(linux_p2f_calloc_ptr) == 0u)
+                && (vma64_find(linux_p2_pid, linux_p2f_calloc_ptr) == 0))
+                ? 1u
+                : 0u;
+        linux_p2f_realloc_unmapped =
+            ((linux_p2f_realloc_ptr != 0ull)
+                && (paging64_user_page_present(linux_p2f_realloc_ptr) == 0u)
+                && (vma64_find(linux_p2_pid, linux_p2f_realloc_ptr) == 0))
+                ? 1u
+                : 0u;
+        linux_p2f_dispatch_match =
+            (((linux_p2f_native_after - linux_p2f_native_before) == 4u)
+                && ((linux_p2f_persona_after - linux_p2f_persona_before) == 4u)
+                && ((linux_p2f_linux_after - linux_p2f_linux_before) == 4u)
+                && ((linux_p2f_mmap_after - linux_p2f_mmap_before) == 2u)
+                && ((linux_p2f_mmap_bytes_after - linux_p2f_mmap_bytes_before)
+                    == ((u32)VMA64_PAGE_BYTES * 2u))
+                && ((linux_p2f_munmap_after - linux_p2f_munmap_before) == 2u)
+                && ((linux_p2f_munmap_bytes_after - linux_p2f_munmap_bytes_before)
+                    == ((u32)VMA64_PAGE_BYTES * 2u))
+                && (linux_p2f_last_pid == linux_p2_pid)
+                && (linux_p2f_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2f_last_result == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2f_export_match =
+            ((linux_libc64_export(linux_p2_pid, "calloc")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_CALLOC))
+                && (linux_libc64_export(linux_p2_pid, "realloc")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_REALLOC))
+                && (linux_libc64_export(linux_p2_pid, "free")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_FREE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2f_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2f_unmap_code =
+        (linux_p2f_code_map == linux_p2f_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2f_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2f_unmap_data =
+        (linux_p2f_data_map == linux_p2f_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2f_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2f_unmap_stack =
+        (linux_p2f_stack_map == linux_p2f_stack_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2f_stack_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2f_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.heap_symbol_count == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2f_code_map == linux_p2f_code_addr)
+            && (linux_p2f_data_map == linux_p2f_data_addr)
+            && (linux_p2f_stack_map == linux_p2f_stack_addr)
+            && (linux_p2f_code_copy != 0u)
+            && (linux_p2f_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2f_runqueue_start != 0u)
+            && (linux_p2f_current_pid == linux_p2_pid)
+            && (linux_p2f_transfer == 0x50324631u)
+            && (linux_p2f_aux == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_p2f_pointer_match != 0u)
+            && (linux_p2f_zero_match != 0u)
+            && (linux_p2f_copy_match != 0u)
+            && (linux_p2f_free_match != 0u)
+            && (linux_p2f_calloc_unmapped != 0u)
+            && (linux_p2f_realloc_unmapped != 0u)
+            && (linux_p2f_dispatch_match != 0u)
+            && (linux_p2f_export_match != 0u)
+            && (linux_p2f_audit_after == (linux_p2f_audit_before + 4u))
+            && (linux_p2f_audit_read != 0u)
+            && (linux_p2f_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2f_audit_record.event_code == LINUX_ABI64_SYSCALL_MUNMAP)
+            && (linux_p2f_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2f_unmap_code != 0u)
+            && (linux_p2f_unmap_data != 0u)
+            && (linux_p2f_unmap_stack != 0u)
+            && (paging64_user_page_present(linux_p2f_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2f_data_addr) == 0u)
+            && (paging64_user_page_present(linux_p2f_stack_addr) == 0u)
+            && (linux_p2f_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2g_code_addr = 0x00000000479A0000ull;
+    linux_p2g_data_addr = 0x00000000479B0000ull;
+    linux_p2g_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2g_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2g_data_map =
+        (linux_p2g_code_map == linux_p2g_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2g_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2g_data_map == linux_p2g_data_addr)
+    {
+        volatile u8 *linux_p2g_code = (volatile u8 *)(u64)linux_p2g_code_addr;
+        volatile u8 *linux_p2g_data = (volatile u8 *)(u64)linux_p2g_data_addr;
+
+        for (linux_p2g_i = 0u; linux_p2g_i < VMA64_PAGE_BYTES; ++linux_p2g_i)
+        {
+            linux_p2g_data[linux_p2g_i] = 0u;
+        }
+        for (linux_p2g_i = 0u; linux_p2g_i < (u32)sizeof(linux_p2g_harness_template); ++linux_p2g_i)
+        {
+            linux_p2g_code[linux_p2g_i] = linux_p2g_harness_template[linux_p2g_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x02u, linux_p2g_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x11u, linux_libc64_export(linux_p2_pid, "fputs"));
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x1Du, linux_p2g_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x2Au, linux_p2g_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x43u, linux_libc64_export(linux_p2_pid, "fwrite"));
+        SCAFFOLD_STORE_LE64(linux_p2g_code, 0x4Fu, linux_p2g_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE32(linux_p2g_code, 0x65u, LINUX_LIBC64_STDIO_SYMBOL_COUNT);
+        for (linux_p2g_i = 0u; linux_p2g_i < (u32)sizeof(linux_p2g_fputs_message); ++linux_p2g_i)
+        {
+            linux_p2g_data[linux_p2g_i] = linux_p2g_fputs_message[linux_p2g_i];
+        }
+        for (linux_p2g_i = 0u; linux_p2g_i < (u32)sizeof(linux_p2g_fwrite_message); ++linux_p2g_i)
+        {
+            linux_p2g_data[0x40u + linux_p2g_i] = linux_p2g_fwrite_message[linux_p2g_i];
+        }
+        linux_p2g_code_prot = paging64_user_page_protection(linux_p2g_code_addr);
+        linux_p2g_code_copy =
+            ((linux_p2g_code[0] == 0x48u)
+                && (linux_p2g_code[0x6Bu] == 0xF4u)
+                && (linux_p2g_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2g_data_init =
+            ((linux_p2g_data[0] == (u8)'p')
+                && (linux_p2g_data[3] == (u8)'-')
+                && (linux_p2g_data[9] == (u8)'\n')
+                && (linux_p2g_data[0x40u] == (u8)'p')
+                && (linux_p2g_data[0x4Au] == (u8)'\n'))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2g_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2g_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2g_runqueue_start =
+            ((linux_p2g_code_copy != 0u) && (linux_p2g_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2g_task)
+                : 0u;
+        linux_p2g_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2g_console_before_count = console64_write_count();
+        linux_p2g_console_before_bytes = console64_byte_count();
+        linux_p2g_native_before = syscall64_native_count();
+        linux_p2g_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2g_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2g_write_before = linux_abi64_write_count();
+        linux_p2g_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2g_transfer =
+            (linux_p2g_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2g_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2g_aux = interrupts64_user_entry_probe_aux();
+        linux_p2g_native_after = syscall64_native_count();
+        linux_p2g_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2g_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2g_write_after = linux_abi64_write_count();
+        linux_p2g_console_after_count = console64_write_count();
+        linux_p2g_console_after_bytes = console64_byte_count();
+        linux_p2g_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2g_fputs_return = *((volatile u64 *)(u64)(linux_p2g_data_addr + 0x80ull));
+        linux_p2g_fwrite_return = *((volatile u64 *)(u64)(linux_p2g_data_addr + 0x88ull));
+        linux_p2g_last_pid = syscall64_native_persona_last_pid();
+        linux_p2g_last_type = syscall64_native_persona_last_type();
+        linux_p2g_last_result = syscall64_native_persona_last_result();
+        linux_p2g_audit_read =
+            (linux_p2g_audit_after > linux_p2g_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2g_audit_after - 1u,
+                    &linux_p2g_audit_record)
+                : 0u;
+        linux_p2g_return_match =
+            ((linux_p2g_fputs_return == ((u64)sizeof(linux_p2g_fputs_message) - 1ull))
+                && (linux_p2g_fwrite_return == ((u64)sizeof(linux_p2g_fwrite_message) - 1ull)))
+                ? 1u
+                : 0u;
+        linux_p2g_console_match =
+            (((linux_p2g_console_after_count - linux_p2g_console_before_count) == 2u)
+                && ((linux_p2g_console_after_bytes - linux_p2g_console_before_bytes)
+                    == ((u32)sizeof(linux_p2g_fputs_message)
+                        + (u32)sizeof(linux_p2g_fwrite_message)
+                        - 2u)))
+                ? 1u
+                : 0u;
+        linux_p2g_dispatch_match =
+            (((linux_p2g_native_after - linux_p2g_native_before) == 2u)
+                && ((linux_p2g_persona_after - linux_p2g_persona_before) == 2u)
+                && ((linux_p2g_linux_after - linux_p2g_linux_before) == 2u)
+                && ((linux_p2g_write_after - linux_p2g_write_before) == 2u)
+                && (linux_p2g_last_pid == linux_p2_pid)
+                && (linux_p2g_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2g_last_result == ((u64)sizeof(linux_p2g_fwrite_message) - 1ull)))
+                ? 1u
+                : 0u;
+        linux_p2g_export_match =
+            ((linux_libc64_export(linux_p2_pid, "fputs")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_FPUTS))
+                && (linux_libc64_export(linux_p2_pid, "fwrite")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_FWRITE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2g_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2g_unmap_code =
+        (linux_p2g_code_map == linux_p2g_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2g_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2g_unmap_data =
+        (linux_p2g_data_map == linux_p2g_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2g_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2g_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.stdio_symbol_count == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2g_code_map == linux_p2g_code_addr)
+            && (linux_p2g_data_map == linux_p2g_data_addr)
+            && (linux_p2g_code_copy != 0u)
+            && (linux_p2g_data_init != 0u)
+            && (linux_p2g_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2g_runqueue_start != 0u)
+            && (linux_p2g_current_pid == linux_p2_pid)
+            && (linux_p2g_transfer == 0x50324731u)
+            && (linux_p2g_aux == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2g_return_match != 0u)
+            && (linux_p2g_console_match != 0u)
+            && (linux_p2g_dispatch_match != 0u)
+            && (linux_p2g_export_match != 0u)
+            && (linux_p2g_audit_after == (linux_p2g_audit_before + 2u))
+            && (linux_p2g_audit_read != 0u)
+            && (linux_p2g_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2g_audit_record.event_code == LINUX_ABI64_SYSCALL_WRITE)
+            && (linux_p2g_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2g_unmap_code != 0u)
+            && (linux_p2g_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2g_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2g_data_addr) == 0u)
+            && (linux_p2g_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2h_code_addr = 0x00000000479A0000ull;
+    linux_p2h_data_addr = 0x00000000479B0000ull;
+    linux_p2h_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2h_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2h_data_map =
+        (linux_p2h_code_map == linux_p2h_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2h_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2h_data_map == linux_p2h_data_addr)
+    {
+        volatile u8 *linux_p2h_code = (volatile u8 *)(u64)linux_p2h_code_addr;
+        volatile u8 *linux_p2h_data = (volatile u8 *)(u64)linux_p2h_data_addr;
+        volatile u8 *linux_p2h_value;
+
+        for (linux_p2h_i = 0u; linux_p2h_i < VMA64_PAGE_BYTES; ++linux_p2h_i)
+        {
+            linux_p2h_data[linux_p2h_i] = 0u;
+        }
+        for (linux_p2h_i = 0u; linux_p2h_i < (u32)sizeof(linux_p2h_harness_template); ++linux_p2h_i)
+        {
+            linux_p2h_code[linux_p2h_i] = linux_p2h_harness_template[linux_p2h_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x02u, linux_p2h_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x0Cu, linux_libc64_export(linux_p2_pid, "getenv"));
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x18u, linux_p2h_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x25u, linux_p2h_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x2Fu, linux_libc64_export(linux_p2_pid, "getenv"));
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x3Bu, linux_p2h_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x48u, linux_p2h_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x52u, linux_p2h_data_addr + 0x60ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x61u, linux_libc64_export(linux_p2_pid, "setenv"));
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x6Du, linux_p2h_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x7Au, linux_p2h_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x84u, linux_libc64_export(linux_p2_pid, "getenv"));
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x90u, linux_p2h_data_addr + 0x98ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0x9Du, linux_p2h_data_addr + 0x40ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0xA7u, linux_p2h_data_addr + 0x60ull);
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0xB6u, linux_libc64_export(linux_p2_pid, "setenv"));
+        SCAFFOLD_STORE_LE64(linux_p2h_code, 0xC2u, linux_p2h_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE32(linux_p2h_code, 0xD8u, LINUX_LIBC64_ENV_SYMBOL_COUNT);
+        for (linux_p2h_i = 0u; linux_p2h_i < (u32)sizeof(linux_p2h_present_name); ++linux_p2h_i)
+        {
+            linux_p2h_data[linux_p2h_i] = linux_p2h_present_name[linux_p2h_i];
+        }
+        for (linux_p2h_i = 0u; linux_p2h_i < (u32)sizeof(linux_p2h_absent_name); ++linux_p2h_i)
+        {
+            linux_p2h_data[0x40u + linux_p2h_i] = linux_p2h_absent_name[linux_p2h_i];
+        }
+        for (linux_p2h_i = 0u; linux_p2h_i < (u32)sizeof(linux_p2h_setenv_value); ++linux_p2h_i)
+        {
+            linux_p2h_data[0x60u + linux_p2h_i] = linux_p2h_setenv_value[linux_p2h_i];
+        }
+        linux_p2h_code_prot = paging64_user_page_protection(linux_p2h_code_addr);
+        linux_p2h_code_copy =
+            ((linux_p2h_code[0] == 0x48u)
+                && (linux_p2h_code[0xDEu] == 0xF4u)
+                && (linux_p2h_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2h_data_init =
+            ((linux_p2h_data[0] == (u8)'L')
+                && (linux_p2h_data[2] == (u8)'_')
+                && (linux_p2h_data[0x40u] == (u8)'L')
+                && (linux_p2h_data[0x60u] == (u8)'p'))
+                ? 1u
+                : 0u;
+        linux_p2_context = persona64_context_for_process(linux_p2_pid);
+        linux_p2h_envp_snapshot =
+            (linux_p2_context != 0)
+                ? linux_p2_context->linux_libc_envp
+                : 0ull;
+        linux_p2h_bind_match =
+            ((linux_p2_context != 0)
+                && (linux_p2_context->linux_libc_environment_bound != 0u)
+                && (linux_p2_context->linux_libc_envp
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ENV_VECTOR))
+                && (linux_p2_context->linux_libc_envc == LINUX_LIBC64_ENV_SNAPSHOT_COUNT)
+                && (linux_p2_context->linux_libc_envp != 0ull))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2h_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2h_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2h_runqueue_start =
+            ((linux_p2h_code_copy != 0u) && (linux_p2h_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2h_task)
+                : 0u;
+        linux_p2h_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2h_native_before = syscall64_native_count();
+        linux_p2h_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2h_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2h_write_before = linux_abi64_write_count();
+        linux_p2h_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2h_transfer =
+            (linux_p2h_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2h_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2h_aux = interrupts64_user_entry_probe_aux();
+        linux_p2h_native_after = syscall64_native_count();
+        linux_p2h_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2h_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2h_write_after = linux_abi64_write_count();
+        linux_p2h_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2h_present_return = *((volatile u64 *)(u64)(linux_p2h_data_addr + 0x80ull));
+        linux_p2h_absent_return = *((volatile u64 *)(u64)(linux_p2h_data_addr + 0x88ull));
+        linux_p2h_setenv_return = *((volatile u64 *)(u64)(linux_p2h_data_addr + 0x90ull));
+        linux_p2h_updated_return = *((volatile u64 *)(u64)(linux_p2h_data_addr + 0x98ull));
+        linux_p2h_missing_setenv_return = *((volatile u64 *)(u64)(linux_p2h_data_addr + 0xA0ull));
+        linux_p2h_value_match = 0u;
+        if ((linux_p2h_updated_return != 0ull)
+            && (linux_p2h_updated_return < 0x0000800000000000ull)
+            && (paging64_user_page_present(linux_p2h_updated_return) != 0u))
+        {
+            linux_p2h_value = (volatile u8 *)(u64)linux_p2h_updated_return;
+            linux_p2h_value_match =
+                ((linux_p2h_value[0] == (u8)'p')
+                    && (linux_p2h_value[1] == (u8)'r')
+                    && (linux_p2h_value[2] == (u8)'e')
+                    && (linux_p2h_value[3] == (u8)'s')
+                    && (linux_p2h_value[4] == (u8)'e')
+                    && (linux_p2h_value[5] == (u8)'n')
+                    && (linux_p2h_value[6] == (u8)'t')
+                    && (linux_p2h_value[7] == 0u))
+                ? 1u
+                : 0u;
+        }
+        linux_p2h_denial_match =
+            (linux_p2h_missing_setenv_return == LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM))
+                ? 1u
+                : 0u;
+        linux_p2h_return_match =
+            ((linux_p2h_present_return != 0ull)
+                && (linux_p2h_absent_return == 0ull)
+                && (linux_p2h_setenv_return == 0ull)
+                && (linux_p2h_updated_return == linux_p2h_present_return)
+                && (linux_p2h_denial_match != 0u))
+                ? 1u
+                : 0u;
+        linux_p2h_syscall_match =
+            (((linux_p2h_native_after - linux_p2h_native_before) == 0u)
+                && ((linux_p2h_persona_after - linux_p2h_persona_before) == 0u)
+                && ((linux_p2h_linux_after - linux_p2h_linux_before) == 0u)
+                && ((linux_p2h_write_after - linux_p2h_write_before) == 0u)
+                && (linux_p2h_audit_after == linux_p2h_audit_before))
+                ? 1u
+                : 0u;
+        linux_p2h_export_match =
+            ((linux_libc64_export(linux_p2_pid, "getenv")
+                    == linux_p2_result.libc_result.getenv_fn)
+                && (linux_libc64_export(linux_p2_pid, "setenv")
+                    == linux_p2_result.libc_result.setenv_fn))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2h_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2h_unmap_code =
+        (linux_p2h_code_map == linux_p2h_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2h_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2h_unmap_data =
+        (linux_p2h_data_map == linux_p2h_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2h_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2h_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_libc64_env_symbol_count() == LINUX_LIBC64_ENV_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2h_code_map == linux_p2h_code_addr)
+            && (linux_p2h_data_map == linux_p2h_data_addr)
+            && (linux_p2h_code_copy != 0u)
+            && (linux_p2h_data_init != 0u)
+            && (linux_p2h_bind_match != 0u)
+            && (linux_p2h_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2h_runqueue_start != 0u)
+            && (linux_p2h_current_pid == linux_p2_pid)
+            && (linux_p2h_transfer == 0x50324831u)
+            && (linux_p2h_aux == LINUX_LIBC64_ENV_SYMBOL_COUNT)
+            && (linux_p2h_value_match != 0u)
+            && (linux_p2h_return_match != 0u)
+            && (linux_p2h_syscall_match != 0u)
+            && (linux_p2h_export_match != 0u)
+            && (linux_p2h_unmap_code != 0u)
+            && (linux_p2h_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2h_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2h_data_addr) == 0u)
+            && (linux_p2h_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2i_code_addr = 0x00000000479A0000ull;
+    linux_p2i_data_addr = 0x00000000479B0000ull;
+    linux_p2i_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2i_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2i_data_map =
+        (linux_p2i_code_map == linux_p2i_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2i_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2i_data_map == linux_p2i_data_addr)
+    {
+        volatile u8 *linux_p2i_code = (volatile u8 *)(u64)linux_p2i_code_addr;
+        volatile u8 *linux_p2i_data = (volatile u8 *)(u64)linux_p2i_data_addr;
+
+        for (linux_p2i_i = 0u; linux_p2i_i < VMA64_PAGE_BYTES; ++linux_p2i_i)
+        {
+            linux_p2i_data[linux_p2i_i] = 0u;
+        }
+        for (linux_p2i_i = 0u; linux_p2i_i < (u32)sizeof(linux_p2i_harness_template); ++linux_p2i_i)
+        {
+            linux_p2i_code[linux_p2i_i] = linux_p2i_harness_template[linux_p2i_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2i_code, 0x02u, linux_libc64_export(linux_p2_pid, "__errno_location"));
+        SCAFFOLD_STORE_LE64(linux_p2i_code, 0x0Eu, linux_p2i_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2i_code, 0x23u, linux_p2i_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE32(linux_p2i_code, 0x39u, LINUX_LIBC64_ERRNO_SYMBOL_COUNT);
+        linux_p2i_code_prot = paging64_user_page_protection(linux_p2i_code_addr);
+        linux_p2i_errno_prot =
+            paging64_user_page_protection(linux_p2_result.libc_result.errno_cell);
+        linux_p2i_code_copy =
+            ((linux_p2i_code[0] == 0x48u)
+                && (linux_p2i_code[0x3Fu] == 0xF4u)
+                && (linux_p2i_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2i_export_match =
+            ((linux_libc64_errno_symbol_count() == LINUX_LIBC64_ERRNO_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2_pid, "__errno_location")
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ERRNO_LOCATION))
+                && (linux_p2_result.libc_result.errno_location_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ERRNO_LOCATION))
+                && (linux_p2_result.libc_result.errno_cell
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_ERRNO_RVA))
+                && (linux_p2_result.libc_result.errno_symbol_count == LINUX_LIBC64_ERRNO_SYMBOL_COUNT)
+                && (linux_p2_result.libc_result.errno_page_mapped != 0u)
+                && (linux_p2i_errno_prot == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE)))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2i_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2i_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2i_runqueue_start =
+            ((linux_p2i_code_copy != 0u)
+                && (linux_p2i_export_match != 0u)
+                && (linux_p2i_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2i_task)
+                : 0u;
+        linux_p2i_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2i_native_before = syscall64_native_count();
+        linux_p2i_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2i_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2i_write_before = linux_abi64_write_count();
+        linux_p2i_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2i_transfer =
+            (linux_p2i_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2i_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2i_aux = interrupts64_user_entry_probe_aux();
+        linux_p2i_native_after = syscall64_native_count();
+        linux_p2i_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2i_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2i_write_after = linux_abi64_write_count();
+        linux_p2i_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2i_errno_return = *((volatile u64 *)(u64)(linux_p2i_data_addr + 0x80ull));
+        linux_p2i_errno_value = *((volatile u64 *)(u64)(linux_p2i_data_addr + 0x88ull));
+        linux_p2i_value_match = 0u;
+        if (linux_p2i_errno_return == linux_p2_result.libc_result.errno_cell)
+        {
+            volatile u32 *linux_p2i_cell = (volatile u32 *)(u64)linux_p2i_errno_return;
+            linux_p2i_value_match =
+                ((*linux_p2i_cell == 22u) && (linux_p2i_errno_value == 22ull))
+                    ? 1u
+                    : 0u;
+        }
+        linux_p2i_syscall_match =
+            (((linux_p2i_native_after - linux_p2i_native_before) == 0u)
+                && ((linux_p2i_persona_after - linux_p2i_persona_before) == 0u)
+                && ((linux_p2i_linux_after - linux_p2i_linux_before) == 0u)
+                && ((linux_p2i_write_after - linux_p2i_write_before) == 0u)
+                && (linux_p2i_audit_after == linux_p2i_audit_before))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2i_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2i_unmap_code =
+        (linux_p2i_code_map == linux_p2i_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2i_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2i_unmap_data =
+        (linux_p2i_data_map == linux_p2i_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2i_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2i_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2i_code_map == linux_p2i_code_addr)
+            && (linux_p2i_data_map == linux_p2i_data_addr)
+            && (linux_p2i_code_copy != 0u)
+            && (linux_p2i_export_match != 0u)
+            && (linux_p2i_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2i_runqueue_start != 0u)
+            && (linux_p2i_current_pid == linux_p2_pid)
+            && (linux_p2i_transfer == 0x50324931u)
+            && (linux_p2i_aux == LINUX_LIBC64_ERRNO_SYMBOL_COUNT)
+            && (linux_p2i_value_match != 0u)
+            && (linux_p2i_syscall_match != 0u)
+            && (linux_p2i_unmap_code != 0u)
+            && (linux_p2i_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2i_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2i_data_addr) == 0u)
+            && (linux_p2i_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2k_code_addr = 0x00000000479A0000ull;
+    linux_p2k_data_addr = 0x00000000479B0000ull;
+    linux_p2k_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2k_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2k_data_map =
+        (linux_p2k_code_map == linux_p2k_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2k_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2k_data_map == linux_p2k_data_addr)
+    {
+        volatile u8 *linux_p2k_code = (volatile u8 *)(u64)linux_p2k_code_addr;
+        volatile u8 *linux_p2k_data = (volatile u8 *)(u64)linux_p2k_data_addr;
+
+        for (linux_p2k_i = 0u; linux_p2k_i < VMA64_PAGE_BYTES; ++linux_p2k_i)
+        {
+            linux_p2k_data[linux_p2k_i] = 0u;
+        }
+        for (linux_p2k_i = 0u; linux_p2k_i < (u32)sizeof(linux_p2k_harness_template); ++linux_p2k_i)
+        {
+            linux_p2k_code[linux_p2k_i] = linux_p2k_harness_template[linux_p2k_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x02u, linux_p2k_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x25u, linux_p2k_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x3Fu, linux_p2k_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x62u, linux_p2k_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x7Cu, linux_p2k_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x0Cu, linux_libc64_export(linux_p2_pid, "pthread_mutex_lock"));
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0xA1u, linux_libc64_export(linux_p2_pid, "pthread_mutex_lock"));
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x49u, linux_libc64_export(linux_p2_pid, "pthread_mutex_unlock"));
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x86u, linux_libc64_export(linux_p2_pid, "pthread_mutex_unlock"));
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0xBCu, linux_libc64_export(linux_p2_pid, "pthread_mutex_unlock"));
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x18u, linux_p2k_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x32u, linux_p2k_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x55u, linux_p2k_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x6Fu, linux_p2k_data_addr + 0x98ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0x92u, linux_p2k_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0xADu, linux_p2k_data_addr + 0xA8ull);
+        SCAFFOLD_STORE_LE64(linux_p2k_code, 0xC8u, linux_p2k_data_addr + 0xB0ull);
+        SCAFFOLD_STORE_LE32(linux_p2k_code, 0xDEu, LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT);
+        linux_p2k_code_prot = paging64_user_page_protection(linux_p2k_code_addr);
+        linux_p2k_code_copy =
+            ((linux_p2k_code[0] == 0x48u)
+                && (linux_p2k_code[0xE4u] == 0xF4u)
+                && (linux_p2k_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2k_data_init =
+            ((linux_p2k_data[0] == 0u)
+                && (linux_p2k_data[1] == 0u)
+                && (linux_p2k_data[2] == 0u)
+                && (linux_p2k_data[3] == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2k_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2k_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2k_runqueue_start =
+            ((linux_p2k_code_copy != 0u)
+                && (linux_p2k_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2k_task)
+                : 0u;
+        linux_p2k_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2k_native_before = syscall64_native_count();
+        linux_p2k_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2k_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2k_futex_wake_before = linux_abi64_futex_wake_count();
+        linux_p2k_futex_woken_before = linux_abi64_futex_woken_count();
+        linux_p2k_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2k_transfer =
+            (linux_p2k_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2k_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2k_aux = interrupts64_user_entry_probe_aux();
+        linux_p2k_native_after = syscall64_native_count();
+        linux_p2k_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2k_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2k_futex_wake_after = linux_abi64_futex_wake_count();
+        linux_p2k_futex_woken_after = linux_abi64_futex_woken_count();
+        linux_p2k_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2k_lock_return = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0x80ull));
+        linux_p2k_word_after_lock = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0x88ull));
+        linux_p2k_unlock_return = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0x90ull));
+        linux_p2k_word_after_unlock = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0x98ull));
+        linux_p2k_empty_unlock_return = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0xA0ull));
+        linux_p2k_null_lock_return = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0xA8ull));
+        linux_p2k_null_unlock_return = *((volatile u64 *)(u64)(linux_p2k_data_addr + 0xB0ull));
+        linux_p2k_last_pid = syscall64_native_persona_last_pid();
+        linux_p2k_last_type = syscall64_native_persona_last_type();
+        linux_p2k_last_result = syscall64_native_persona_last_result();
+        linux_p2k_audit_read =
+            (linux_p2k_audit_after > linux_p2k_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2k_audit_after - 1u,
+                    &linux_p2k_audit_record)
+                : 0u;
+        linux_p2k_return_match =
+            ((linux_p2k_lock_return == 0ull)
+                && (linux_p2k_unlock_return == 0ull)
+                && (linux_p2k_empty_unlock_return == (u64)LINUX_ABI64_EINVAL)
+                && (linux_p2k_null_lock_return == (u64)LINUX_ABI64_EINVAL)
+                && (linux_p2k_null_unlock_return == (u64)LINUX_ABI64_EINVAL))
+                ? 1u
+                : 0u;
+        linux_p2k_word_match =
+            ((linux_p2k_word_after_lock == 1ull)
+                && (linux_p2k_word_after_unlock == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2k_dispatch_match =
+            (((linux_p2k_native_after - linux_p2k_native_before) == 1u)
+                && ((linux_p2k_persona_after - linux_p2k_persona_before) == 1u)
+                && ((linux_p2k_linux_after - linux_p2k_linux_before) == 1u)
+                && ((linux_p2k_futex_wake_after - linux_p2k_futex_wake_before) == 1u)
+                && ((linux_p2k_futex_woken_after - linux_p2k_futex_woken_before) == 0u)
+                && (linux_abi64_futex_waiter_count() == 0u)
+                && (linux_p2k_last_pid == linux_p2_pid)
+                && (linux_p2k_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2k_last_result == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2k_export_match =
+            ((linux_libc64_pthread_mutex_symbol_count() == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2_pid, "pthread_mutex_lock")
+                    == linux_p2_result.libc_result.pthread_mutex_lock_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_mutex_unlock")
+                    == linux_p2_result.libc_result.pthread_mutex_unlock_fn)
+                && (linux_p2_result.libc_result.pthread_mutex_lock_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_MUTEX_LOCK))
+                && (linux_p2_result.libc_result.pthread_mutex_unlock_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_MUTEX_UNLOCK))
+                && (linux_p2_result.libc_result.pthread_mutex_symbol_count
+                    == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+                && (linux_p2_result.libc_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2k_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2k_unmap_code =
+        (linux_p2k_code_map == linux_p2k_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2k_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2k_unmap_data =
+        (linux_p2k_data_map == linux_p2k_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2k_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2k_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2k_code_map == linux_p2k_code_addr)
+            && (linux_p2k_data_map == linux_p2k_data_addr)
+            && (linux_p2k_code_copy != 0u)
+            && (linux_p2k_data_init != 0u)
+            && (linux_p2k_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2k_runqueue_start != 0u)
+            && (linux_p2k_current_pid == linux_p2_pid)
+            && (linux_p2k_transfer == 0x50324B31u)
+            && (linux_p2k_aux == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+            && (linux_p2k_return_match != 0u)
+            && (linux_p2k_word_match != 0u)
+            && (linux_p2k_dispatch_match != 0u)
+            && (linux_p2k_export_match != 0u)
+            && (linux_p2k_audit_after == (linux_p2k_audit_before + 1u))
+            && (linux_p2k_audit_read != 0u)
+            && (linux_p2k_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2k_audit_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
+            && (linux_p2k_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2k_unmap_code != 0u)
+            && (linux_p2k_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2k_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2k_data_addr) == 0u)
+            && (linux_p2k_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2n_code_addr = 0x00000000479A0000ull;
+    linux_p2n_data_addr = 0x00000000479B0000ull;
+    linux_p2n_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2n_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2n_data_map =
+        (linux_p2n_code_map == linux_p2n_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2n_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2n_data_map == linux_p2n_data_addr)
+    {
+        volatile u8 *linux_p2n_code = (volatile u8 *)(u64)linux_p2n_code_addr;
+        volatile u8 *linux_p2n_data = (volatile u8 *)(u64)linux_p2n_data_addr;
+
+        for (linux_p2n_i = 0u; linux_p2n_i < VMA64_PAGE_BYTES; ++linux_p2n_i)
+        {
+            linux_p2n_data[linux_p2n_i] = 0u;
+        }
+        for (linux_p2n_i = 0u; linux_p2n_i < (u32)sizeof(linux_p2n_harness_template); ++linux_p2n_i)
+        {
+            linux_p2n_code[linux_p2n_i] = linux_p2n_harness_template[linux_p2n_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x02u, linux_p2n_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x0Cu, linux_libc64_export(linux_p2_pid, "pthread_cond_signal"));
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x18u, linux_p2n_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x25u, linux_p2n_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x2Fu, linux_libc64_export(linux_p2_pid, "pthread_cond_broadcast"));
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x3Bu, linux_p2n_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x4Au, linux_libc64_export(linux_p2_pid, "pthread_cond_signal"));
+        SCAFFOLD_STORE_LE64(linux_p2n_code, 0x56u, linux_p2n_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE32(linux_p2n_code, 0x6Cu, LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT);
+        linux_p2n_code_prot = paging64_user_page_protection(linux_p2n_code_addr);
+        linux_p2n_code_copy =
+            ((linux_p2n_code[0] == 0x48u)
+                && (linux_p2n_code[0x72u] == 0xF4u)
+                && (linux_p2n_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2n_data_init =
+            ((linux_p2n_data[0] == 0u)
+                && (linux_p2n_data[1] == 0u)
+                && (linux_p2n_data[2] == 0u)
+                && (linux_p2n_data[3] == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2n_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2n_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2n_runqueue_start =
+            ((linux_p2n_code_copy != 0u)
+                && (linux_p2n_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2n_task)
+                : 0u;
+        linux_p2n_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2n_native_before = syscall64_native_count();
+        linux_p2n_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2n_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2n_futex_wake_before = linux_abi64_futex_wake_count();
+        linux_p2n_futex_woken_before = linux_abi64_futex_woken_count();
+        linux_p2n_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2n_transfer =
+            (linux_p2n_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2n_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2n_aux = interrupts64_user_entry_probe_aux();
+        linux_p2n_native_after = syscall64_native_count();
+        linux_p2n_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2n_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2n_futex_wake_after = linux_abi64_futex_wake_count();
+        linux_p2n_futex_woken_after = linux_abi64_futex_woken_count();
+        linux_p2n_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2n_signal_return = *((volatile u64 *)(u64)(linux_p2n_data_addr + 0x80ull));
+        linux_p2n_broadcast_return = *((volatile u64 *)(u64)(linux_p2n_data_addr + 0x88ull));
+        linux_p2n_null_return = *((volatile u64 *)(u64)(linux_p2n_data_addr + 0x90ull));
+        linux_p2n_last_pid = syscall64_native_persona_last_pid();
+        linux_p2n_last_type = syscall64_native_persona_last_type();
+        linux_p2n_last_result = syscall64_native_persona_last_result();
+        linux_p2n_audit_read =
+            (linux_p2n_audit_after > linux_p2n_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2n_audit_after - 1u,
+                    &linux_p2n_audit_record)
+                : 0u;
+        linux_p2n_return_match =
+            ((linux_p2n_signal_return == 0ull)
+                && (linux_p2n_broadcast_return == 0ull)
+                && (linux_p2n_null_return == (u64)LINUX_ABI64_EINVAL))
+                ? 1u
+                : 0u;
+        linux_p2n_dispatch_match =
+            (((linux_p2n_native_after - linux_p2n_native_before) == 2u)
+                && ((linux_p2n_persona_after - linux_p2n_persona_before) == 2u)
+                && ((linux_p2n_linux_after - linux_p2n_linux_before) == 2u)
+                && ((linux_p2n_futex_wake_after - linux_p2n_futex_wake_before) == 2u)
+                && ((linux_p2n_futex_woken_after - linux_p2n_futex_woken_before) == 0u)
+                && (linux_abi64_futex_waiter_count() == 0u)
+                && (linux_p2n_last_pid == linux_p2_pid)
+                && (linux_p2n_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2n_last_result == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2n_export_match =
+            ((linux_libc64_pthread_cond_symbol_count() == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_init")
+                    == linux_p2_result.libc_result.pthread_cond_init_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_destroy")
+                    == linux_p2_result.libc_result.pthread_cond_destroy_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_wait")
+                    == linux_p2_result.libc_result.pthread_cond_wait_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_signal")
+                    == linux_p2_result.libc_result.pthread_cond_signal_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_broadcast")
+                    == linux_p2_result.libc_result.pthread_cond_broadcast_fn)
+                && (linux_p2_result.libc_result.pthread_cond_init_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_INIT))
+                && (linux_p2_result.libc_result.pthread_cond_destroy_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_DESTROY))
+                && (linux_p2_result.libc_result.pthread_cond_wait_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_WAIT))
+                && (linux_p2_result.libc_result.pthread_cond_signal_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_SIGNAL))
+                && (linux_p2_result.libc_result.pthread_cond_broadcast_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_BROADCAST))
+                && (linux_p2_result.libc_result.pthread_cond_symbol_count
+                    == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+                && (linux_p2_result.libc_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2n_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2n_unmap_code =
+        (linux_p2n_code_map == linux_p2n_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2n_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2n_unmap_data =
+        (linux_p2n_data_map == linux_p2n_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2n_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2n_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2n_code_map == linux_p2n_code_addr)
+            && (linux_p2n_data_map == linux_p2n_data_addr)
+            && (linux_p2n_code_copy != 0u)
+            && (linux_p2n_data_init != 0u)
+            && (linux_p2n_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2n_runqueue_start != 0u)
+            && (linux_p2n_current_pid == linux_p2_pid)
+            && (linux_p2n_transfer == 0x50324E31u)
+            && (linux_p2n_aux == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+            && (linux_p2n_return_match != 0u)
+            && (linux_p2n_dispatch_match != 0u)
+            && (linux_p2n_export_match != 0u)
+            && (linux_p2n_audit_after == (linux_p2n_audit_before + 2u))
+            && (linux_p2n_audit_read != 0u)
+            && (linux_p2n_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2n_audit_record.event_code == LINUX_ABI64_SYSCALL_FUTEX)
+            && (linux_p2n_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2n_unmap_code != 0u)
+            && (linux_p2n_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2n_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2n_data_addr) == 0u)
+            && (linux_p2n_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2o_code_addr = 0x00000000479A0000ull;
+    linux_p2o_data_addr = 0x00000000479B0000ull;
+    linux_p2o_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2o_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2o_data_map =
+        (linux_p2o_code_map == linux_p2o_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2o_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2o_data_map == linux_p2o_data_addr)
+    {
+        volatile u8 *linux_p2o_code = (volatile u8 *)(u64)linux_p2o_code_addr;
+        volatile u8 *linux_p2o_data = (volatile u8 *)(u64)linux_p2o_data_addr;
+        u64 linux_p2o_signaler_rip = linux_p2o_code_addr + 0x100ull;
+        u64 linux_p2o_signaler_stack = linux_p2o_data_addr + 0xF00ull;
+
+        for (linux_p2o_i = 0u; linux_p2o_i < VMA64_PAGE_BYTES; ++linux_p2o_i)
+        {
+            linux_p2o_data[linux_p2o_i] = 0u;
+        }
+        linux_p2o_data[4] = 1u;
+        for (linux_p2o_i = 0u; linux_p2o_i < (u32)sizeof(linux_p2o_waiter_template); ++linux_p2o_i)
+        {
+            linux_p2o_code[linux_p2o_i] = linux_p2o_waiter_template[linux_p2o_i];
+        }
+        for (linux_p2o_i = 0u; linux_p2o_i < (u32)sizeof(linux_p2o_signaler_template); ++linux_p2o_i)
+        {
+            linux_p2o_code[0x100u + linux_p2o_i] = linux_p2o_signaler_template[linux_p2o_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x02u, linux_p2o_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x0Cu, linux_p2o_data_addr + 4ull);
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x16u, linux_libc64_export(linux_p2_pid, "pthread_cond_wait"));
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x22u, linux_p2o_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE32(linux_p2o_code, 0x38u, LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT);
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x102u, linux_p2o_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x10Cu, linux_libc64_export(linux_p2_pid, "pthread_cond_signal"));
+        SCAFFOLD_STORE_LE64(linux_p2o_code, 0x118u, linux_p2o_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE32(linux_p2o_code, 0x12Eu, LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT);
+        linux_p2o_code_prot = paging64_user_page_protection(linux_p2o_code_addr);
+        linux_p2o_code_copy =
+            ((linux_p2o_code[0] == 0x48u)
+                && (linux_p2o_code[0x100u] == 0x48u)
+                && (linux_p2o_code[0x134u] == 0xF4u)
+                && (linux_p2o_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2o_data_init =
+            ((linux_p2o_data[0] == 0u)
+                && (linux_p2o_data[4] == 1u)
+                && (*((volatile u64 *)(u64)(linux_p2o_data_addr + 0x80ull)) == 0ull)
+                && (*((volatile u64 *)(u64)(linux_p2o_data_addr + 0x88ull)) == 0ull))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2o_blocks_before = 0u;
+        linux_p2o_wakes_before = 0u;
+        linux_p2o_switches_before = 0u;
+        linux_p2o_native_before = syscall64_native_count();
+        linux_p2o_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2o_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2o_futex_wait_before = linux_abi64_futex_wait_count();
+        linux_p2o_futex_wake_before = linux_abi64_futex_wake_count();
+        linux_p2o_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2o_transfer =
+            (linux_p2o_code_copy != 0u)
+                ? interrupts64_trigger_user_runqueue_probe(
+                    linux_p2_pid,
+                    linux_p2o_code_addr,
+                    linux_p2_result.stack_top,
+                    linux_p2_pid,
+                    linux_p2o_signaler_rip,
+                    linux_p2o_signaler_stack,
+                    (u64)process64_runtime_user_entry_rflags(linux_p2_pid))
+                : 0u;
+        linux_p2o_task = 0u;
+        linux_p2o_signaler_task = 1u;
+        linux_p2o_runqueue_start =
+            ((linux_p2o_transfer == 0x50324F32u)
+                && (scheduler64_runqueue_task_pid(linux_p2o_task) == linux_p2_pid)
+                && (scheduler64_runqueue_task_pid(linux_p2o_signaler_task) == linux_p2_pid))
+                ? 1u
+                : 0u;
+        linux_p2o_current_pid = scheduler64_runqueue_task_pid(linux_p2o_task);
+        linux_p2o_aux = scheduler64_runqueue_task_pid(linux_p2o_signaler_task);
+        linux_p2o_blocks_after = scheduler64_runqueue_block_count();
+        linux_p2o_wakes_after = scheduler64_runqueue_wake_count();
+        linux_p2o_switches_after = scheduler64_runqueue_switches();
+        linux_p2o_waiter_state = scheduler64_runqueue_task_state(linux_p2o_task);
+        linux_p2o_signaler_state = scheduler64_runqueue_task_state(linux_p2o_signaler_task);
+        linux_p2o_waiter_result = scheduler64_runqueue_task_result(linux_p2o_task);
+        linux_p2o_signaler_result = scheduler64_runqueue_task_result(linux_p2o_signaler_task);
+        linux_p2o_native_after = syscall64_native_count();
+        linux_p2o_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2o_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2o_futex_wait_after = linux_abi64_futex_wait_count();
+        linux_p2o_futex_wake_after = linux_abi64_futex_wake_count();
+        linux_p2o_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2o_wait_return = *((volatile u64 *)(u64)(linux_p2o_data_addr + 0x80ull));
+        linux_p2o_signal_return = *((volatile u64 *)(u64)(linux_p2o_data_addr + 0x88ull));
+        linux_p2o_cond_word_after = *((volatile u32 *)(u64)linux_p2o_data_addr);
+        linux_p2o_mutex_word_after = *((volatile u32 *)(u64)(linux_p2o_data_addr + 4ull));
+        linux_p2o_return_match =
+            ((linux_p2o_wait_return == 0ull)
+                && (linux_p2o_signal_return == 0ull)
+                && (linux_p2o_cond_word_after == 0u)
+                && (linux_p2o_mutex_word_after == 1u))
+                ? 1u
+                : 0u;
+        linux_p2o_dispatch_match =
+            (((linux_p2o_native_after - linux_p2o_native_before) == 3u)
+                && ((linux_p2o_persona_after - linux_p2o_persona_before) == 3u)
+                && ((linux_p2o_linux_after - linux_p2o_linux_before) == 3u)
+                && ((linux_p2o_futex_wait_after - linux_p2o_futex_wait_before) == 1u)
+                && ((linux_p2o_futex_wake_after - linux_p2o_futex_wake_before) == 2u)
+                && ((linux_p2o_audit_after - linux_p2o_audit_before) == 3u)
+                && (linux_abi64_futex_waiter_count() == 0u))
+                ? 1u
+                : 0u;
+        linux_p2o_export_match =
+            ((linux_libc64_pthread_cond_symbol_count() == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_init")
+                    == linux_p2_result.libc_result.pthread_cond_init_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_destroy")
+                    == linux_p2_result.libc_result.pthread_cond_destroy_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_cond_wait")
+                    == linux_p2_result.libc_result.pthread_cond_wait_fn)
+                && (linux_p2_result.libc_result.pthread_cond_init_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_INIT))
+                && (linux_p2_result.libc_result.pthread_cond_destroy_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_DESTROY))
+                && (linux_p2_result.libc_result.pthread_cond_wait_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_COND_WAIT))
+                && (linux_p2_result.libc_result.pthread_cond_symbol_count
+                    == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+                && (linux_p2_result.libc_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2o_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2o_unmap_code =
+        (linux_p2o_code_map == linux_p2o_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2o_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2o_unmap_data =
+        (linux_p2o_data_map == linux_p2o_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2o_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2o_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2o_code_map == linux_p2o_code_addr)
+            && (linux_p2o_data_map == linux_p2o_data_addr)
+            && (linux_p2o_code_copy != 0u)
+            && (linux_p2o_data_init != 0u)
+            && (linux_p2o_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2o_signaler_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2o_runqueue_start != 0u)
+            && (linux_p2o_current_pid == linux_p2_pid)
+            && (linux_p2o_transfer == 0x50324F32u)
+            && (linux_p2o_aux == linux_p2_pid)
+            && ((linux_p2o_blocks_after - linux_p2o_blocks_before) == 1u)
+            && ((linux_p2o_wakes_after - linux_p2o_wakes_before) == 1u)
+            && ((linux_p2o_switches_after - linux_p2o_switches_before) == 2u)
+            && (linux_p2o_waiter_state == SCHEDULER64_TASK_EXITED)
+            && (linux_p2o_signaler_state == SCHEDULER64_TASK_EXITED)
+            && (linux_p2o_waiter_result == 0x50324F32u)
+            && (linux_p2o_signaler_result == 0x50324F33u)
+            && (linux_p2o_return_match != 0u)
+            && (linux_p2o_dispatch_match != 0u)
+            && (linux_p2o_export_match != 0u)
+            && (linux_p2o_unmap_code != 0u)
+            && (linux_p2o_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2o_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2o_data_addr) == 0u)
+            && (linux_p2o_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2p_code_addr = 0x00000000479A0000ull;
+    linux_p2p_data_addr = 0x00000000479B0000ull;
+    linux_p2p_value = 0x1122334455667788ull;
+    linux_p2p_code_map =
+        (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2p_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2p_data_map =
+        (linux_p2p_code_map == linux_p2p_code_addr)
+            ? vma64_map_anon(
+                linux_p2_pid,
+                linux_p2p_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2p_data_map == linux_p2p_data_addr)
+    {
+        volatile u8 *linux_p2p_code = (volatile u8 *)(u64)linux_p2p_code_addr;
+        volatile u8 *linux_p2p_data = (volatile u8 *)(u64)linux_p2p_data_addr;
+
+        for (linux_p2p_i = 0u; linux_p2p_i < VMA64_PAGE_BYTES; ++linux_p2p_i)
+        {
+            linux_p2p_data[linux_p2p_i] = 0u;
+        }
+        *((volatile u32 *)(u64)(linux_p2p_data_addr + 0x24ull)) = 0x5A5A5A5Au;
+        for (linux_p2p_i = 0u; linux_p2p_i < (u32)sizeof(linux_p2p_harness_template); ++linux_p2p_i)
+        {
+            linux_p2p_code[linux_p2p_i] = linux_p2p_harness_template[linux_p2p_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x04u, linux_libc64_export(linux_p2_pid, "pthread_getspecific"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x10u, linux_p2p_data_addr + 0x80ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x1Du, linux_p2p_data_addr + 0x20ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x29u, linux_libc64_export(linux_p2_pid, "pthread_key_create"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x35u, linux_p2p_data_addr + 0x88ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x44u, linux_p2p_value);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x4Eu, linux_libc64_export(linux_p2_pid, "pthread_setspecific"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x5Au, linux_p2p_data_addr + 0x90ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x69u, linux_libc64_export(linux_p2_pid, "pthread_getspecific"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x75u, linux_p2p_data_addr + 0x98ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x82u, linux_p2p_data_addr + 0x24ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x8Eu, linux_libc64_export(linux_p2_pid, "pthread_key_create"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0x9Au, linux_p2p_data_addr + 0xA0ull);
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0xB6u, linux_libc64_export(linux_p2_pid, "pthread_setspecific"));
+        SCAFFOLD_STORE_LE64(linux_p2p_code, 0xC2u, linux_p2p_data_addr + 0xA8ull);
+        SCAFFOLD_STORE_LE32(linux_p2p_code, 0xD8u, LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT);
+        linux_p2p_code_prot = paging64_user_page_protection(linux_p2p_code_addr);
+        linux_p2p_code_copy =
+            ((linux_p2p_code[0] == 0x31u)
+                && (linux_p2p_code[0xDEu] == 0xF4u)
+                && (linux_p2p_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2p_data_init =
+            ((*((volatile u32 *)(u64)(linux_p2p_data_addr + 0x20ull)) == 0u)
+                && (*((volatile u32 *)(u64)(linux_p2p_data_addr + 0x24ull)) == 0x5A5A5A5Au))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2p_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2_pid,
+                process64_runtime_token(linux_p2_pid),
+                process64_runtime_user_entry_token(linux_p2_pid),
+                linux_p2p_code_addr,
+                linux_p2_result.stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2_pid));
+        linux_p2p_runqueue_start =
+            ((linux_p2p_code_copy != 0u)
+                && (linux_p2p_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2p_task)
+                : 0u;
+        linux_p2p_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2p_native_before = syscall64_native_count();
+        linux_p2p_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2p_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2p_audit_before = persona_audit64_count(linux_p2_pid);
+        linux_p2p_transfer =
+            (linux_p2p_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2p_code_addr,
+                    linux_p2_result.stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2p_aux = interrupts64_user_entry_probe_aux();
+        linux_p2p_native_after = syscall64_native_count();
+        linux_p2p_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2p_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2p_audit_after = persona_audit64_count(linux_p2_pid);
+        linux_p2p_pre_get_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0x80ull));
+        linux_p2p_create_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0x88ull));
+        linux_p2p_set_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0x90ull));
+        linux_p2p_get_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0x98ull));
+        linux_p2p_second_create_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0xA0ull));
+        linux_p2p_bad_set_return = *((volatile u64 *)(u64)(linux_p2p_data_addr + 0xA8ull));
+        linux_p2p_key_out = *((volatile u32 *)(u64)(linux_p2p_data_addr + 0x20ull));
+        linux_p2p_key2_out = *((volatile u32 *)(u64)(linux_p2p_data_addr + 0x24ull));
+        linux_p2p_audit_read =
+            (linux_p2p_audit_after > linux_p2p_audit_before)
+                ? persona_audit64_read(
+                    linux_p2_pid,
+                    linux_p2p_audit_after - 1u,
+                    &linux_p2p_audit_record)
+                : 0u;
+        linux_p2p_return_match =
+            ((linux_p2p_pre_get_return == 0ull)
+                && (linux_p2p_create_return == 0ull)
+                && (linux_p2p_set_return == 0ull)
+                && (linux_p2p_get_return == linux_p2p_value)
+                && (linux_p2p_second_create_return == (u64)LINUX_ABI64_EAGAIN)
+                && (linux_p2p_bad_set_return == (u64)LINUX_ABI64_EINVAL)
+                && (linux_p2p_key_out == 0u)
+                && (linux_p2p_key2_out == 0x5A5A5A5Au))
+                ? 1u
+                : 0u;
+        linux_p2p_dispatch_match =
+            (((linux_p2p_native_after - linux_p2p_native_before) == 2u)
+                && ((linux_p2p_persona_after - linux_p2p_persona_before) == 2u)
+                && ((linux_p2p_linux_after - linux_p2p_linux_before) == 2u)
+                && (linux_p2p_audit_after == (linux_p2p_audit_before + 2u)))
+                ? 1u
+                : 0u;
+        linux_p2p_export_match =
+            ((linux_libc64_pthread_tls_symbol_count() == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2_pid, "pthread_key_create")
+                    == linux_p2_result.libc_result.pthread_key_create_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_setspecific")
+                    == linux_p2_result.libc_result.pthread_setspecific_fn)
+                && (linux_libc64_export(linux_p2_pid, "pthread_getspecific")
+                    == linux_p2_result.libc_result.pthread_getspecific_fn)
+                && (linux_p2_result.libc_result.pthread_key_create_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_KEY_CREATE))
+                && (linux_p2_result.libc_result.pthread_setspecific_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_SETSPECIFIC))
+                && (linux_p2_result.libc_result.pthread_getspecific_fn
+                    == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC))
+                && (linux_p2_result.libc_result.pthread_tls_symbol_count
+                    == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+                && (linux_p2_result.libc_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2p_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2p_unmap_code =
+        (linux_p2p_code_map == linux_p2p_code_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2p_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2p_unmap_data =
+        (linux_p2p_data_map == linux_p2p_data_addr)
+            ? vma64_unmap(linux_p2_pid, linux_p2p_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2p_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2p_code_map == linux_p2p_code_addr)
+            && (linux_p2p_data_map == linux_p2p_data_addr)
+            && (linux_p2p_code_copy != 0u)
+            && (linux_p2p_data_init != 0u)
+            && (linux_p2p_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2p_runqueue_start != 0u)
+            && (linux_p2p_current_pid == linux_p2_pid)
+            && (linux_p2p_transfer == 0x50325031u)
+            && (linux_p2p_aux == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+            && (linux_p2p_return_match != 0u)
+            && (linux_p2p_dispatch_match != 0u)
+            && (linux_p2p_export_match != 0u)
+            && (linux_p2p_audit_read != 0u)
+            && (linux_p2p_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2p_audit_record.event_code == LINUX_ABI64_SYSCALL_GETTID)
+            && (linux_p2p_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2p_unmap_code != 0u)
+            && (linux_p2p_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2p_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2p_data_addr) == 0u)
+            && (linux_p2p_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2_prepare_after = linux_dynamic64_prepare_count();
+    linux_p2_dynamic_load_after = linux_dynamic64_load_count();
+    linux_p2_libc_load_after = linux_libc64_load_count();
+    linux_p2_libc_denial_after = linux_libc64_denial_count();
+    linux_p2_dep_supported_after = linux_libc64_dependency_supported_count();
+    linux_p2_context = persona64_context_for_process(linux_p2_pid);
+    linux_p2_context_match =
+        ((linux_p2_context != 0)
+            && (linux_p2_context->linux_dynamic_base == LINUX_DYNAMIC64_DEFAULT_BASE)
+            && (linux_p2_context->linux_libc_base == LINUX_LIBC64_DEFAULT_BASE)
+            && (linux_p2_context->linux_libc_write == linux_p2_result.libc_result.write_fn)
+            && (linux_p2_context->linux_libc_read == linux_p2_result.libc_result.read_fn)
+            && (linux_p2_context->linux_libc_exit == linux_p2_result.libc_result.exit_fn)
+            && (linux_p2_context->linux_libc_strlen == linux_p2_result.libc_result.strlen_fn)
+            && (linux_p2_context->linux_libc_envp
+                == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ENV_VECTOR))
+            && (linux_p2_context->linux_libc_envc == LINUX_LIBC64_ENV_SNAPSHOT_COUNT)
+            && (linux_p2_context->linux_libc_environment_bound != 0u)
+            && (linux_p2_context->linux_libc_symbol_count == LINUX_LIBC64_SYMBOL_COUNT)
+            && (linux_p2_context->linux_libc_unavailable_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2_context->linux_dynamic_needed_count == 1u)
+            && (linux_p2_context->linux_dynamic_missing_count == 0u))
+            ? 1u
+            : 0u;
+    linux_p2l_pid = process64_spawn_clone(init_pid);
+    linux_p2l_vma_init =
+        (linux_p2l_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p2l_pid)
+            : 0u;
+    linux_p2l_audit_attach =
+        (linux_p2l_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p2l_pid)
+            : 0u;
+    linux_p2l_owner =
+        (linux_p2l_pid != PROCESS64_INVALID_PID)
+            ? process64_principal(linux_p2l_pid)
+            : 0u;
+    linux_p2l_stdin_cap =
+        (linux_p2l_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2l_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2l_stdout_cap =
+        (linux_p2l_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2l_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2l_stderr_cap =
+        (linux_p2l_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2l_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2l_fd_init =
+        ((linux_p2l_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2l_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2l_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                linux_p2l_pid,
+                linux_p2l_owner,
+                linux_p2l_stdin_cap,
+                linux_p2l_stdout_cap,
+                linux_p2l_stderr_cap)
+            : 0u;
+    linux_p2l_bind =
+        (linux_p2l_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p2l_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_p2l_libc_base = 0x0000000044190000ull;
+    linux_p2l_code_addr = 0x0000000044180000ull;
+    linux_p2l_data_addr = 0x0000000044181000ull;
+    linux_p2l_stack_addr = 0x0000000044182000ull;
+    linux_p2l_stack_top = linux_p2l_stack_addr + VMA64_PAGE_BYTES;
+    linux_p2l_load =
+        ((linux_p2l_vma_init != 0u)
+            && (linux_p2l_audit_attach != 0u)
+            && (linux_p2l_fd_init != 0u)
+            && (linux_p2l_bind == PERSONA64_ATTACH_OK))
+            ? linux_libc64_load(linux_p2l_pid, linux_p2l_libc_base, &linux_p2l_result)
+            : LINUX_LIBC64_DENIED;
+    linux_p2l_code_map =
+        (linux_p2l_load == LINUX_LIBC64_OK)
+            ? vma64_map_anon(
+                linux_p2l_pid,
+                linux_p2l_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2l_data_map =
+        (linux_p2l_code_map == linux_p2l_code_addr)
+            ? vma64_map_anon(
+                linux_p2l_pid,
+                linux_p2l_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2l_stack_map =
+        (linux_p2l_data_map == linux_p2l_data_addr)
+            ? vma64_map_anon(
+                linux_p2l_pid,
+                linux_p2l_stack_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2l_stack_map == linux_p2l_stack_addr)
+    {
+        volatile u8 *linux_p2l_code = (volatile u8 *)(u64)linux_p2l_code_addr;
+        volatile u8 *linux_p2l_data = (volatile u8 *)(u64)linux_p2l_data_addr;
+
+        for (linux_p2l_i = 0u; linux_p2l_i < VMA64_PAGE_BYTES; ++linux_p2l_i)
+        {
+            linux_p2l_data[linux_p2l_i] = 0u;
+        }
+        for (linux_p2l_i = 0u; linux_p2l_i < (u32)sizeof(linux_p2l_harness_template); ++linux_p2l_i)
+        {
+            linux_p2l_code[linux_p2l_i] = linux_p2l_harness_template[linux_p2l_i];
+        }
+        linux_p2l_start_fn = linux_p2l_code_addr + 0x8Bull;
+        linux_p2l_thread_storage = linux_p2l_data_addr + 0x20ull;
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x02u, linux_p2l_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x10u, linux_p2l_start_fn);
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x38u, linux_p2l_start_fn);
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x5Du, linux_p2l_start_fn);
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x1Du, linux_libc64_export(linux_p2l_pid, "pthread_create"));
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x45u, linux_libc64_export(linux_p2l_pid, "pthread_create"));
+        SCAFFOLD_STORE_LE64(linux_p2l_code, 0x6Au, linux_libc64_export(linux_p2l_pid, "pthread_create"));
+        linux_p2l_code_prot = paging64_user_page_protection(linux_p2l_code_addr);
+        linux_p2l_code_copy =
+            ((linux_p2l_code[0] == 0x49u)
+                && (linux_p2l_code[0x9Eu] == 0xC3u)
+                && (linux_p2l_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2l_data_init =
+            ((linux_p2l_data[0x20u] == 0u)
+                && (linux_p2l_data[0x28u] == 0u)
+                && (linux_p2l_data[0x30u] == 0u)
+                && (linux_p2l_data[0x38u] == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        linux_p2l_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2l_pid,
+                process64_runtime_token(linux_p2l_pid),
+                process64_runtime_user_entry_token(linux_p2l_pid),
+                linux_p2l_code_addr,
+                linux_p2l_stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2l_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2l_pid));
+        linux_p2l_runqueue_start =
+            ((linux_p2l_code_copy != 0u)
+                && (linux_p2l_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2l_task)
+                : 0u;
+        linux_p2l_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2l_native_before = syscall64_native_count();
+        linux_p2l_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2l_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2l_mmap_before = linux_abi64_mmap_count();
+        linux_p2l_mmap_bytes_before = linux_abi64_mmap_byte_count();
+        linux_p2l_clone_before = linux_abi64_clone_count();
+        linux_p2l_clone_thread_before = linux_abi64_clone_thread_count();
+        linux_p2l_clone_sched_before = linux_abi64_clone_scheduler_count();
+        linux_p2l_audit_before = persona_audit64_count(linux_p2l_pid);
+        linux_p2l_transfer =
+            (linux_p2l_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2l_code_addr,
+                    linux_p2l_stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2l_aux = interrupts64_user_entry_probe_aux();
+        linux_p2l_native_after = syscall64_native_count();
+        linux_p2l_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2l_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2l_mmap_after = linux_abi64_mmap_count();
+        linux_p2l_mmap_bytes_after = linux_abi64_mmap_byte_count();
+        linux_p2l_clone_after = linux_abi64_clone_count();
+        linux_p2l_clone_thread_after = linux_abi64_clone_thread_count();
+        linux_p2l_clone_sched_after = linux_abi64_clone_scheduler_count();
+        linux_p2l_audit_after = persona_audit64_count(linux_p2l_pid);
+        linux_p2l_invalid_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x30ull));
+        linux_p2l_unsupported_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x38ull));
+        linux_p2l_create_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x28ull));
+        linux_p2l_thread_value = *((volatile u64 *)(u64)(linux_p2l_thread_storage));
+        linux_p2l_child_pid = linux_abi64_clone_last_child_pid();
+        linux_p2l_child_task = linux_abi64_clone_last_task_id();
+        linux_p2l_child_stack = linux_abi64_clone_last_child_stack();
+        linux_p2l_child_stack_base =
+            (linux_p2l_child_stack >= 0x3FC0ull)
+                ? (linux_p2l_child_stack - 0x3FC0ull)
+                : 0ull;
+        linux_p2l_child_task_pid = scheduler64_runqueue_task_pid(linux_p2l_child_task);
+        linux_p2l_child_task_state = scheduler64_runqueue_task_state(linux_p2l_child_task);
+        linux_p2l_child_task_rip = scheduler64_runqueue_task_rip(linux_p2l_child_task);
+        linux_p2l_child_task_rsp = scheduler64_runqueue_task_rsp(linux_p2l_child_task);
+        linux_p2l_shared_vma = linux_abi64_clone_last_shared_vma();
+        linux_p2l_shared_fd = linux_abi64_clone_last_shared_fd();
+        linux_p2l_shared_audit = linux_abi64_clone_last_shared_audit();
+        linux_p2l_last_pid = syscall64_native_persona_last_pid();
+        linux_p2l_last_type = syscall64_native_persona_last_type();
+        linux_p2l_last_result = syscall64_native_persona_last_result();
+        linux_p2l_audit_read =
+            (linux_p2l_audit_after > linux_p2l_audit_before)
+                ? persona_audit64_read(
+                    linux_p2l_pid,
+                    linux_p2l_audit_after - 1u,
+                    &linux_p2l_audit_record)
+                : 0u;
+        linux_p2l_return_match =
+            ((linux_p2l_invalid_return == (u64)LINUX_ABI64_EINVAL)
+                && (linux_p2l_unsupported_return == (u64)LINUX_ABI64_ENOSYS)
+                && (linux_p2l_create_return == 0ull)
+                && (linux_p2l_thread_value == (u64)linux_p2l_child_pid)
+                && (linux_p2l_child_pid != PROCESS64_INVALID_PID))
+                ? 1u
+                : 0u;
+        linux_p2l_clone_match =
+            ((linux_p2l_child_task != SCHEDULER64_INVALID_TASK)
+                && (linux_p2l_child_task_pid == linux_p2l_child_pid)
+                && (linux_p2l_child_task_state == SCHEDULER64_TASK_READY)
+                && (linux_p2l_child_task_rip >= (linux_p2l_result.image_base + LINUX_LIBC64_TEXT_RVA))
+                && (linux_p2l_child_task_rip < (linux_p2l_result.image_base + LINUX_LIBC64_RODATA_RVA))
+                && (linux_p2l_child_task_rsp == linux_p2l_child_stack)
+                && (paging64_user_page_present(linux_p2l_child_stack_base) != 0u)
+                && (linux_p2l_shared_vma != 0u)
+                && (linux_p2l_shared_fd != 0u)
+                && (linux_p2l_shared_audit != 0u)
+                && (linux_abi64_clone_last_parent_pid() == linux_p2l_pid)
+                && (linux_abi64_clone_last_flags()
+                    == (LINUX_ABI64_CLONE_THREAD_REQUIRED
+                        | LINUX_ABI64_CLONE_PARENT_SETTID
+                        | LINUX_ABI64_CLONE_CHILD_CLEARTID
+                        | LINUX_ABI64_CLONE_CHILD_SETTID)))
+                ? 1u
+                : 0u;
+        linux_p2l_dispatch_match =
+            (((linux_p2l_native_after - linux_p2l_native_before) == 2u)
+                && ((linux_p2l_persona_after - linux_p2l_persona_before) == 2u)
+                && ((linux_p2l_linux_after - linux_p2l_linux_before) == 2u)
+                && ((linux_p2l_mmap_after - linux_p2l_mmap_before) == 1u)
+                && ((linux_p2l_mmap_bytes_after - linux_p2l_mmap_bytes_before) == 0x4000u)
+                && ((linux_p2l_clone_after - linux_p2l_clone_before) == 1u)
+                && ((linux_p2l_clone_thread_after - linux_p2l_clone_thread_before) == 1u)
+                && ((linux_p2l_clone_sched_after - linux_p2l_clone_sched_before) == 1u)
+                && (linux_p2l_last_pid == linux_p2l_pid)
+                && (linux_p2l_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2l_last_result == (u64)linux_p2l_child_pid))
+                ? 1u
+                : 0u;
+        linux_p2l_export_match =
+            ((linux_libc64_pthread_create_symbol_count() == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2l_pid, "pthread_create")
+                    == linux_p2l_result.pthread_create_fn)
+                && (linux_p2l_result.pthread_create_fn
+                    == (linux_p2l_result.image_base + LINUX_LIBC64_RVA_PTHREAD_CREATE))
+                && (linux_p2l_result.pthread_create_symbol_count
+                    == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+                && (linux_p2l_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2l_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2l_release_clone =
+        ((linux_p2l_child_pid != PROCESS64_INVALID_PID)
+            && (linux_p2l_child_pid != 0u))
+            ? linux_abi64_release_clone(linux_p2l_child_pid)
+            : 0u;
+    linux_p2l_unmap_probe_stack =
+        (linux_p2l_stack_map == linux_p2l_stack_addr)
+            ? vma64_unmap(linux_p2l_pid, linux_p2l_stack_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2l_unmap_thread_stack =
+        ((linux_p2l_child_stack_base != 0ull)
+            && (paging64_user_page_present(linux_p2l_child_stack_base) != 0u))
+            ? vma64_unmap(linux_p2l_pid, linux_p2l_child_stack_base, 0x4000u)
+            : 0u;
+    linux_p2l_unmap_code =
+        (linux_p2l_code_map == linux_p2l_code_addr)
+            ? vma64_unmap(linux_p2l_pid, linux_p2l_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2l_unmap_data =
+        (linux_p2l_data_map == linux_p2l_data_addr)
+            ? vma64_unmap(linux_p2l_pid, linux_p2l_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2l_libc_release =
+        (linux_p2l_load == LINUX_LIBC64_OK)
+            ? linux_libc64_release_process(linux_p2l_pid)
+            : 0u;
+    linux_p2l_fd_release =
+        (linux_p2l_fd_init != 0u)
+            ? fd64_release_process(linux_p2l_pid)
+            : 0u;
+    linux_p2l_persona_release =
+        (linux_p2l_bind == PERSONA64_ATTACH_OK)
+            ? persona64_release(linux_p2l_pid)
+            : 0u;
+    linux_p2l_audit_release =
+        (linux_p2l_audit_attach != 0u)
+            ? persona_audit64_release(linux_p2l_pid)
+            : 0u;
+    linux_p2l_vma_release =
+        (linux_p2l_vma_init != 0u)
+            ? vma64_release_process(linux_p2l_pid)
+            : 0u;
+    linux_p2l_clone_release =
+        (linux_p2l_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p2l_pid)
+            : 0u;
+    linux_p2l_cleanup =
+        ((process64_persona_ctx(linux_p2l_pid) == 0)
+            && (process64_audit_ctx(linux_p2l_pid) == 0)
+            && (process64_vma_root(linux_p2l_pid) == 0)
+            && (process64_fd_table(linux_p2l_pid) == 0)
+            && (linux_p2l_libc_release >= 2u)
+            && (linux_p2l_fd_release >= 3u)
+            && (linux_p2l_persona_release != 0u)
+            && (linux_p2l_audit_release != 0u)
+            && (linux_p2l_vma_release == 0u)
+            && (linux_p2l_clone_release != 0u)
+            && (paging64_user_page_present(linux_p2l_libc_base + LINUX_LIBC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(linux_p2l_libc_base + LINUX_LIBC64_DATA_RVA) == 0u))
+            ? 1u
+            : 0u;
+    linux_p2l_positive =
+        ((linux_p2l_pid != PROCESS64_INVALID_PID)
+            && (linux_p2l_vma_init != 0u)
+            && (linux_p2l_audit_attach != 0u)
+            && (linux_p2l_fd_init != 0u)
+            && (linux_p2l_bind == PERSONA64_ATTACH_OK)
+            && (linux_p2l_load == LINUX_LIBC64_OK)
+            && (linux_p2l_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2l_code_map == linux_p2l_code_addr)
+            && (linux_p2l_data_map == linux_p2l_data_addr)
+            && (linux_p2l_stack_map == linux_p2l_stack_addr)
+            && (linux_p2l_code_copy != 0u)
+            && (linux_p2l_data_init != 0u)
+            && (linux_p2l_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2l_runqueue_start != 0u)
+            && (linux_p2l_current_pid == linux_p2l_pid)
+            && (linux_p2l_transfer == 0x50324C31u)
+            && (linux_p2l_aux == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+            && (linux_p2l_return_match != 0u)
+            && (linux_p2l_clone_match != 0u)
+            && (linux_p2l_dispatch_match != 0u)
+            && (linux_p2l_export_match != 0u)
+            && (linux_p2l_audit_after == (linux_p2l_audit_before + 2u))
+            && (linux_p2l_audit_read != 0u)
+            && (linux_p2l_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2l_audit_record.event_code == LINUX_ABI64_SYSCALL_CLONE)
+            && (linux_p2l_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2l_release_clone != 0u)
+            && (linux_p2l_unmap_probe_stack != 0u)
+            && (linux_p2l_unmap_thread_stack != 0u)
+            && (linux_p2l_unmap_code != 0u)
+            && (linux_p2l_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2l_child_stack_base) == 0u)
+            && (paging64_user_page_present(linux_p2l_stack_addr) == 0u)
+            && (paging64_user_page_present(linux_p2l_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2l_data_addr) == 0u)
+            && (linux_p2l_reset != 0u)
+            && (linux_p2l_cleanup != 0u))
+            ? 1u
+            : 0u;
+    linux_p2m_pid = process64_spawn_clone(init_pid);
+    linux_p2m_vma_init =
+        (linux_p2m_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p2m_pid)
+            : 0u;
+    linux_p2m_audit_attach =
+        (linux_p2m_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p2m_pid)
+            : 0u;
+    linux_p2m_owner = process64_principal(linux_p2m_pid);
+    linux_p2m_stdin_cap =
+        (linux_p2m_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2m_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2m_stdout_cap =
+        (linux_p2m_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2m_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2m_stderr_cap =
+        (linux_p2m_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_p2m_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_p2m_fd_init =
+        ((linux_p2m_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2m_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_p2m_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                linux_p2m_pid,
+                linux_p2m_owner,
+                linux_p2m_stdin_cap,
+                linux_p2m_stdout_cap,
+                linux_p2m_stderr_cap)
+            : 0u;
+    linux_p2m_bind =
+        (linux_p2m_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p2m_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_p2m_libc_base = 0x00000000441C0000ull;
+    linux_p2m_code_addr = 0x00000000441D0000ull;
+    linux_p2m_data_addr = 0x00000000441D1000ull;
+    linux_p2m_stack_addr = 0x00000000441D2000ull;
+    linux_p2m_child_stack_addr = 0x00000000441D3000ull;
+    linux_p2m_stack_top = linux_p2m_stack_addr + VMA64_PAGE_BYTES;
+    linux_p2m_child_stack_top = linux_p2m_child_stack_addr + VMA64_PAGE_BYTES;
+    linux_p2m_load =
+        ((linux_p2m_vma_init != 0u)
+            && (linux_p2m_audit_attach != 0u)
+            && (linux_p2m_fd_init != 0u)
+            && (linux_p2m_bind == PERSONA64_ATTACH_OK))
+            ? linux_libc64_load(linux_p2m_pid, linux_p2m_libc_base, &linux_p2m_result)
+            : LINUX_LIBC64_DENIED;
+    linux_p2m_code_map =
+        (linux_p2m_load == LINUX_LIBC64_OK)
+            ? vma64_map_anon(
+                linux_p2m_pid,
+                linux_p2m_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2m_data_map =
+        (linux_p2m_code_map == linux_p2m_code_addr)
+            ? vma64_map_anon(
+                linux_p2m_pid,
+                linux_p2m_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2m_stack_map =
+        (linux_p2m_data_map == linux_p2m_data_addr)
+            ? vma64_map_anon(
+                linux_p2m_pid,
+                linux_p2m_stack_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2m_child_stack_map =
+        (linux_p2m_stack_map == linux_p2m_stack_addr)
+            ? vma64_map_anon(
+                linux_p2m_pid,
+                linux_p2m_child_stack_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2m_child_stack_map == linux_p2m_child_stack_addr)
+    {
+        volatile u8 *linux_p2m_code = (volatile u8 *)(u64)linux_p2m_code_addr;
+        volatile u8 *linux_p2m_data = (volatile u8 *)(u64)linux_p2m_data_addr;
+
+        for (linux_p2m_i = 0u; linux_p2m_i < VMA64_PAGE_BYTES; ++linux_p2m_i)
+        {
+            linux_p2m_data[linux_p2m_i] = 0u;
+        }
+        for (linux_p2m_i = 0u; linux_p2m_i < (u32)sizeof(linux_p2m_harness_template); ++linux_p2m_i)
+        {
+            linux_p2m_code[linux_p2m_i] = linux_p2m_harness_template[linux_p2m_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2m_code, 0x02u, linux_p2m_data_addr);
+        SCAFFOLD_STORE_LE64(linux_p2m_code, 0x10u, linux_libc64_export(linux_p2m_pid, "pthread_join"));
+        SCAFFOLD_STORE_LE64(linux_p2m_code, 0x2Bu, linux_libc64_export(linux_p2m_pid, "pthread_join"));
+        SCAFFOLD_STORE_LE64(linux_p2m_code, 0x43u, linux_libc64_export(linux_p2m_pid, "pthread_join"));
+        linux_p2m_code_prot = paging64_user_page_protection(linux_p2m_code_addr);
+        linux_p2m_code_copy =
+            ((linux_p2m_code[0] == 0x49u)
+                && (linux_p2m_code[0x63u] == 0xF4u)
+                && (linux_p2m_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2m_data_init =
+            ((linux_p2m_data[0x20u] == 0u)
+                && (linux_p2m_data[0x28u] == 0u)
+                && (linux_p2m_data[0x30u] == 0u)
+                && (linux_p2m_data[0x40u] == 0u))
+                ? 1u
+                : 0u;
+        linux_p2m_clone_return =
+            ((linux_p2m_code_copy != 0u) && (linux_p2m_data_init != 0u))
+                ? linux_abi64_sys_clone(
+                    linux_p2m_pid,
+                    LINUX_ABI64_CLONE_THREAD_REQUIRED
+                        | LINUX_ABI64_CLONE_PARENT_SETTID
+                        | LINUX_ABI64_CLONE_CHILD_CLEARTID
+                        | LINUX_ABI64_CLONE_CHILD_SETTID,
+                    linux_p2m_child_stack_top,
+                    linux_p2m_data_addr + 0x50ull,
+                    linux_p2m_data_addr + 0x54ull,
+                    0ull,
+                    linux_p2m_code_addr)
+                : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+        linux_p2m_child_pid = (u32)(linux_p2m_clone_return & 0xFFFFFFFFull);
+        SCAFFOLD_STORE_LE32(linux_p2m_code, 0x20u, linux_p2m_child_pid);
+        SCAFFOLD_STORE_LE32(linux_p2m_code, 0x3Bu, linux_p2m_child_pid);
+        linux_p2m_child_task = linux_abi64_clone_last_task_id();
+        linux_p2m_child_task_pid = scheduler64_runqueue_task_pid(linux_p2m_child_task);
+        linux_p2m_child_task_state = scheduler64_runqueue_task_state(linux_p2m_child_task);
+        linux_p2m_child_task_rsp = scheduler64_runqueue_task_rsp(linux_p2m_child_task);
+        linux_p2m_child_exit_result =
+            ((linux_p2m_clone_return == (u64)linux_p2m_child_pid)
+                && (linux_p2m_child_pid != PROCESS64_INVALID_PID))
+                ? (u32)linux_abi64_sys_exit_group(
+                    linux_p2m_child_pid,
+                    45ull,
+                    linux_p2m_code_addr + 0x80ull)
+                : 1u;
+        linux_p2m_child_exit_code = linux_abi64_last_exit_code();
+        scheduler64_runqueue_reset();
+        linux_p2m_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2m_pid,
+                process64_runtime_token(linux_p2m_pid),
+                process64_runtime_user_entry_token(linux_p2m_pid),
+                linux_p2m_code_addr,
+                linux_p2m_stack_top,
+                (u64)process64_runtime_user_entry_selectors(linux_p2m_pid),
+                (u64)process64_runtime_user_entry_rflags(linux_p2m_pid));
+        linux_p2m_runqueue_start =
+            ((linux_p2m_child_exit_result == 0u)
+                && (linux_p2m_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2m_task)
+                : 0u;
+        linux_p2m_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2m_native_before = syscall64_native_count();
+        linux_p2m_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2m_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2m_wait4_before = linux_abi64_wait4_count();
+        linux_p2m_reap_before = linux_abi64_wait4_reap_count();
+        linux_p2m_audit_before = persona_audit64_count(linux_p2m_pid);
+        linux_p2m_transfer =
+            (linux_p2m_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2m_code_addr,
+                    linux_p2m_stack_top,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2m_aux = interrupts64_user_entry_probe_aux();
+        linux_p2m_native_after = syscall64_native_count();
+        linux_p2m_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2m_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2m_wait4_after = linux_abi64_wait4_count();
+        linux_p2m_reap_after = linux_abi64_wait4_reap_count();
+        linux_p2m_audit_after = persona_audit64_count(linux_p2m_pid);
+        linux_p2m_invalid_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x20ull));
+        linux_p2m_retval_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x28ull));
+        linux_p2m_join_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x30ull));
+        linux_p2m_last_pid = syscall64_native_persona_last_pid();
+        linux_p2m_last_type = syscall64_native_persona_last_type();
+        linux_p2m_last_result = syscall64_native_persona_last_result();
+        linux_p2m_audit_read =
+            (linux_p2m_audit_after > linux_p2m_audit_before)
+                ? persona_audit64_read(
+                    linux_p2m_pid,
+                    linux_p2m_audit_after - 1u,
+                    &linux_p2m_audit_record)
+                : 0u;
+        linux_p2m_return_match =
+            ((linux_p2m_invalid_return == (u64)LINUX_ABI64_EINVAL)
+                && (linux_p2m_retval_return == (u64)LINUX_ABI64_ENOSYS)
+                && (linux_p2m_join_return == 0ull))
+                ? 1u
+                : 0u;
+        linux_p2m_wait_match =
+            (((linux_p2m_wait4_after - linux_p2m_wait4_before) == 1u)
+                && ((linux_p2m_reap_after - linux_p2m_reap_before) == 1u)
+                && (linux_abi64_wait4_last_parent_pid() == linux_p2m_pid)
+                && (linux_abi64_wait4_last_child_pid() == linux_p2m_child_pid)
+                && (linux_abi64_wait4_last_exit_code() == 45u)
+                && (linux_abi64_wait4_last_status() == 0x00002D00u)
+                && (linux_abi64_wait4_last_status_written() == 0u)
+                && (linux_abi64_wait4_last_options() == 0u)
+                && (linux_abi64_wait4_last_process_release() != 0u)
+                && (linux_abi64_wait4_last_clone_release() != 0u))
+                ? 1u
+                : 0u;
+        linux_p2m_dispatch_match =
+            (((linux_p2m_native_after - linux_p2m_native_before) == 1u)
+                && ((linux_p2m_persona_after - linux_p2m_persona_before) == 1u)
+                && ((linux_p2m_linux_after - linux_p2m_linux_before) == 1u)
+                && (linux_p2m_last_pid == linux_p2m_pid)
+                && (linux_p2m_last_type == PERSONA64_TYPE_LINUX_ELF)
+                && (linux_p2m_last_result == (u64)linux_p2m_child_pid))
+                ? 1u
+                : 0u;
+        linux_p2m_export_match =
+            ((linux_libc64_pthread_join_symbol_count() == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2m_pid, "pthread_join")
+                    == linux_p2m_result.pthread_join_fn)
+                && (linux_p2m_result.pthread_join_fn
+                    == (linux_p2m_result.image_base + LINUX_LIBC64_RVA_PTHREAD_JOIN))
+                && (linux_p2m_result.pthread_join_symbol_count
+                    == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+                && (linux_p2m_result.unavailable_symbol_count
+                    == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        linux_p2m_reap_match =
+            ((linux_p2m_clone_return == (u64)linux_p2m_child_pid)
+                && (linux_p2m_child_pid != PROCESS64_INVALID_PID)
+                && (linux_p2m_child_task != SCHEDULER64_INVALID_TASK)
+                && (linux_p2m_child_task_pid == linux_p2m_child_pid)
+                && (linux_p2m_child_task_state == SCHEDULER64_TASK_READY)
+                && (linux_p2m_child_task_rsp == linux_p2m_child_stack_top)
+                && (linux_p2m_child_exit_result == 0u)
+                && (linux_p2m_child_exit_code == 45u)
+                && (process64_principal(linux_p2m_child_pid) == 0u))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2m_reset =
+            (scheduler64_runqueue_current_task_id() == SCHEDULER64_INVALID_TASK)
+                ? 1u
+                : 0u;
+    }
+    linux_p2m_unmap_child_stack =
+        (linux_p2m_child_stack_map == linux_p2m_child_stack_addr)
+            ? vma64_unmap(linux_p2m_pid, linux_p2m_child_stack_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2m_unmap_stack =
+        (linux_p2m_stack_map == linux_p2m_stack_addr)
+            ? vma64_unmap(linux_p2m_pid, linux_p2m_stack_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2m_unmap_code =
+        (linux_p2m_code_map == linux_p2m_code_addr)
+            ? vma64_unmap(linux_p2m_pid, linux_p2m_code_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2m_unmap_data =
+        (linux_p2m_data_map == linux_p2m_data_addr)
+            ? vma64_unmap(linux_p2m_pid, linux_p2m_data_addr, VMA64_PAGE_BYTES)
+            : 0u;
+    linux_p2m_libc_release =
+        (linux_p2m_load == LINUX_LIBC64_OK)
+            ? linux_libc64_release_process(linux_p2m_pid)
+            : 0u;
+    linux_p2m_fd_release =
+        (linux_p2m_fd_init != 0u)
+            ? fd64_release_process(linux_p2m_pid)
+            : 0u;
+    linux_p2m_persona_release =
+        (linux_p2m_bind == PERSONA64_ATTACH_OK)
+            ? persona64_release(linux_p2m_pid)
+            : 0u;
+    linux_p2m_audit_release =
+        (linux_p2m_audit_attach != 0u)
+            ? persona_audit64_release(linux_p2m_pid)
+            : 0u;
+    linux_p2m_vma_release =
+        (linux_p2m_vma_init != 0u)
+            ? vma64_release_process(linux_p2m_pid)
+            : 0u;
+    linux_p2m_parent_release =
+        (linux_p2m_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p2m_pid)
+            : 0u;
+    linux_p2m_cleanup =
+        ((process64_persona_ctx(linux_p2m_pid) == 0)
+            && (process64_audit_ctx(linux_p2m_pid) == 0)
+            && (process64_vma_root(linux_p2m_pid) == 0)
+            && (process64_fd_table(linux_p2m_pid) == 0)
+            && (linux_p2m_unmap_child_stack != 0u)
+            && (linux_p2m_unmap_stack != 0u)
+            && (linux_p2m_unmap_code != 0u)
+            && (linux_p2m_unmap_data != 0u)
+            && (linux_p2m_libc_release >= 2u)
+            && (linux_p2m_fd_release >= 3u)
+            && (linux_p2m_persona_release != 0u)
+            && (linux_p2m_audit_release != 0u)
+            && (linux_p2m_vma_release == 0u)
+            && (linux_p2m_parent_release != 0u)
+            && (paging64_user_page_present(linux_p2m_libc_base + LINUX_LIBC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(linux_p2m_libc_base + LINUX_LIBC64_DATA_RVA) == 0u))
+            ? 1u
+            : 0u;
+    linux_p2m_positive =
+        ((linux_p2m_pid != PROCESS64_INVALID_PID)
+            && (linux_p2m_vma_init != 0u)
+            && (linux_p2m_audit_attach != 0u)
+            && (linux_p2m_fd_init != 0u)
+            && (linux_p2m_bind == PERSONA64_ATTACH_OK)
+            && (linux_p2m_load == LINUX_LIBC64_OK)
+            && (linux_p2m_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2m_code_map == linux_p2m_code_addr)
+            && (linux_p2m_data_map == linux_p2m_data_addr)
+            && (linux_p2m_stack_map == linux_p2m_stack_addr)
+            && (linux_p2m_child_stack_map == linux_p2m_child_stack_addr)
+            && (linux_p2m_code_copy != 0u)
+            && (linux_p2m_data_init != 0u)
+            && (linux_p2m_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2m_runqueue_start != 0u)
+            && (linux_p2m_current_pid == linux_p2m_pid)
+            && (linux_p2m_transfer == 0x50324D31u)
+            && (linux_p2m_aux == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+            && (linux_p2m_return_match != 0u)
+            && (linux_p2m_wait_match != 0u)
+            && (linux_p2m_dispatch_match != 0u)
+            && (linux_p2m_export_match != 0u)
+            && (linux_p2m_reap_match != 0u)
+            && (linux_p2m_audit_after == (linux_p2m_audit_before + 1u))
+            && (linux_p2m_audit_read != 0u)
+            && (linux_p2m_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2m_audit_record.event_code == LINUX_ABI64_SYSCALL_WAIT4)
+            && (linux_p2m_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (paging64_user_page_present(linux_p2m_child_stack_addr) == 0u)
+            && (paging64_user_page_present(linux_p2m_stack_addr) == 0u)
+            && (paging64_user_page_present(linux_p2m_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2m_data_addr) == 0u)
+            && (linux_p2m_reset != 0u)
+            && (linux_p2m_cleanup != 0u))
+            ? 1u
+            : 0u;
+    if ((linux_p2d_unmap_code == 0u) && (linux_p2d_code_map == linux_p2d_code_addr))
+    {
+        linux_p2d_unmap_code = vma64_unmap(linux_p2_pid, linux_p2d_code_addr, VMA64_PAGE_BYTES);
+    }
+    if ((linux_p2d_unmap_data == 0u) && (linux_p2d_data_map == linux_p2d_data_addr))
+    {
+        linux_p2d_unmap_data = vma64_unmap(linux_p2_pid, linux_p2d_data_addr, VMA64_PAGE_BYTES);
+    }
+    linux_p2d_positive =
+        ((linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.libc_result.stdio_symbol_count == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2d_code_map == linux_p2d_code_addr)
+            && (linux_p2d_data_map == linux_p2d_data_addr)
+            && (linux_p2d_code_copy != 0u)
+            && (linux_p2d_data_init != 0u)
+            && (linux_p2d_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2d_runqueue_start != 0u)
+            && (linux_p2d_current_pid == linux_p2_pid)
+            && (linux_p2d_transfer == 0x50324431u)
+            && (linux_p2d_aux == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2d_return_match != 0u)
+            && (linux_p2d_deny_match != 0u)
+            && (linux_p2d_console_match != 0u)
+            && (linux_p2d_dispatch_match != 0u)
+            && (linux_p2d_export_match != 0u)
+            && (linux_p2d_audit_after == (linux_p2d_audit_before + 1u))
+            && (linux_p2d_audit_read != 0u)
+            && (linux_p2d_audit_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (linux_p2d_audit_record.event_code == LINUX_ABI64_SYSCALL_WRITE)
+            && (linux_p2d_audit_record.result == PERSONA_AUDIT64_RESULT_OK)
+            && (linux_p2d_unmap_code != 0u)
+            && (linux_p2d_unmap_data != 0u)
+            && (paging64_user_page_present(linux_p2d_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2d_data_addr) == 0u)
+            && (linux_p2d_reset != 0u))
+            ? 1u
+            : 0u;
+    linux_p2j_pid = process64_spawn_clone(init_pid);
+    linux_p2j_vma_init =
+        (linux_p2j_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p2j_pid)
+            : 0u;
+    linux_p2j_audit_attach =
+        (linux_p2j_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p2j_pid)
+            : 0u;
+    linux_p2j_bind =
+        (linux_p2j_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p2j_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_p2j_libc_base = 0x0000000047B00000ull;
+    linux_p2j_code_addr = 0x0000000047B30000ull;
+    linux_p2j_data_addr = 0x0000000047B40000ull;
+    linux_p2j_stack_addr = 0x0000000047B50000ull;
+    linux_p2j_load =
+        ((linux_p2j_vma_init != 0u)
+            && (linux_p2j_audit_attach != 0u)
+            && (linux_p2j_bind == PERSONA64_ATTACH_OK))
+            ? linux_libc64_load(linux_p2j_pid, linux_p2j_libc_base, &linux_p2j_result)
+            : LINUX_LIBC64_DENIED;
+    linux_p2j_code_map =
+        (linux_p2j_load == LINUX_LIBC64_OK)
+            ? vma64_map_anon(
+                linux_p2j_pid,
+                linux_p2j_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2j_data_map =
+        (linux_p2j_code_map == linux_p2j_code_addr)
+            ? vma64_map_anon(
+                linux_p2j_pid,
+                linux_p2j_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    linux_p2j_stack_map =
+        (linux_p2j_data_map == linux_p2j_data_addr)
+            ? vma64_map_anon(
+                linux_p2j_pid,
+                linux_p2j_stack_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (linux_p2j_stack_map == linux_p2j_stack_addr)
+    {
+        volatile u8 *linux_p2j_code = (volatile u8 *)(u64)linux_p2j_code_addr;
+        volatile u8 *linux_p2j_data = (volatile u8 *)(u64)linux_p2j_data_addr;
+
+        for (linux_p2j_i = 0u; linux_p2j_i < VMA64_PAGE_BYTES; ++linux_p2j_i)
+        {
+            linux_p2j_data[linux_p2j_i] = 0u;
+        }
+        for (linux_p2j_i = 0u; linux_p2j_i < (u32)sizeof(linux_p2j_harness_template); ++linux_p2j_i)
+        {
+            linux_p2j_code[linux_p2j_i] = linux_p2j_harness_template[linux_p2j_i];
+        }
+        SCAFFOLD_STORE_LE64(linux_p2j_code, 0x02u, linux_libc64_export(linux_p2j_pid, "abort"));
+        SCAFFOLD_STORE_LE64(linux_p2j_code, 0x0Eu, linux_p2j_data_addr + 0x80ull);
+        linux_p2j_code_prot = paging64_user_page_protection(linux_p2j_code_addr);
+        linux_p2j_code_copy =
+            ((linux_p2j_code[0] == 0x48u)
+                && (linux_p2j_code[0x2Au] == 0xF4u)
+                && (linux_p2j_code_prot
+                    == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_WRITE | PAGING64_USER_PROT_EXECUTE)))
+                ? 1u
+                : 0u;
+        linux_p2j_export_match =
+            ((linux_libc64_abort_symbol_count() == LINUX_LIBC64_ABORT_SYMBOL_COUNT)
+                && (linux_libc64_export(linux_p2j_pid, "abort") == linux_p2j_result.abort_fn)
+                && (linux_p2j_result.abort_fn == (linux_p2j_result.image_base + LINUX_LIBC64_RVA_ABORT))
+                && (linux_p2j_result.abort_symbol_count == LINUX_LIBC64_ABORT_SYMBOL_COUNT)
+                && (linux_p2j_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT))
+                ? 1u
+                : 0u;
+        linux_p2j_vma_ctx = process64_vma_root(linux_p2j_pid);
+        linux_p2j_audit_ctx = process64_audit_ctx(linux_p2j_pid);
+        scheduler64_runqueue_reset();
+        linux_p2j_task =
+            scheduler64_runqueue_register_process_task(
+                linux_p2j_pid,
+                process64_runtime_token(linux_p2j_pid),
+                process64_runtime_user_entry_token(linux_p2j_pid),
+                linux_p2j_code_addr,
+                linux_p2j_stack_addr + VMA64_PAGE_BYTES,
+                0x002B0033ull,
+                0x0000000000000002ull);
+        linux_p2j_runqueue_start =
+            ((linux_p2j_code_copy != 0u)
+                && (linux_p2j_export_match != 0u)
+                && (linux_p2j_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(linux_p2j_task)
+                : 0u;
+        linux_p2j_current_pid = scheduler64_runqueue_current_pid();
+        linux_p2j_native_before = syscall64_native_count();
+        linux_p2j_persona_before = syscall64_native_persona_dispatch_count();
+        linux_p2j_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_p2j_exit_group_before = linux_abi64_exit_group_count();
+        linux_p2j_transfer =
+            (linux_p2j_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_p2j_code_addr,
+                    linux_p2j_stack_addr + VMA64_PAGE_BYTES,
+                    0x002B0033ull,
+                    0x0000000000000002ull)
+                : 0u;
+        linux_p2j_aux = interrupts64_user_entry_probe_aux();
+        linux_p2j_native_after = syscall64_native_count();
+        linux_p2j_persona_after = syscall64_native_persona_dispatch_count();
+        linux_p2j_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_p2j_exit_group_after = linux_abi64_exit_group_count();
+        linux_p2j_return_value = *((volatile u64 *)(u64)(linux_p2j_data_addr + 0x80ull));
+        linux_p2j_exited = linux_abi64_process_exited(linux_p2j_pid);
+        linux_p2j_exit_code = linux_abi64_exit_code(linux_p2j_pid);
+        linux_p2j_last_pid = linux_abi64_last_exit_pid();
+        linux_p2j_last_code = linux_abi64_last_exit_code();
+        linux_p2j_last_vma = linux_abi64_last_exit_vma_regions();
+        linux_p2j_last_fd = linux_abi64_last_exit_fd_entries();
+        linux_p2j_last_persona = linux_abi64_last_exit_persona_released();
+        linux_p2j_last_audit_release = linux_abi64_last_exit_audit_released();
+        linux_p2j_last_audit_recorded = linux_abi64_last_exit_audit_recorded();
+        linux_p2j_slots_detached =
+            ((process64_vma_root(linux_p2j_pid) == 0)
+                && (process64_fd_table(linux_p2j_pid) == 0)
+                && (process64_persona_ctx(linux_p2j_pid) == 0)
+                && (process64_audit_ctx(linux_p2j_pid) == 0))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_p2j_reattach_vma =
+            ((linux_p2j_vma_ctx != 0) && (process64_vma_root(linux_p2j_pid) == 0))
+                ? process64_attach_vma(linux_p2j_pid, linux_p2j_vma_ctx)
+                : 0u;
+        linux_p2j_reattach_audit =
+            ((linux_p2j_audit_ctx != 0) && (process64_audit_ctx(linux_p2j_pid) == 0))
+                ? process64_attach_audit(linux_p2j_pid, linux_p2j_audit_ctx)
+                : 0u;
+        linux_p2j_audit_count_after_reattach =
+            (linux_p2j_reattach_audit != 0u)
+                ? persona_audit64_count(linux_p2j_pid)
+                : 0u;
+    }
+    linux_p2j_dispatch_match =
+        (((linux_p2j_native_after - linux_p2j_native_before) == 1u)
+            && ((linux_p2j_persona_after - linux_p2j_persona_before) == 1u)
+            && ((linux_p2j_linux_after - linux_p2j_linux_before) == 1u)
+            && ((linux_p2j_exit_group_after - linux_p2j_exit_group_before) == 1u))
+            ? 1u
+            : 0u;
+    linux_p2j_exit_match =
+        ((linux_p2j_exited != 0u)
+            && (linux_p2j_exit_code == LINUX_LIBC64_ABORT_EXIT_CODE)
+            && (linux_p2j_last_pid == linux_p2j_pid)
+            && (linux_p2j_last_code == LINUX_LIBC64_ABORT_EXIT_CODE)
+            && (linux_p2j_last_vma == 0u)
+            && (linux_p2j_last_fd == 0u)
+            && (linux_p2j_last_persona != 0u)
+            && (linux_p2j_last_audit_release == 0u)
+            && (linux_p2j_last_audit_recorded != 0u)
+            && (linux_p2j_slots_detached != 0u))
+            ? 1u
+            : 0u;
+    linux_p2j_vma_release =
+        (linux_p2j_reattach_vma != 0u)
+            ? vma64_release_process(linux_p2j_pid)
+            : 0u;
+    linux_p2j_audit_release =
+        (linux_p2j_reattach_audit != 0u)
+            ? persona_audit64_release(linux_p2j_pid)
+            : 0u;
+    linux_p2j_clone_release =
+        (linux_p2j_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p2j_pid)
+            : 0u;
+    linux_p2j_pages_clear =
+        ((paging64_user_page_present(linux_p2j_libc_base + LINUX_LIBC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(linux_p2j_libc_base + LINUX_LIBC64_DATA_RVA) == 0u)
+            && (paging64_user_page_present(linux_p2j_code_addr) == 0u)
+            && (paging64_user_page_present(linux_p2j_data_addr) == 0u)
+            && (paging64_user_page_present(linux_p2j_stack_addr) == 0u))
+            ? 1u
+            : 0u;
+    linux_p2j_cleanup =
+        ((linux_p2j_reattach_vma != 0u)
+            && (linux_p2j_vma_release >= 5u)
+            && (linux_p2j_reattach_audit != 0u)
+            && (linux_p2j_audit_count_after_reattach != 0u)
+            && (linux_p2j_audit_release != 0u)
+            && (linux_p2j_clone_release != 0u)
+            && (linux_p2j_pages_clear != 0u))
+            ? 1u
+            : 0u;
+    linux_p2j_positive =
+        ((linux_p2j_pid != PROCESS64_INVALID_PID)
+            && (linux_p2j_vma_init != 0u)
+            && (linux_p2j_audit_attach != 0u)
+            && (linux_p2j_bind == PERSONA64_ATTACH_OK)
+            && (linux_p2j_load == LINUX_LIBC64_OK)
+            && (linux_p2j_code_map == linux_p2j_code_addr)
+            && (linux_p2j_data_map == linux_p2j_data_addr)
+            && (linux_p2j_stack_map == linux_p2j_stack_addr)
+            && (linux_p2j_code_copy != 0u)
+            && (linux_p2j_export_match != 0u)
+            && (linux_p2j_task != SCHEDULER64_INVALID_TASK)
+            && (linux_p2j_runqueue_start != 0u)
+            && (linux_p2j_current_pid == linux_p2j_pid)
+            && (linux_p2j_transfer == 0x50324A31u)
+            && (linux_p2j_aux == LINUX_LIBC64_ABORT_SYMBOL_COUNT)
+            && (linux_p2j_return_value == 0ull)
+            && (linux_p2j_dispatch_match != 0u)
+            && (linux_p2j_exit_match != 0u)
+            && (linux_p2j_cleanup != 0u))
+            ? 1u
+            : 0u;
+    linux_p2_release = linux_dynamic64_release_launch(linux_p2_pid, &linux_p2_result);
+    linux_p2_fd_release = fd64_release_process(linux_p2_pid);
+    linux_p2_pages_clear =
+        ((paging64_user_page_present(0x0000000047880000ull) == 0u)
+            && (paging64_user_page_present(LINUX_DYNAMIC64_DEFAULT_BASE + LINUX_DYNAMIC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_DATA_RVA) == 0u)
+            && (paging64_user_page_present(0x0000000047980000ull) == 0u))
+            ? 1u
+            : 0u;
+    linux_p2_persona_release = persona64_release(linux_p2_pid);
+    linux_p2_audit_release = persona_audit64_release(linux_p2_pid);
+    linux_p2_vma_release = vma64_release_process(linux_p2_pid);
+    linux_p2_clone_release =
+        (linux_p2_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p2_pid)
+            : 0u;
+    linux_p2_cleanup =
+        ((process64_persona_ctx(linux_p2_pid) == 0)
+            && (process64_audit_ctx(linux_p2_pid) == 0)
+            && (process64_vma_root(linux_p2_pid) == 0)
+            && (process64_fd_table(linux_p2_pid) == 0)
+            && (linux_p2_clone_release != 0u))
+            ? 1u
+            : 0u;
+    linux_p2_positive =
+        ((linux_p2_pid != PROCESS64_INVALID_PID)
+            && (linux_p2_vma_init != 0u)
+            && (linux_p2_audit_attach != 0u)
+            && (linux_p2_fd_init != 0u)
+            && (linux_p2_bind == PERSONA64_ATTACH_OK)
+            && (linux_p2_init != 0u)
+            && (linux_p2_prepare == LINUX_DYNAMIC64_OK)
+            && (linux_p2_result.error == LINUX_DYNAMIC64_ERROR_NONE)
+            && (linux_p2_result.needed_result.needed_count == 1u)
+            && (linux_p2_result.needed_result.supported_count == 1u)
+            && (linux_p2_result.needed_result.missing_count == 0u)
+            && (linux_p2_result.needed_result.libc_needed_count == 1u)
+            && (linux_p2_result.libc_required == 1u)
+            && (linux_p2_result.libc_mapped == 1u)
+            && (linux_p2_result.libc_result.header.type == ELF64_TYPE_DYN)
+            && (linux_p2_result.libc_result.phdr_summary.load_count == 1u)
+            && (linux_p2_result.libc_result.phdr_summary.dynamic_count == 1u)
+            && (linux_p2_result.libc_result.symbol_count == LINUX_LIBC64_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.syscall_symbol_count == LINUX_LIBC64_SYSCALL_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.memory_symbol_count == LINUX_LIBC64_MEMORY_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.string_symbol_count == LINUX_LIBC64_STRING_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.stdio_symbol_count == LINUX_LIBC64_STDIO_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.heap_symbol_count == LINUX_LIBC64_HEAP_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.abort_symbol_count == LINUX_LIBC64_ABORT_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.env_symbol_count == LINUX_LIBC64_ENV_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.errno_symbol_count == LINUX_LIBC64_ERRNO_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_create_symbol_count
+                == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_join_symbol_count
+                == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_exit_symbol_count
+                == LINUX_LIBC64_PTHREAD_EXIT_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_mutex_symbol_count == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_cond_symbol_count == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.pthread_tls_symbol_count == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.unavailable_symbol_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
+            && (linux_p2_result.libc_result.image_checksum != 0u)
+            && (linux_p2_result.libc_result.text_checksum != 0u)
+            && (linux_p2_result.libc_result.rodata_checksum != 0u)
+            && (linux_p2_result.libc_result.text_protection
+                == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
+            && (linux_p2_export_match != 0u)
+            && (linux_p2_missing_export != 0u)
+            && (linux_p2_dep_libc != 0u)
+            && (linux_p2_dep_unknown == 0u)
+            && (linux_p2_context_match != 0u)
+            && (linux_p2_bad_load == LINUX_LIBC64_DENIED)
+            && (linux_p2_bad_load_result.error == LINUX_LIBC64_ERROR_BASE)
+            && (linux_p2_prepare_after == (linux_p2_prepare_before + 1u))
+            && (linux_p2_dynamic_load_after == (linux_p2_dynamic_load_before + 1u))
+            && (linux_p2_libc_load_after == (linux_p2_libc_load_before + 1u))
+            && (linux_p2_libc_denial_after == (linux_p2_libc_denial_before + 1u))
+            && (linux_p2_dep_supported_after == (linux_p2_dep_supported_before + 2u))
+            && (linux_p2_audit_after == (linux_p2_audit_before + 1u))
+            && (linux_p2_read_audit != 0u)
+            && (linux_p2_audit_record.event_type == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (linux_p2_audit_record.event_code == LINUX_LIBC64_ERROR_BASE)
+            && (linux_p2c_positive != 0u)
+            && (linux_p2d_positive != 0u)
+            && (linux_p2e_positive != 0u)
+            && (linux_p2f_positive != 0u)
+            && (linux_p2g_positive != 0u)
+            && (linux_p2h_positive != 0u)
+            && (linux_p2i_positive != 0u)
+            && (linux_p2k_positive != 0u)
+            && (linux_p2n_positive != 0u)
+            && (linux_p2o_positive != 0u)
+            && (linux_p2p_positive != 0u)
+            && (linux_p2l_positive != 0u)
+            && (linux_p2j_positive != 0u)
+            && (linux_p2_release >= 5u)
+            && (linux_p2_fd_release >= 3u)
+            && (linux_p2_pages_clear != 0u)
+            && (linux_p2_persona_release != 0u)
+            && (linux_p2_audit_release != 0u)
+            && (linux_p2_vma_release == 0u)
+            && (linux_p2_cleanup != 0u))
+            ? 1u
+            : 0u;
+    for (linux_p3_build_i = 0u;
+         linux_p3_build_i < (u32)sizeof(linux_p3_app_bytes);
+         ++linux_p3_build_i)
+    {
+        linux_p3_app_bytes[linux_p3_build_i] = linux_p1_app_bytes[linux_p3_build_i];
+        linux_p3_missing_bytes[linux_p3_build_i] = linux_p1_app_bytes[linux_p3_build_i];
+    }
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x98u, 0x0000000000000050ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0xA0u, 0x0000000000000050ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x280u, LINUX_DYNAMIC64_DT_NEEDED);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x288u, 0x0000000000000001ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x290u, LINUX_DYNAMIC64_DT_NEEDED);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x298u, 0x0000000000000020ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2A0u, LINUX_DYNAMIC64_DT_STRTAB);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2A8u, 0x0000000000000300ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2B0u, LINUX_DYNAMIC64_DT_STRSZ);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2B8u, 0x0000000000000080ull);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2C0u, LINUX_DYNAMIC64_DT_NULL);
+    SCAFFOLD_STORE_LE64(linux_p3_app_bytes, 0x2C8u, 0x0000000000000000ull);
+    linux_p3_app_bytes[0x300u] = 0u;
+    for (linux_p3_build_i = 0u;
+         linux_p3_build_i < (u32)sizeof(linux_p3_pthread_dep);
+         ++linux_p3_build_i)
+    {
+        linux_p3_app_bytes[0x301u + linux_p3_build_i] =
+            linux_p3_pthread_dep[linux_p3_build_i];
+    }
+    for (linux_p3_build_i = 0u;
+         linux_p3_build_i < (u32)sizeof(linux_p3_libc_dep);
+         ++linux_p3_build_i)
+    {
+        linux_p3_app_bytes[0x320u + linux_p3_build_i] =
+            linux_p3_libc_dep[linux_p3_build_i];
+    }
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x280u, LINUX_DYNAMIC64_DT_NEEDED);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x288u, 0x0000000000000001ull);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x290u, LINUX_DYNAMIC64_DT_STRTAB);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x298u, 0x0000000000000300ull);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x2A0u, LINUX_DYNAMIC64_DT_STRSZ);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x2A8u, 0x0000000000000080ull);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x2B0u, LINUX_DYNAMIC64_DT_NULL);
+    SCAFFOLD_STORE_LE64(linux_p3_missing_bytes, 0x2B8u, 0x0000000000000000ull);
+    linux_p3_missing_bytes[0x300u] = 0u;
+    for (linux_p3_build_i = 0u;
+         linux_p3_build_i < (u32)sizeof(linux_p3_missing_dep);
+         ++linux_p3_build_i)
+    {
+        linux_p3_missing_bytes[0x301u + linux_p3_build_i] =
+            linux_p3_missing_dep[linux_p3_build_i];
+    }
+
+    linux_p3_argv[0] = linux_p3_argv0;
+    linux_p3_pid = process64_spawn_clone(init_pid);
+    linux_p3_vma_init =
+        (linux_p3_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_p3_pid)
+            : 0u;
+    linux_p3_audit_attach =
+        (linux_p3_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_p3_pid)
+            : 0u;
+    linux_p3_bind =
+        (linux_p3_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_p3_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_p3_init =
+        ((linux_dynamic64_interpreter_image() != 0)
+            && (linux_libc64_image() != 0))
+            ? 1u
+            : 0u;
+    linux_p3_prepare_before = linux_dynamic64_prepare_count();
+    linux_p3_dynamic_load_before = linux_dynamic64_load_count();
+    linux_p3_libc_load_before = linux_libc64_load_count();
+    linux_p3_denial_before = linux_dynamic64_denial_count();
+    linux_p3_dep_denial_before = linux_dynamic64_dependency_denial_count();
+    linux_p3_dep_supported_before = linux_libc64_dependency_supported_count();
+    linux_p3_audit_before = persona_audit64_count(linux_p3_pid);
+    linux_p3_prepare =
+        ((linux_p3_vma_init != 0u)
+            && (linux_p3_audit_attach != 0u)
+            && (linux_p3_bind == PERSONA64_ATTACH_OK)
+            && (linux_p3_init != 0u))
+            ? linux_dynamic64_prepare(
+                linux_p3_pid,
+                linux_p3_app_bytes,
+                (u32)sizeof(linux_p3_app_bytes),
+                0x0000000047C00000ull,
+                0x0000000047C40000ull,
+                0x0000000047C80000ull,
+                LINUX_DYNAMIC64_STACK_BYTES,
+                1u,
+                linux_p3_argv,
+                0u,
+                0,
+                &linux_p3_result)
+            : LINUX_DYNAMIC64_DENIED;
+    linux_p3_alias_supported =
+        linux_libc64_pthread_dependency_supported("libpthread.so.0", 15u);
+    linux_p3_alias_missing =
+        linux_libc64_pthread_dependency_supported("libpthread_missing.so", 21u);
+    linux_p3_exit_export =
+        (linux_p3_result.libc_result.pthread_exit_fn
+            == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_EXIT))
+            ? 1u
+            : 0u;
+    linux_p3_exit_stub = 0u;
+    if ((linux_p3_exit_export != 0u)
+        && (linux_p2_libc_image != 0))
+    {
+        volatile u8 *linux_p3_exit_bytes =
+            (volatile u8 *)(u64)(
+                linux_p2_libc_image
+                + LINUX_LIBC64_TEXT_FILE_OFFSET
+                + (LINUX_LIBC64_RVA_PTHREAD_EXIT - LINUX_LIBC64_TEXT_RVA));
+        linux_p3_exit_stub =
+            ((linux_p3_exit_bytes[0] == 0xB8u)
+                && (linux_p3_exit_bytes[1] == (u8)(LINUX_ABI64_SYSCALL_EXIT & 0xFFu))
+                && (linux_p3_exit_bytes[2] == (u8)((LINUX_ABI64_SYSCALL_EXIT >> 8) & 0xFFu))
+                && (linux_p3_exit_bytes[3] == (u8)((LINUX_ABI64_SYSCALL_EXIT >> 16) & 0xFFu))
+                && (linux_p3_exit_bytes[4] == (u8)((LINUX_ABI64_SYSCALL_EXIT >> 24) & 0xFFu))
+                && (linux_p3_exit_bytes[5] == 0x0Fu)
+                && (linux_p3_exit_bytes[6] == 0x05u)
+                && (linux_p3_exit_bytes[7] == 0xC3u))
+                ? 1u
+                : 0u;
+    }
+    linux_p3_needed_match =
+        ((linux_p3_result.needed_result.needed_count == 2u)
+            && (linux_p3_result.needed_result.supported_count == 2u)
+            && (linux_p3_result.needed_result.missing_count == 0u)
+            && (linux_p3_result.needed_result.libc_needed_count == 1u)
+            && (linux_p3_result.needed_result.pthread_needed_count == 1u)
+            && (linux_p3_result.needed_result.first_needed_checksum != 0u)
+            && (linux_p3_result.needed_result.last_needed_checksum != 0u)
+            && (linux_p3_result.needed_result.first_needed_checksum
+                != linux_p3_result.needed_result.last_needed_checksum))
+            ? 1u
+            : 0u;
+    linux_p3_export_match =
+        ((linux_p3_result.libc_result.pthread_create_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_CREATE))
+            && (linux_p3_result.libc_result.pthread_join_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_JOIN))
+            && (linux_p3_result.libc_result.pthread_exit_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_EXIT))
+            && (linux_p3_result.libc_result.pthread_mutex_lock_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_MUTEX_LOCK))
+            && (linux_p3_result.libc_result.pthread_create_symbol_count
+                == LINUX_LIBC64_PTHREAD_CREATE_SYMBOL_COUNT)
+            && (linux_p3_result.libc_result.pthread_join_symbol_count
+                == LINUX_LIBC64_PTHREAD_JOIN_SYMBOL_COUNT)
+            && (linux_p3_result.libc_result.pthread_exit_symbol_count
+                == LINUX_LIBC64_PTHREAD_EXIT_SYMBOL_COUNT)
+            && (linux_p3_result.libc_result.pthread_mutex_symbol_count
+                == LINUX_LIBC64_PTHREAD_MUTEX_SYMBOL_COUNT)
+            && (linux_p3_result.libc_result.pthread_cond_init_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_COND_INIT))
+            && (linux_p3_result.libc_result.pthread_cond_destroy_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_COND_DESTROY))
+            && (linux_p3_result.libc_result.pthread_cond_wait_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_COND_WAIT))
+            && (linux_p3_result.libc_result.pthread_cond_signal_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_COND_SIGNAL))
+            && (linux_p3_result.libc_result.pthread_cond_broadcast_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_COND_BROADCAST))
+            && (linux_p3_result.libc_result.pthread_cond_symbol_count
+                == LINUX_LIBC64_PTHREAD_COND_SYMBOL_COUNT)
+            && (linux_p3_result.libc_result.pthread_key_create_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_KEY_CREATE))
+            && (linux_p3_result.libc_result.pthread_setspecific_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_SETSPECIFIC))
+            && (linux_p3_result.libc_result.pthread_getspecific_fn
+                == (LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC))
+            && (linux_p3_result.libc_result.pthread_tls_symbol_count
+                == LINUX_LIBC64_PTHREAD_TLS_SYMBOL_COUNT)
+            && (linux_p3_exit_export != 0u)
+            && (linux_p3_exit_stub != 0u))
+            ? 1u
+            : 0u;
+    linux_p3_context_match =
+        ((linux_p3_result.interpreter_result.context_stored != 0u)
+            && (linux_p3_result.libc_result.context_stored != 0u)
+            && (linux_p3_result.transfer_rip
+                == (0x0000000047C40000ull + LINUX_DYNAMIC64_RVA_DL_START))
+            && (linux_p3_result.initial_rsp != 0ull)
+            && (linux_p3_result.stack_result.error == ELF64_ERROR_NONE)
+            && (linux_p3_result.stack_result.alignment_ok != 0u)
+            && (linux_p3_result.transfer_ready == 0u)
+            && (linux_p3_result.error == LINUX_DYNAMIC64_ERROR_TRANSFER))
+            ? 1u
+            : 0u;
+    linux_p3_missing_prepare =
+        (linux_p3_bind == PERSONA64_ATTACH_OK)
+            ? linux_dynamic64_prepare(
+                linux_p3_pid,
+                linux_p3_missing_bytes,
+                (u32)sizeof(linux_p3_missing_bytes),
+                0x0000000047D00000ull,
+                0x0000000047D40000ull,
+                0x0000000047D80000ull,
+                LINUX_DYNAMIC64_STACK_BYTES,
+                1u,
+                linux_p3_argv,
+                0u,
+                0,
+                &linux_p3_missing_result)
+            : LINUX_DYNAMIC64_OK;
+    linux_p3_audit_after = persona_audit64_count(linux_p3_pid);
+    linux_p3_read_audit =
+        (linux_p3_audit_after > linux_p3_audit_before)
+            ? persona_audit64_read(
+                linux_p3_pid,
+                linux_p3_audit_after - 1u,
+                &linux_p3_audit_record)
+            : 0u;
+    linux_p3_prepare_after = linux_dynamic64_prepare_count();
+    linux_p3_dynamic_load_after = linux_dynamic64_load_count();
+    linux_p3_libc_load_after = linux_libc64_load_count();
+    linux_p3_denial_after = linux_dynamic64_denial_count();
+    linux_p3_dep_denial_after = linux_dynamic64_dependency_denial_count();
+    linux_p3_dep_supported_after = linux_libc64_dependency_supported_count();
+    linux_p3_denial_match =
+        ((linux_p3_missing_prepare == LINUX_DYNAMIC64_DENIED)
+            && (linux_p3_missing_result.error == LINUX_DYNAMIC64_ERROR_DEPENDENCY)
+            && (linux_p3_missing_result.needed_result.needed_count == 1u)
+            && (linux_p3_missing_result.needed_result.supported_count == 0u)
+            && (linux_p3_missing_result.needed_result.missing_count == 1u)
+            && (linux_p3_missing_result.needed_result.pthread_needed_count == 0u)
+            && (linux_p3_read_audit != 0u)
+            && (linux_p3_audit_record.event_type == PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED)
+            && (linux_p3_audit_record.event_code == LINUX_DYNAMIC64_ERROR_DEPENDENCY)
+            && (linux_p3_audit_record.result == LINUX_ABI64_ENOSYS))
+            ? 1u
+            : 0u;
+    linux_p3_release = linux_dynamic64_release_launch(linux_p3_pid, &linux_p3_result);
+    linux_p3_pages_clear =
+        ((paging64_user_page_present(0x0000000047C00000ull) == 0u)
+            && (paging64_user_page_present(0x0000000047C40000ull + LINUX_DYNAMIC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_TEXT_RVA) == 0u)
+            && (paging64_user_page_present(LINUX_LIBC64_DEFAULT_BASE + LINUX_LIBC64_DATA_RVA) == 0u)
+            && (paging64_user_page_present(0x0000000047C80000ull) == 0u)
+            && (paging64_user_page_present(0x0000000047D00000ull) == 0u))
+            ? 1u
+            : 0u;
+    linux_p3_persona_release = persona64_release(linux_p3_pid);
+    linux_p3_audit_release = persona_audit64_release(linux_p3_pid);
+    linux_p3_vma_release = vma64_release_process(linux_p3_pid);
+    linux_p3_clone_release =
+        (linux_p3_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_p3_pid)
+            : 0u;
+    linux_p3_cleanup =
+        ((process64_persona_ctx(linux_p3_pid) == 0)
+            && (process64_audit_ctx(linux_p3_pid) == 0)
+            && (process64_vma_root(linux_p3_pid) == 0)
+            && (linux_p3_clone_release != 0u))
+            ? 1u
+            : 0u;
+    linux_p3_positive =
+        ((linux_p3_init != 0u)
+            && (linux_p3_needed_match != 0u)
+            && (linux_p3_export_match != 0u)
+            && (linux_p3_context_match != 0u)
+            && (linux_p3_denial_match != 0u)
+            && (linux_p3_pages_clear != 0u)
+            && (linux_p3_cleanup != 0u))
+            ? 1u
+            : 0u;
+#endif
     fd_cleanup = fd64_release_process(init_pid);
     fd_post_detach = ((process64_fd_table(init_pid) == 0) && (fd64_live_count(init_pid) == 0u)) ? 1u : 0u;
     write_string("[x64] fd-B3 open-ramfs fd ");
@@ -23070,6 +39062,20 @@ static void log_process_namespace(void)
     write_dec_u32(linux_f25_waiters_after_wait);
     write_string(" f ");
     write_dec_u32(linux_f25_waiters_after_wake);
+    write_string(" t ");
+    write_dec_u32(linux_f25_task_id_before_wait);
+    write_string("/");
+    write_dec_u32(linux_f25_last_task);
+    write_string("/");
+    write_dec_u32(linux_f25_wait_task_state_after_wait);
+    write_string("/");
+    write_dec_u32(linux_f25_wait_task_state_after_wake);
+    write_string("/");
+    write_dec_u32(linux_f25_sched_block_count_after_wait - linux_f25_sched_block_count_before);
+    write_string("/");
+    write_dec_u32(linux_f25_sched_wake_count_after_wake - linux_f25_sched_wake_count_before);
+    write_string("/");
+    write_dec_u32(linux_f25_sched_denial_count_after - linux_f25_sched_denial_count_before);
     write_string(" v ");
     write_dec_u32(linux_f25_initial_value);
     write_string(" e ");
@@ -23078,6 +39084,10 @@ static void log_process_namespace(void)
     write_hex_u64(linux_f25_fault_return);
     write_string(" b ");
     write_hex_u64(linux_f25_badop_return);
+    write_string(" n ");
+    write_hex_u64(linux_f25_direct_return);
+    write_string("/");
+    write_dec_u32(linux_f25_direct_record.result);
     write_string(" r ");
     write_dec_u32(linux_f25_eagain_record.result);
     write_string("/");
@@ -23108,10 +39118,91 @@ static void log_process_namespace(void)
     write_dec_u32(linux_f25_last_value);
     write_string("/");
     write_dec_u32(linux_f25_last_wake);
+    write_string("/");
+    write_dec_u32(linux_f25_last_task);
     write_string(" c ");
     write_dec_u32(linux_f25_cleanup_unmap);
     write_string(" positive ");
     write_dec_u32(linux_f25_positive);
+    write_line("");
+    write_string("[x64] linux-abi-F25b futex-timeout wait ");
+    write_hex_u64(linux_f25b_wait_return);
+    write_string(" resume ");
+    write_hex_u64(linux_f25b_resume_return);
+    write_string(" states ");
+    write_dec_u32(linux_f25b_state_after_wait);
+    write_string("/");
+    write_dec_u32(linux_f25b_state_after_timeout);
+    write_string(" waiters ");
+    write_dec_u32(linux_f25b_waiters_after_wait);
+    write_string("/");
+    write_dec_u32(linux_f25b_waiters_after_timeout);
+    write_string(" pending ");
+    write_dec_u32(linux_f25b_sleep_pending_after_wait);
+    write_string("/");
+    write_dec_u32(linux_f25b_sleep_pending_after_timeout);
+    write_string(" switch ");
+    write_dec_u32(linux_f25b_switch_peer);
+    write_string("/");
+    write_dec_u32(linux_f25b_switch_waiter);
+    write_string(" ticks ");
+    write_dec_u32(linux_f25b_wake_tick);
+    write_string("/");
+    write_dec_u32(linux_f25b_elapsed);
+    write_string(" sched ");
+    write_dec_u32(linux_f25b_sched_block_after - linux_f25b_sched_block_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_sched_wake_after - linux_f25b_sched_wake_before);
+    write_string(" sleep ");
+    write_dec_u32(linux_f25b_sleep_count_after - linux_f25b_sleep_count_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_sleep_wake_after - linux_f25b_sleep_wake_before);
+    write_string(" zero ");
+    write_hex_u64(linux_f25b_zero_return);
+    write_string(" invalid ");
+    write_hex_u64(linux_f25b_invalid_return);
+    write_string(" fault ");
+    write_hex_u64(linux_f25b_fault_return);
+    write_string(" counts ");
+    write_dec_u32(linux_f25b_timed_after - linux_f25b_timed_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_timeout_after - linux_f25b_timeout_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_wait_after - linux_f25b_wait_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_denial_after - linux_f25b_denial_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_fault_after - linux_f25b_fault_before);
+    write_string(" audit ");
+    write_dec_u32(linux_f25b_audit_before);
+    write_string("/");
+    write_dec_u32(linux_f25b_audit_after_wait);
+    write_string("/");
+    write_dec_u32(linux_f25b_audit_after_timeout);
+    write_string("/");
+    write_dec_u32(linux_f25b_audit_after_zero);
+    write_string("/");
+    write_dec_u32(linux_f25b_audit_after_invalid);
+    write_string("/");
+    write_dec_u32(linux_f25b_audit_after_fault);
+    write_string(" records ");
+    write_dec_u32(linux_f25b_timeout_record.result);
+    write_string("/");
+    write_dec_u32(linux_f25b_zero_record.result);
+    write_string("/");
+    write_dec_u32(linux_f25b_invalid_record.result);
+    write_string("/");
+    write_dec_u32(linux_f25b_fault_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_f25b_last_timeout_task);
+    write_string("/");
+    write_dec_u32(linux_f25b_last_timeout_ticks);
+    write_string("/");
+    write_dec_u32(linux_f25b_last_timeout_result);
+    write_string(" cleanup ");
+    write_dec_u32(linux_f25b_cleanup_unmap);
+    write_string(" positive ");
+    write_dec_u32(linux_f25b_positive);
     write_line("");
     write_string("[x64] linux-abi-F26 clone ret ");
     write_hex_u64(linux_f26_clone_return);
@@ -24700,6 +40791,52 @@ static void log_process_namespace(void)
     write_dec_u32(pe_j12_denied);
     write_string("/");
     write_dec_u32(pe_j12_denied_error);
+    write_string(" ntdll ");
+    write_dec_u32(pe_j12_ntdll_load);
+    write_string("/");
+    write_hex_u64(pe_j12_ntdll_result.ldr_initialize_thunk);
+    write_string(" pte ");
+    write_dec_u32(pe_j12_ntdll_text_pte_before_exe);
+    write_string("/");
+    write_hex_u32(pe_j12_ntdll_text_prot_before_exe);
+    write_string("/");
+    write_dec_u32(pe_j12_ntdll_text_pte_after_exe);
+    write_string("/");
+    write_hex_u32(pe_j12_ntdll_text_prot_after_exe);
+    write_string(" exe ");
+    write_dec_u32(pe_j12_exe_launch);
+    write_string(" rip ");
+    write_hex_u64(pe_j12_exe_result.entry_rip);
+    write_string("/");
+    write_hex_u64(pe_j12_exe_result.transfer_rip);
+    write_string(" args ");
+    write_hex_u64(pe_j12_exe_result.arg_rcx);
+    write_string("/");
+    write_hex_u64(pe_j12_exe_result.arg_rdx);
+    write_string("/");
+    write_hex_u64(pe_j12_exe_result.arg_r8);
+    write_string(" ready ");
+    write_dec_u32(pe_j12_exe_result.transfer_ready);
+    write_string("/");
+    write_dec_u32(pe_j12_exe_result.transfer_executed);
+    write_string(" pages ");
+    write_dec_u32(pe_j12_exe_result.entry_page_present);
+    write_string("/");
+    write_hex_u32(pe_j12_exe_result.entry_page_prot);
+    write_string("/");
+    write_dec_u32(pe_j12_exe_result.stack_page_present);
+    write_string("/");
+    write_hex_u32(pe_j12_exe_result.stack_page_prot);
+    write_string(" result ");
+    write_hex_u32(pe_j12_exe_result.transfer_result);
+    write_string("/");
+    write_hex_u32(pe_j12_exe_result.transfer_aux);
+    write_string(" ctx ");
+    write_dec_u32(pe_j12_exe_result.context_stored);
+    write_string("/");
+    write_dec_u32(pe_j12_exe_context_match);
+    write_string(" err ");
+    write_dec_u32(pe_j12_exe_result.error);
     write_string(" cleanup ");
     write_dec_u32(pe_j12_cleanup);
     write_string("/");
@@ -24735,6 +40872,16 @@ static void log_process_namespace(void)
     write_dec_u32(windows_k1_entry_create_mutant);
     write_string("/");
     write_dec_u32(windows_k1_entry_release_mutant);
+    write_string("/");
+    write_dec_u32(windows_k1_entry_query_process);
+    write_string("/");
+    write_dec_u32(windows_k1_entry_query_system);
+    write_string("/");
+    write_dec_u32(windows_k1_entry_open_key);
+    write_string("/");
+    write_dec_u32(windows_k1_entry_create_key);
+    write_string("/");
+    write_dec_u32(windows_k1_entry_query_value_key);
     write_string(" bind ");
     write_dec_u32(windows_k1_bind);
     write_string("/");
@@ -25707,6 +41854,4331 @@ static void log_process_namespace(void)
     write_string(" positive ");
     write_dec_u32(windows_k10_positive);
     write_line("");
+    write_string("[x64] windows-abi-K10b wait-block direct ");
+    write_hex_u32(windows_k10b_direct_result);
+    write_string(" wait ");
+    write_hex_u32(windows_k10b_wait_result);
+    write_string(" release ");
+    write_hex_u32(windows_k10b_release_result);
+    write_string("/");
+    write_hex_u32(windows_k10b_child_release_result);
+    write_string(" tasks ");
+    write_dec_u32(windows_k10b_current_before_wait);
+    write_string("/");
+    write_dec_u32(windows_k10b_waiter_slot_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10b_waiter_state_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10b_owner_state_after_switch);
+    write_string("/");
+    write_dec_u32(windows_k10b_waiter_state_after_wake);
+    write_string("/");
+    write_dec_u32(windows_k10b_current_after_switch);
+    write_string("/");
+    write_dec_u32(windows_k10b_waiter_state_after_switch);
+    write_string(" sched ");
+    write_dec_u32(windows_k10b_block_count_after - windows_k10b_block_count_before);
+    write_string("/");
+    write_dec_u32(windows_k10b_wake_count_after - windows_k10b_wake_count_before);
+    write_string("/");
+    write_dec_u32(windows_k10b_sched_denial_after - windows_k10b_sched_denial_before);
+    write_string(" owner ");
+    write_dec_u32(windows_k10b_owner_after_release);
+    write_string("/");
+    write_dec_u32(windows_k10b_count_after_release);
+    write_string("/");
+    write_dec_u32(windows_k10b_owner_after_child_release);
+    write_string("/");
+    write_dec_u32(windows_k10b_count_after_child_release);
+    write_string(" prev ");
+    write_dec_u32(windows_k10b_owner_prev);
+    write_string("/");
+    write_dec_u32(windows_k10b_waiter_prev);
+    write_string(" audit ");
+    write_dec_u32(windows_k10b_audit_waiter_before);
+    write_string("/");
+    write_dec_u32(windows_k10b_audit_waiter_after_direct);
+    write_string("/");
+    write_dec_u32(windows_k10b_audit_waiter_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10b_audit_owner_after_create);
+    write_string("/");
+    write_dec_u32(windows_k10b_audit_owner_after_release);
+    write_string("/");
+    write_dec_u32(windows_k10b_audit_waiter_after_release);
+    write_string(" records ");
+    write_dec_u32((u32)windows_k10b_direct_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k10b_direct_record.result);
+    write_string("/");
+    write_dec_u32((u32)windows_k10b_wait_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k10b_wait_record.result);
+    write_string("/");
+    write_dec_u32((u32)windows_k10b_release_record.event_code);
+    write_string("/");
+    write_dec_u32((u32)windows_k10b_child_release_record.event_code);
+    write_string(" counts ");
+    write_dec_u32(windows_k10b_wait_count);
+    write_string("/");
+    write_dec_u32(windows_k10b_release_count);
+    write_string("/");
+    write_dec_u32(windows_k10b_denial_count);
+    write_string("/");
+    write_dec_u32(windows_k10b_handle_wait_count);
+    write_string("/");
+    write_dec_u32(windows_k10b_handle_release_count);
+    write_string("/");
+    write_dec_u32(windows_k10b_handle_denial_count);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k10b_cleanup);
+    write_string(" positive ");
+    write_dec_u32(windows_k10b_positive);
+    write_line("");
+    write_string("[x64] windows-abi-K10c wait-timeout ");
+    write_hex_u32(windows_k10c_create_result);
+    write_string("/");
+    write_hex_u32(windows_k10c_wait_result);
+    write_string("/");
+    write_hex_u64(windows_k10c_resume_result);
+    write_string("/");
+    write_hex_u32(windows_k10c_deny_result);
+    write_string(" s ");
+    write_dec_u32(windows_k10c_waiter_slot_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10c_state_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10c_state_after_timeout);
+    write_string("/");
+    write_dec_u32(windows_k10c_waiter_slot_after_timeout);
+    write_string(" p ");
+    write_dec_u32(windows_k10c_sleep_pending_after_wait);
+    write_string("/");
+    write_dec_u32(windows_k10c_sleep_pending_after_timeout);
+    write_string("/");
+    write_dec_u32(windows_k10c_sleep_elapsed);
+    write_string(" q ");
+    write_dec_u32(windows_k10c_sched_block_delta);
+    write_string("/");
+    write_dec_u32(windows_k10c_sched_wake_delta);
+    write_string("/");
+    write_dec_u32(windows_k10c_sleep_count_delta);
+    write_string("/");
+    write_dec_u32(windows_k10c_sleep_wake_delta);
+    write_string(" c ");
+    write_dec_u32(windows_k10c_timed_delta);
+    write_string("/");
+    write_dec_u32(windows_k10c_timeout_delta);
+    write_string("/");
+    write_dec_u32(windows_k10c_timeout_denial_delta);
+    write_string(" l ");
+    write_dec_u32(windows_k10c_last_timeout_task);
+    write_string("/");
+    write_dec_u32(windows_k10c_last_timeout_ticks);
+    write_string("/");
+    write_hex_u32(windows_k10c_last_timeout_result);
+    write_string(" a ");
+    write_dec_u32(windows_k10c_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k10c_audit_after_timeout);
+    write_string("/");
+    write_dec_u32(windows_k10c_audit_after_deny);
+    write_string(" r ");
+    write_dec_u32((u32)windows_k10c_timeout_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k10c_timeout_record.result);
+    write_string("/");
+    write_hex_u32(windows_k10c_deny_record.result);
+    write_string(" x ");
+    write_dec_u32(windows_k10c_cleanup);
+    write_string("/");
+    write_dec_u32(windows_k10c_positive);
+    write_line("");
+    write_string("[x64] windows-abi-K11 query basic ");
+    write_hex_u32(windows_k11_basic_result);
+    write_string(" entry ");
+    write_dec_u32(windows_k11_entry_query);
+    write_string(" peb ");
+    write_hex_u64(windows_k11_basic_peb);
+    write_string("/");
+    write_hex_u64(windows_k11_peb_result.peb_base);
+    write_string(" pid ");
+    write_dec_u32((u32)windows_k11_basic_pid_value);
+    write_string("/");
+    write_dec_u32(windows_k11_pid);
+    write_string(" parent ");
+    write_dec_u32((u32)windows_k11_basic_parent_value);
+    write_string(" ret ");
+    write_dec_u32(windows_k11_basic_return_length);
+    write_string("/");
+    write_dec_u32(windows_k11_debug_return_length);
+    write_string("/");
+    write_dec_u32(windows_k11_image_return_length);
+    write_string(" debug ");
+    write_hex_u32(windows_k11_debug_result);
+    write_string("/");
+    write_hex_u64(windows_k11_debug_port);
+    write_string(" image ");
+    write_hex_u32(windows_k11_image_result);
+    write_string(" len ");
+    write_dec_u32(windows_k11_image_length);
+    write_string("/");
+    write_dec_u32(windows_k11_image_maximum_length);
+    write_string(" buf ");
+    write_hex_u64(windows_k11_image_buffer);
+    write_string(" checksum ");
+    write_hex_u32(windows_k11_image_checksum);
+    write_string(" deny ");
+    write_hex_u32(windows_k11_deny_result);
+    write_string("/");
+    write_hex_u32(windows_k11_deny_record.result);
+    write_string(" audit ");
+    write_dec_u32(windows_k11_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k11_audit_after_basic);
+    write_string("/");
+    write_dec_u32(windows_k11_audit_after_debug);
+    write_string("/");
+    write_dec_u32(windows_k11_audit_after_image);
+    write_string("/");
+    write_dec_u32(windows_k11_audit_after_deny);
+    write_string(" records ");
+    write_dec_u32((u32)windows_k11_basic_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k11_basic_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k11_basic_record.result);
+    write_string("/");
+    write_dec_u32((u32)windows_k11_deny_record.event_type);
+    write_string("/");
+    write_hex_u32(windows_k11_deny_record.result);
+    write_string(" counts ");
+    write_dec_u32(windows_k11_query_count);
+    write_string("/");
+    write_dec_u32(windows_k11_denial_count);
+    write_string("/");
+    write_dec_u32(windows_k11_fault_count);
+    write_string(" last ");
+    write_dec_u32(windows_k11_last_class);
+    write_string("/");
+    write_hex_u32(windows_k11_last_result);
+    write_string("/");
+    write_hex_u64(windows_k11_last_peb);
+    write_string("/");
+    write_dec_u32(windows_k11_last_return_length);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k11_unmap_info);
+    write_string("/");
+    write_dec_u32(windows_k11_unmap_teb);
+    write_string("/");
+    write_dec_u32(windows_k11_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k11_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k11_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k11_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k11_positive);
+    write_line("");
+    write_string("[x64] windows-abi-K12 system basic ");
+    write_hex_u32(windows_k12_basic_result);
+    write_string(" entry ");
+    write_dec_u32(windows_k12_entry_query);
+    write_string(" page ");
+    write_dec_u32(windows_k12_basic_page_size);
+    write_string(" pages ");
+    write_dec_u32(windows_k12_basic_physical_pages);
+    write_string("/");
+    write_dec_u32(windows_k12_basic_highest_page);
+    write_string(" gran ");
+    write_hex_u32(windows_k12_basic_granularity);
+    write_string(" user ");
+    write_hex_u64(windows_k12_basic_min_user);
+    write_string("/");
+    write_hex_u64(windows_k12_basic_max_user);
+    write_string(" cpu ");
+    write_dec_u32(windows_k12_basic_processor_count);
+    write_string("/");
+    write_hex_u64(windows_k12_basic_affinity);
+    write_string(" processor ");
+    write_hex_u32(windows_k12_processor_result);
+    write_string("/");
+    write_dec_u32(windows_k12_processor_arch);
+    write_string("/");
+    write_dec_u32(windows_k12_processor_level);
+    write_string("/");
+    write_dec_u32(windows_k12_processor_revision);
+    write_string("/");
+    write_dec_u32(windows_k12_processor_maximum);
+    write_string("/");
+    write_hex_u32(windows_k12_processor_features);
+    write_string(" perf ");
+    write_hex_u32(windows_k12_perf_result);
+    write_string(" pages ");
+    write_dec_u32(windows_k12_perf_available_pages);
+    write_string("/");
+    write_dec_u32(windows_k12_perf_committed_pages);
+    write_string("/");
+    write_dec_u32(windows_k12_perf_commit_limit);
+    write_string("/");
+    write_dec_u32(windows_k12_perf_peak_commit);
+    write_string(" vma ");
+    write_dec_u32(windows_k12_perf_vma_claimed);
+    write_string("/");
+    write_dec_u32(windows_k12_perf_vma_free);
+    write_string(" psize ");
+    write_dec_u32(windows_k12_perf_page_size);
+    write_string(" ret ");
+    write_dec_u32(windows_k12_basic_return_length);
+    write_string("/");
+    write_dec_u32(windows_k12_processor_return_length);
+    write_string("/");
+    write_dec_u32(windows_k12_perf_return_length);
+    write_string(" checksum ");
+    write_hex_u32(windows_k12_perf_checksum);
+    write_string(" deny ");
+    write_hex_u32(windows_k12_deny_result);
+    write_string("/");
+    write_hex_u32(windows_k12_deny_record.result);
+    write_string(" audit ");
+    write_dec_u32(windows_k12_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k12_audit_after_basic);
+    write_string("/");
+    write_dec_u32(windows_k12_audit_after_processor);
+    write_string("/");
+    write_dec_u32(windows_k12_audit_after_perf);
+    write_string("/");
+    write_dec_u32(windows_k12_audit_after_deny);
+    write_string(" records ");
+    write_dec_u32((u32)windows_k12_basic_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k12_basic_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k12_basic_record.result);
+    write_string("/");
+    write_dec_u32((u32)windows_k12_deny_record.event_type);
+    write_string("/");
+    write_hex_u32(windows_k12_deny_record.result);
+    write_string(" counts ");
+    write_dec_u32(windows_k12_query_count);
+    write_string("/");
+    write_dec_u32(windows_k12_denial_count);
+    write_string("/");
+    write_dec_u32(windows_k12_fault_count);
+    write_string(" last ");
+    write_dec_u32(windows_k12_last_class);
+    write_string("/");
+    write_hex_u32(windows_k12_last_result);
+    write_string("/");
+    write_dec_u32(windows_k12_last_return_length);
+    write_string("/");
+    write_dec_u32(windows_k12_last_page_size);
+    write_string("/");
+    write_dec_u32(windows_k12_last_processor_count);
+    write_string("/");
+    write_dec_u32(windows_k12_last_physical_pages);
+    write_string("/");
+    write_dec_u32(windows_k12_last_free_pages);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k12_unmap_info);
+    write_string("/");
+    write_dec_u32(windows_k12_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k12_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k12_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k12_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k12_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K13 ntdll load ");
+    write_dec_u32(windows_k13_load);
+    write_string(" base ");
+    write_hex_u64(windows_k13_result.image_base);
+    write_string(" image ");
+    write_dec_u32(windows_k13_result.image_bytes);
+    write_string("/");
+    write_dec_u32(windows_k13_result.file_bytes);
+    write_string(" sections ");
+    write_dec_u32(windows_k13_result.section_count);
+    write_string("/");
+    write_dec_u32(windows_k13_result.mapped_count);
+    write_string(" symbols ");
+    write_dec_u32(windows_k13_result.symbol_count);
+    write_string(" checksum ");
+    write_hex_u32(windows_k13_result.image_checksum);
+    write_string(" text ");
+    write_dec_u32(windows_k13_text_pte);
+    write_string("/");
+    write_hex_u32(windows_k13_result.text_protection);
+    write_string("/");
+    write_hex_u32(windows_k13_result.text_checksum);
+    write_string(" rdata ");
+    write_dec_u32(windows_k13_rdata_pte);
+    write_string("/");
+    write_hex_u32(windows_k13_result.rdata_protection);
+    write_string("/");
+    write_hex_u32(windows_k13_result.rdata_checksum);
+    write_string(" exports ");
+    write_hex_u64(windows_k13_ldr_export);
+    write_string("/");
+    write_hex_u64(windows_k13_heap_export);
+    write_string("/");
+    write_hex_u64(windows_k13_ntwrite_export);
+    write_string("/");
+    write_hex_u64(windows_k13_missing_export);
+    write_string(" registry ");
+    write_dec_u32(windows_k13_registry_build);
+    write_string("/");
+    write_dec_u32(windows_k13_registry.registry.library_count);
+    write_string("/");
+    write_dec_u32(windows_k13_registry.libraries[0].symbol_count);
+    write_string(" ctx ");
+    write_dec_u32(windows_k13_result.context_stored);
+    write_string("/");
+    write_dec_u32(windows_k13_context_match);
+    write_string(" handoff ");
+    write_dec_u32(windows_k13_launch);
+    write_string("/");
+    write_dec_u32(windows_k13_transfer_match);
+    write_string(" rip ");
+    write_hex_u64(windows_k13_ldr_export);
+    write_string(" exe ");
+    write_dec_u32(windows_k13_exe_pte);
+    write_string("/");
+    write_hex_u32(windows_k13_exe_prot);
+    write_string(" deny ");
+    write_dec_u32(windows_k13_denied);
+    write_string("/");
+    write_dec_u32(windows_k13_denied_error);
+    write_string(" counts ");
+    write_dec_u32(windows_k13_load_count_snapshot);
+    write_string("/");
+    write_dec_u32(windows_k13_denial_count_snapshot);
+    write_string(" last ");
+    write_hex_u64(windows_k13_last_base_snapshot);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k13_unmap_text);
+    write_string("/");
+    write_dec_u32(windows_k13_unmap_rdata);
+    write_string("/");
+    write_dec_u32(windows_k13_unmap_stack);
+    write_string("/");
+    write_dec_u32(windows_k13_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k13_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k13_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k13_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k13_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K13b ntdll-syscall load ");
+    write_dec_u32(windows_k13b_load);
+    write_string(" export ");
+    write_hex_u64(windows_k13b_ntwrite_export);
+    write_string(" maps ");
+    write_hex_u64(windows_k13b_code_map);
+    write_string("/");
+    write_hex_u64(windows_k13b_data_map);
+    write_string(" copy ");
+    write_dec_u32(windows_k13b_code_copy);
+    write_string("/");
+    write_hex_u32(windows_k13b_code_prot);
+    write_string("/");
+    write_dec_u32(windows_k13b_data_init);
+    write_string(" run ");
+    write_hex_u32(windows_k13b_transfer);
+    write_string("/");
+    write_dec_u32(windows_k13b_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k13b_task);
+    write_string("/");
+    write_dec_u32(windows_k13b_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k13b_current_pid);
+    write_string(" ret ");
+    write_hex_u64(windows_k13b_return_status);
+    write_string(" iosb ");
+    write_hex_u32(windows_k13b_iosb_status);
+    write_string("/");
+    write_hex_u64(windows_k13b_iosb_info);
+    write_string("/");
+    write_hex_u64(windows_k13b_info_copy);
+    write_string(" console ");
+    write_dec_u32(windows_k13b_console_after_count - windows_k13b_console_before_count);
+    write_string("/");
+    write_dec_u32(windows_k13b_console_after_bytes - windows_k13b_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(windows_k13b_native_after - windows_k13b_native_before);
+    write_string(" persona ");
+    write_dec_u32(windows_k13b_persona_after - windows_k13b_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k13b_windows_after - windows_k13b_windows_before);
+    write_string(" write ");
+    write_dec_u32(windows_k13b_write_after - windows_k13b_write_before);
+    write_string(" audit ");
+    write_dec_u32(windows_k13b_audit_after - windows_k13b_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k13b_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k13b_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k13b_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k13b_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k13b_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k13b_last_type);
+    write_string("/");
+    write_hex_u64(windows_k13b_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k13b_return_match);
+    write_string("/");
+    write_dec_u32(windows_k13b_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k13b_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k13b_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k13b_unmap_code);
+    write_string("/");
+    write_dec_u32(windows_k13b_unmap_data);
+    write_string("/");
+    write_dec_u32(windows_k13b_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k13b_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k13b_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k13b_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k13b_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K14 kernel32 load ");
+    write_dec_u32(windows_k14_load);
+    write_string(" dep ");
+    write_dec_u32(windows_k14_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k14_result.ntdll_ready);
+    write_string(" base ");
+    write_hex_u64(windows_k14_result.image_base);
+    write_string(" image ");
+    write_dec_u32(windows_k14_result.image_bytes);
+    write_string("/");
+    write_dec_u32(windows_k14_result.file_bytes);
+    write_string(" sections ");
+    write_dec_u32(windows_k14_result.section_count);
+    write_string("/");
+    write_dec_u32(windows_k14_result.mapped_count);
+    write_string(" symbols ");
+    write_dec_u32(windows_k14_result.symbol_count);
+    write_string(" checksum ");
+    write_hex_u32(windows_k14_result.image_checksum);
+    write_string(" text ");
+    write_dec_u32(windows_k14_text_pte);
+    write_string("/");
+    write_hex_u32(windows_k14_result.text_protection);
+    write_string("/");
+    write_hex_u32(windows_k14_result.text_checksum);
+    write_string(" rdata ");
+    write_dec_u32(windows_k14_rdata_pte);
+    write_string("/");
+    write_hex_u32(windows_k14_result.rdata_protection);
+    write_string("/");
+    write_hex_u32(windows_k14_result.rdata_checksum);
+    write_string(" exports ");
+    write_hex_u64(windows_k14_exit_export);
+    write_string("/");
+    write_hex_u64(windows_k14_write_console_export);
+    write_string("/");
+    write_hex_u64(windows_k14_virtual_alloc_export);
+    write_string("/");
+    write_hex_u64(windows_k14_missing_export);
+    write_string(" registry ");
+    write_dec_u32(windows_k14_registry_build);
+    write_string("/");
+    write_dec_u32(windows_k14_registry.registry.library_count);
+    write_string("/");
+    write_dec_u32(windows_k14_registry.libraries[0].symbol_count);
+    write_string("/");
+    write_dec_u32(windows_k14_registry.libraries[1].symbol_count);
+    write_string(" ctx ");
+    write_dec_u32(windows_k14_result.context_stored);
+    write_string("/");
+    write_dec_u32(windows_k14_context_match);
+    write_string(" bridge ");
+    write_hex_u32(windows_k14_result.nt_call_bridge_mask);
+    write_string(" live ");
+    write_dec_u32(windows_k14_result.live_stub_count);
+    write_string("/");
+    write_dec_u32(windows_k14_result.unavailable_stub_count);
+    write_string(" import ");
+    write_dec_u32(windows_k14_import_resolve);
+    write_string("/");
+    write_dec_u32(windows_k14_import_result.resolved_count);
+    write_string(" iat ");
+    write_hex_u64(windows_k14_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k14_iat_after);
+    write_string(" deny ");
+    write_dec_u32(windows_k14_denied);
+    write_string("/");
+    write_dec_u32(windows_k14_denied_error);
+    write_string(" import-deny ");
+    write_dec_u32(windows_k14_import_denied);
+    write_string("/");
+    write_dec_u32(windows_k14_import_denied_error);
+    write_string(" counts ");
+    write_dec_u32(windows_k14_load_count_snapshot);
+    write_string("/");
+    write_dec_u32(windows_k14_denial_count_snapshot);
+    write_string(" last ");
+    write_hex_u64(windows_k14_last_base_snapshot);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k14_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_import_text);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_import_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14_unmap_import_data);
+    write_string("/");
+    write_dec_u32(windows_k14_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k14_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k14_vma_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k14_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K14b kernel32-console maps ");
+    write_hex_u64(windows_k14b_code_map);
+    write_string("/");
+    write_hex_u64(windows_k14b_data_map);
+    write_string(" copy ");
+    write_dec_u32(windows_k14b_code_copy);
+    write_string("/");
+    write_hex_u32(windows_k14b_code_prot);
+    write_string("/");
+    write_dec_u32(windows_k14b_data_init);
+    write_string(" run ");
+    write_hex_u32(windows_k14b_transfer);
+    write_string("/");
+    write_dec_u32(windows_k14b_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k14b_task);
+    write_string("/");
+    write_dec_u32(windows_k14b_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k14b_current_pid);
+    write_string(" handle ");
+    write_hex_u64(windows_k14b_handle_value);
+    write_string(" ret ");
+    write_hex_u64(windows_k14b_return_value);
+    write_string("/");
+    write_dec_u32(windows_k14b_written_value);
+    write_string(" console ");
+    write_dec_u32(windows_k14b_console_after_count - windows_k14b_console_before_count);
+    write_string("/");
+    write_dec_u32(windows_k14b_console_after_bytes - windows_k14b_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(windows_k14b_native_after - windows_k14b_native_before);
+    write_string(" persona ");
+    write_dec_u32(windows_k14b_persona_after - windows_k14b_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k14b_windows_after - windows_k14b_windows_before);
+    write_string(" write ");
+    write_dec_u32(windows_k14b_write_after - windows_k14b_write_before);
+    write_string(" audit ");
+    write_dec_u32(windows_k14b_audit_after - windows_k14b_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k14b_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k14b_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k14b_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k14b_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k14b_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k14b_last_type);
+    write_string("/");
+    write_hex_u64(windows_k14b_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k14b_return_match);
+    write_string("/");
+    write_dec_u32(windows_k14b_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k14b_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k14b_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14b_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k14b_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14b_unmap_code);
+    write_string("/");
+    write_dec_u32(windows_k14b_unmap_data);
+    write_string("/");
+    write_dec_u32(windows_k14b_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k14b_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k14b_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k14b_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k14b_cleanup);
+    write_line("");
+    write_string("[x64] windows-shim-K14c imported-pe launch base ");
+    write_hex_u64(windows_k14c_base);
+    write_string("/");
+    write_hex_u64(windows_k14c_stack_base);
+    write_string(" deps ");
+    write_dec_u32(windows_k14c_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k14c_kernel32_load);
+    write_string("/");
+    write_dec_u32(windows_k14c_registry_build);
+    write_string(" parse ");
+    write_dec_u32(windows_k14c_image_ready);
+    write_string("/");
+    write_dec_u32(windows_k14c_header_parse);
+    write_string("/");
+    write_dec_u32(windows_k14c_parse);
+    write_string("/");
+    write_dec_u32(windows_k14c_map);
+    write_string("/");
+    write_dec_u32(windows_k14c_resolve);
+    write_string("/");
+    write_dec_u32(windows_k14c_prepare);
+    write_string(" imports ");
+    write_dec_u32(windows_k14c_import_result.descriptor_count);
+    write_string("/");
+    write_dec_u32(windows_k14c_import_result.thunk_count);
+    write_string("/");
+    write_dec_u32(windows_k14c_import_result.resolved_count);
+    write_string(" iat ");
+    write_hex_u64(windows_k14c_get_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k14c_get_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k14c_write_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k14c_write_iat_after);
+    write_string(" run ");
+    write_hex_u32(windows_k14c_transfer);
+    write_string("/");
+    write_dec_u32(windows_k14c_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k14c_task);
+    write_string("/");
+    write_dec_u32(windows_k14c_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k14c_current_pid);
+    write_string(" ret ");
+    write_hex_u64(windows_k14c_handle_value);
+    write_string("/");
+    write_hex_u64(windows_k14c_return_value);
+    write_string("/");
+    write_dec_u32(windows_k14c_written_value);
+    write_string(" console ");
+    write_dec_u32(windows_k14c_console_after_count - windows_k14c_console_before_count);
+    write_string("/");
+    write_dec_u32(windows_k14c_console_after_bytes - windows_k14c_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(windows_k14c_native_after - windows_k14c_native_before);
+    write_string(" persona ");
+    write_dec_u32(windows_k14c_persona_after - windows_k14c_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k14c_windows_after - windows_k14c_windows_before);
+    write_string(" write ");
+    write_dec_u32(windows_k14c_write_after - windows_k14c_write_before);
+    write_string(" audit ");
+    write_dec_u32(windows_k14c_audit_after - windows_k14c_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k14c_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k14c_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k14c_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k14c_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k14c_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k14c_last_type);
+    write_string("/");
+    write_hex_u64(windows_k14c_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k14c_return_match);
+    write_string("/");
+    write_dec_u32(windows_k14c_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k14c_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_text);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_data);
+    write_string("/");
+    write_dec_u32(windows_k14c_unmap_stack);
+    write_string("/");
+    write_dec_u32(windows_k14c_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k14c_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k14c_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k14c_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k14c_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K15 crt load ");
+    write_dec_u32(windows_k15_load);
+    write_string(" dep ");
+    write_dec_u32(windows_k15_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k15_kernel32_load);
+    write_string("/");
+    write_dec_u32(windows_k15_result.kernel32_ready);
+    write_string(" base ");
+    write_hex_u64(windows_k15_result.image_base);
+    write_string(" image ");
+    write_dec_u32(windows_k15_result.image_bytes);
+    write_string("/");
+    write_dec_u32(windows_k15_result.file_bytes);
+    write_string(" sections ");
+    write_dec_u32(windows_k15_result.section_count);
+    write_string("/");
+    write_dec_u32(windows_k15_result.mapped_count);
+    write_string(" symbols ");
+    write_dec_u32(windows_k15_result.symbol_count);
+    write_string(" checksum ");
+    write_hex_u32(windows_k15_result.image_checksum);
+    write_string(" text ");
+    write_dec_u32(windows_k15_text_pte);
+    write_string("/");
+    write_hex_u32(windows_k15_result.text_protection);
+    write_string("/");
+    write_hex_u32(windows_k15_result.text_checksum);
+    write_string(" rdata ");
+    write_dec_u32(windows_k15_rdata_pte);
+    write_string("/");
+    write_hex_u32(windows_k15_result.rdata_protection);
+    write_string("/");
+    write_hex_u32(windows_k15_result.rdata_checksum);
+    write_string(" exports ");
+    write_hex_u64(windows_k15_printf_export);
+    write_string("/");
+    write_hex_u64(windows_k15_malloc_export);
+    write_string("/");
+    write_hex_u64(windows_k15_memcpy_export);
+    write_string("/");
+    write_hex_u64(windows_k15_fopen_export);
+    write_string("/");
+    write_hex_u64(windows_k15_exit_export);
+    write_string("/");
+    write_hex_u64(windows_k15_missing_export);
+    write_string(" registry ");
+    write_dec_u32(windows_k15_registry_build);
+    write_string("/");
+    write_dec_u32(windows_k15_registry.registry.library_count);
+    write_string("/");
+    write_dec_u32(windows_k15_registry.libraries[0].symbol_count);
+    write_string("/");
+    write_dec_u32(windows_k15_registry.libraries[1].symbol_count);
+    write_string("/");
+    write_dec_u32(windows_k15_registry.libraries[2].symbol_count);
+    write_string("/");
+    write_dec_u32(windows_k15_registry.libraries[3].symbol_count);
+    write_string(" crt-reg ");
+    write_dec_u32(windows_k15_crt_registry_build);
+    write_string("/");
+    write_dec_u32(windows_k15_crt_registry.registry.library_count);
+    write_string("/");
+    write_dec_u32(windows_k15_crt_registry.libraries[0].symbol_count);
+    write_string("/");
+    write_dec_u32(windows_k15_crt_registry.libraries[1].symbol_count);
+    write_string(" ctx ");
+    write_dec_u32(windows_k15_result.context_stored);
+    write_string("/");
+    write_dec_u32(windows_k15_context_match);
+    write_string(" bridge ");
+    write_hex_u32(windows_k15_result.kernel32_export_mask);
+    write_string(" live ");
+    write_dec_u32(windows_k15_result.live_stub_count);
+    write_string("/");
+    write_dec_u32(windows_k15_result.unavailable_stub_count);
+    write_string(" parse ");
+    write_dec_u32(windows_k15_import_header_parse);
+    write_string("/");
+    write_dec_u32(windows_k15_import_parse);
+    write_string("/");
+    write_dec_u32(windows_k15_import_map);
+    write_string("/");
+    write_dec_u32(windows_k15_import_header.error);
+    write_string("/");
+    write_dec_u32(windows_k15_import_summary.error);
+    write_string("/");
+    write_dec_u32(windows_k15_import_map_result.error);
+    write_string(" import ");
+    write_dec_u32(windows_k15_import_resolve);
+    write_string("/");
+    write_dec_u32(windows_k15_import_result.descriptor_count);
+    write_string("/");
+    write_dec_u32(windows_k15_import_result.resolved_count);
+    write_string(" iat ");
+    write_hex_u64(windows_k15_printf_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k15_printf_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k15_exit_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k15_exit_iat_after);
+    write_string(" deny ");
+    write_dec_u32(windows_k15_denied);
+    write_string("/");
+    write_dec_u32(windows_k15_denied_error);
+    write_string(" import-deny ");
+    write_dec_u32(windows_k15_import_denied);
+    write_string("/");
+    write_dec_u32(windows_k15_import_denied_error);
+    write_string(" counts ");
+    write_dec_u32(windows_shim64_crt_load_count());
+    write_string("/");
+    write_dec_u32(windows_shim64_crt_denial_count());
+    write_string(" last ");
+    write_hex_u64(windows_shim64_crt_last_base());
+    write_string(" cleanup ");
+    write_dec_u32(windows_k15_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_crt_text);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_crt_rdata);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_import_text);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_import_rdata);
+    write_string("/");
+    write_dec_u32(windows_k15_unmap_import_data);
+    write_string("/");
+    write_dec_u32(windows_k15_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k15_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k15_vma_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k15_positive);
+    write_line("");
+    write_string("[x64] windows-vfs-L1 route bind ");
+    write_dec_u32(windows_l1_bind);
+    write_string(" c ");
+    write_hex_u32(windows_l1_c_result);
+    write_string("/");
+    write_dec_u32(windows_l1_c_route.route_type);
+    write_string("/");
+    write_hex_u32(windows_l1_c_route.target_hash);
+    write_string("/");
+    write_dec_u32(windows_l1_c_route.target_bytes);
+    write_string("/");
+    write_dec_u32(windows_l1_c_route.backend_endpoint);
+    write_string(" unc ");
+    write_hex_u32(windows_l1_unc_result);
+    write_string("/");
+    write_dec_u32(windows_l1_unc_route.route_type);
+    write_string("/");
+    write_dec_u32(windows_l1_unc_route.unavailable);
+    write_string("/");
+    write_hex_u32(windows_l1_unc_route.target_hash);
+    write_string("/");
+    write_dec_u32(windows_l1_unc_route.target_bytes);
+    write_string("/");
+    write_dec_u32(windows_l1_unc_route.backend_endpoint);
+    write_string(" con ");
+    write_hex_u32(windows_l1_con_result);
+    write_string("/");
+    write_dec_u32(windows_l1_con_route.route_type);
+    write_string("/");
+    write_dec_u32(windows_l1_con_route.device_id);
+    write_string("/");
+    write_dec_u32(windows_l1_con_route.target_bytes);
+    write_string("/");
+    write_dec_u32(windows_l1_con_route.backend_endpoint);
+    write_string(" null ");
+    write_hex_u32(windows_l1_null_result);
+    write_string("/");
+    write_dec_u32(windows_l1_null_route.route_type);
+    write_string("/");
+    write_dec_u32(windows_l1_null_route.device_id);
+    write_string("/");
+    write_dec_u32(windows_l1_null_route.target_bytes);
+    write_string(" bad ");
+    write_hex_u32(windows_l1_bad_result);
+    write_string("/");
+    write_dec_u32(windows_l1_bad_route.route_type);
+    write_string(" wrong ");
+    write_hex_u32(windows_l1_wrong_persona_result);
+    write_string("/");
+    write_dec_u32(windows_l1_wrong_route.route_type);
+    write_string(" counts ");
+    write_dec_u32(windows_l1_route_count);
+    write_string("/");
+    write_dec_u32(windows_l1_route_denials);
+    write_string(" last ");
+    write_dec_u32(windows_l1_last_route_type);
+    write_string("/");
+    write_hex_u32(windows_l1_last_target_hash);
+    write_string("/");
+    write_dec_u32(windows_l1_last_target_bytes);
+    write_string("/");
+    write_dec_u32(windows_l1_last_device_id);
+    write_string("/");
+    write_dec_u32(windows_l1_last_unavailable);
+    write_string(" cleanup ");
+    write_dec_u32(windows_l1_persona_release);
+    write_string("/");
+    write_dec_u32(windows_l1_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_l1_positive);
+    write_line("");
+    write_string("[x64] windows-vfs-L2 system32 bind ");
+    write_dec_u32(windows_l2_bind);
+    write_string("/");
+    write_dec_u32(windows_l2_handle_init);
+    write_string(" ok ");
+    write_dec_u32(windows_l2_ok_mask);
+    write_string(" miss ");
+    write_hex_u32(windows_l2_result[4]);
+    write_string(" ids ");
+    write_hex_u32(windows_l2_id_word);
+    write_string(" masks ");
+    write_dec_u32(windows_l2_type_mask);
+    write_string("/");
+    write_dec_u32(windows_l2_cap_mask);
+    write_string("/");
+    write_dec_u32(windows_l2_close_mask);
+    write_string(" counts ");
+    write_dec_u32(windows_l2_open_count);
+    write_string("/");
+    write_dec_u32(windows_l2_open_denials);
+    write_string("/");
+    write_dec_u32(windows_l2_route_count);
+    write_string("/");
+    write_dec_u32(windows_l2_route_denials);
+    write_string(" live ");
+    write_dec_u32(windows_l2_live_before_close);
+    write_string("/");
+    write_dec_u32(windows_l2_live_after_close);
+    write_string(" last ");
+    write_hex_u32(windows_l2_last_result);
+    write_string("/");
+    write_dec_u32(windows_l2_last_shim_id);
+    write_string(" cleanup ");
+    write_dec_u32(windows_l2_release_count);
+    write_string("/");
+    write_dec_u32(windows_l2_table_clear);
+    write_string("/");
+    write_dec_u32(windows_l2_persona_release);
+    write_string("/");
+    write_dec_u32(windows_l2_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_l2_positive);
+    write_line("");
+    write_string("[x64] windows-vfs-L3 users bind ");
+    write_dec_u32(windows_l3_bind);
+    write_string("/");
+    write_dec_u32(windows_l3_handle_init);
+    write_string(" create ");
+    write_hex_u32(windows_l3_result);
+    write_string("/");
+    write_dec_u32(windows_l3_type_ok);
+    write_string("/");
+    write_dec_u32(windows_l3_cap_ok);
+    write_string("/");
+    write_dec_u32(windows_l3_node_exists);
+    write_string(" node ");
+    write_dec_u32(windows_l3_node);
+    write_string("/");
+    write_dec_u32(windows_l3_last_node);
+    write_string(" mask ");
+    write_hex_u32(windows_l3_dir_mask);
+    write_string(" deny ");
+    write_hex_u32(windows_l3_deny_result);
+    write_string(" counts ");
+    write_dec_u32(windows_l3_profile_count);
+    write_string("/");
+    write_dec_u32(windows_l3_profile_denials);
+    write_string("/");
+    write_dec_u32(windows_l3_open_count);
+    write_string("/");
+    write_dec_u32(windows_l3_open_denials);
+    write_string("/");
+    write_dec_u32(windows_l3_route_count);
+    write_string("/");
+    write_dec_u32(windows_l3_route_denials);
+    write_string(" last ");
+    write_hex_u32(windows_l3_last_result);
+    write_string("/");
+    write_dec_u32(windows_l3_last_route_type);
+    write_string(" live ");
+    write_dec_u32(windows_l3_live_before_close);
+    write_string("/");
+    write_dec_u32(windows_l3_live_after_close);
+    write_string(" cleanup ");
+    write_dec_u32(windows_l3_close);
+    write_string("/");
+    write_dec_u32(windows_l3_release_count);
+    write_string("/");
+    write_dec_u32(windows_l3_table_clear);
+    write_string("/");
+    write_dec_u32(windows_l3_persona_release);
+    write_string("/");
+    write_dec_u32(windows_l3_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_l3_positive);
+    write_line("");
+    write_string("[x64] windows-vfs-L4 temp bind ");
+    write_dec_u32(windows_l4_bind);
+    write_string("/");
+    write_dec_u32(windows_l4_handle_init);
+    write_string(" create ");
+    write_hex_u32(windows_l4_result);
+    write_string("/");
+    write_dec_u32(windows_l4_type_ok);
+    write_string("/");
+    write_dec_u32(windows_l4_cap_ok);
+    write_string("/");
+    write_dec_u32(windows_l4_node_exists);
+    write_string(" io ");
+    write_hex_u32(windows_l4_write_result);
+    write_string("/");
+    write_dec_u32(windows_l4_bytes_written);
+    write_string("/");
+    write_hex_u32(windows_l4_read_result);
+    write_string("/");
+    write_dec_u32(windows_l4_bytes_read);
+    write_string("/");
+    write_hex_u32(windows_l4_checksum);
+    write_string("/");
+    write_dec_u32(windows_l4_match);
+    write_string(" delete ");
+    write_hex_u32(windows_l4_delete_result);
+    write_string("/");
+    write_hex_u32(windows_l4_post_result);
+    write_string(" node ");
+    write_dec_u32(windows_l4_node);
+    write_string("/");
+    write_dec_u32(windows_l4_last_node);
+    write_string(" mask ");
+    write_hex_u32(windows_l4_dir_mask);
+    write_string(" counts ");
+    write_dec_u32(windows_l4_create_count);
+    write_string("/");
+    write_dec_u32(windows_l4_write_count);
+    write_string("/");
+    write_dec_u32(windows_l4_read_count);
+    write_string("/");
+    write_dec_u32(windows_l4_delete_count);
+    write_string("/");
+    write_dec_u32(windows_l4_temp_denials);
+    write_string("/");
+    write_dec_u32(windows_l4_open_count);
+    write_string("/");
+    write_dec_u32(windows_l4_open_denials);
+    write_string("/");
+    write_dec_u32(windows_l4_route_count);
+    write_string("/");
+    write_dec_u32(windows_l4_route_denials);
+    write_string(" last ");
+    write_hex_u32(windows_l4_last_result);
+    write_string("/");
+    write_dec_u32(windows_l4_last_route_type);
+    write_string(" live ");
+    write_dec_u32(windows_l4_live_before_close);
+    write_string("/");
+    write_dec_u32(windows_l4_live_after_close);
+    write_string(" cleanup ");
+    write_dec_u32(windows_l4_close);
+    write_string("/");
+    write_dec_u32(windows_l4_release_count);
+    write_string("/");
+    write_dec_u32(windows_l4_table_clear);
+    write_string("/");
+    write_dec_u32(windows_l4_persona_release);
+    write_string("/");
+    write_dec_u32(windows_l4_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_l4_positive);
+    write_line("");
+    write_string("[x64] windows-vfs-L5 registry entries ");
+    write_dec_u32(windows_abi64_open_key_entry_installed());
+    write_string("/");
+    write_dec_u32(windows_abi64_create_key_entry_installed());
+    write_string("/");
+    write_dec_u32(windows_abi64_query_value_key_entry_installed());
+    write_string(" open ");
+    write_hex_u32(windows_l5_open_result);
+    write_string("/");
+    write_hex_u32((u32)windows_l5_handle);
+    write_string("/");
+    write_dec_u32(windows_l5_key_id);
+    write_string(" query ");
+    write_hex_u32(windows_l5_query_result);
+    write_string("/");
+    write_dec_u32(windows_l5_value_type);
+    write_string("/");
+    write_dec_u32(windows_l5_data_length);
+    write_string("/");
+    write_dec_u32(windows_l5_required_success);
+    write_string("/");
+    write_dec_u32(windows_l5_result_length_success);
+    write_string("/");
+    write_hex_u32(windows_l5_checksum);
+    write_string("/");
+    write_dec_u32(windows_l5_match);
+    write_string(" create ");
+    write_hex_u32(windows_l5_create_result);
+    write_string("/");
+    write_dec_u32(windows_l5_disposition);
+    write_string("/");
+    write_dec_u32(windows_l5_create_key_id);
+    write_string(" miss ");
+    write_hex_u32(windows_l5_missing_result);
+    write_string(" handles ");
+    write_dec_u32(windows_l5_key_type);
+    write_string("/");
+    write_dec_u32(windows_l5_create_type);
+    write_string(" caps ");
+    write_dec_u32(windows_l5_cap_ok);
+    write_string("/");
+    write_dec_u32(windows_l5_create_cap_ok);
+    write_string(" live ");
+    write_dec_u32(windows_l5_live_before_close);
+    write_string("/");
+    write_dec_u32(windows_l5_live_after_close);
+    write_string(" counts ");
+    write_dec_u32(windows_l5_abi_open_count);
+    write_string("/");
+    write_dec_u32(windows_l5_abi_create_count);
+    write_string("/");
+    write_dec_u32(windows_l5_abi_query_count);
+    write_string("/");
+    write_dec_u32(windows_l5_abi_denial_count);
+    write_string("/");
+    write_dec_u32(windows_l5_abi_fault_count);
+    write_string(" reg ");
+    write_dec_u32(windows_l5_reg_open_count);
+    write_string("/");
+    write_dec_u32(windows_l5_reg_create_count);
+    write_string("/");
+    write_dec_u32(windows_l5_reg_query_count);
+    write_string("/");
+    write_dec_u32(windows_l5_reg_denial_count);
+    write_string("/");
+    write_dec_u32(windows_l5_reg_dynamic_count);
+    write_string(" last ");
+    write_dec_u32(windows_l5_last_syscall);
+    write_string("/");
+    write_hex_u32(windows_l5_last_result);
+    write_string("/");
+    write_dec_u32(windows_l5_last_key_id);
+    write_string("/");
+    write_dec_u32(windows_l5_last_required);
+    write_string("/");
+    write_dec_u32(windows_l5_last_value_type);
+    write_string(" audit ");
+    write_dec_u32(windows_l5_audit_before);
+    write_string("/");
+    write_dec_u32(windows_l5_audit_after);
+    write_string(" record ");
+    write_dec_u32((u32)windows_l5_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_l5_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_l5_record.result);
+    write_string("/");
+    write_dec_u32((u32)windows_l5_record.persona_type);
+    write_string(" cleanup ");
+    write_dec_u32(windows_l5_close_key);
+    write_string("/");
+    write_dec_u32(windows_l5_close_created);
+    write_string("/");
+    write_dec_u32(windows_l5_release_count);
+    write_string("/");
+    write_dec_u32(windows_l5_table_clear);
+    write_string("/");
+    write_dec_u32(windows_l5_unmap);
+    write_string("/");
+    write_dec_u32(windows_l5_persona_release);
+    write_string("/");
+    write_dec_u32(windows_l5_audit_release);
+    write_string("/");
+    write_dec_u32(windows_l5_vma_release);
+    write_string("/");
+    write_dec_u32(windows_l5_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_l5_positive);
+    write_line("");
+    write_string("[x64] macho-M1 header parse ");
+    write_dec_u32(macho_m1_parse);
+    write_string(" magic ");
+    write_hex_u32(macho_m1_header.magic);
+    write_string(" cpu ");
+    write_hex_u32(macho_m1_header.cpu_type);
+    write_string(" subtype ");
+    write_dec_u32(macho_m1_header.cpu_subtype);
+    write_string(" filetype ");
+    write_dec_u32(macho_m1_header.filetype);
+    write_string(" cmds ");
+    write_dec_u32(macho_m1_header.ncmds);
+    write_string(" size ");
+    write_hex_u32(macho_m1_header.sizeofcmds);
+    write_string(" range ");
+    write_hex_u32(macho_m1_header.load_command_offset);
+    write_string("/");
+    write_hex_u32(macho_m1_header.load_command_end);
+    write_string(" flags ");
+    write_hex_u32(macho_m1_header.flags);
+    write_string(" deny ");
+    write_dec_u32(macho_m1_bad_magic);
+    write_string("/");
+    write_dec_u32(macho_m1_bad_magic_error);
+    write_string(" ");
+    write_dec_u32(macho_m1_bad_cpu);
+    write_string("/");
+    write_dec_u32(macho_m1_bad_cpu_error);
+    write_string(" ");
+    write_dec_u32(macho_m1_bad_subtype);
+    write_string("/");
+    write_dec_u32(macho_m1_bad_subtype_error);
+    write_string(" ");
+    write_dec_u32(macho_m1_bad_filetype);
+    write_string("/");
+    write_dec_u32(macho_m1_bad_filetype_error);
+    write_string(" ");
+    write_dec_u32(macho_m1_bad_range);
+    write_string("/");
+    write_dec_u32(macho_m1_bad_range_error);
+    write_string(" positive ");
+    write_dec_u32(macho_m1_positive);
+    write_line("");
+    write_string("[x64] macho-M2 fat slice ");
+    write_dec_u32(macho_m2_slice_result);
+    write_string(" magic ");
+    write_hex_u32(macho_m2_slice.magic);
+    write_string(" arches ");
+    write_dec_u32(macho_m2_slice.arch_count);
+    write_string(" index ");
+    write_dec_u32(macho_m2_slice.selected_index);
+    write_string(" cpu ");
+    write_hex_u32(macho_m2_slice.cpu_type);
+    write_string(" subtype ");
+    write_dec_u32(macho_m2_slice.cpu_subtype);
+    write_string(" off ");
+    write_hex_u32(macho_m2_slice.offset);
+    write_string(" size ");
+    write_hex_u32(macho_m2_slice.size);
+    write_string(" align ");
+    write_dec_u32(macho_m2_slice.align);
+    write_string(" thin ");
+    write_dec_u32(macho_m2_header_result);
+    write_string("/");
+    write_dec_u32(macho_m2_header.filetype);
+    write_string("/");
+    write_dec_u32(macho_m2_header.ncmds);
+    write_string("/");
+    write_hex_u32(macho_m2_header.sizeofcmds);
+    write_string(" deny ");
+    write_dec_u32(macho_m2_short);
+    write_string("/");
+    write_dec_u32(macho_m2_short_error);
+    write_string(" ");
+    write_dec_u32(macho_m2_bad_magic);
+    write_string("/");
+    write_dec_u32(macho_m2_bad_magic_error);
+    write_string(" ");
+    write_dec_u32(macho_m2_bad_count);
+    write_string("/");
+    write_dec_u32(macho_m2_bad_count_error);
+    write_string(" ");
+    write_dec_u32(macho_m2_no_x64);
+    write_string("/");
+    write_dec_u32(macho_m2_no_x64_error);
+    write_string(" ");
+    write_dec_u32(macho_m2_bad_range);
+    write_string("/");
+    write_dec_u32(macho_m2_bad_range_error);
+    write_string(" positive ");
+    write_dec_u32(macho_m2_positive);
+    write_line("");
+    write_string("[x64] macho-M3 segment-map ");
+    write_dec_u32(macho_m3_map);
+    write_string(" segments ");
+    write_dec_u32(macho_m3_result.mapped_count);
+    write_string("/");
+    write_dec_u32(macho_m3_result.segment_count);
+    write_string(" bytes ");
+    write_hex_u64(macho_m3_result.total_map_bytes);
+    write_string(" file ");
+    write_hex_u64(macho_m3_result.total_file_bytes);
+    write_string(" bss ");
+    write_hex_u64(macho_m3_result.total_bss_bytes);
+    write_string(" text ");
+    write_dec_u32(macho_m3_result.text_mapped);
+    write_string("/");
+    write_dec_u32(macho_m3_text_pte);
+    write_string("/");
+    write_hex_u32(macho_m3_text_prot);
+    write_string("/");
+    write_hex_u32(macho_m3_text_first);
+    write_string(" data ");
+    write_dec_u32(macho_m3_result.data_mapped);
+    write_string("/");
+    write_dec_u32(macho_m3_data_pte);
+    write_string("/");
+    write_hex_u32(macho_m3_data_prot);
+    write_string("/");
+    write_hex_u32(macho_m3_data_first);
+    write_string(" linkedit ");
+    write_dec_u32(macho_m3_result.linkedit_mapped);
+    write_string("/");
+    write_dec_u32(macho_m3_linkedit_pte);
+    write_string("/");
+    write_hex_u32(macho_m3_linkedit_prot);
+    write_string("/");
+    write_hex_u32(macho_m3_linkedit_first);
+    write_string(" bss-zero ");
+    write_dec_u32(macho_m3_bss_zero);
+    write_string(" source ");
+    write_hex_u32(macho_m3_result.source_checksum);
+    write_string(" mapped ");
+    write_hex_u32(macho_m3_result.mapped_checksum);
+    write_string(" denied ");
+    write_dec_u32(macho_m3_denied);
+    write_string(" err ");
+    write_dec_u32(macho_m3_denied_error);
+    write_string(" cleanup ");
+    write_dec_u32(macho_m3_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m3_after_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m3_denial_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macho_m3_positive);
+    write_line("");
+    write_string("[x64] macho-M4 lc-main ");
+    write_dec_u32(macho_m4_prepare);
+    write_string(" entry ");
+    write_hex_u64(macho_m4_result.entry_rip);
+    write_string(" off ");
+    write_hex_u64(macho_m4_result.entryoff);
+    write_string(" text ");
+    write_dec_u32(macho_m4_result.text_found);
+    write_string("/");
+    write_hex_u64(macho_m4_result.text_vmaddr);
+    write_string("/");
+    write_hex_u64(macho_m4_result.text_vmsize);
+    write_string("/");
+    write_dec_u32(macho_m4_result.entry_within_text);
+    write_string(" page ");
+    write_dec_u32(macho_m4_entry_pte);
+    write_string("/");
+    write_hex_u32(macho_m4_entry_prot);
+    write_string(" stack ");
+    write_dec_u32(macho_m4_result.stack_defaulted);
+    write_string("/");
+    write_dec_u32(macho_m4_result.stack_mapped);
+    write_string("/");
+    write_hex_u64(macho_m4_result.stack_size);
+    write_string("/");
+    write_hex_u64(macho_m4_result.stack_mapped_bytes);
+    write_string(" base ");
+    write_hex_u64(macho_m4_result.stack_base);
+    write_string(" top ");
+    write_hex_u64(macho_m4_result.stack_top);
+    write_string(" rsp ");
+    write_hex_u64(macho_m4_result.initial_rsp);
+    write_string(" spage ");
+    write_dec_u32(macho_m4_stack_pte);
+    write_string("/");
+    write_hex_u32(macho_m4_stack_prot);
+    write_string(" deny ");
+    write_dec_u32(macho_m4_denied);
+    write_string("/");
+    write_dec_u32(macho_m4_denied_error);
+    write_string(" cleanup ");
+    write_dec_u32(macho_m4_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m4_after_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macho_m4_positive);
+    write_line("");
+    write_string("[x64] macho-M5 dylib walk ");
+    write_dec_u32(macho_m5_walk);
+    write_string(" cmds ");
+    write_dec_u32(macho_m5_result.load_command_count);
+    write_string("/");
+    write_dec_u32(macho_m5_result.weak_command_count);
+    write_string(" record ");
+    write_dec_u32(macho_m5_result.recorded_count);
+    write_string("/");
+    write_dec_u32(macho_m5_result.shim_found_count);
+    write_string("/");
+    write_dec_u32(macho_m5_result.weak_absent_count);
+    write_string("/");
+    write_dec_u32(macho_m5_result.required_missing_count);
+    write_string(" first ");
+    write_dec_u32(macho_m5_result.first_shim_id);
+    write_string("/");
+    write_hex_u32(macho_m5_result.first_path_checksum);
+    write_string(" dep ");
+    write_dec_u32(macho_m5_result.dependencies[0].present);
+    write_string("/");
+    write_dec_u32(macho_m5_result.dependencies[0].weak);
+    write_string("/");
+    write_dec_u32(macho_m5_result.dependencies[0].shim_found);
+    write_string("/");
+    write_dec_u32(macho_m5_result.dependencies[0].shim_id);
+    write_string("/");
+    write_dec_u32(macho_m5_result.dependencies[0].name_offset);
+    write_string("/");
+    write_dec_u32(macho_m5_result.dependencies[0].path_length);
+    write_string("/");
+    write_hex_u32(macho_m5_result.dependencies[0].timestamp);
+    write_string("/");
+    write_hex_u32(macho_m5_result.dependencies[0].current_version);
+    write_string("/");
+    write_hex_u32(macho_m5_result.dependencies[0].compatibility_version);
+    write_string(" path ");
+    write_dec_u32(macho_m5_path_match);
+    write_string(" deny ");
+    write_dec_u32(macho_m5_bad_walk);
+    write_string("/");
+    write_dec_u32(macho_m5_bad_error);
+    write_string("/");
+    write_dec_u32(macho_m5_bad_result.required_missing_count);
+    write_string("/");
+    write_dec_u32(macho_m5_bad_result.load_command_count);
+    write_string(" positive ");
+    write_dec_u32(macho_m5_positive);
+    write_line("");
+    write_string("[x64] macho-M6 dyld fixups ");
+    write_dec_u32(macho_m6_apply);
+    write_string(" info ");
+    write_dec_u32(macho_m6_result.dyld_info_found);
+    write_string("/");
+    write_dec_u32(macho_m6_result.exports_trie_found);
+    write_string(" reb ");
+    write_dec_u32(macho_m6_result.rebase_count);
+    write_string("/");
+    write_hex_u64(macho_m6_result.rebase_target);
+    write_string("/");
+    write_hex_u64(macho_m6_result.rebase_before);
+    write_string("/");
+    write_hex_u64(macho_m6_result.rebase_after);
+    write_string("/");
+    write_hex_u64(macho_m6_rebase_readback);
+    write_string(" bind ");
+    write_dec_u32(macho_m6_result.bind_count);
+    write_string("/");
+    write_dec_u32(macho_m6_result.bind_ordinal);
+    write_string("/");
+    write_dec_u32(macho_m6_result.bind_shim_id);
+    write_string("/");
+    write_dec_u32(macho_m6_result.bind_symbol_length);
+    write_string("/");
+    write_hex_u32(macho_m6_result.bind_symbol_checksum);
+    write_string("/");
+    write_hex_u64(macho_m6_result.bind_target);
+    write_string("/");
+    write_hex_u64(macho_m6_result.bind_value);
+    write_string("/");
+    write_hex_u64(macho_m6_bind_readback);
+    write_string(" ranges ");
+    write_hex_u32(macho_m6_result.rebase_off);
+    write_string("/");
+    write_hex_u32(macho_m6_result.rebase_size);
+    write_string("/");
+    write_hex_u32(macho_m6_result.bind_off);
+    write_string("/");
+    write_hex_u32(macho_m6_result.bind_size);
+    write_string("/");
+    write_hex_u32(macho_m6_result.exports_trie_off);
+    write_string("/");
+    write_hex_u32(macho_m6_result.exports_trie_size);
+    write_string(" deny ");
+    write_dec_u32(macho_m6_bad_apply);
+    write_string("/");
+    write_dec_u32(macho_m6_bad_error);
+    write_string("/");
+    write_dec_u32(macho_m6_bad_result.bind_count);
+    write_string(" positive ");
+    write_dec_u32(macho_m6_positive);
+    write_line("");
+    write_string("[x64] macho-M7 tls ");
+    write_dec_u32(macho_m7_setup);
+    write_string(" sections ");
+    write_dec_u32(macho_m7_result.section_count);
+    write_string("/");
+    write_dec_u32(macho_m7_result.variables_count);
+    write_string("/");
+    write_dec_u32(macho_m7_result.regular_count);
+    write_string("/");
+    write_dec_u32(macho_m7_result.zerofill_count);
+    write_string(" vars ");
+    write_hex_u64(macho_m7_result.variables_addr);
+    write_string("/");
+    write_hex_u64(macho_m7_result.variables_bytes);
+    write_string(" regular ");
+    write_hex_u64(macho_m7_result.regular_addr);
+    write_string("/");
+    write_hex_u64(macho_m7_result.regular_bytes);
+    write_string(" zero ");
+    write_hex_u64(macho_m7_result.zerofill_addr);
+    write_string("/");
+    write_hex_u64(macho_m7_result.zerofill_bytes);
+    write_string(" block ");
+    write_hex_u64(macho_m7_result.tls_block_base);
+    write_string("/");
+    write_hex_u64(macho_m7_result.tls_block_bytes);
+    write_string(" template ");
+    write_hex_u64(macho_m7_result.tls_template_base);
+    write_string("/");
+    write_hex_u64(macho_m7_result.tls_template_bytes);
+    write_string("/");
+    write_hex_u32(macho_m7_template_first);
+    write_string(" gs ");
+    write_hex_u64(macho_m7_result.gs_base_before);
+    write_string("/");
+    write_hex_u64(macho_m7_result.gs_base_after);
+    write_string("/");
+    write_hex_u64(macho_m7_result.gs_zero_value);
+    write_string("/");
+    write_hex_u64(macho_m7_gs_zero);
+    write_string("/");
+    write_hex_u64(macho_m7_gs_restore);
+    write_string(" checks ");
+    write_hex_u32(macho_m7_result.template_checksum);
+    write_string("/");
+    write_hex_u32(macho_m7_result.block_checksum);
+    write_string(" pte ");
+    write_dec_u32(macho_m7_present);
+    write_string("/");
+    write_hex_u32(macho_m7_prot);
+    write_string(" ctx ");
+    write_dec_u32(macho_m7_result.context_stored);
+    write_string("/");
+    write_dec_u32(macho_m7_context_match);
+    write_string("/");
+    write_dec_u32(macho_m7_type);
+    write_string(" deny ");
+    write_dec_u32(macho_m7_denied);
+    write_string("/");
+    write_dec_u32(macho_m7_denied_error);
+    write_string(" cleanup ");
+    write_dec_u32(macho_m7_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m7_after_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m7_clone_release);
+    write_string(" positive ");
+    write_dec_u32(macho_m7_positive);
+    write_line("");
+    write_string("[x64] macho-M8 stack ");
+    write_dec_u32(macho_m8_build);
+    write_string(" rsp ");
+    write_hex_u64(macho_m8_result.initial_rsp);
+    write_string(" layout ");
+    write_dec_u32(macho_m8_result.layout_bytes);
+    write_string(" strings ");
+    write_dec_u32(macho_m8_result.string_bytes);
+    write_string(" slots ");
+    write_dec_u32(macho_m8_result.pointer_slot_count);
+    write_string(" counts ");
+    write_dec_u32(macho_m8_result.argc);
+    write_string("/");
+    write_dec_u32(macho_m8_result.envc);
+    write_string("/");
+    write_dec_u32(macho_m8_result.apple_count);
+    write_string("/");
+    write_dec_u32(macho_m8_result.aux_entry_count);
+    write_string(" ptrs ");
+    write_hex_u64(macho_m8_result.argv0_address);
+    write_string("/");
+    write_hex_u64(macho_m8_result.env0_address);
+    write_string("/");
+    write_hex_u64(macho_m8_result.apple_exec_path_address);
+    write_string("/");
+    write_hex_u64(macho_m8_result.apple_persona_address);
+    write_string("/");
+    write_hex_u64(macho_m8_result.auxv_address);
+    write_string(" reads ");
+    write_hex_u64(macho_m8_argc_value);
+    write_string("/");
+    write_hex_u64(macho_m8_argv0_ptr);
+    write_string("/");
+    write_hex_u64(macho_m8_env0_ptr);
+    write_string("/");
+    write_hex_u64(macho_m8_apple0_ptr);
+    write_string("/");
+    write_hex_u64(macho_m8_aux0_type);
+    write_string("/");
+    write_hex_u64(macho_m8_aux0_value);
+    write_string(" nulls ");
+    write_dec_u32(macho_m8_result.argv_null_ok);
+    write_string("/");
+    write_dec_u32(macho_m8_result.envp_null_ok);
+    write_string("/");
+    write_dec_u32(macho_m8_result.apple_null_ok);
+    write_string("/");
+    write_dec_u32(macho_m8_result.aux_null_ok);
+    write_string(" checks ");
+    write_hex_u32(macho_m8_result.exec_path_checksum);
+    write_string("/");
+    write_hex_u32(macho_m8_result.persona_string_checksum);
+    write_string("/");
+    write_hex_u32(macho_m8_result.stack_checksum);
+    write_string(" page ");
+    write_dec_u32(macho_m8_result.stack_page_present);
+    write_string("/");
+    write_hex_u32(macho_m8_result.stack_page_protection);
+    write_string(" ctx ");
+    write_dec_u32(macho_m8_context_match);
+    write_string("/");
+    write_dec_u32(macho_m8_type);
+    write_string(" deny ");
+    write_dec_u32(macho_m8_denied);
+    write_string("/");
+    write_dec_u32(macho_m8_denied_error);
+    write_string(" cleanup ");
+    write_dec_u32(macho_m8_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m8_after_cleanup);
+    write_string("/");
+    write_dec_u32(macho_m8_clone_release);
+    write_string(" prefix ");
+    write_dec_u32(macho_m8_exec_prefix_match);
+    write_string(" positive ");
+    write_dec_u32(macho_m8_positive);
+    write_line("");
+    write_string("[x64] macos-abi-N1 table ");
+    write_dec_u32(macos_n1_table_size);
+    write_string("/");
+    write_dec_u32(macos_n1_unimplemented_entries);
+    write_string(" entries ");
+    write_dec_u32(macos_n1_entries_installed);
+    write_string(" ctx ");
+    write_dec_u32(macos_n1_context_bound);
+    write_string(" setup ");
+    write_dec_u32(macos_n1_pid);
+    write_string("/");
+    write_dec_u32(macos_n1_vma_init);
+    write_string("/");
+    write_dec_u32(macos_n1_audit_attach);
+    write_string("/");
+    write_dec_u32(macos_n1_fd_init);
+    write_string("/");
+    write_dec_u32(macos_n1_bind);
+    write_string("/");
+    write_dec_u32((macos_n1_buffer_map == macos_n1_buffer_base) ? 1u : 0u);
+    write_string(" getpid ");
+    write_hex_u64(macos_n1_getpid_ret);
+    write_string(" write ");
+    write_hex_u64(macos_n1_write_ret);
+    write_string(" console ");
+    write_dec_u32(macos_n1_console_after_count - macos_n1_console_before_count);
+    write_string("/");
+    write_dec_u32(macos_n1_console_after_bytes - macos_n1_console_before_bytes);
+    write_string(" open ");
+    write_hex_u64(macos_n1_open_ret);
+    write_string(" read ");
+    write_hex_u64(macos_n1_read_ret);
+    write_string("/");
+    write_hex_u32(macos_n1_read_checksum);
+    write_string(" stat ");
+    write_hex_u64(macos_n1_stat_ret);
+    write_string("/");
+    write_hex_u64(macos_n1_stat_size);
+    write_string("/");
+    write_hex_u32(macos_n1_stat_mode);
+    write_string(" fstat ");
+    write_hex_u64(macos_n1_fstat_ret);
+    write_string(" close ");
+    write_hex_u64(macos_n1_close_ret);
+    write_string("/");
+    write_dec_u32(
+        (macos_n1_open_ret < (u64)FD64_TABLE_LIMIT)
+            ? ((fd64_entry_type(macos_n1_pid, (u32)macos_n1_open_ret) == FD64_TYPE_EMPTY)
+                ? 1u
+                : 0u)
+            : 0u);
+    write_string(" mmap ");
+    write_hex_u64(macos_n1_mmap_ret);
+    write_string(" pte ");
+    write_dec_u32(macos_n1_pte_mapped);
+    write_string("/");
+    write_hex_u32(macos_n1_prot_after_map);
+    write_string(" protect ");
+    write_hex_u64(macos_n1_mprotect_ret);
+    write_string("/");
+    write_hex_u32(macos_n1_prot_after_protect);
+    write_string(" munmap ");
+    write_hex_u64(macos_n1_munmap_ret);
+    write_string("/");
+    write_dec_u32(macos_n1_pte_after_unmap);
+    write_string(" clock ");
+    write_hex_u64(macos_n1_clock_ret);
+    write_string("/");
+    write_hex_u64(macos_n1_time_sec);
+    write_string("/");
+    write_hex_u64(macos_n1_time_nsec);
+    write_string(" sysctl ");
+    write_hex_u64(macos_n1_sysctl_ret);
+    write_string("/");
+    write_dec_u32((u32)macos_n1_sysctl_len);
+    write_string("/");
+    write_dec_u32(macos_n1_sysctl_prefix);
+    write_string("/");
+    write_dec_u32(macos_abi64_last_sysctl_name0());
+    write_string("/");
+    write_dec_u32(macos_abi64_last_sysctl_name1());
+    write_string("/");
+    write_dec_u32(macos_abi64_last_sysctl_bytes());
+    write_string(" deny ");
+    write_hex_u64(macos_n1_bad_open_ret);
+    write_string(" unimpl ");
+    write_hex_u64(macos_n1_unimpl_ret);
+    write_string(" audit ");
+    write_dec_u32(macos_n1_audit_before);
+    write_string("/");
+    write_dec_u32(macos_n1_audit_after_unimpl);
+    write_string("/");
+    write_dec_u32(macos_n1_read_unimpl_record);
+    write_string("/");
+    write_dec_u32((u32)macos_n1_unimpl_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)macos_n1_unimpl_record.event_code);
+    write_string("/");
+    write_dec_u32(macos_n1_unimpl_record.result);
+    write_string("/");
+    write_dec_u32((u32)macos_n1_unimpl_record.persona_type);
+    write_string(" exit ");
+    write_hex_u64(macos_n1_exit_ret);
+    write_string("/");
+    write_dec_u32(macos_abi64_last_exit_vma_regions());
+    write_string("/");
+    write_dec_u32(macos_abi64_last_exit_fd_entries());
+    write_string("/");
+    write_dec_u32(macos_abi64_last_exit_persona_released());
+    write_string("/");
+    write_dec_u32(macos_abi64_last_exit_audit_released());
+    write_string(" cleanup ");
+    write_dec_u32(macos_n1_clone_release);
+    write_string("/");
+    write_dec_u32(macos_n1_after_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macos_n1_positive);
+    write_line("");
+    write_string("[x64] macos-mach-N2 table ");
+    write_dec_u32(macos_n2_table_size);
+    write_string("/");
+    write_dec_u32(macos_n2_unimplemented_entries);
+    write_string(" entries ");
+    write_dec_u32(macos_n2_entries_installed);
+    write_string(" setup ");
+    write_dec_u32(macos_n2_pid);
+    write_string("/");
+    write_dec_u32(macos_n2_vma_init);
+    write_string("/");
+    write_dec_u32(macos_n2_audit_attach);
+    write_string("/");
+    write_dec_u32(macos_n2_bind);
+    write_string("/");
+    write_dec_u32((macos_n2_buffer_map == macos_n2_buffer_base) ? 1u : 0u);
+    write_string(" ports ");
+    write_hex_u64(macos_n2_task_port);
+    write_string("/");
+    write_hex_u64(macos_n2_thread_port);
+    write_string("/");
+    write_hex_u64(macos_n2_host_port);
+    write_string("/");
+    write_hex_u64(macos_n2_reply_port);
+    write_string(" live ");
+    write_dec_u32(macos_n2_live_after_ports);
+    write_string("/");
+    write_dec_u32(macos_mach64_total_live_port_count());
+    write_string(" kinds ");
+    write_dec_u32(macos_n2_task_kind);
+    write_string("/");
+    write_dec_u32(macos_n2_thread_kind);
+    write_string("/");
+    write_dec_u32(macos_n2_host_kind);
+    write_string(" reply-rights ");
+    write_hex_u32(macos_n2_reply_rights);
+    write_string(" backing ");
+    write_dec_u32(macos_n2_task_endpoint);
+    write_string("/");
+    write_dec_u32(macos_n2_reply_endpoint);
+    write_string("/");
+    write_hex_u32(macos_n2_reply_capability);
+    write_string(" msg ");
+    write_hex_u64(macos_n2_send_ret);
+    write_string("/");
+    write_hex_u64(macos_n2_recv_ret);
+    write_string(" pending ");
+    write_dec_u32(macos_n2_pending_after_send);
+    write_string("/");
+    write_dec_u32(macos_n2_pending_after_recv);
+    write_string(" recv ");
+    write_hex_u32(macos_n2_recv_id);
+    write_string("/");
+    write_dec_u32(macos_n2_recv_size);
+    write_string("/");
+    write_hex_u32(macos_n2_recv_local);
+    write_string("/");
+    write_hex_u32(macos_n2_recv_remote);
+    write_string("/");
+    write_hex_u32(macos_n2_body_checksum);
+    write_string(" counts ");
+    write_dec_u32(macos_n2_send_count_after - macos_n2_send_count_before);
+    write_string("/");
+    write_dec_u32(macos_n2_recv_count_after - macos_n2_recv_count_before);
+    write_string("/");
+    write_dec_u32(macos_n2_denial_after - macos_n2_denial_before);
+    write_string(" deny ");
+    write_hex_u64(macos_n2_bad_send_ret);
+    write_string(" unimpl ");
+    write_hex_u64(macos_n2_unimpl_ret);
+    write_string(" audit ");
+    write_dec_u32(macos_n2_audit_before);
+    write_string("/");
+    write_dec_u32(macos_n2_audit_after_unimpl);
+    write_string("/");
+    write_dec_u32(macos_n2_read_unimpl_record);
+    write_string("/");
+    write_dec_u32((u32)macos_n2_unimpl_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)macos_n2_unimpl_record.event_code);
+    write_string("/");
+    write_dec_u32(macos_n2_unimpl_record.result);
+    write_string("/");
+    write_dec_u32((u32)macos_n2_unimpl_record.persona_type);
+    write_string(" last ");
+    write_dec_u32(macos_mach64_last_trap());
+    write_string("/");
+    write_hex_u32(macos_mach64_last_result());
+    write_string("/");
+    write_dec_u32(macos_mach64_mach_msg_count());
+    write_string("/");
+    write_dec_u32(macos_mach64_unimplemented_count());
+    write_string(" cleanup ");
+    write_dec_u32(macos_n2_release_ports);
+    write_string("/");
+    write_dec_u32(macos_n2_unmap_buffer);
+    write_string("/");
+    write_dec_u32(macos_n2_persona_release);
+    write_string("/");
+    write_dec_u32(macos_n2_audit_release);
+    write_string("/");
+    write_dec_u32(macos_n2_clone_release);
+    write_string("/");
+    write_dec_u32(macos_n2_after_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macos_n2_positive);
+    write_line("");
+    write_string("[x64] macos-shim-N3 load ");
+    write_dec_u32(macos_n3_load);
+    write_string("/");
+    write_dec_u32(macos_n3_bad_load);
+    write_string(" err ");
+    write_dec_u32(macos_n3_load_result.error);
+    write_string("/");
+    write_dec_u32(macos_n3_bad_load_result.error);
+    write_string(" syms ");
+    write_dec_u32(macos_n3_symbol_count);
+    write_string("/");
+    write_dec_u32(macos_n3_resolved_count);
+    write_string(" addrs ");
+    write_hex_u64(macos_n3_write_addr);
+    write_string("/");
+    write_hex_u64(macos_n3_printf_addr);
+    write_string("/");
+    write_hex_u64(macos_n3_missing_addr);
+    write_string(" map ");
+    write_dec_u32(macos_n3_load_result.mapped_count);
+    write_string("/");
+    write_dec_u32(macos_n3_text_present);
+    write_string("/");
+    write_dec_u32(macos_n3_rodata_present);
+    write_string(" prot ");
+    write_hex_u32(macos_n3_load_result.text_protection);
+    write_string("/");
+    write_hex_u32(macos_n3_load_result.rodata_protection);
+    write_string(" checks ");
+    write_hex_u32(macos_n3_load_result.text_checksum);
+    write_string("/");
+    write_hex_u32(macos_n3_load_result.rodata_checksum);
+    write_string("/");
+    write_hex_u32(macos_n3_load_result.name_checksum);
+    write_string(" printf ");
+    write_dec_u32((u32)macos_n3_printf_result.value);
+    write_string("/");
+    write_dec_u32(macos_n3_console_after_count - macos_n3_console_before_count);
+    write_string("/");
+    write_dec_u32(macos_n3_console_after_bytes - macos_n3_console_before_bytes);
+    write_string(" strlen ");
+    write_dec_u32((u32)macos_n3_strlen_result.value);
+    write_string(" mem ");
+    write_hex_u64(macos_n3_malloc_result.value);
+    write_string("/");
+    write_hex_u64(macos_n3_realloc_result.value);
+    write_string("/");
+    write_dec_u32(macos_n3_copied_match);
+    write_string("/");
+    write_dec_u32(macos_n3_free_result.error);
+    write_string(" mmap ");
+    write_hex_u64(macos_n3_mmap_result.value);
+    write_string("/");
+    write_dec_u32(macos_n3_mmap_present);
+    write_string("/");
+    write_hex_u32(macos_n3_mprotect_prot);
+    write_string("/");
+    write_hex_u64(macos_n3_munmap_result.value);
+    write_string(" open ");
+    write_hex_u64(macos_n3_open_result.value);
+    write_string("/");
+    write_hex_u64(macos_n3_close_result.value);
+    write_string(" clock ");
+    write_hex_u64(macos_n3_clock_result.value);
+    write_string("/");
+    write_dec_u32(macos_n3_time_written);
+    write_string(" bad ");
+    write_dec_u32(macos_n3_bad_result.error);
+    write_string(" counts ");
+    write_dec_u32(macos_n3_load_delta);
+    write_string("/");
+    write_dec_u32(macos_n3_call_delta);
+    write_string("/");
+    write_dec_u32(macos_n3_bridge_delta);
+    write_string("/");
+    write_dec_u32(macos_n3_memory_delta);
+    write_string("/");
+    write_dec_u32(macos_n3_denial_delta);
+    write_string("/");
+    write_dec_u32(macos_n3_fault_delta);
+    write_string(" audit ");
+    write_dec_u32(macos_n3_audit_before);
+    write_string("/");
+    write_dec_u32(macos_n3_audit_after);
+    write_string(" last ");
+    write_dec_u32(macos_n3_last_symbol);
+    write_string("/");
+    write_dec_u32(macos_n3_last_error);
+    write_string("/");
+    write_hex_u64(macos_n3_last_result);
+    write_string(" cleanup ");
+    write_dec_u32(macos_n3_release_shim);
+    write_string("/");
+    write_dec_u32(macos_n3_unmap_buffer);
+    write_string("/");
+    write_dec_u32(macos_n3_fd_release);
+    write_string("/");
+    write_dec_u32(macos_n3_persona_release);
+    write_string("/");
+    write_dec_u32(macos_n3_audit_release);
+    write_string("/");
+    write_dec_u32(macos_n3_vma_release);
+    write_string("/");
+    write_dec_u32(macos_n3_clone_release);
+    write_string("/");
+    write_dec_u32(macos_n3_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macos_n3_positive);
+    write_line("");
+    write_string("[x64] macos-dyld-N4 load ");
+    write_dec_u32(macos_n4_load);
+    write_string("/");
+    write_dec_u32(macos_n4_bad_load);
+    write_string(" err ");
+    write_dec_u32(macos_n4_load_result.error);
+    write_string("/");
+    write_dec_u32(macos_n4_bad_load_result.error);
+    write_string(" syms ");
+    write_dec_u32(macos_n4_symbol_count);
+    write_string("/");
+    write_dec_u32(macos_n4_resolved_count);
+    write_string(" addrs ");
+    write_hex_u64(macos_n4_stub_addr);
+    write_string("/");
+    write_hex_u64(macos_n4_get_name_addr);
+    write_string("/");
+    write_hex_u64(macos_n4_image_count_addr);
+    write_string("/");
+    write_hex_u64(macos_n4_missing_addr);
+    write_string(" map ");
+    write_dec_u32(macos_n4_load_result.mapped_count);
+    write_string("/");
+    write_dec_u32(macos_n4_text_present);
+    write_string("/");
+    write_dec_u32(macos_n4_rodata_present);
+    write_string("/");
+    write_dec_u32(macos_n4_buffer_map);
+    write_string(" prot ");
+    write_hex_u32(macos_n4_load_result.text_protection);
+    write_string("/");
+    write_hex_u32(macos_n4_load_result.rodata_protection);
+    write_string(" checks ");
+    write_hex_u32(macos_n4_load_result.text_checksum);
+    write_string("/");
+    write_hex_u32(macos_n4_load_result.rodata_checksum);
+    write_string("/");
+    write_hex_u32(macos_n4_load_result.name_checksum);
+    write_string(" bind ");
+    write_hex_u64(macos_n4_missing_bind_result.slot);
+    write_string("/");
+    write_hex_u64(macos_n4_binder_result.value);
+    write_string("/");
+    write_hex_u64(macos_n4_slot_after);
+    write_string("/");
+    write_dec_u32(macos_n4_binder_result.byte_count);
+    write_string("/");
+    write_hex_u32(macos_n4_binder_result.checksum);
+    write_string(" images ");
+    write_dec_u32((u32)macos_n4_count_result.value);
+    write_string("/");
+    write_hex_u64(macos_n4_name_result.value);
+    write_string("/");
+    write_dec_u32(macos_n4_name_result.byte_count);
+    write_string("/");
+    write_dec_u32(macos_n4_name_prefix);
+    write_string("/");
+    write_hex_u32(macos_n4_name_result.checksum);
+    write_string(" bad ");
+    write_dec_u32(macos_n4_missing_bind_result.error);
+    write_string("/");
+    write_dec_u32(macos_n4_bad_call_result.error);
+    write_string(" counts ");
+    write_dec_u32(macos_n4_load_delta);
+    write_string("/");
+    write_dec_u32(macos_n4_call_delta);
+    write_string("/");
+    write_dec_u32(macos_n4_lazy_delta);
+    write_string("/");
+    write_dec_u32(macos_n4_image_delta);
+    write_string("/");
+    write_dec_u32(macos_n4_denial_delta);
+    write_string("/");
+    write_dec_u32(macos_n4_fault_delta);
+    write_string(" audit ");
+    write_dec_u32(macos_n4_audit_before);
+    write_string("/");
+    write_dec_u32(macos_n4_audit_after);
+    write_string(" last ");
+    write_dec_u32(macos_dyld64_last_symbol());
+    write_string("/");
+    write_dec_u32(macos_dyld64_last_error());
+    write_string("/");
+    write_hex_u64(macos_dyld64_last_result());
+    write_string(" cleanup ");
+    write_dec_u32(macos_n4_release_shim);
+    write_string("/");
+    write_dec_u32(macos_n4_unmap_buffer);
+    write_string("/");
+    write_dec_u32(macos_n4_persona_release);
+    write_string("/");
+    write_dec_u32(macos_n4_audit_release);
+    write_string("/");
+    write_dec_u32(macos_n4_vma_release);
+    write_string("/");
+    write_dec_u32(macos_n4_clone_release);
+    write_string("/");
+    write_dec_u32(macos_n4_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macos_n4_positive);
+    write_line("");
+    write_string("[x64] macos-cf-N5 load ");
+    write_dec_u32(macos_n5_load);
+    write_string("/");
+    write_dec_u32(macos_n5_bad_load);
+    write_string(" lib ");
+    write_dec_u32(macos_n5_libsystem_load);
+    write_string(" err ");
+    write_dec_u32(macos_n5_load_result.error);
+    write_string("/");
+    write_dec_u32(macos_n5_bad_load_result.error);
+    write_string(" syms ");
+    write_dec_u32(macos_n5_symbol_count);
+    write_string("/");
+    write_dec_u32(macos_n5_resolved_count);
+    write_string(" addrs ");
+    write_hex_u64(macos_n5_allocator_addr);
+    write_string("/");
+    write_hex_u64(macos_n5_create_addr);
+    write_string("/");
+    write_hex_u64(macos_n5_get_addr);
+    write_string("/");
+    write_hex_u64(macos_n5_show_addr);
+    write_string("/");
+    write_hex_u64(macos_n5_missing_addr);
+    write_string(" map ");
+    write_dec_u32(macos_n5_load_result.mapped_count);
+    write_string("/");
+    write_dec_u32(macos_n5_text_present);
+    write_string("/");
+    write_dec_u32(macos_n5_rodata_present);
+    write_string("/");
+    write_dec_u32(macos_n5_buffer_map);
+    write_string(" prot ");
+    write_hex_u32(macos_n5_load_result.text_protection);
+    write_string("/");
+    write_hex_u32(macos_n5_load_result.rodata_protection);
+    write_string(" checks ");
+    write_hex_u32(macos_n5_load_result.text_checksum);
+    write_string("/");
+    write_hex_u32(macos_n5_load_result.rodata_checksum);
+    write_string("/");
+    write_hex_u32(macos_n5_load_result.name_checksum);
+    write_string(" alloc ");
+    write_hex_u64(macos_n5_allocator_result.value);
+    write_string(" create ");
+    write_hex_u64(macos_n5_create_result.value);
+    write_string("/");
+    write_dec_u32(macos_n5_create_result.byte_count);
+    write_string("/");
+    write_hex_u32(macos_n5_create_result.checksum);
+    write_string(" retain ");
+    write_hex_u64(macos_n5_retain_result.value);
+    write_string("/");
+    write_dec_u32(macos_n5_retain_result.byte_count);
+    write_string(" get ");
+    write_dec_u32((u32)macos_n5_get_result.value);
+    write_string("/");
+    write_dec_u32(macos_n5_get_result.byte_count);
+    write_string("/");
+    write_dec_u32(macos_n5_output_match);
+    write_string("/");
+    write_dec_u32(macos_n5_output_nul);
+    write_string(" show ");
+    write_dec_u32((u32)macos_n5_show_result.value);
+    write_string("/");
+    write_dec_u32(macos_n5_console_after_count - macos_n5_console_before_count);
+    write_string("/");
+    write_dec_u32(macos_n5_console_after_bytes - macos_n5_console_before_bytes);
+    write_string(" release ");
+    write_dec_u32((u32)macos_n5_release1_result.value);
+    write_string("/");
+    write_dec_u32((u32)macos_n5_release2_result.value);
+    write_string(" live ");
+    write_dec_u32(macos_n5_live_after_create);
+    write_string("/");
+    write_dec_u32(macos_n5_live_after_retain);
+    write_string("/");
+    write_dec_u32(macos_n5_live_after_release1);
+    write_string("/");
+    write_dec_u32(macos_n5_live_after_release2);
+    write_string(" bad ");
+    write_dec_u32(macos_n5_bad_result.error);
+    write_string(" counts ");
+    write_dec_u32(macos_n5_load_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_call_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_create_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_get_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_show_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_retain_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_release_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_denial_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_fault_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_scratch_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_shim_call_delta);
+    write_string("/");
+    write_dec_u32(macos_n5_shim_bridge_delta);
+    write_string(" audit ");
+    write_dec_u32(macos_n5_audit_before);
+    write_string("/");
+    write_dec_u32(macos_n5_audit_after);
+    write_string(" last ");
+    write_dec_u32(macos_cf64_last_symbol());
+    write_string("/");
+    write_dec_u32(macos_cf64_last_error());
+    write_string("/");
+    write_hex_u64(macos_cf64_last_result());
+    write_string(" cleanup ");
+    write_dec_u32(macos_n5_release_cf);
+    write_string("/");
+    write_dec_u32(macos_n5_release_shim);
+    write_string("/");
+    write_dec_u32(macos_n5_unmap_buffer);
+    write_string("/");
+    write_dec_u32(macos_n5_fd_release);
+    write_string("/");
+    write_dec_u32(macos_n5_persona_release);
+    write_string("/");
+    write_dec_u32(macos_n5_audit_release);
+    write_string("/");
+    write_dec_u32(macos_n5_vma_release);
+    write_string("/");
+    write_dec_u32(macos_n5_clone_release);
+    write_string("/");
+    write_dec_u32(macos_n5_cleanup);
+    write_string(" positive ");
+    write_dec_u32(macos_n5_positive);
+    write_line("");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string("[x64] persona-o1 cap-tag pids ");
+    write_dec_u32(persona_o1_linux_pid);
+    write_string("/");
+    write_dec_u32(persona_o1_windows_pid);
+    write_string(" bind ");
+    write_dec_u32(persona_o1_linux_bind);
+    write_string("/");
+    write_dec_u32(persona_o1_windows_bind);
+    write_string(" masks ");
+    write_hex_u32(persona_o1_linux_mask);
+    write_string("/");
+    write_hex_u32(persona_o1_windows_mask);
+    write_string(" caps ");
+    write_hex_u32(persona_o1_tagged_cap);
+    write_string("/");
+    write_hex_u32(persona_o1_untagged_cap);
+    write_string(" delegates ");
+    write_hex_u32(persona_o1_self_delegate);
+    write_string("/");
+    write_hex_u32(persona_o1_cross_delegate);
+    write_string("/");
+    write_hex_u32(persona_o1_legacy_delegate);
+    write_string(" tags ");
+    write_dec_u32(persona_o1_tag);
+    write_string("/");
+    write_hex_u32(persona_o1_tag_mask);
+    write_string("/");
+    write_dec_u32(persona_o1_self_tag);
+    write_string("/");
+    write_hex_u32(persona_o1_self_mask);
+    write_string("/");
+    write_dec_u32(persona_o1_legacy_tag);
+    write_string("/");
+    write_hex_u32(persona_o1_legacy_mask);
+    write_string(" routes ");
+    write_dec_u32(persona_o1_self_route);
+    write_string("/");
+    write_dec_u32(persona_o1_legacy_route);
+    write_string(" denials ");
+    write_dec_u32(persona_o1_denial_after - persona_o1_denial_before);
+    write_string("/");
+    write_dec_u32(persona_o1_transfer_after - persona_o1_transfer_before);
+    write_string(" audit ");
+    write_dec_u32(persona_o1_audit_before);
+    write_string("/");
+    write_dec_u32(persona_o1_audit_after);
+    write_string("/");
+    write_dec_u32(persona_o1_audit_read);
+    write_string("/");
+    write_dec_u32((u32)persona_o1_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o1_record.event_code);
+    write_string("/");
+    write_dec_u32(persona_o1_record.result);
+    write_string("/");
+    write_dec_u32((u32)persona_o1_record.persona_type);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o1_revoke_tagged);
+    write_string("/");
+    write_dec_u32(persona_o1_revoke_legacy);
+    write_string("/");
+    write_dec_u32(persona_o1_windows_release);
+    write_string("/");
+    write_dec_u32(persona_o1_linux_release);
+    write_string("/");
+    write_dec_u32(persona_o1_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o1_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o1_positive);
+    write_line("");
+    write_string("[x64] persona-o2 syscall-audit bind ");
+    write_dec_u32(persona_o2_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o2_bind);
+    write_string(" map ");
+    write_dec_u32(persona_o2_map_ok);
+    write_string(" calls ");
+    write_dec_u32((persona_o2_returns[0] == (u64)persona_o2_pid) ? 1u : 0u);
+    write_string("/");
+    write_dec_u32((persona_o2_returns[1] == (u64)persona_o2_pid) ? 1u : 0u);
+    write_string("/");
+    write_dec_u32((persona_o2_returns[2] == 0ull) ? 1u : 0u);
+    write_string("/");
+    write_dec_u32((persona_o2_returns[3] == (u64)persona_o2_pid) ? 1u : 0u);
+    write_string("/");
+    write_dec_u32((persona_o2_returns[4] == 0ull) ? 1u : 0u);
+    write_string(" count ");
+    write_dec_u32(persona_o2_audit_before);
+    write_string("/");
+    write_dec_u32(persona_o2_audit_after);
+    write_string("/");
+    write_dec_u32(persona_o2_audit_delta);
+    write_string(" reads ");
+    write_dec_u32(persona_o2_read[0]);
+    write_string("/");
+    write_dec_u32(persona_o2_read[1]);
+    write_string("/");
+    write_dec_u32(persona_o2_read[2]);
+    write_string("/");
+    write_dec_u32(persona_o2_read[3]);
+    write_string("/");
+    write_dec_u32(persona_o2_read[4]);
+    write_string(" events ");
+    write_dec_u32((u32)persona_o2_records[0].event_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[1].event_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[2].event_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[3].event_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[4].event_type);
+    write_string(" codes ");
+    write_dec_u32((u32)persona_o2_records[0].event_code);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[1].event_code);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[2].event_code);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[3].event_code);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[4].event_code);
+    write_string(" persona ");
+    write_dec_u32((u32)persona_o2_records[0].persona_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[1].persona_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[2].persona_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[3].persona_type);
+    write_string("/");
+    write_dec_u32((u32)persona_o2_records[4].persona_type);
+    write_string(" results ");
+    write_dec_u32(persona_o2_records[0].result);
+    write_string("/");
+    write_dec_u32(persona_o2_records[1].result);
+    write_string("/");
+    write_dec_u32(persona_o2_records[2].result);
+    write_string("/");
+    write_dec_u32(persona_o2_records[3].result);
+    write_string("/");
+    write_dec_u32(persona_o2_records[4].result);
+    write_string(" ops ");
+    write_dec_u32(persona_o2_records[0].translated_operation);
+    write_string("/");
+    write_dec_u32(persona_o2_records[1].translated_operation);
+    write_string("/");
+    write_dec_u32(persona_o2_records[2].translated_operation);
+    write_string("/");
+    write_dec_u32(persona_o2_records[3].translated_operation);
+    write_string("/");
+    write_dec_u32(persona_o2_records[4].translated_operation);
+    write_string(" names ");
+    write_hex_u32(persona_o2_records[0].syscall_name_token);
+    write_string("/");
+    write_hex_u32(persona_o2_records[1].syscall_name_token);
+    write_string("/");
+    write_hex_u32(persona_o2_records[2].syscall_name_token);
+    write_string("/");
+    write_hex_u32(persona_o2_records[3].syscall_name_token);
+    write_string("/");
+    write_hex_u32(persona_o2_records[4].syscall_name_token);
+    write_string(" match ");
+    write_dec_u32(persona_o2_event_match);
+    write_string("/");
+    write_dec_u32(persona_o2_code_match);
+    write_string("/");
+    write_dec_u32(persona_o2_token_match);
+    write_string("/");
+    write_dec_u32(persona_o2_operation_match);
+    write_string("/");
+    write_dec_u32(persona_o2_timestamp_match);
+    write_string(" time ");
+    write_dec_u32(persona_o2_time_match);
+    write_string(" last ");
+    write_hex_u32(persona_o2_last_token);
+    write_string("/");
+    write_dec_u32(persona_o2_last_operation);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o2_cleanup_unmap);
+    write_string("/");
+    write_dec_u32(persona_o2_persona_release);
+    write_string("/");
+    write_dec_u32(persona_o2_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o2_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o2_positive);
+    write_line("");
+    write_string("[x64] persona-o3 budgets bind ");
+    write_dec_u32(persona_o3_vma_init);
+    write_string("/");
+    write_dec_u32(persona_o3_fd_init);
+    write_string("/");
+    write_dec_u32(persona_o3_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o3_bind);
+    write_string(" defaults ");
+    write_dec_u32(persona_o3_default_vma_budget);
+    write_string("/");
+    write_dec_u32(persona_o3_default_fd_budget);
+    write_string("/");
+    write_dec_u32(persona_o3_default_pipe_budget);
+    write_string(" config ");
+    write_dec_u32(persona_o3_config_fd);
+    write_string("/");
+    write_dec_u32(persona_o3_config_pipe);
+    write_string(" vma ");
+    write_hex_u64(persona_o3_mmap_ok);
+    write_string("/");
+    write_hex_u64(persona_o3_mmap_denied);
+    write_string(" pages ");
+    write_dec_u32(persona_o3_pages_after_map);
+    write_string(" vdeny ");
+    write_dec_u32(persona_o3_vma_kind);
+    write_string("/");
+    write_dec_u32(persona_o3_vma_requested);
+    write_string("/");
+    write_dec_u32(persona_o3_vma_limit);
+    write_string(" fd ");
+    write_hex_u64(persona_o3_dup_ok);
+    write_string("/");
+    write_hex_u64(persona_o3_dup_denied);
+    write_string(" live ");
+    write_dec_u32(persona_o3_fd_live_after_dup);
+    write_string(" fdeny ");
+    write_dec_u32(persona_o3_fd_kind);
+    write_string("/");
+    write_dec_u32(persona_o3_fd_requested);
+    write_string("/");
+    write_dec_u32(persona_o3_fd_limit);
+    write_string(" pipe ");
+    write_hex_u64(persona_o3_pipe_ok);
+    write_string("/");
+    write_hex_u64(persona_o3_pipe_denied);
+    write_string(" fds ");
+    write_dec_u32(persona_o3_pipe_read_fd);
+    write_string("/");
+    write_dec_u32(persona_o3_pipe_write_fd);
+    write_string(" count ");
+    write_dec_u32(persona_o3_pipe_count_after_create);
+    write_string("/");
+    write_dec_u32(persona_o3_pipe_count_after_close);
+    write_string(" pdeny ");
+    write_dec_u32(persona_o3_pipe_kind);
+    write_string("/");
+    write_dec_u32(persona_o3_pipe_requested);
+    write_string("/");
+    write_dec_u32(persona_o3_pipe_limit);
+    write_string(" denials ");
+    write_dec_u32(persona_o3_budget_denials);
+    write_string(" audit ");
+    write_dec_u32(persona_o3_audit_before);
+    write_string("/");
+    write_dec_u32(persona_o3_audit_after);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o3_close_pipe_read);
+    write_string("/");
+    write_dec_u32(persona_o3_close_pipe_write);
+    write_string("/");
+    write_dec_u32(persona_o3_close_dup);
+    write_string("/");
+    write_dec_u32(persona_o3_unmap);
+    write_string("/");
+    write_dec_u32(persona_o3_fd_release);
+    write_string("/");
+    write_dec_u32(persona_o3_persona_release);
+    write_string("/");
+    write_dec_u32(persona_o3_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o3_vma_release);
+    write_string("/");
+    write_dec_u32(persona_o3_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o3_positive);
+    write_line("");
+    write_string("[x64] persona-o4 isolation bind ");
+    write_dec_u32(persona_o4_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o4_linux_bind);
+    write_string("/");
+    write_dec_u32(persona_o4_windows_bind);
+    write_string(" groups ");
+    write_dec_u32(persona_o4_linux_group);
+    write_string("/");
+    write_dec_u32(persona_o4_windows_group);
+    write_string(" ret ");
+    write_hex_u64(persona_o4_self_ret);
+    write_string("/");
+    write_hex_u64(persona_o4_cross_ret);
+    write_string(" audit ");
+    write_dec_u32(persona_o4_audit_before);
+    write_string("/");
+    write_dec_u32(persona_o4_audit_after);
+    write_string("/");
+    write_dec_u32(persona_o4_audit_read);
+    write_string(" record ");
+    write_dec_u32(persona_o4_event);
+    write_string("/");
+    write_dec_u32(persona_o4_code);
+    write_string("/");
+    write_dec_u32(persona_o4_result);
+    write_string("/");
+    write_dec_u32(persona_o4_persona);
+    write_string("/");
+    write_dec_u32(persona_o4_rip_match);
+    write_string(" last ");
+    write_dec_u32(persona_o4_last_source);
+    write_string("/");
+    write_dec_u32(persona_o4_last_target);
+    write_string("/");
+    write_dec_u32(persona_o4_last_source_group);
+    write_string("/");
+    write_dec_u32(persona_o4_last_target_group);
+    write_string("/");
+    write_dec_u32(persona_o4_last_result);
+    write_string(" denials ");
+    write_dec_u32(persona_o4_denials);
+    write_string(" types ");
+    write_dec_u32(PERSONA64_TYPE_LINUX_ELF);
+    write_string("/");
+    write_dec_u32(persona_o4_windows_type);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o4_windows_release);
+    write_string("/");
+    write_dec_u32(persona_o4_linux_release);
+    write_string("/");
+    write_dec_u32(persona_o4_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o4_windows_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o4_linux_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o4_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o4_positive);
+    write_line("");
+    write_string("[x64] persona-o5 unavailable bind ");
+    write_dec_u32(persona_o5_linux_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_bind);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_bind);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_bind);
+    write_string(" ret ");
+    write_hex_u64(persona_o5_linux_return);
+    write_string("/");
+    write_hex_u64(persona_o5_windows_return);
+    write_string("/");
+    write_hex_u64(persona_o5_macos_return);
+    write_string(" expected ");
+    write_hex_u64(persona_o5_linux_expected_return);
+    write_string("/");
+    write_hex_u64(persona_o5_windows_expected_return);
+    write_string("/");
+    write_hex_u64(persona_o5_macos_expected_return);
+    write_string(" abi ");
+    write_hex_u32(persona_o5_linux_abi_result);
+    write_string("/");
+    write_hex_u32(persona_o5_windows_abi_result);
+    write_string("/");
+    write_hex_u32(persona_o5_macos_abi_result);
+    write_string(" audit ");
+    write_dec_u32(persona_o5_linux_before);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_after);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_read);
+    write_string(" ");
+    write_dec_u32(persona_o5_windows_before);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_after);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_read);
+    write_string(" ");
+    write_dec_u32(persona_o5_macos_before);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_after);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_read);
+    write_string(" records ");
+    write_dec_u32(persona_o5_linux_record.event_type);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_record.event_code);
+    write_string("/");
+    write_hex_u32(persona_o5_linux_record.result);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_record.persona_type);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_record.translated_operation);
+    write_string(" ");
+    write_dec_u32(persona_o5_windows_record.event_type);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_record.event_code);
+    write_string("/");
+    write_hex_u32(persona_o5_windows_record.result);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_record.persona_type);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_record.translated_operation);
+    write_string(" ");
+    write_dec_u32(persona_o5_macos_record.event_type);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_record.event_code);
+    write_string("/");
+    write_hex_u32(persona_o5_macos_record.result);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_record.persona_type);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_record.translated_operation);
+    write_string(" deltas ");
+    write_dec_u32(persona_o5_linux_unimpl_after - persona_o5_linux_unimpl_before);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_unimpl_after - persona_o5_windows_unimpl_before);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_unimpl_after - persona_o5_macos_unimpl_before);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o5_linux_release);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_release);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_release);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o5_linux_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o5_windows_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o5_macos_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o5_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o5_positive);
+    write_line("");
+    write_string("[x64] persona-o6 crash-report bind ");
+    write_dec_u32(persona_o6_vma_init);
+    write_string("/");
+    write_dec_u32(persona_o6_audit_attach);
+    write_string("/");
+    write_dec_u32(persona_o6_bind);
+    write_string(" record ");
+    write_dec_u32(persona_o6_record_result);
+    write_string("/");
+    write_dec_u32(persona_o6_bad_record_result);
+    write_string(" audit ");
+    write_dec_u32(persona_o6_audit_before);
+    write_string("/");
+    write_dec_u32(persona_o6_audit_after);
+    write_string("/");
+    write_dec_u32(persona_o6_read_record);
+    write_string(" crash ");
+    write_dec_u32(persona_o6_crash_before);
+    write_string("/");
+    write_dec_u32(persona_o6_crash_after);
+    write_string("/");
+    write_dec_u32(persona_o6_read_report);
+    write_string(" event ");
+    write_dec_u32(persona_o6_record.event_type);
+    write_string("/");
+    write_dec_u32(persona_o6_record.event_code);
+    write_string("/");
+    write_dec_u32(persona_o6_record.result);
+    write_string("/");
+    write_dec_u32(persona_o6_record.persona_type);
+    write_string("/");
+    write_hex_u64(persona_o6_record.rip);
+    write_string(" frame ");
+    write_dec_u32(persona_o6_report.vector);
+    write_string("/");
+    write_hex_u64(persona_o6_report.error_code);
+    write_string("/");
+    write_hex_u64(persona_o6_report.rip);
+    write_string("/");
+    write_hex_u64(persona_o6_report.rsp);
+    write_string("/");
+    write_hex_u64(persona_o6_report.fault_address);
+    write_string(" vma ");
+    write_dec_u32(persona_o6_report.vma_region_count);
+    write_string("/");
+    write_hex_u64(persona_o6_report.vma_mapped_bytes);
+    write_string("/");
+    write_hex_u64(persona_o6_report.vma_first_base);
+    write_string("/");
+    write_hex_u64(persona_o6_report.vma_first_end);
+    write_string("/");
+    write_hex_u32(persona_o6_report.vma_first_prot);
+    write_string("/");
+    write_dec_u32(persona_o6_report.fault_region_present);
+    write_string(" cleanup ");
+    write_dec_u32(persona_o6_unmap);
+    write_string("/");
+    write_dec_u32(persona_o6_persona_release);
+    write_string("/");
+    write_dec_u32(persona_o6_audit_release);
+    write_string("/");
+    write_dec_u32(persona_o6_vma_release);
+    write_string("/");
+    write_dec_u32(persona_o6_clone_release);
+    write_string("/");
+    write_dec_u32(persona_o6_cleanup);
+    write_string(" positive ");
+    write_dec_u32(persona_o6_positive);
+    write_line("");
+    write_string("[x64] linux-dynamic-P1 ld init ");
+    write_dec_u32(linux_p1_init);
+    write_string(" prepare ");
+    write_dec_u32(linux_p1_prepare);
+    write_string("/");
+    write_dec_u32(linux_p1_missing_prepare);
+    write_string(" counts ");
+    write_dec_u32(linux_p1_prepare_after - linux_p1_prepare_before);
+    write_string("/");
+    write_dec_u32(linux_p1_load_after - linux_p1_load_before);
+    write_string("/");
+    write_dec_u32(linux_p1_denial_after - linux_p1_denial_before);
+    write_string("/");
+    write_dec_u32(linux_p1_dep_after - linux_p1_dep_before);
+    write_string(" interp ");
+    write_dec_u32(linux_p1_result.interpreter_result.header.type);
+    write_string("/");
+    write_dec_u32(linux_p1_result.interpreter_result.phdr_summary.load_count);
+    write_string("/");
+    write_dec_u32(linux_p1_result.interpreter_result.phdr_summary.dynamic_count);
+    write_string("/");
+    write_dec_u32(linux_p1_result.interpreter_result.symbol_count);
+    write_string("/");
+    write_hex_u32(linux_p1_result.interpreter_result.image_checksum);
+    write_string(" prot ");
+    write_hex_u32(linux_p1_result.interpreter_result.text_protection);
+    write_string("/");
+    write_hex_u32(linux_p1_result.interpreter_result.rodata_protection);
+    write_string(" aux ");
+    write_hex_u64(elf64_auxv_value(&linux_p1_result.auxv, ELF64_AT_BASE));
+    write_string("/");
+    write_hex_u64(linux_p1_result.transfer_rip);
+    write_string("/");
+    write_dec_u32(linux_p1_result.transfer_ready);
+    write_string("/");
+    write_dec_u32(linux_p1_result.stack_result.alignment_ok);
+    write_string(" deps ");
+    write_dec_u32(linux_p1_result.needed_result.needed_count);
+    write_string("/");
+    write_dec_u32(linux_p1_missing_result.needed_result.needed_count);
+    write_string("/");
+    write_dec_u32(linux_p1_missing_result.needed_result.missing_count);
+    write_string("/");
+    write_dec_u32(linux_p1_missing_result.error);
+    write_string(" audit ");
+    write_dec_u32(linux_p1_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p1_audit_after);
+    write_string("/");
+    write_dec_u32(linux_p1_read_audit);
+    write_string("/");
+    write_dec_u32(linux_p1_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p1_audit_record.event_code);
+    write_string(" ctx ");
+    write_dec_u32(linux_p1_context_match);
+    write_string("/");
+    write_dec_u32(linux_p1_export_match);
+    write_string("/");
+    write_dec_u32(linux_p1_missing_export);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p1_release);
+    write_string("/");
+    write_dec_u32(linux_p1_pages_clear);
+    write_string("/");
+    write_dec_u32(linux_p1_persona_release);
+    write_string("/");
+    write_dec_u32(linux_p1_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p1_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p1_clone_release);
+    write_string("/");
+    write_dec_u32(linux_p1_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p1_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2 shim init ");
+    write_dec_u32(linux_p2_init);
+    write_string(" prepare ");
+    write_dec_u32(linux_p2_prepare);
+    write_string(" counts ");
+    write_dec_u32(linux_p2_prepare_after - linux_p2_prepare_before);
+    write_string("/");
+    write_dec_u32(linux_p2_dynamic_load_after - linux_p2_dynamic_load_before);
+    write_string("/");
+    write_dec_u32(linux_p2_libc_load_after - linux_p2_libc_load_before);
+    write_string("/");
+    write_dec_u32(linux_p2_libc_denial_after - linux_p2_libc_denial_before);
+    write_string("/");
+    write_dec_u32(linux_p2_dep_supported_after - linux_p2_dep_supported_before);
+    write_string(" needed ");
+    write_dec_u32(linux_p2_result.needed_result.needed_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.needed_result.supported_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.needed_result.missing_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.needed_result.libc_needed_count);
+    write_string(" libc ");
+    write_dec_u32(linux_p2_result.libc_required);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_mapped);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.header.type);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.phdr_summary.load_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.phdr_summary.dynamic_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.syscall_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.memory_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.string_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.stdio_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.heap_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.abort_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string("/");
+    write_hex_u32(linux_p2_result.libc_result.image_checksum);
+    write_string(" prot ");
+    write_hex_u32(linux_p2_result.libc_result.text_protection);
+    write_string(" exports ");
+    write_hex_u64(linux_p2_result.libc_result.write_fn);
+    write_string("/");
+    write_hex_u64(linux_p2_result.libc_result.strlen_fn);
+    write_string("/");
+    write_hex_u64(linux_p2_result.libc_result.pthread_create_fn);
+    write_string("/");
+    write_hex_u64(linux_p2_result.libc_result.abort_fn);
+    write_string("/");
+    write_dec_u32(linux_p2_export_match);
+    write_string("/");
+    write_dec_u32(linux_p2_missing_export);
+    write_string(" deps ");
+    write_dec_u32(linux_p2_dep_libc);
+    write_string("/");
+    write_dec_u32(linux_p2_dep_unknown);
+    write_string(" deny ");
+    write_dec_u32(linux_p2_bad_load);
+    write_string("/");
+    write_dec_u32(linux_p2_bad_load_result.error);
+    write_string(" audit ");
+    write_dec_u32(linux_p2_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2_audit_after);
+    write_string("/");
+    write_dec_u32(linux_p2_read_audit);
+    write_string("/");
+    write_dec_u32(linux_p2_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2_audit_record.event_code);
+    write_string(" ctx ");
+    write_dec_u32(linux_p2_context_match);
+    write_string(" fd ");
+    write_dec_u32(linux_p2_fd_init);
+    write_string("/");
+    write_dec_u32(linux_p2_fd_release);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2_release);
+    write_string("/");
+    write_dec_u32(linux_p2_pages_clear);
+    write_string("/");
+    write_dec_u32(linux_p2_persona_release);
+    write_string("/");
+    write_dec_u32(linux_p2_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p2_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p2_clone_release);
+    write_string("/");
+    write_dec_u32(linux_p2_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p2_positive);
+    write_line("");
+    write_string("[x64] linux-pthread-P3 alias init ");
+    write_dec_u32(linux_p3_init);
+    write_string(" prepare ");
+    write_dec_u32(linux_p3_prepare);
+    write_string("/");
+    write_dec_u32(linux_p3_missing_prepare);
+    write_string(" counts ");
+    write_dec_u32(linux_p3_prepare_after - linux_p3_prepare_before);
+    write_string("/");
+    write_dec_u32(linux_p3_dynamic_load_after - linux_p3_dynamic_load_before);
+    write_string("/");
+    write_dec_u32(linux_p3_libc_load_after - linux_p3_libc_load_before);
+    write_string("/");
+    write_dec_u32(linux_p3_denial_after - linux_p3_denial_before);
+    write_string("/");
+    write_dec_u32(linux_p3_dep_denial_after - linux_p3_dep_denial_before);
+    write_string("/");
+    write_dec_u32(linux_p3_dep_supported_after - linux_p3_dep_supported_before);
+    write_string(" needed ");
+    write_dec_u32(linux_p3_result.needed_result.needed_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.needed_result.supported_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.needed_result.missing_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.needed_result.libc_needed_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.needed_result.pthread_needed_count);
+    write_string(" needok ");
+    write_dec_u32(linux_p3_needed_match);
+    write_string(" checks ");
+    write_hex_u32(linux_p3_result.needed_result.first_needed_checksum);
+    write_string("/");
+    write_hex_u32(linux_p3_result.needed_result.last_needed_checksum);
+    write_string(" pthread ");
+    write_dec_u32(linux_p3_result.pthread_required);
+    write_string("/");
+    write_dec_u32(linux_p3_result.pthread_mapped);
+    write_string("/");
+    write_dec_u32(linux_p3_alias_supported);
+    write_string("/");
+    write_dec_u32(linux_p3_exit_export);
+    write_string("/");
+    write_dec_u32(linux_p3_exit_stub);
+    write_string("/");
+    write_dec_u32(linux_p3_alias_missing);
+    write_string(" libc ");
+    write_dec_u32(linux_p3_result.libc_required);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_mapped);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.pthread_create_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.pthread_join_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.pthread_exit_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.pthread_mutex_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p3_result.libc_result.pthread_cond_symbol_count);
+    write_string(" exports ");
+    write_dec_u32(linux_p3_export_match);
+    write_string(" ctx ");
+    write_dec_u32(linux_p3_context_match);
+    write_string(" deny ");
+    write_dec_u32(linux_p3_missing_result.error);
+    write_string("/");
+    write_dec_u32(linux_p3_missing_result.needed_result.needed_count);
+    write_string("/");
+    write_dec_u32(linux_p3_missing_result.needed_result.missing_count);
+    write_string("/");
+    write_dec_u32(linux_p3_denial_match);
+    write_string(" audit ");
+    write_dec_u32(linux_p3_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p3_audit_after);
+    write_string("/");
+    write_dec_u32(linux_p3_read_audit);
+    write_string("/");
+    write_dec_u32(linux_p3_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p3_audit_record.event_code);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p3_release);
+    write_string("/");
+    write_dec_u32(linux_p3_pages_clear);
+    write_string("/");
+    write_dec_u32(linux_p3_persona_release);
+    write_string("/");
+    write_dec_u32(linux_p3_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p3_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p3_clone_release);
+    write_string("/");
+    write_dec_u32(linux_p3_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p3_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2b helpers maps ");
+    write_hex_u64(linux_p2b_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2b_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2_result.libc_result.string_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" exec ");
+    write_hex_u32(linux_p2b_code_prot);
+    write_string(" run ");
+    write_hex_u32(linux_p2b_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2b_aux);
+    write_string(" match ");
+    write_dec_u32(linux_p2b_strcpy_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_strncpy_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_strcmp_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_strncmp_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_memmove_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2b_export_match);
+    write_string(" rets ");
+    write_hex_u64(linux_p2b_strcpy_ret);
+    write_string("/");
+    write_hex_u64(linux_p2b_strncpy_ret);
+    write_string("/");
+    write_hex_u64(linux_p2b_strcmp_ret);
+    write_string("/");
+    write_hex_u64(linux_p2b_strncmp2_ret);
+    write_string("/");
+    write_hex_u64(linux_p2b_strncmp3_ret);
+    write_string("/");
+    write_hex_u64(linux_p2b_memmove_ret);
+    write_string(" checksum ");
+    write_hex_u32(linux_p2b_checksum);
+    write_string(" copy ");
+    write_dec_u32(linux_p2b_code_copy);
+    write_string("/");
+    write_dec_u32(linux_p2b_data_init);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2b_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2b_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2b_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2b_data_addr));
+    write_string(" positive ");
+    write_dec_u32(linux_p2b_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2c puts maps ");
+    write_hex_u64(linux_p2c_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2c_data_map);
+    write_string(" fd ");
+    write_dec_u32(linux_p2_fd_init);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2_result.libc_result.stdio_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" run ");
+    write_hex_u32(linux_p2c_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2c_aux);
+    write_string("/");
+    write_dec_u32(linux_p2c_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2c_puts_return);
+    write_string(" console ");
+    write_dec_u32(linux_p2c_console_after_count - linux_p2c_console_before_count);
+    write_string("/");
+    write_dec_u32(linux_p2c_console_after_bytes - linux_p2c_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(linux_p2c_native_after - linux_p2c_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2c_persona_after - linux_p2c_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2c_linux_after - linux_p2c_linux_before);
+    write_string(" write ");
+    write_dec_u32(linux_p2c_write_after - linux_p2c_write_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2c_audit_after - linux_p2c_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2c_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2c_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2c_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2c_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2c_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2c_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2c_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2c_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2c_console_match);
+    write_string("/");
+    write_dec_u32(linux_p2c_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2c_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2c_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2c_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2c_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2c_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2c_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2c_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2d printf maps ");
+    write_hex_u64(linux_p2d_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2d_data_map);
+    write_string(" fd ");
+    write_dec_u32(linux_p2_fd_init);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2_result.libc_result.stdio_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" run ");
+    write_hex_u32(linux_p2d_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2d_aux);
+    write_string("/");
+    write_dec_u32(linux_p2d_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2d_printf_return);
+    write_string("/");
+    write_hex_u64(linux_p2d_deny_return);
+    write_string(" console ");
+    write_dec_u32(linux_p2d_console_after_count - linux_p2d_console_before_count);
+    write_string("/");
+    write_dec_u32(linux_p2d_console_after_bytes - linux_p2d_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(linux_p2d_native_after - linux_p2d_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2d_persona_after - linux_p2d_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2d_linux_after - linux_p2d_linux_before);
+    write_string(" write ");
+    write_dec_u32(linux_p2d_write_after - linux_p2d_write_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2d_audit_after - linux_p2d_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2d_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2d_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2d_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2d_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2d_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2d_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2d_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2d_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2d_deny_match);
+    write_string("/");
+    write_dec_u32(linux_p2d_console_match);
+    write_string("/");
+    write_dec_u32(linux_p2d_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2d_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2d_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2d_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2d_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2d_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2d_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2d_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2e malloc maps ");
+    write_hex_u64(linux_p2e_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2e_data_map);
+    write_string("/");
+    write_hex_u64(linux_p2e_stack_map);
+    write_string(" load ");
+    write_dec_u32(linux_p2e_load);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2e_result.heap_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2e_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2e_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2e_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2e_libc_page_present);
+    write_string(" run ");
+    write_hex_u32(linux_p2e_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2e_aux);
+    write_string("/");
+    write_dec_u32(linux_p2e_current_pid);
+    write_string(" ptr ");
+    write_hex_u64(linux_p2e_malloc_ptr);
+    write_string("/");
+    write_hex_u64(linux_p2e_heap_base);
+    write_string(" free ");
+    write_hex_u64(linux_p2e_free_return);
+    write_string(" magic ");
+    write_hex_u64(linux_p2e_heap_magic);
+    write_string(" native ");
+    write_dec_u32(linux_p2e_native_after - linux_p2e_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2e_persona_after - linux_p2e_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2e_linux_after - linux_p2e_linux_before);
+    write_string(" mmap ");
+    write_dec_u32(linux_p2e_mmap_after - linux_p2e_mmap_before);
+    write_string("/");
+    write_dec_u32(linux_p2e_mmap_bytes_after - linux_p2e_mmap_bytes_before);
+    write_string(" munmap ");
+    write_dec_u32(linux_p2e_munmap_after - linux_p2e_munmap_before);
+    write_string("/");
+    write_dec_u32(linux_p2e_munmap_bytes_after - linux_p2e_munmap_bytes_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2e_audit_after - linux_p2e_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2e_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2e_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2e_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2e_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2e_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2e_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2e_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2e_pointer_match);
+    write_string("/");
+    write_dec_u32(linux_p2e_magic_match);
+    write_string("/");
+    write_dec_u32(linux_p2e_free_match);
+    write_string("/");
+    write_dec_u32(linux_p2e_heap_unmapped);
+    write_string("/");
+    write_dec_u32(linux_p2e_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2e_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2e_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2e_unmap_data);
+    write_string("/");
+    write_dec_u32(linux_p2e_unmap_stack);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2e_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2e_data_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2e_stack_addr));
+    write_string("/");
+    write_dec_u32(linux_p2e_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2e_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2f calloc-realloc maps ");
+    write_hex_u64(linux_p2f_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2f_data_map);
+    write_string("/");
+    write_hex_u64(linux_p2f_stack_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2_result.libc_result.heap_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2f_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2f_code_prot);
+    write_string(" run ");
+    write_hex_u32(linux_p2f_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2f_aux);
+    write_string("/");
+    write_dec_u32(linux_p2f_current_pid);
+    write_string(" ptr ");
+    write_hex_u64(linux_p2f_calloc_ptr);
+    write_string("/");
+    write_hex_u64(linux_p2f_realloc_ptr);
+    write_string(" free ");
+    write_hex_u64(linux_p2f_free_return);
+    write_string(" zero ");
+    write_hex_u64(linux_p2f_zero_qwords);
+    write_string(" magic ");
+    write_hex_u64(linux_p2f_copied_magic);
+    write_string(" native ");
+    write_dec_u32(linux_p2f_native_after - linux_p2f_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2f_persona_after - linux_p2f_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2f_linux_after - linux_p2f_linux_before);
+    write_string(" mmap ");
+    write_dec_u32(linux_p2f_mmap_after - linux_p2f_mmap_before);
+    write_string("/");
+    write_dec_u32(linux_p2f_mmap_bytes_after - linux_p2f_mmap_bytes_before);
+    write_string(" munmap ");
+    write_dec_u32(linux_p2f_munmap_after - linux_p2f_munmap_before);
+    write_string("/");
+    write_dec_u32(linux_p2f_munmap_bytes_after - linux_p2f_munmap_bytes_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2f_audit_after - linux_p2f_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2f_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2f_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2f_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2f_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2f_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2f_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2f_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2f_pointer_match);
+    write_string("/");
+    write_dec_u32(linux_p2f_zero_match);
+    write_string("/");
+    write_dec_u32(linux_p2f_copy_match);
+    write_string("/");
+    write_dec_u32(linux_p2f_free_match);
+    write_string("/");
+    write_dec_u32(linux_p2f_calloc_unmapped);
+    write_string("/");
+    write_dec_u32(linux_p2f_realloc_unmapped);
+    write_string("/");
+    write_dec_u32(linux_p2f_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2f_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2f_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2f_unmap_data);
+    write_string("/");
+    write_dec_u32(linux_p2f_unmap_stack);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2f_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2f_data_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2f_stack_addr));
+    write_string("/");
+    write_dec_u32(linux_p2f_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2f_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2g fputs-fwrite maps ");
+    write_hex_u64(linux_p2g_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2g_data_map);
+    write_string(" fd ");
+    write_dec_u32(linux_p2_fd_init);
+    write_string(" symbols ");
+    write_dec_u32(linux_p2_result.libc_result.stdio_symbol_count);
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2g_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2g_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2g_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2g_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2g_aux);
+    write_string("/");
+    write_dec_u32(linux_p2g_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2g_fputs_return);
+    write_string("/");
+    write_hex_u64(linux_p2g_fwrite_return);
+    write_string(" console ");
+    write_dec_u32(linux_p2g_console_after_count - linux_p2g_console_before_count);
+    write_string("/");
+    write_dec_u32(linux_p2g_console_after_bytes - linux_p2g_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(linux_p2g_native_after - linux_p2g_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2g_persona_after - linux_p2g_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2g_linux_after - linux_p2g_linux_before);
+    write_string(" write ");
+    write_dec_u32(linux_p2g_write_after - linux_p2g_write_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2g_audit_after - linux_p2g_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2g_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2g_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2g_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2g_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2g_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2g_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2g_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2g_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2g_console_match);
+    write_string("/");
+    write_dec_u32(linux_p2g_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2g_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2g_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2g_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2g_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2g_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2g_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2g_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2h getenv maps ");
+    write_hex_u64(linux_p2h_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2h_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_env_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" bind ");
+    write_dec_u32(linux_p2h_bind_match);
+    write_string("/");
+    write_hex_u64(linux_p2h_envp_snapshot);
+    write_string("/");
+    write_dec_u32(LINUX_LIBC64_ENV_SNAPSHOT_COUNT);
+    write_string(" copy ");
+    write_dec_u32(linux_p2h_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2h_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2h_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2h_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2h_aux);
+    write_string("/");
+    write_dec_u32(linux_p2h_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2h_present_return);
+    write_string("/");
+    write_hex_u64(linux_p2h_absent_return);
+    write_string("/");
+    write_hex_u64(linux_p2h_setenv_return);
+    write_string("/");
+    write_hex_u64(linux_p2h_updated_return);
+    write_string("/");
+    write_hex_u64(linux_p2h_missing_setenv_return);
+    write_string(" native ");
+    write_dec_u32(linux_p2h_native_after - linux_p2h_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2h_persona_after - linux_p2h_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2h_linux_after - linux_p2h_linux_before);
+    write_string(" write ");
+    write_dec_u32(linux_p2h_write_after - linux_p2h_write_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2h_audit_after - linux_p2h_audit_before);
+    write_string(" match ");
+    write_dec_u32(linux_p2h_value_match);
+    write_string("/");
+    write_dec_u32(linux_p2h_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2h_denial_match);
+    write_string("/");
+    write_dec_u32(linux_p2h_syscall_match);
+    write_string("/");
+    write_dec_u32(linux_p2h_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2h_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2h_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2h_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2h_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2h_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2h_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2i errno maps ");
+    write_hex_u64(linux_p2i_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2i_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_errno_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" cell ");
+    write_hex_u64(linux_p2_result.libc_result.errno_location_fn);
+    write_string("/");
+    write_hex_u64(linux_p2i_errno_return);
+    write_string("/");
+    write_hex_u64(linux_p2_result.libc_result.errno_cell);
+    write_string(" prot ");
+    write_hex_u32(linux_p2i_code_prot);
+    write_string("/");
+    write_hex_u32(linux_p2i_errno_prot);
+    write_string(" copy ");
+    write_dec_u32(linux_p2i_code_copy);
+    write_string(" run ");
+    write_hex_u32(linux_p2i_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2i_aux);
+    write_string("/");
+    write_dec_u32(linux_p2i_current_pid);
+    write_string(" value ");
+    write_hex_u64(linux_p2i_errno_value);
+    write_string(" native ");
+    write_dec_u32(linux_p2i_native_after - linux_p2i_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2i_persona_after - linux_p2i_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2i_linux_after - linux_p2i_linux_before);
+    write_string(" write ");
+    write_dec_u32(linux_p2i_write_after - linux_p2i_write_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2i_audit_after - linux_p2i_audit_before);
+    write_string(" match ");
+    write_dec_u32(linux_p2i_value_match);
+    write_string("/");
+    write_dec_u32(linux_p2i_syscall_match);
+    write_string("/");
+    write_dec_u32(linux_p2i_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2i_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2i_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2i_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2i_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2i_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2i_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2k mutex maps ");
+    write_hex_u64(linux_p2k_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2k_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_mutex_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2k_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2k_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2k_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2k_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2k_aux);
+    write_string("/");
+    write_dec_u32(linux_p2k_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2k_lock_return);
+    write_string("/");
+    write_hex_u64(linux_p2k_unlock_return);
+    write_string("/");
+    write_hex_u64(linux_p2k_empty_unlock_return);
+    write_string("/");
+    write_hex_u64(linux_p2k_null_lock_return);
+    write_string("/");
+    write_hex_u64(linux_p2k_null_unlock_return);
+    write_string(" word ");
+    write_hex_u64(linux_p2k_word_after_lock);
+    write_string("/");
+    write_hex_u64(linux_p2k_word_after_unlock);
+    write_string(" native ");
+    write_dec_u32(linux_p2k_native_after - linux_p2k_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2k_persona_after - linux_p2k_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2k_linux_after - linux_p2k_linux_before);
+    write_string(" futex ");
+    write_dec_u32(linux_p2k_futex_wake_after - linux_p2k_futex_wake_before);
+    write_string("/");
+    write_dec_u32(linux_p2k_futex_woken_after - linux_p2k_futex_woken_before);
+    write_string("/");
+    write_dec_u32(linux_abi64_futex_waiter_count());
+    write_string(" audit ");
+    write_dec_u32(linux_p2k_audit_after - linux_p2k_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2k_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2k_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2k_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2k_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2k_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2k_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2k_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2k_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2k_word_match);
+    write_string("/");
+    write_dec_u32(linux_p2k_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2k_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2k_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2k_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2k_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2k_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2k_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2k_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2n cond maps ");
+    write_hex_u64(linux_p2n_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2n_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_cond_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2n_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2n_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2n_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2n_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2n_aux);
+    write_string("/");
+    write_dec_u32(linux_p2n_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2n_signal_return);
+    write_string("/");
+    write_hex_u64(linux_p2n_broadcast_return);
+    write_string("/");
+    write_hex_u64(linux_p2n_null_return);
+    write_string(" native ");
+    write_dec_u32(linux_p2n_native_after - linux_p2n_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2n_persona_after - linux_p2n_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2n_linux_after - linux_p2n_linux_before);
+    write_string(" futex ");
+    write_dec_u32(linux_p2n_futex_wake_after - linux_p2n_futex_wake_before);
+    write_string("/");
+    write_dec_u32(linux_p2n_futex_woken_after - linux_p2n_futex_woken_before);
+    write_string("/");
+    write_dec_u32(linux_abi64_futex_waiter_count());
+    write_string(" audit ");
+    write_dec_u32(linux_p2n_audit_after - linux_p2n_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2n_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2n_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2n_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2n_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2n_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2n_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2n_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2n_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2n_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2n_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2n_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2n_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2n_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2n_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2n_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2n_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2o cond-wait maps ");
+    write_hex_u64(linux_p2o_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2o_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_cond_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2o_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2o_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2o_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2o_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2o_aux);
+    write_string("/");
+    write_dec_u32(linux_p2o_current_pid);
+    write_string(" tasks ");
+    write_dec_u32(linux_p2o_waiter_state);
+    write_string("/");
+    write_dec_u32(linux_p2o_signaler_state);
+    write_string("/");
+    write_hex_u32(linux_p2o_waiter_result);
+    write_string("/");
+    write_hex_u32(linux_p2o_signaler_result);
+    write_string(" words ");
+    write_hex_u32(linux_p2o_cond_word_after);
+    write_string("/");
+    write_hex_u32(linux_p2o_mutex_word_after);
+    write_string(" wait ");
+    write_hex_u64(linux_p2o_wait_return);
+    write_string("/");
+    write_hex_u64(linux_p2o_signal_return);
+    write_string(" sched ");
+    write_dec_u32(linux_p2o_blocks_after - linux_p2o_blocks_before);
+    write_string("/");
+    write_dec_u32(linux_p2o_wakes_after - linux_p2o_wakes_before);
+    write_string("/");
+    write_dec_u32(linux_p2o_switches_after - linux_p2o_switches_before);
+    write_string(" native ");
+    write_dec_u32(linux_p2o_native_after - linux_p2o_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2o_persona_after - linux_p2o_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2o_linux_after - linux_p2o_linux_before);
+    write_string(" futex ");
+    write_dec_u32(linux_p2o_futex_wait_after - linux_p2o_futex_wait_before);
+    write_string("/");
+    write_dec_u32(linux_p2o_futex_wake_after - linux_p2o_futex_wake_before);
+    write_string("/");
+    write_dec_u32(linux_abi64_futex_waiter_count());
+    write_string(" audit ");
+    write_dec_u32(linux_p2o_audit_after - linux_p2o_audit_before);
+    write_string(" match ");
+    write_dec_u32(linux_p2o_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2o_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2o_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2o_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2o_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2o_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2o_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2o_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2o_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2p pthread-tls maps ");
+    write_hex_u64(linux_p2p_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2p_data_map);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_tls_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2_result.libc_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2p_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2p_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2p_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2p_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2p_aux);
+    write_string("/");
+    write_dec_u32(linux_p2p_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2p_pre_get_return);
+    write_string("/");
+    write_hex_u64(linux_p2p_create_return);
+    write_string("/");
+    write_hex_u64(linux_p2p_set_return);
+    write_string("/");
+    write_hex_u64(linux_p2p_get_return);
+    write_string("/");
+    write_hex_u64(linux_p2p_second_create_return);
+    write_string("/");
+    write_hex_u64(linux_p2p_bad_set_return);
+    write_string(" keys ");
+    write_hex_u32(linux_p2p_key_out);
+    write_string("/");
+    write_hex_u32(linux_p2p_key2_out);
+    write_string(" native ");
+    write_dec_u32(linux_p2p_native_after - linux_p2p_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2p_persona_after - linux_p2p_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2p_linux_after - linux_p2p_linux_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2p_audit_after - linux_p2p_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2p_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2p_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2p_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2p_audit_record.result);
+    write_string(" match ");
+    write_dec_u32(linux_p2p_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2p_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2p_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2p_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2p_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2p_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2p_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2p_reset);
+    write_string(" positive ");
+    write_dec_u32(linux_p2p_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2l pthread-create maps ");
+    write_hex_u64(linux_p2l_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2l_data_map);
+    write_string("/");
+    write_hex_u64(linux_p2l_stack_map);
+    write_string(" load ");
+    write_dec_u32(linux_p2l_load);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_create_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2l_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2l_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2l_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2l_data_init);
+    write_string(" run ");
+    write_hex_u32(linux_p2l_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2l_aux);
+    write_string("/");
+    write_dec_u32(linux_p2l_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2l_invalid_return);
+    write_string("/");
+    write_hex_u64(linux_p2l_unsupported_return);
+    write_string("/");
+    write_hex_u64(linux_p2l_create_return);
+    write_string("/");
+    write_hex_u64(linux_p2l_thread_value);
+    write_string(" task ");
+    write_dec_u32(linux_p2l_child_pid);
+    write_string("/");
+    write_dec_u32(linux_p2l_child_task);
+    write_string("/");
+    write_dec_u32(linux_p2l_child_task_pid);
+    write_string("/");
+    write_dec_u32(linux_p2l_child_task_state);
+    write_string("/");
+    write_hex_u64(linux_p2l_child_task_rip);
+    write_string("/");
+    write_hex_u64(linux_p2l_child_task_rsp);
+    write_string(" stack ");
+    write_hex_u64(linux_p2l_child_stack);
+    write_string("/");
+    write_hex_u64(linux_p2l_child_stack_base);
+    write_string(" shared ");
+    write_dec_u32(linux_p2l_shared_vma);
+    write_string("/");
+    write_dec_u32(linux_p2l_shared_fd);
+    write_string("/");
+    write_dec_u32(linux_p2l_shared_audit);
+    write_string(" native ");
+    write_dec_u32(linux_p2l_native_after - linux_p2l_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2l_persona_after - linux_p2l_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2l_linux_after - linux_p2l_linux_before);
+    write_string(" mmap ");
+    write_dec_u32(linux_p2l_mmap_after - linux_p2l_mmap_before);
+    write_string("/");
+    write_dec_u32(linux_p2l_mmap_bytes_after - linux_p2l_mmap_bytes_before);
+    write_string(" clone ");
+    write_dec_u32(linux_p2l_clone_after - linux_p2l_clone_before);
+    write_string("/");
+    write_dec_u32(linux_p2l_clone_thread_after - linux_p2l_clone_thread_before);
+    write_string("/");
+    write_dec_u32(linux_p2l_clone_sched_after - linux_p2l_clone_sched_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2l_audit_after - linux_p2l_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2l_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2l_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2l_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2l_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2l_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2l_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2l_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2l_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2l_clone_match);
+    write_string("/");
+    write_dec_u32(linux_p2l_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2l_export_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2l_release_clone);
+    write_string("/");
+    write_dec_u32(linux_p2l_unmap_probe_stack);
+    write_string("/");
+    write_dec_u32(linux_p2l_unmap_thread_stack);
+    write_string("/");
+    write_dec_u32(linux_p2l_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2l_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2l_child_stack_base));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2l_stack_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2l_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2l_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2l_reset);
+    write_string(" release ");
+    write_dec_u32(linux_p2l_libc_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_fd_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_persona_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_clone_release);
+    write_string("/");
+    write_dec_u32(linux_p2l_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p2l_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2m pthread-join maps ");
+    write_hex_u64(linux_p2m_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2m_data_map);
+    write_string("/");
+    write_hex_u64(linux_p2m_stack_map);
+    write_string("/");
+    write_hex_u64(linux_p2m_child_stack_map);
+    write_string(" load ");
+    write_dec_u32(linux_p2m_load);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_pthread_join_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2m_result.unavailable_symbol_count);
+    write_string(" copy ");
+    write_dec_u32(linux_p2m_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2m_code_prot);
+    write_string("/");
+    write_dec_u32(linux_p2m_data_init);
+    write_string(" clone ");
+    write_hex_u64(linux_p2m_clone_return);
+    write_string("/");
+    write_dec_u32(linux_p2m_child_pid);
+    write_string("/");
+    write_dec_u32(linux_p2m_child_task);
+    write_string("/");
+    write_dec_u32(linux_p2m_child_task_pid);
+    write_string("/");
+    write_dec_u32(linux_p2m_child_task_state);
+    write_string("/");
+    write_hex_u64(linux_p2m_child_task_rsp);
+    write_string(" exit ");
+    write_dec_u32(linux_p2m_child_exit_result);
+    write_string("/");
+    write_dec_u32(linux_p2m_child_exit_code);
+    write_string(" run ");
+    write_hex_u32(linux_p2m_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2m_aux);
+    write_string("/");
+    write_dec_u32(linux_p2m_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2m_invalid_return);
+    write_string("/");
+    write_hex_u64(linux_p2m_retval_return);
+    write_string("/");
+    write_hex_u64(linux_p2m_join_return);
+    write_string(" wait ");
+    write_dec_u32(linux_p2m_wait4_after - linux_p2m_wait4_before);
+    write_string("/");
+    write_dec_u32(linux_p2m_reap_after - linux_p2m_reap_before);
+    write_string("/");
+    write_dec_u32(linux_abi64_wait4_last_status());
+    write_string("/");
+    write_dec_u32(linux_abi64_wait4_last_status_written());
+    write_string("/");
+    write_dec_u32(linux_abi64_wait4_last_process_release());
+    write_string("/");
+    write_dec_u32(linux_abi64_wait4_last_clone_release());
+    write_string(" native ");
+    write_dec_u32(linux_p2m_native_after - linux_p2m_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2m_persona_after - linux_p2m_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2m_linux_after - linux_p2m_linux_before);
+    write_string(" audit ");
+    write_dec_u32(linux_p2m_audit_after - linux_p2m_audit_before);
+    write_string("/");
+    write_dec_u32(linux_p2m_audit_read);
+    write_string("/");
+    write_dec_u32(linux_p2m_audit_record.event_type);
+    write_string("/");
+    write_dec_u32(linux_p2m_audit_record.event_code);
+    write_string("/");
+    write_dec_u32(linux_p2m_audit_record.result);
+    write_string(" last ");
+    write_dec_u32(linux_p2m_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2m_last_type);
+    write_string("/");
+    write_hex_u64(linux_p2m_last_result);
+    write_string(" match ");
+    write_dec_u32(linux_p2m_return_match);
+    write_string("/");
+    write_dec_u32(linux_p2m_wait_match);
+    write_string("/");
+    write_dec_u32(linux_p2m_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2m_export_match);
+    write_string("/");
+    write_dec_u32(linux_p2m_reap_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2m_unmap_child_stack);
+    write_string("/");
+    write_dec_u32(linux_p2m_unmap_stack);
+    write_string("/");
+    write_dec_u32(linux_p2m_unmap_code);
+    write_string("/");
+    write_dec_u32(linux_p2m_unmap_data);
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2m_child_stack_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2m_stack_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2m_code_addr));
+    write_string("/");
+    write_dec_u32(paging64_user_page_present(linux_p2m_data_addr));
+    write_string("/");
+    write_dec_u32(linux_p2m_reset);
+    write_string(" release ");
+    write_dec_u32(linux_p2m_libc_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_fd_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_persona_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_parent_release);
+    write_string("/");
+    write_dec_u32(linux_p2m_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p2m_positive);
+    write_line("");
+    write_string("[x64] linux-libc-P2j abort maps ");
+    write_hex_u64(linux_p2j_code_map);
+    write_string("/");
+    write_hex_u64(linux_p2j_data_map);
+    write_string("/");
+    write_hex_u64(linux_p2j_stack_map);
+    write_string(" load ");
+    write_dec_u32(linux_p2j_load);
+    write_string(" symbols ");
+    write_dec_u32(linux_libc64_abort_symbol_count());
+    write_string("/");
+    write_dec_u32(linux_p2j_result.unavailable_symbol_count);
+    write_string(" fn ");
+    write_hex_u64(linux_p2j_result.abort_fn);
+    write_string(" copy ");
+    write_dec_u32(linux_p2j_code_copy);
+    write_string("/");
+    write_hex_u32(linux_p2j_code_prot);
+    write_string(" run ");
+    write_hex_u32(linux_p2j_transfer);
+    write_string("/");
+    write_dec_u32(linux_p2j_aux);
+    write_string("/");
+    write_dec_u32(linux_p2j_current_pid);
+    write_string(" ret ");
+    write_hex_u64(linux_p2j_return_value);
+    write_string(" native ");
+    write_dec_u32(linux_p2j_native_after - linux_p2j_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_p2j_persona_after - linux_p2j_persona_before);
+    write_string("/");
+    write_dec_u32(linux_p2j_linux_after - linux_p2j_linux_before);
+    write_string(" exit ");
+    write_dec_u32(linux_p2j_exit_group_after - linux_p2j_exit_group_before);
+    write_string("/");
+    write_dec_u32(linux_p2j_exited);
+    write_string("/");
+    write_dec_u32(linux_p2j_exit_code);
+    write_string(" last ");
+    write_dec_u32(linux_p2j_last_pid);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_code);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_vma);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_fd);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_persona);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p2j_last_audit_recorded);
+    write_string(" detach ");
+    write_dec_u32(linux_p2j_slots_detached);
+    write_string(" audit ");
+    write_dec_u32(linux_p2j_reattach_audit);
+    write_string("/");
+    write_dec_u32(linux_p2j_audit_count_after_reattach);
+    write_string(" match ");
+    write_dec_u32(linux_p2j_export_match);
+    write_string("/");
+    write_dec_u32(linux_p2j_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_p2j_exit_match);
+    write_string(" cleanup ");
+    write_dec_u32(linux_p2j_reattach_vma);
+    write_string("/");
+    write_dec_u32(linux_p2j_vma_release);
+    write_string("/");
+    write_dec_u32(linux_p2j_audit_release);
+    write_string("/");
+    write_dec_u32(linux_p2j_clone_release);
+    write_string("/");
+    write_dec_u32(linux_p2j_pages_clear);
+    write_string("/");
+    write_dec_u32(linux_p2j_cleanup);
+    write_string(" positive ");
+    write_dec_u32(linux_p2j_positive);
+    write_line("");
+#endif
     write_string("[x64] pipe-C1 object-bytes ");
     write_dec_u32((u32)sizeof(pipe64_buffer_t));
     write_string(" buffer ");
@@ -25825,6 +46297,69 @@ static void log_process_namespace(void)
     write_dec_u32(pipe_c5_live_final);
     write_string(" positive ");
     write_dec_u32(pipe_c5_positive);
+    write_line("");
+    write_string("[x64] pipe-C6 block direct ");
+    write_dec_u32(pipe_c6_direct_denied);
+    write_string(" block ");
+    write_hex_u32(pipe_c6_read_block_result);
+    write_string(" tasks ");
+    write_dec_u32(pipe_c6_current_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_blocked_slot);
+    write_string("/");
+    write_dec_u32(pipe_c6_reader_state_after_block);
+    write_string("/");
+    write_dec_u32(pipe_c6_switch_to_writer);
+    write_string("/");
+    write_dec_u32(pipe_c6_writer_state_after_switch);
+    write_string(" write ");
+    write_dec_u32(pipe_c6_write_bytes);
+    write_string(" wake ");
+    write_dec_u32(pipe_c6_pipe_wake_after - pipe_c6_pipe_wake_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_sched_wake_after - pipe_c6_sched_wake_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_reader_state_after_wake);
+    write_string("/");
+    write_dec_u32(pipe_c6_slot_after_wake);
+    write_string(" back ");
+    write_dec_u32(pipe_c6_switch_to_reader);
+    write_string("/");
+    write_dec_u32(pipe_c6_current_after_switch);
+    write_string("/");
+    write_dec_u32(pipe_c6_reader_state_after_switch);
+    write_string(" read ");
+    write_dec_u32(pipe_c6_read_after_wake);
+    write_string(" checksum ");
+    write_hex_u32(pipe_c6_checksum);
+    write_string(" match ");
+    write_dec_u32(pipe_c6_match);
+    write_string(" avail ");
+    write_dec_u32(pipe_c6_avail_after_write);
+    write_string("/");
+    write_dec_u32(pipe_c6_avail_after_read);
+    write_string(" counts ");
+    write_dec_u32(pipe_c6_pipe_block_after - pipe_c6_pipe_block_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_pipe_wake_after - pipe_c6_pipe_wake_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_sched_block_after - pipe_c6_sched_block_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_sched_wake_after - pipe_c6_sched_wake_before);
+    write_string("/");
+    write_dec_u32(pipe_c6_sched_denial_after - pipe_c6_sched_denial_before);
+    write_string(" cleanup ");
+    write_dec_u32(pipe_c6_close_writer);
+    write_string("/");
+    write_dec_u32(pipe_c6_close_b_read);
+    write_string("/");
+    write_dec_u32(pipe_c6_close_a_read);
+    write_string("/");
+    write_dec_u32(pipe_c6_target_cleanup);
+    write_string("/");
+    write_dec_u32(pipe_c6_live_final);
+    write_string(" positive ");
+    write_dec_u32(pipe_c6_positive);
     write_line("");
     write_string("[x64] persona-D1 bytes ");
     write_dec_u32((u32)sizeof(persona_context_t));
@@ -26812,7 +47347,6 @@ static void run_user_entry_switch_probe(void)
     u64 target_rip = 0u;
     u64 target_rsp = 0u;
     u32 result = 0u;
-
     if ((policy_manifest != LAUNCH64_INVALID_MANIFEST)
         && ((user_entry_state & LAUNCH64_USER_ENTRY_TRANSFER_READY) != 0u))
     {
@@ -26874,6 +47408,63 @@ static void run_user_entry_runqueue_probe(void)
     u64 target_rip = 0u;
     u64 target_rsp = 0u;
     u32 result = 0u;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u32 block_source_task = SCHEDULER64_INVALID_TASK;
+    u32 block_target_task = SCHEDULER64_INVALID_TASK;
+    u32 block_start = 0u;
+    u32 block_result = 0u;
+    u32 block_state = 0u;
+    u32 block_count = 0u;
+    u32 blocked_after_block = 0u;
+    u32 block_switch = 0u;
+    u32 block_target_state = 0u;
+    u32 block_wake = 0u;
+    u32 block_wake_state = 0u;
+    u32 block_wake_count = 0u;
+    u32 block_switch_back = 0u;
+    u32 block_final_state = 0u;
+    u32 block_denials_before = 0u;
+    u32 block_denials_after = 0u;
+    u32 block_invalid_deny = 0u;
+    u32 block_running_wake_deny = 0u;
+    u32 block_positive = 0u;
+    struct interrupt_frame64 block_frame = {0};
+    u32 sleep_source_task = SCHEDULER64_INVALID_TASK;
+    u32 sleep_peer_task = SCHEDULER64_INVALID_TASK;
+    u32 sleep_start = 0u;
+    u32 sleep_result = 0u;
+    u32 sleep_requested = 3u;
+    u32 sleep_wake_tick = 0u;
+    u32 sleep_elapsed = 0u;
+    u32 sleep_last_task = SCHEDULER64_INVALID_TASK;
+    u32 sleep_current_before = SCHEDULER64_INVALID_TASK;
+    u32 sleep_state_after_block = 0u;
+    u32 sleep_pending_before = 0u;
+    u32 sleep_pending_after_block = 0u;
+    u32 sleep_pending_after_wake = 0u;
+    u32 sleep_count_before = 0u;
+    u32 sleep_count_after = 0u;
+    u32 sleep_wake_before = 0u;
+    u32 sleep_wake_after = 0u;
+    u32 sleep_sched_block_before = 0u;
+    u32 sleep_sched_block_after = 0u;
+    u32 sleep_sched_wake_before = 0u;
+    u32 sleep_sched_wake_after = 0u;
+    u32 sleep_switch_to_peer = 0u;
+    u32 sleep_peer_state = 0u;
+    u32 sleep_switch_to_source = 0u;
+    u32 sleep_current_after_wake = SCHEDULER64_INVALID_TASK;
+    u32 sleep_final_state = 0u;
+    u32 sleep_deny_task = SCHEDULER64_INVALID_TASK;
+    u32 sleep_deny_start = 0u;
+    u32 sleep_deny_result = 0u;
+    u32 sleep_deny_state = 0u;
+    u32 sleep_denial_before = 0u;
+    u32 sleep_denial_after = 0u;
+    u32 sleep_positive = 0u;
+    struct interrupt_frame64 sleep_source_frame = {0};
+    struct interrupt_frame64 sleep_peer_frame = {0};
+#endif
 
     if ((policy_pid != PROCESS64_INVALID_PID)
         && (console_pid != PROCESS64_INVALID_PID)
@@ -26944,6 +47535,294 @@ static void run_user_entry_runqueue_probe(void)
     write_hex_u64(interrupts64_user_runqueue_probe_ss());
     write_labeled_hex_u32(" rflags ", interruptible_rflags);
     write_line("");
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    scheduler64_runqueue_reset();
+    if ((policy_manifest != LAUNCH64_INVALID_MANIFEST)
+        && (console_manifest != LAUNCH64_INVALID_MANIFEST)
+        && ((policy_user_entry_state & LAUNCH64_USER_ENTRY_TRANSFER_READY) != 0u)
+        && ((console_user_entry_state & LAUNCH64_USER_ENTRY_TRANSFER_READY) != 0u))
+    {
+        block_source_task = scheduler64_runqueue_register_user_task(
+            source_rip,
+            source_rsp,
+            launch64_manifest_runtime_user_entry_selectors(policy_manifest),
+            interruptible_rflags);
+        block_target_task = scheduler64_runqueue_register_user_task(
+            target_rip,
+            target_rsp,
+            launch64_manifest_runtime_user_entry_selectors(console_manifest),
+            interruptible_rflags);
+    }
+    block_start = (block_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(block_source_task)
+        : 0u;
+    block_result = (block_start != 0u)
+        ? scheduler64_runqueue_block_task(block_source_task)
+        : 0u;
+    block_state = (block_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(block_source_task)
+        : 0u;
+    block_count = scheduler64_runqueue_block_count();
+    blocked_after_block = scheduler64_runqueue_blocked_count();
+    if (block_result != 0u)
+    {
+        block_frame.rip = source_rip;
+        block_frame.rsp = source_rsp;
+        block_frame.rflags = interruptible_rflags;
+        block_frame.cs =
+            launch64_manifest_runtime_user_entry_selectors(policy_manifest) & 0xFFFFull;
+        block_frame.ss =
+            (launch64_manifest_runtime_user_entry_selectors(policy_manifest) >> 16) & 0xFFFFull;
+        block_switch = scheduler64_runqueue_on_timer(&block_frame);
+    }
+    block_target_state = (block_target_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(block_target_task)
+        : 0u;
+    block_wake = (block_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_wake_task(block_source_task)
+        : 0u;
+    block_wake_state = (block_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(block_source_task)
+        : 0u;
+    block_wake_count = scheduler64_runqueue_wake_count();
+    block_switch_back = (block_wake != 0u)
+        ? scheduler64_runqueue_on_timer(&block_frame)
+        : 0u;
+    block_final_state = (block_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(block_source_task)
+        : 0u;
+    block_denials_before = scheduler64_runqueue_block_denial_count();
+    block_invalid_deny =
+        (scheduler64_runqueue_block_task(SCHEDULER64_INVALID_TASK) == 0u) ? 1u : 0u;
+    block_running_wake_deny =
+        (scheduler64_runqueue_wake_task(block_source_task) == 0u) ? 1u : 0u;
+    block_denials_after = scheduler64_runqueue_block_denial_count();
+    block_positive =
+        ((block_start != 0u)
+            && (block_result != 0u)
+            && (block_state == SCHEDULER64_TASK_BLOCKED)
+            && (block_count == 1u)
+            && (blocked_after_block == 1u)
+            && (block_switch != 0u)
+            && (block_target_state == SCHEDULER64_TASK_RUNNING)
+            && (block_wake != 0u)
+            && (block_wake_state == SCHEDULER64_TASK_READY)
+            && (block_wake_count == 1u)
+            && (block_switch_back != 0u)
+            && (block_final_state == SCHEDULER64_TASK_RUNNING)
+            && (block_invalid_deny != 0u)
+            && (block_running_wake_deny != 0u)
+            && ((block_denials_after - block_denials_before) == 2u))
+            ? 1u
+            : 0u;
+    scheduler64_runqueue_stop();
+
+    write_string("[x64] sched-block start ");
+    write_dec_u32(block_start);
+    write_string(" block ");
+    write_dec_u32(block_result);
+    write_string("/");
+    write_dec_u32(block_state);
+    write_string("/");
+    write_dec_u32(blocked_after_block);
+    write_string(" switch ");
+    write_dec_u32(block_switch);
+    write_string("/");
+    write_dec_u32(block_target_state);
+    write_string(" wake ");
+    write_dec_u32(block_wake);
+    write_string("/");
+    write_dec_u32(block_wake_state);
+    write_string(" back ");
+    write_dec_u32(block_switch_back);
+    write_string("/");
+    write_dec_u32(block_final_state);
+    write_string(" counts ");
+    write_dec_u32(block_count);
+    write_string("/");
+    write_dec_u32(block_wake_count);
+    write_string(" deny ");
+    write_dec_u32(block_invalid_deny);
+    write_string("/");
+    write_dec_u32(block_running_wake_deny);
+    write_string("/");
+    write_dec_u32(block_denials_after - block_denials_before);
+    write_string(" positive ");
+    write_dec_u32(block_positive);
+    write_line("");
+
+    scheduler64_runqueue_reset();
+    if ((policy_manifest != LAUNCH64_INVALID_MANIFEST)
+        && (console_manifest != LAUNCH64_INVALID_MANIFEST)
+        && ((policy_user_entry_state & LAUNCH64_USER_ENTRY_TRANSFER_READY) != 0u)
+        && ((console_user_entry_state & LAUNCH64_USER_ENTRY_TRANSFER_READY) != 0u))
+    {
+        sleep_source_task = scheduler64_runqueue_register_user_task(
+            source_rip,
+            source_rsp,
+            launch64_manifest_runtime_user_entry_selectors(policy_manifest),
+            interruptible_rflags);
+        sleep_peer_task = scheduler64_runqueue_register_user_task(
+            target_rip,
+            target_rsp,
+            launch64_manifest_runtime_user_entry_selectors(console_manifest),
+            interruptible_rflags);
+    }
+    sleep_start = (sleep_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(sleep_source_task)
+        : 0u;
+    sleep_current_before = scheduler64_runqueue_current_task_id();
+    sleep_pending_before = scheduler64_sleep_pending_count();
+    sleep_count_before = scheduler64_sleep_count();
+    sleep_wake_before = scheduler64_sleep_wake_count();
+    sleep_sched_block_before = scheduler64_runqueue_block_count();
+    sleep_sched_wake_before = scheduler64_runqueue_wake_count();
+    sleep_result = (sleep_start != 0u)
+        ? scheduler64_sleep_for_ticks(sleep_requested)
+        : 0u;
+    sleep_wake_tick = scheduler64_sleep_last_wake_tick();
+    sleep_state_after_block = (sleep_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(sleep_source_task)
+        : 0u;
+    sleep_pending_after_block = scheduler64_sleep_pending_count();
+    sleep_count_after = scheduler64_sleep_count();
+    sleep_sched_block_after = scheduler64_runqueue_block_count();
+    sleep_source_frame.rip = source_rip;
+    sleep_source_frame.rsp = source_rsp;
+    sleep_source_frame.rflags = interruptible_rflags;
+    sleep_source_frame.cs =
+        launch64_manifest_runtime_user_entry_selectors(policy_manifest) & 0xFFFFull;
+    sleep_source_frame.ss =
+        (launch64_manifest_runtime_user_entry_selectors(policy_manifest) >> 16) & 0xFFFFull;
+    sleep_switch_to_peer =
+        (sleep_state_after_block == SCHEDULER64_TASK_BLOCKED)
+            ? scheduler64_runqueue_on_timer(&sleep_source_frame)
+            : 0u;
+    sleep_peer_state = (sleep_peer_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(sleep_peer_task)
+        : 0u;
+    if (sleep_wake_tick > pit_get_ticks())
+    {
+        interrupts64_enable();
+        wait_for_timer_ticks(sleep_wake_tick);
+        interrupts64_disable();
+    }
+    sleep_peer_frame.rip = target_rip;
+    sleep_peer_frame.rsp = target_rsp;
+    sleep_peer_frame.rflags = interruptible_rflags;
+    sleep_peer_frame.cs =
+        launch64_manifest_runtime_user_entry_selectors(console_manifest) & 0xFFFFull;
+    sleep_peer_frame.ss =
+        (launch64_manifest_runtime_user_entry_selectors(console_manifest) >> 16) & 0xFFFFull;
+    sleep_switch_to_source =
+        (sleep_peer_state == SCHEDULER64_TASK_RUNNING)
+            ? scheduler64_runqueue_on_timer(&sleep_peer_frame)
+            : 0u;
+    sleep_current_after_wake = scheduler64_runqueue_current_task_id();
+    sleep_final_state = (sleep_source_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(sleep_source_task)
+        : 0u;
+    sleep_pending_after_wake = scheduler64_sleep_pending_count();
+    sleep_wake_after = scheduler64_sleep_wake_count();
+    sleep_sched_wake_after = scheduler64_runqueue_wake_count();
+    sleep_elapsed = scheduler64_sleep_last_elapsed_ticks();
+    sleep_last_task = scheduler64_sleep_last_task_id();
+    scheduler64_runqueue_stop();
+    scheduler64_runqueue_reset();
+
+    sleep_denial_before = scheduler64_sleep_denial_count();
+    sleep_deny_task = scheduler64_runqueue_register_user_task(
+        source_rip,
+        source_rsp,
+        launch64_manifest_runtime_user_entry_selectors(policy_manifest),
+        interruptible_rflags);
+    sleep_deny_start = (sleep_deny_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_start(sleep_deny_task)
+        : 0u;
+    sleep_deny_result = (sleep_deny_start != 0u)
+        ? scheduler64_sleep_for_ticks(1u)
+        : 1u;
+    sleep_deny_state = (sleep_deny_task != SCHEDULER64_INVALID_TASK)
+        ? scheduler64_runqueue_task_state(sleep_deny_task)
+        : 0u;
+    sleep_denial_after = scheduler64_sleep_denial_count();
+    scheduler64_runqueue_stop();
+
+    sleep_positive =
+        ((sleep_start != 0u)
+            && (sleep_result != 0u)
+            && (sleep_current_before == sleep_source_task)
+            && (sleep_state_after_block == SCHEDULER64_TASK_BLOCKED)
+            && (sleep_pending_before == 0u)
+            && (sleep_pending_after_block == 1u)
+            && ((sleep_count_after - sleep_count_before) == 1u)
+            && ((sleep_sched_block_after - sleep_sched_block_before) == 1u)
+            && (sleep_switch_to_peer != 0u)
+            && (sleep_peer_state == SCHEDULER64_TASK_RUNNING)
+            && (sleep_wake_tick != 0u)
+            && (sleep_switch_to_source != 0u)
+            && (sleep_current_after_wake == sleep_source_task)
+            && (sleep_final_state == SCHEDULER64_TASK_RUNNING)
+            && (sleep_pending_after_wake == 0u)
+            && ((sleep_wake_after - sleep_wake_before) == 1u)
+            && ((sleep_sched_wake_after - sleep_sched_wake_before) == 1u)
+            && (sleep_elapsed >= sleep_requested)
+            && (sleep_last_task == sleep_source_task)
+            && (sleep_deny_start != 0u)
+            && (sleep_deny_result == 0u)
+            && (sleep_deny_state == SCHEDULER64_TASK_RUNNING)
+            && ((sleep_denial_after - sleep_denial_before) == 1u))
+            ? 1u
+            : 0u;
+
+    write_string("[x64] sched-sleep start ");
+    write_dec_u32(sleep_start);
+    write_string(" sleep ");
+    write_dec_u32(sleep_result);
+    write_string("/");
+    write_dec_u32(sleep_state_after_block);
+    write_string("/");
+    write_dec_u32(sleep_pending_after_block);
+    write_string(" switch ");
+    write_dec_u32(sleep_switch_to_peer);
+    write_string("/");
+    write_dec_u32(sleep_peer_state);
+    write_string(" wake ");
+    write_dec_u32(sleep_switch_to_source);
+    write_string("/");
+    write_dec_u32(sleep_current_after_wake);
+    write_string("/");
+    write_dec_u32(sleep_final_state);
+    write_string("/");
+    write_dec_u32(sleep_pending_after_wake);
+    write_string(" ticks ");
+    write_dec_u32(sleep_requested);
+    write_string("/");
+    write_dec_u32(sleep_elapsed);
+    write_string("/");
+    write_dec_u32(sleep_wake_tick);
+    write_string(" counts ");
+    write_dec_u32(sleep_count_after - sleep_count_before);
+    write_string("/");
+    write_dec_u32(sleep_wake_after - sleep_wake_before);
+    write_string("/");
+    write_dec_u32(sleep_sched_block_after - sleep_sched_block_before);
+    write_string("/");
+    write_dec_u32(sleep_sched_wake_after - sleep_sched_wake_before);
+    write_string(" deny ");
+    write_dec_u32(sleep_deny_result);
+    write_string("/");
+    write_dec_u32(sleep_deny_state);
+    write_string("/");
+    write_dec_u32(sleep_denial_after - sleep_denial_before);
+    write_string(" last ");
+    write_dec_u32(sleep_last_task);
+    write_string(" positive ");
+    write_dec_u32(sleep_positive);
+    write_line("");
+    scheduler64_runqueue_reset();
+#endif
 }
 
 static void run_user_entry_filesystem_probe(void)

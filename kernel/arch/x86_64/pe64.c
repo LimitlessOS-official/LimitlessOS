@@ -34,9 +34,9 @@
  * code. J.11 reads the Load Config Directory security-cookie pointer and
  * initializes the pointed image slot with a nonzero kernel-mixed cookie while
  * preserving page protections. J.12 prepares the first PE entry transfer frame,
- * proves the Windows-persona DLL argument contract with a ring-3 probe, and
- * truthfully denies executable launch until the ntdll LdrInitializeThunk shim
- * exists in Phase K.
+ * proves the Windows-persona DLL argument contract with a ring-3 probe, denies
+ * executable launch when ntdll is absent, and hands executable images to the
+ * LimitlessOS-owned ntdll LdrInitializeThunk when that shim is available.
  * The scaffold checkpoints prove valid AMD64 PE metadata is accepted, sections
  * map with deterministic bytes and R/W/X page protections, BSS is actually
  * zero, DIR64 relocations update mapped pointer slots while restoring read-only
@@ -47,8 +47,8 @@
  * tick, and malformed metadata, short raw data, missing relocation sections,
  * missing imports, invalid TLS ranges, invalid exception tables, invalid
  * TEB/PEB/KUSER setup, malformed Load Config security-cookie metadata,
- * unavailable executable thunk launch, and capacity errors are denied with specific
- * structured codes.
+ * unavailable executable thunk launch, and capacity errors are denied with
+ * specific structured codes.
  */
 
 #define PE64_KUSER_REGISTERED_MAX PERSONA64_MAX_CONTEXTS
@@ -3268,6 +3268,7 @@ u32 pe64_setup_peb(
     u64 image_path_descriptor;
     u64 command_line_descriptor;
     u64 environment_descriptor;
+    u32 image_path_index;
 
     pe64_clear_peb_result(out_result);
 
@@ -3415,6 +3416,34 @@ u32 pe64_setup_peb(
 
     context->windows_image_base = image_base;
     context->windows_process_parameters = process_parameters;
+    context->windows_image_path_ascii_bytes = 0u;
+    for (image_path_index = 0u;
+         image_path_index < PERSONA64_WINDOWS_IMAGE_PATH_MAX_BYTES;
+         ++image_path_index)
+    {
+        context->windows_image_path_ascii[image_path_index] = 0u;
+    }
+    if (image_path != 0)
+    {
+        for (image_path_index = 0u;
+             image_path_index < PERSONA64_WINDOWS_IMAGE_PATH_MAX_BYTES;
+             ++image_path_index)
+        {
+            u8 value = (u8)image_path[image_path_index];
+
+            if (value == 0u)
+            {
+                context->windows_image_path_ascii_bytes = image_path_index;
+                break;
+            }
+            if ((value < 0x20u) || (value > 0x7Eu))
+            {
+                context->windows_image_path_ascii_bytes = 0u;
+                break;
+            }
+            context->windows_image_path_ascii[image_path_index] = value;
+        }
+    }
     context->windows_os_major = PE64_PEB_OS_MAJOR;
     context->windows_os_minor = PE64_PEB_OS_MINOR;
     context->windows_os_build = PE64_PEB_OS_BUILD;
@@ -3859,9 +3888,18 @@ u32 pe64_launch_entry(
     out_result->stack_base = stack_base;
     out_result->stack_top = stack_top;
     out_result->initial_rsp = initial_rsp;
-    out_result->arg_rcx = (u64)PE64_TLS_REASON_DLL_PROCESS_ATTACH;
-    out_result->arg_rdx = actual_base;
-    out_result->arg_r8 = 0ull;
+    if (dll_entry != 0u)
+    {
+        out_result->arg_rcx = (u64)PE64_TLS_REASON_DLL_PROCESS_ATTACH;
+        out_result->arg_rdx = actual_base;
+        out_result->arg_r8 = 0ull;
+    }
+    else
+    {
+        out_result->arg_rcx = entry_rip;
+        out_result->arg_rdx = actual_base;
+        out_result->arg_r8 = stack_top;
+    }
     out_result->ldr_initialize_thunk = ldr_initialize_thunk;
     out_result->transfer_selectors =
         ((u32)DESCRIPTORS64_USER_DATA_SELECTOR << 16)

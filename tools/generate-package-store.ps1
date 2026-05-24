@@ -693,8 +693,14 @@ $lines.Add("#define LIMITLESS_PACKAGE_STORE_GENERATED_H")
 $lines.Add("")
 $lines.Add("// Generated from packages/bootstrap-store.json by tools/generate-package-store.ps1")
 $lines.Add(("#define PACKAGE_STORE_GENERATED_ARCHIVE_SIZE {0}u" -f $archive.Length))
+$lines.Add(("#define PACKAGE_STORE_GENERATED_VERSION {0}u" -f (Convert-ToUInt32 $spec.version)))
+$lines.Add(("#define PACKAGE_STORE_GENERATED_SIGNER_COUNT {0}u" -f ([uint32]$signerRecords.Count)))
+$lines.Add(("#define PACKAGE_STORE_GENERATED_MANIFEST_COUNT {0}u" -f ([uint32]$manifestRecords.Count)))
+$lines.Add(("#define PACKAGE_STORE_GENERATED_PAYLOAD_COUNT {0}u" -f ([uint32]$payloadRecords.Count)))
+$lines.Add(("#define PACKAGE_STORE_GENERATED_STRING_BYTES {0}u" -f ([uint32]$stringBytes.Count)))
 $lines.Add(("#define PACKAGE_STORE_GENERATED_ARCHIVE_CHECKSUM 0x{0:X8}u" -f $checksum))
 $lines.Add("")
+$lines.Add("#ifndef PACKAGE_STORE_GENERATED_NO_ARCHIVE")
 $lines.Add("static const u8 package_store_generated_archive[PACKAGE_STORE_GENERATED_ARCHIVE_SIZE] = {")
 
 for ($index = 0; $index -lt $archive.Length; $index += 16) {
@@ -713,6 +719,7 @@ for ($index = 0; $index -lt $archive.Length; $index += 16) {
 }
 
 $lines.Add("};")
+$lines.Add("#endif")
 $lines.Add("")
 $lines.Add("#endif")
 

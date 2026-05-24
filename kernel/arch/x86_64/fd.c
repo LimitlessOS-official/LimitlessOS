@@ -3,6 +3,7 @@
 #include "console_x64.h"
 #include "process_x64.h"
 #include "fs_x64.h"
+#include "persona_x64.h"
 #include "pipe_x64.h"
 #include "services.h"
 
@@ -110,6 +111,12 @@ static u32 fd64_install_entry(
 
     entry = &table->entries[fd_number];
     if (fd64_entry_active(entry) != 0u)
+    {
+        ++table->denial_count;
+        return 0u;
+    }
+
+    if (persona64_budget_check_fd(table->pid, table->live_count, 1u) == 0u)
     {
         ++table->denial_count;
         return 0u;
@@ -787,6 +794,10 @@ u32 fd64_read(u32 pid, u32 fd_number, u8 *output, u32 byte_count)
             output,
             byte_count,
             table->owner_id);
+        if (bytes_read == PIPE64_IO_BLOCKED)
+        {
+            return FD64_IO_BLOCKED;
+        }
         if (bytes_read == PIPE64_IO_ERROR)
         {
             ++table->denial_count;
@@ -880,6 +891,10 @@ u32 fd64_write(u32 pid, u32 fd_number, const u8 *input, u32 byte_count)
             input,
             byte_count,
             table->owner_id);
+        if (bytes_written == PIPE64_IO_BLOCKED)
+        {
+            return FD64_IO_BLOCKED;
+        }
         if (bytes_written == PIPE64_IO_ERROR)
         {
             ++table->denial_count;
@@ -1036,6 +1051,12 @@ static u32 fd64_dup_into(fd_table_t *table, u32 old_fd_number, u32 new_fd_number
             ++table->denial_count;
             return FD64_INVALID_FD;
         }
+    }
+
+    if (persona64_budget_check_fd(table->pid, table->live_count, 1u) == 0u)
+    {
+        ++table->denial_count;
+        return FD64_INVALID_FD;
     }
 
     target = &table->entries[new_fd_number];

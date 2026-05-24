@@ -5,6 +5,7 @@
 
 #define PIPE64_INVALID_HANDLE 0xFFFFFFFFu
 #define PIPE64_IO_ERROR 0xFFFFFFFFu
+#define PIPE64_IO_BLOCKED 0xFFFFFFFEu
 #define PIPE64_BUFFER_BYTES 4096u
 #define PIPE64_MAX_BUFFER_BYTES 65536u
 #define PIPE64_MAX_OBJECTS 16u
@@ -43,6 +44,8 @@ typedef struct pipe64_buffer
     u32 byte_count_semaphore;
     u32 writer_closed;
     u32 reader_closed;
+    u32 blocked_reader_task_id;
+    u32 blocked_writer_task_id;
     u8 bytes[PIPE64_BUFFER_BYTES];
 } pipe64_buffer_t;
 
@@ -59,6 +62,10 @@ u32 pipe64_capacity(u32 pipe_handle, u32 owner_id);
 u32 pipe64_reader_closed(u32 pipe_handle, u32 owner_id);
 u32 pipe64_writer_closed(u32 pipe_handle, u32 owner_id);
 u32 pipe64_handle_kind(u32 pipe_handle);
+u32 pipe64_blocked_reader_task(u32 pipe_handle, u32 owner_id);
+u32 pipe64_blocked_writer_task(u32 pipe_handle, u32 owner_id);
+u32 pipe64_block_count(void);
+u32 pipe64_wake_count(void);
 u32 pipe64_denial_count(void);
 
 #endif

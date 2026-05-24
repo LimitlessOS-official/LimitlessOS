@@ -6,6 +6,7 @@
 #ifdef LIMITLESS_X64_UEFI_KERNEL
 #include "linux_abi_x64.h"
 #include "pe64_x64.h"
+#include "persona_audit_x64.h"
 #include "persona_x64.h"
 #include "windows_seh_x64.h"
 #endif
@@ -937,6 +938,38 @@ static void interrupt64_deliver_linux_signals_if_ready(struct interrupt_frame64 
         (void)linux_abi64_signal_deliver_pending(pid, frame);
     }
 }
+
+static void interrupt64_record_persona_crash_if_ready(const struct interrupt_frame64 *frame)
+{
+    u32 pid;
+    u32 persona_type;
+    u64 fault_address;
+
+    if ((frame == 0) || ((frame->cs & 0x3ull) != 0x3ull))
+    {
+        return;
+    }
+
+    pid = scheduler64_runqueue_current_pid();
+    persona_type = persona64_type(pid);
+    if ((persona_type != PERSONA64_TYPE_LINUX_ELF)
+        && (persona_type != PERSONA64_TYPE_WINDOWS_PE)
+        && (persona_type != PERSONA64_TYPE_MACOS_MACHO))
+    {
+        return;
+    }
+
+    fault_address = (frame->vector == PERSONA_AUDIT64_CRASH_VECTOR_PAGE_FAULT)
+        ? read_cr2_64()
+        : 0ull;
+    (void)persona_audit64_record_crash(
+        pid,
+        (u32)frame->vector,
+        frame->error_code,
+        frame->rip,
+        frame->rsp,
+        fault_address);
+}
 #endif
 
 void interrupts64_dispatch(struct interrupt_frame64 *frame)
@@ -955,6 +988,7 @@ void interrupts64_dispatch(struct interrupt_frame64 *frame)
         {
             return;
         }
+        interrupt64_record_persona_crash_if_ready(frame);
 #endif
 
         interrupt64_log_exception(frame);

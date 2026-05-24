@@ -47,8 +47,11 @@
      * formatting Linux dirent64 records from the Linux VFS directory enumerator.
      * F.25 adds the first futex WAIT/WAKE substrate: a bounded kernel wait
      * table keyed by Linux persona PID and user futex word, with VMA-validated
-     * user reads, audited EAGAIN/EFAULT/EINVAL denials, and wake consumption
-     * telemetry. F.26 adds thread-style clone(2) for shared VM/FD/persona
+     * user reads, scheduler-backed BLOCKED/READY transitions, audited
+     * EAGAIN/EFAULT/EINVAL denials, wake consumption telemetry, and a timed
+     * WAIT path that binds a scheduler sleep expiry back to the futex waiter
+     * so timeout cleanup and ETIMEDOUT resume state are not fabricated. F.26 adds
+     * thread-style clone(2) for shared VM/FD/persona
      * state, routes the child into scheduler_x64.h, and truthfully returns
      * ENOSYS for fork-style clone requests until per-process page tables exist.
      * F.27 adds execve/execveat by copying path/argv/envp before teardown,
@@ -114,8 +117,14 @@ typedef struct linux_abi64_futex_waiter
 {
     u32 active;
     u32 pid;
+    u32 task_id;
+    u32 timed;
     u32 expected_value;
+    u32 timeout_ticks;
+    u32 timeout_result;
+    u32 reserved;
     u64 user_address;
+    u64 rip;
 } linux_abi64_futex_waiter_t;
 
 typedef struct linux_abi64_clone_record
@@ -278,10 +287,16 @@ static u32 g_linux_abi64_futex_woken_count = 0u;
 static u32 g_linux_abi64_futex_eagain_count = 0u;
 static u32 g_linux_abi64_futex_denial_count = 0u;
 static u32 g_linux_abi64_futex_fault_count = 0u;
+static u32 g_linux_abi64_futex_timed_wait_count = 0u;
+static u32 g_linux_abi64_futex_timeout_count = 0u;
 static u32 g_linux_abi64_futex_last_wait_pid = PROCESS64_INVALID_PID;
 static u64 g_linux_abi64_futex_last_wait_address = 0ull;
 static u32 g_linux_abi64_futex_last_wait_value = 0u;
+static u32 g_linux_abi64_futex_last_wait_task_id = SCHEDULER64_INVALID_TASK;
 static u32 g_linux_abi64_futex_last_wake_count = 0u;
+static u32 g_linux_abi64_futex_last_timeout_task_id = SCHEDULER64_INVALID_TASK;
+static u32 g_linux_abi64_futex_last_timeout_ticks = 0u;
+static u32 g_linux_abi64_futex_last_timeout_result = 0u;
 static u32 g_linux_abi64_clone_count = 0u;
 static u32 g_linux_abi64_clone_thread_count = 0u;
 static u32 g_linux_abi64_clone_denial_count = 0u;
@@ -1362,8 +1377,14 @@ static void linux_abi64_clear_futex_waiter(linux_abi64_futex_waiter_t *waiter)
 
     waiter->active = 0u;
     waiter->pid = PROCESS64_INVALID_PID;
+    waiter->task_id = SCHEDULER64_INVALID_TASK;
+    waiter->timed = 0u;
     waiter->expected_value = 0u;
+    waiter->timeout_ticks = 0u;
+    waiter->timeout_result = 0u;
+    waiter->reserved = 0u;
     waiter->user_address = 0ull;
+    waiter->rip = 0ull;
 }
 
 static u32 linux_abi64_futex_active_waiters(void)
@@ -1426,12 +1447,41 @@ static u32 linux_abi64_release_futex_waiters(u32 pid)
         if ((g_linux_abi64_futex_waiters[index].active != 0u)
             && (g_linux_abi64_futex_waiters[index].pid == pid))
         {
+            if (g_linux_abi64_futex_waiters[index].timed != 0u)
+            {
+                (void)scheduler64_sleep_cancel_task(g_linux_abi64_futex_waiters[index].task_id);
+            }
             linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
             ++released;
         }
     }
 
     return released;
+}
+
+static void linux_abi64_futex_timeout_callback(u32 task_id, u64 cookie)
+{
+    linux_abi64_futex_waiter_t *waiter = (linux_abi64_futex_waiter_t *)(u64)cookie;
+
+    if ((waiter == 0)
+        || (waiter->active == 0u)
+        || (waiter->task_id != task_id)
+        || (waiter->timed == 0u))
+    {
+        return;
+    }
+
+    ++g_linux_abi64_futex_timeout_count;
+    g_linux_abi64_futex_last_timeout_task_id = task_id;
+    g_linux_abi64_futex_last_timeout_ticks = waiter->timeout_ticks;
+    g_linux_abi64_futex_last_timeout_result = LINUX_ABI64_ETIMEDOUT;
+    (void)persona_audit64_record(
+        waiter->pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_FUTEX,
+        LINUX_ABI64_ETIMEDOUT,
+        waiter->rip);
+    linux_abi64_clear_futex_waiter(waiter);
 }
 
 static void linux_abi64_clear_clone_record(linux_abi64_clone_record_t *record)
@@ -1826,10 +1876,16 @@ void linux_abi64_init(void)
     g_linux_abi64_futex_eagain_count = 0u;
     g_linux_abi64_futex_denial_count = 0u;
     g_linux_abi64_futex_fault_count = 0u;
+    g_linux_abi64_futex_timed_wait_count = 0u;
+    g_linux_abi64_futex_timeout_count = 0u;
     g_linux_abi64_futex_last_wait_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_futex_last_wait_address = 0ull;
     g_linux_abi64_futex_last_wait_value = 0u;
+    g_linux_abi64_futex_last_wait_task_id = SCHEDULER64_INVALID_TASK;
     g_linux_abi64_futex_last_wake_count = 0u;
+    g_linux_abi64_futex_last_timeout_task_id = SCHEDULER64_INVALID_TASK;
+    g_linux_abi64_futex_last_timeout_ticks = 0u;
+    g_linux_abi64_futex_last_timeout_result = 0u;
     g_linux_abi64_clone_count = 0u;
     g_linux_abi64_clone_thread_count = 0u;
     g_linux_abi64_clone_denial_count = 0u;
@@ -1964,6 +2020,8 @@ u64 linux_abi64_dispatch(
     u64 rip)
 {
     linux_abi64_handler_t handler;
+    u32 unavailable_result;
+    u64 unavailable_return;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -1974,25 +2032,30 @@ u64 linux_abi64_dispatch(
     if (syscall_number >= LINUX_ABI64_SYSCALL_LIMIT)
     {
         ++g_linux_abi64_unimplemented_count;
-        (void)persona_audit64_record(
+        (void)persona64_record_unavailable_syscall(
             pid,
-            PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED,
+            PERSONA64_TYPE_LINUX_ELF,
             (u16)syscall_number,
-            PERSONA_AUDIT64_RESULT_ENOSYS,
-            rip);
-        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOSYS);
+            rip,
+            &unavailable_result,
+            &unavailable_return);
+        (void)unavailable_result;
+        return unavailable_return;
     }
 
     handler = g_linux_abi64_dispatch_table[syscall_number];
     if (handler == linux_abi64_unimplemented_stub)
     {
         ++g_linux_abi64_unimplemented_count;
-        (void)persona_audit64_record(
+        (void)persona64_record_unavailable_syscall(
             pid,
-            PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED,
+            PERSONA64_TYPE_LINUX_ELF,
             (u16)syscall_number,
-            PERSONA_AUDIT64_RESULT_ENOSYS,
-            rip);
+            rip,
+            &unavailable_result,
+            &unavailable_return);
+        (void)unavailable_result;
+        return unavailable_return;
     }
 
     return handler(pid, rdi, rsi, rdx, r10, r8, r9, rip);
@@ -3541,6 +3604,16 @@ u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count
     else
     {
         bytes_read = fd64_read(pid, fd_index, read_scratch, read_count);
+        if (bytes_read == FD64_IO_BLOCKED)
+        {
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_READ,
+                LINUX_ABI64_EAGAIN,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+        }
         if (bytes_read == FD64_IO_ERROR)
         {
             ++g_linux_abi64_read_denial_count;
@@ -3621,6 +3694,16 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
     }
 
     bytes_written = fd64_write(pid, fd_index, (const u8 *)(u64)user_buffer, write_count);
+    if (bytes_written == FD64_IO_BLOCKED)
+    {
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_WRITE,
+            LINUX_ABI64_EAGAIN,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+    }
     if (bytes_written == FD64_IO_ERROR)
     {
         ++g_linux_abi64_write_denial_count;
@@ -4049,6 +4132,17 @@ u64 linux_abi64_sys_readv(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, u
     }
 
     bytes_read = fd64_read(pid, fd_index, read_scratch, requested_bytes);
+    if (bytes_read == FD64_IO_BLOCKED)
+    {
+        g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_READV,
+            LINUX_ABI64_EAGAIN,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+    }
     if (bytes_read == FD64_IO_ERROR)
     {
         ++g_linux_abi64_vector_denial_count;
@@ -4244,6 +4338,17 @@ u64 linux_abi64_sys_writev(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, 
     }
 
     bytes_written = fd64_write(pid, fd_index, write_scratch, requested_bytes);
+    if (bytes_written == FD64_IO_BLOCKED)
+    {
+        g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_WRITEV,
+            LINUX_ABI64_EAGAIN,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+    }
     if (bytes_written == FD64_IO_ERROR)
     {
         ++g_linux_abi64_vector_denial_count;
@@ -6582,6 +6687,12 @@ u64 linux_abi64_sys_futex(
     u32 index;
     u32 wake_limit;
     u32 wake_count = 0u;
+    u32 task_id;
+    u32 wake_task_id;
+    linux_abi64_timespec_t timeout_value;
+    const volatile linux_abi64_timespec_t *timeout_source;
+    u32 timeout_ticks = 0u;
+    u32 timed_wait = 0u;
 
     (void)user_address2;
     (void)value3;
@@ -6667,14 +6778,26 @@ u64 linux_abi64_sys_futex(
                 return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
             }
 
-            ++g_linux_abi64_futex_denial_count;
-            (void)persona_audit64_record(
-                pid,
-                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
-                LINUX_ABI64_SYSCALL_FUTEX,
-                LINUX_ABI64_EINVAL,
-                rip);
-            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+            timeout_source = (const volatile linux_abi64_timespec_t *)(u64)timeout;
+            timeout_value.tv_sec = timeout_source->tv_sec;
+            timeout_value.tv_nsec = timeout_source->tv_nsec;
+            if ((linux_abi64_timespec_is_valid(&timeout_value) == 0u)
+                || (linux_abi64_timespec_to_ticks(
+                    &timeout_value,
+                    linux_abi64_effective_tick_frequency(),
+                    &timeout_ticks) == 0u))
+            {
+                ++g_linux_abi64_futex_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                    LINUX_ABI64_SYSCALL_FUTEX,
+                    LINUX_ABI64_EINVAL,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+            }
+
+            timed_wait = 1u;
         }
 
         if (current_value != (u32)(value & 0xFFFFFFFFull))
@@ -6689,7 +6812,37 @@ u64 linux_abi64_sys_futex(
             return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
         }
 
+        if ((timed_wait != 0u) && (timeout_ticks == 0u))
+        {
+            ++g_linux_abi64_futex_timeout_count;
+            g_linux_abi64_futex_last_timeout_task_id = SCHEDULER64_INVALID_TASK;
+            g_linux_abi64_futex_last_timeout_ticks = 0u;
+            g_linux_abi64_futex_last_timeout_result = LINUX_ABI64_ETIMEDOUT;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                LINUX_ABI64_ETIMEDOUT,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ETIMEDOUT);
+        }
+
         if (linux_abi64_futex_waiter_for(pid, user_address) != 0)
+        {
+            ++g_linux_abi64_futex_denial_count;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                LINUX_ABI64_EINVAL,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+        }
+
+        task_id = scheduler64_runqueue_current_task_id();
+        if ((task_id == SCHEDULER64_INVALID_TASK)
+            || (scheduler64_runqueue_task_pid(task_id) != pid)
+            || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_RUNNING))
         {
             ++g_linux_abi64_futex_denial_count;
             (void)persona_audit64_record(
@@ -6716,12 +6869,52 @@ u64 linux_abi64_sys_futex(
 
         waiter->active = 1u;
         waiter->pid = pid;
+        waiter->task_id = task_id;
+        waiter->timed = timed_wait;
         waiter->expected_value = current_value;
+        waiter->timeout_ticks = timeout_ticks;
+        waiter->timeout_result = (timed_wait != 0u) ? LINUX_ABI64_ETIMEDOUT : 0u;
         waiter->user_address = user_address;
+        waiter->rip = rip;
+        if (timed_wait != 0u)
+        {
+            if (scheduler64_sleep_current_task_for_ticks(
+                    timeout_ticks,
+                    LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ETIMEDOUT),
+                    linux_abi64_futex_timeout_callback,
+                    (u64)waiter) == 0u)
+            {
+                linux_abi64_clear_futex_waiter(waiter);
+                ++g_linux_abi64_futex_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                    LINUX_ABI64_SYSCALL_FUTEX,
+                    LINUX_ABI64_EINVAL,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+            }
+
+            ++g_linux_abi64_futex_timed_wait_count;
+        }
+        else if (scheduler64_runqueue_block_task(task_id) == 0u)
+        {
+            linux_abi64_clear_futex_waiter(waiter);
+            ++g_linux_abi64_futex_denial_count;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                LINUX_ABI64_EINVAL,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+        }
+
         ++g_linux_abi64_futex_wait_count;
         g_linux_abi64_futex_last_wait_pid = pid;
         g_linux_abi64_futex_last_wait_address = user_address;
         g_linux_abi64_futex_last_wait_value = current_value;
+        g_linux_abi64_futex_last_wait_task_id = task_id;
         (void)persona_audit64_record(
             pid,
             PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
@@ -6742,8 +6935,21 @@ u64 linux_abi64_sys_futex(
                 && (g_linux_abi64_futex_waiters[index].pid == pid)
                 && (g_linux_abi64_futex_waiters[index].user_address == user_address))
             {
+                wake_task_id = g_linux_abi64_futex_waiters[index].task_id;
+                if (g_linux_abi64_futex_waiters[index].timed != 0u)
+                {
+                    (void)scheduler64_sleep_cancel_task(wake_task_id);
+                }
+
+                if (scheduler64_runqueue_wake_task_with_result(wake_task_id, 0ull) != 0u)
+                {
+                    ++wake_count;
+                }
+                else
+                {
+                    ++g_linux_abi64_futex_denial_count;
+                }
                 linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
-                ++wake_count;
             }
         }
 
@@ -6998,6 +7204,7 @@ u64 linux_abi64_sys_clone(
     child_context->persona_module_handle = parent_context->persona_module_handle;
     child_context->capability_attenuation_mask = parent_context->capability_attenuation_mask;
     child_context->load_bias_low = parent_context->load_bias_low;
+    child_context->process_group_id = parent_context->process_group_id;
     child_context->linux_cwd_length = parent_context->linux_cwd_length;
     for (task_id = 0u; task_id < PERSONA64_LINUX_CWD_MAX_BYTES; ++task_id)
     {
@@ -8015,6 +8222,7 @@ static u64 linux_abi64_signal_translate(
 
     persona_context_t *target_context;
     u32 target_pid;
+    u32 isolation_result;
     u64 signal_mask;
 
     if (linux_abi64_signal_persona_ready(pid) == 0u)
@@ -8055,8 +8263,35 @@ static u64 linux_abi64_signal_translate(
     target_context = persona64_context_for_process(target_pid);
     if ((target_pid == PROCESS64_INVALID_PID)
         || (process64_principal(target_pid) == 0u)
-        || (target_context == 0)
-        || (target_context->persona_type != PERSONA64_TYPE_LINUX_ELF))
+        || (target_context == 0))
+    {
+        ++g_linux_abi64_kill_denial_count;
+        g_linux_abi64_kill_last_result = LINUX_ABI64_ESRCH;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            syscall_number,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    isolation_result = PERSONA64_ISOLATION_RESULT_OK;
+    if (persona64_can_signal(pid, target_pid, &isolation_result) == 0u)
+    {
+        (void)isolation_result;
+        ++g_linux_abi64_kill_denial_count;
+        g_linux_abi64_kill_last_result = LINUX_ABI64_ESRCH;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            syscall_number,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    if (target_context->persona_type != PERSONA64_TYPE_LINUX_ELF)
     {
         ++g_linux_abi64_kill_denial_count;
         g_linux_abi64_kill_last_result = LINUX_ABI64_ESRCH;
@@ -9576,6 +9811,16 @@ u32 linux_abi64_futex_fault_count(void)
     return g_linux_abi64_futex_fault_count;
 }
 
+u32 linux_abi64_futex_timed_wait_count(void)
+{
+    return g_linux_abi64_futex_timed_wait_count;
+}
+
+u32 linux_abi64_futex_timeout_count(void)
+{
+    return g_linux_abi64_futex_timeout_count;
+}
+
 u32 linux_abi64_futex_last_wait_pid(void)
 {
     return g_linux_abi64_futex_last_wait_pid;
@@ -9591,9 +9836,29 @@ u32 linux_abi64_futex_last_wait_value(void)
     return g_linux_abi64_futex_last_wait_value;
 }
 
+u32 linux_abi64_futex_last_wait_task_id(void)
+{
+    return g_linux_abi64_futex_last_wait_task_id;
+}
+
 u32 linux_abi64_futex_last_wake_count(void)
 {
     return g_linux_abi64_futex_last_wake_count;
+}
+
+u32 linux_abi64_futex_last_timeout_task_id(void)
+{
+    return g_linux_abi64_futex_last_timeout_task_id;
+}
+
+u32 linux_abi64_futex_last_timeout_ticks(void)
+{
+    return g_linux_abi64_futex_last_timeout_ticks;
+}
+
+u32 linux_abi64_futex_last_timeout_result(void)
+{
+    return g_linux_abi64_futex_last_timeout_result;
 }
 
 u32 linux_abi64_clone_count(void)

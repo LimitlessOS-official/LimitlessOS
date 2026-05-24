@@ -17,9 +17,11 @@
 #define CAPABILITY64_DELEGATE_LEASE_TICKS 2u
 #define CAPABILITY64_CONTEXT(caller, recipient) \
     ((((caller) & 0xFFFFu) << 16) | ((recipient) & 0xFFFFu))
+#define CAPABILITY64_PERSONA_UNTAGGED 0xFFu
 
 void capability64_init(void);
 u32 capability64_grant_service(u32 endpoint_class, u32 requested_rights, u32 owner_id);
+u32 capability64_grant_service_for_process(u32 endpoint_class, u32 requested_rights, u32 pid);
 u32 capability64_delegate(u32 source_handle, u32 requested_rights, u32 owner_context);
 u32 capability64_delegate_persistent(u32 source_handle, u32 requested_rights, u32 owner_context);
 u32 capability64_route(u32 handle, u32 required_rights, u32 caller_owner_id);
@@ -31,6 +33,8 @@ u32 capability64_owner(u32 handle, u32 caller_owner_id);
 u32 capability64_expiry_tick(u32 handle, u32 caller_owner_id);
 u32 capability64_runtime_generation(u32 handle, u32 caller_owner_id);
 u32 capability64_runtime_token(u32 handle, u32 caller_owner_id);
+u32 capability64_persona_tag(u32 handle, u32 caller_owner_id);
+u32 capability64_persona_mask(u32 handle, u32 caller_owner_id);
 u32 capability64_live_count(void);
 u32 capability64_live_for_endpoint_class(u32 endpoint_class);
 u32 capability64_revoke_endpoint_class(u32 endpoint_class);
@@ -43,6 +47,8 @@ u32 capability64_expiration_count(void);
 u32 capability64_owner_denial_count(void);
 u32 capability64_principal_denial_count(void);
 u32 capability64_runtime_stale_denial_count(void);
+u32 capability64_persona_denial_count(void);
+u32 capability64_persona_transfer_denial_count(void);
 u32 capability64_denial_count(void);
 
 #endif

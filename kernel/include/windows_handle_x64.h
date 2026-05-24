@@ -19,6 +19,7 @@
 #define WINDOWS_HANDLE64_TYPE_MUTANT 4u
 #define WINDOWS_HANDLE64_TYPE_PROCESS 5u
 #define WINDOWS_HANDLE64_TYPE_THREAD 6u
+#define WINDOWS_HANDLE64_TYPE_KEY 7u
 
 #define WINDOWS_HANDLE64_MAX_EVENTS 32u
 #define WINDOWS_HANDLE64_EVENT_TYPE_NOTIFICATION 0u
@@ -92,13 +93,27 @@ u32 windows_handle64_entry_rights(u32 pid, u64 handle);
 u32 windows_handle64_entry_flags(u32 pid, u64 handle);
 u32 windows_handle64_entry_ref_count(u32 pid, u64 handle);
 u64 windows_handle64_high_water_handle(u32 pid);
+u64 windows_handle64_key_create(
+    u32 pid,
+    u32 key_id,
+    u32 rights,
+    u32 flags);
+u32 windows_handle64_key_id(u32 pid, u64 handle);
 u64 windows_handle64_event_create(
     u32 pid,
     u32 manual_reset,
     u32 initial_state,
     u32 flags);
-u32 windows_handle64_event_set(u32 pid, u64 handle, u32 *previous_state_out);
+u32 windows_handle64_event_set(
+    u32 pid,
+    u64 handle,
+    u32 *previous_state_out,
+    u32 *wake_task_out);
 u32 windows_handle64_event_wait(u32 pid, u64 handle);
+u32 windows_handle64_event_arm_wait(u32 pid, u64 handle, u32 task_id);
+u32 windows_handle64_event_cancel_wait(u32 pid, u64 handle, u32 task_id);
+u32 windows_handle64_event_waiter_task(u32 pid, u64 handle);
+u32 windows_handle64_event_waiter_pid(u32 pid, u64 handle);
 u32 windows_handle64_event_signaled(u32 pid, u64 handle);
 u32 windows_handle64_event_manual_reset(u32 pid, u64 handle);
 u32 windows_handle64_event_create_count(void);
@@ -113,9 +128,17 @@ u64 windows_handle64_mutant_create(
     u32 initial_owner,
     u32 flags);
 u32 windows_handle64_mutant_wait(u32 pid, u64 handle);
-u32 windows_handle64_mutant_release(u32 pid, u64 handle, u32 *previous_count_out);
+u32 windows_handle64_mutant_arm_wait(u32 pid, u64 handle, u32 task_id);
+u32 windows_handle64_mutant_cancel_wait(u32 pid, u64 handle, u32 task_id);
+u32 windows_handle64_mutant_release(
+    u32 pid,
+    u64 handle,
+    u32 *previous_count_out,
+    u32 *wake_task_out);
 u32 windows_handle64_mutant_owner(u32 pid, u64 handle);
 u32 windows_handle64_mutant_recursion(u32 pid, u64 handle);
+u32 windows_handle64_mutant_waiter_task(u32 pid, u64 handle);
+u32 windows_handle64_mutant_waiter_pid(u32 pid, u64 handle);
 u32 windows_handle64_mutant_create_count(void);
 u32 windows_handle64_mutant_wait_count(void);
 u32 windows_handle64_mutant_release_count(void);

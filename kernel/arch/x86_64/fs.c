@@ -1114,6 +1114,19 @@ u32 fs64_revoke(u32 node_capability_handle, u32 owner_id)
     return 1u;
 }
 
+u32 fs64_handle_is_node(u32 node_capability_handle, u32 owner_id)
+{
+    struct fs64_node_capability *record;
+
+    fs64_ensure_init();
+    record = fs64_find_live(node_capability_handle);
+    return ((record != 0)
+        && (record->owner_id == owner_id)
+        && (ramfs_node_exists(record->node_id) != 0))
+        ? 1u
+        : 0u;
+}
+
 static u32 fs64_rename_common(
     u32 base_capability_handle,
     u64 path_address,

@@ -7,10 +7,7 @@
 enum
 {
     SCHEDULER64_RUNQUEUE_TASKS = 4u,
-    SCHEDULER64_TASK_UNUSED = 0u,
-    SCHEDULER64_TASK_READY = 1u,
-    SCHEDULER64_TASK_RUNNING = 2u,
-    SCHEDULER64_TASK_EXITED = 3u,
+    SCHEDULER64_SLEEP_QUEUE_TASKS = SCHEDULER64_RUNQUEUE_TASKS,
     SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK = 50000u,
     SCHEDULER64_SLEEP_MAX_SPIN_BUDGET = 1000000u
 };
@@ -42,10 +39,29 @@ struct scheduler64_runqueue
     u32 irqs;
     u32 switches;
     u32 result;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u32 blocks;
+    u32 wakes;
+    u32 block_denials;
+#endif
     u64 cs;
     u64 ss;
     struct scheduler64_task tasks[SCHEDULER64_RUNQUEUE_TASKS];
 };
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+struct scheduler64_sleep_entry
+{
+    u32 active;
+    u32 task_id;
+    u32 start_tick;
+    u32 wake_tick;
+    u32 requested_ticks;
+    u64 resume_rax;
+    scheduler64_sleep_expiry_callback_t expiry_callback;
+    u64 callback_cookie;
+};
+#endif
 
 static struct scheduler64_runqueue g_runqueue;
 static u32 g_scheduler64_sleep_count = 0u;
@@ -54,6 +70,12 @@ static u32 g_scheduler64_sleep_last_requested_ticks = 0u;
 static u32 g_scheduler64_sleep_last_elapsed_ticks = 0u;
 static u32 g_scheduler64_sleep_last_start_ticks = 0u;
 static u32 g_scheduler64_sleep_last_end_ticks = 0u;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static struct scheduler64_sleep_entry g_scheduler64_sleep_queue[SCHEDULER64_SLEEP_QUEUE_TASKS];
+static u32 g_scheduler64_sleep_wake_count = 0u;
+static u32 g_scheduler64_sleep_last_task_id = SCHEDULER64_INVALID_TASK;
+static u32 g_scheduler64_sleep_last_wake_tick = 0u;
+#endif
 
 static void scheduler64_cpu_pause(void)
 {
@@ -118,6 +140,110 @@ static void scheduler64_clear_task(struct scheduler64_task *task)
     scheduler64_clear_frame(&task->frame);
 }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static void scheduler64_clear_sleep_entry(struct scheduler64_sleep_entry *entry)
+{
+    entry->active = 0u;
+    entry->task_id = SCHEDULER64_INVALID_TASK;
+    entry->start_tick = 0u;
+    entry->wake_tick = 0u;
+    entry->requested_ticks = 0u;
+    entry->resume_rax = 0ull;
+    entry->expiry_callback = 0;
+    entry->callback_cookie = 0ull;
+}
+
+static void scheduler64_sleep_queue_reset(void)
+{
+    u32 index;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        scheduler64_clear_sleep_entry(&g_scheduler64_sleep_queue[index]);
+    }
+}
+
+static u32 scheduler64_sleep_tick_reached(u32 now_tick, u32 wake_tick)
+{
+    return (((u32)(now_tick - wake_tick)) < 0x80000000u) ? 1u : 0u;
+}
+
+static struct scheduler64_sleep_entry *scheduler64_sleep_free_entry(void)
+{
+    u32 index;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        if (g_scheduler64_sleep_queue[index].active == 0u)
+        {
+            return &g_scheduler64_sleep_queue[index];
+        }
+    }
+
+    return 0;
+}
+
+static u32 scheduler64_sleep_task_pending(u32 task_id)
+{
+    u32 index;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        if ((g_scheduler64_sleep_queue[index].active != 0u)
+            && (g_scheduler64_sleep_queue[index].task_id == task_id))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 scheduler64_sleep_wake_expired(u32 now_tick)
+{
+    u32 index;
+    u32 wake_count = 0u;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        struct scheduler64_sleep_entry *entry = &g_scheduler64_sleep_queue[index];
+        u32 elapsed;
+
+        if ((entry->active == 0u)
+            || (scheduler64_sleep_tick_reached(now_tick, entry->wake_tick) == 0u))
+        {
+            continue;
+        }
+
+        elapsed = (u32)(now_tick - entry->start_tick);
+        g_scheduler64_sleep_last_task_id = entry->task_id;
+        g_scheduler64_sleep_last_requested_ticks = entry->requested_ticks;
+        g_scheduler64_sleep_last_start_ticks = entry->start_tick;
+        g_scheduler64_sleep_last_end_ticks = now_tick;
+        g_scheduler64_sleep_last_elapsed_ticks = elapsed;
+        g_scheduler64_sleep_last_wake_tick = entry->wake_tick;
+        if (entry->expiry_callback != 0)
+        {
+            entry->expiry_callback(entry->task_id, entry->callback_cookie);
+        }
+
+        if (scheduler64_runqueue_wake_task_with_result(entry->task_id, entry->resume_rax) != 0u)
+        {
+            ++g_scheduler64_sleep_wake_count;
+            ++wake_count;
+        }
+        else
+        {
+            ++g_scheduler64_sleep_denial_count;
+        }
+
+        scheduler64_clear_sleep_entry(entry);
+    }
+
+    return wake_count;
+}
+#endif
+
 static u32 scheduler64_next_runnable(u32 current)
 {
     u32 offset;
@@ -149,6 +275,12 @@ void scheduler64_init(void)
     g_scheduler64_sleep_last_elapsed_ticks = 0u;
     g_scheduler64_sleep_last_start_ticks = 0u;
     g_scheduler64_sleep_last_end_ticks = 0u;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    g_scheduler64_sleep_wake_count = 0u;
+    g_scheduler64_sleep_last_task_id = SCHEDULER64_INVALID_TASK;
+    g_scheduler64_sleep_last_wake_tick = 0u;
+    scheduler64_sleep_queue_reset();
+#endif
 }
 
 void scheduler64_runqueue_reset(void)
@@ -163,12 +295,20 @@ void scheduler64_runqueue_reset(void)
     g_runqueue.irqs = 0u;
     g_runqueue.switches = 0u;
     g_runqueue.result = 0u;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    g_runqueue.blocks = 0u;
+    g_runqueue.wakes = 0u;
+    g_runqueue.block_denials = 0u;
+#endif
     g_runqueue.cs = 0u;
     g_runqueue.ss = 0u;
     for (index = 0u; index < SCHEDULER64_RUNQUEUE_TASKS; ++index)
     {
         scheduler64_clear_task(&g_runqueue.tasks[index]);
     }
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    scheduler64_sleep_queue_reset();
+#endif
 }
 
 u32 scheduler64_runqueue_register_user_task(u64 rip, u64 rsp, u64 selectors, u64 rflags)
@@ -303,6 +443,136 @@ void scheduler64_runqueue_stop(void)
     g_runqueue.current_task = SCHEDULER64_INVALID_TASK;
 }
 
+u32 scheduler64_runqueue_block_task(u32 task_id)
+{
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+    (void)task_id;
+    return 0u;
+#else
+    struct scheduler64_task *task;
+
+    if ((task_id >= g_runqueue.task_count)
+        || (g_runqueue.tasks[task_id].frame_valid == 0u)
+        || (g_runqueue.tasks[task_id].state == SCHEDULER64_TASK_UNUSED)
+        || (g_runqueue.tasks[task_id].state == SCHEDULER64_TASK_EXITED)
+        || (g_runqueue.tasks[task_id].state == SCHEDULER64_TASK_BLOCKED))
+    {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        ++g_runqueue.block_denials;
+#endif
+        return 0u;
+    }
+
+    if (g_runqueue.tasks[task_id].state == SCHEDULER64_TASK_RUNNING)
+    {
+        if ((g_runqueue.active == 0u)
+            || (g_runqueue.current_task != task_id)
+            || (scheduler64_next_runnable(task_id) == SCHEDULER64_INVALID_TASK))
+        {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+            ++g_runqueue.block_denials;
+#endif
+            return 0u;
+        }
+    }
+
+    task = &g_runqueue.tasks[task_id];
+    task->state = SCHEDULER64_TASK_BLOCKED;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    ++g_runqueue.blocks;
+#endif
+    return 1u;
+#endif
+}
+
+u32 scheduler64_runqueue_wake_task(u32 task_id)
+{
+    return scheduler64_runqueue_wake_task_with_result(task_id, 0ull);
+}
+
+u32 scheduler64_runqueue_wake_task_with_result(u32 task_id, u64 result)
+{
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+    (void)task_id;
+    (void)result;
+    return 0u;
+#else
+    struct scheduler64_task *task;
+
+    if ((task_id >= g_runqueue.task_count)
+        || (g_runqueue.tasks[task_id].frame_valid == 0u)
+        || (g_runqueue.tasks[task_id].state != SCHEDULER64_TASK_BLOCKED))
+    {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        ++g_runqueue.block_denials;
+#endif
+        return 0u;
+    }
+
+    task = &g_runqueue.tasks[task_id];
+    task->frame.rax = result;
+    task->state = SCHEDULER64_TASK_READY;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    ++g_runqueue.wakes;
+#endif
+    return 1u;
+#endif
+}
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static u32 scheduler64_sleep_start_current_task(
+    u32 requested_ticks,
+    u64 resume_rax,
+    scheduler64_sleep_expiry_callback_t expiry_callback,
+    u64 callback_cookie)
+{
+    u32 task_id;
+    u32 start_ticks;
+    struct scheduler64_sleep_entry *sleep_entry;
+
+    if (requested_ticks == 0u)
+    {
+        return 0u;
+    }
+
+    task_id = scheduler64_runqueue_current_task_id();
+    if (task_id == SCHEDULER64_INVALID_TASK)
+    {
+        return 0u;
+    }
+
+    start_ticks = pit_get_ticks();
+    sleep_entry = scheduler64_sleep_free_entry();
+    if ((sleep_entry == 0)
+        || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_RUNNING)
+        || (scheduler64_sleep_task_pending(task_id) != 0u))
+    {
+        ++g_scheduler64_sleep_denial_count;
+        return 0u;
+    }
+
+    sleep_entry->active = 1u;
+    sleep_entry->task_id = task_id;
+    sleep_entry->start_tick = start_ticks;
+    sleep_entry->wake_tick = start_ticks + requested_ticks;
+    sleep_entry->requested_ticks = requested_ticks;
+    sleep_entry->resume_rax = resume_rax;
+    sleep_entry->expiry_callback = expiry_callback;
+    sleep_entry->callback_cookie = callback_cookie;
+    g_scheduler64_sleep_last_task_id = task_id;
+    g_scheduler64_sleep_last_wake_tick = sleep_entry->wake_tick;
+    if (scheduler64_runqueue_block_task(task_id) == 0u)
+    {
+        scheduler64_clear_sleep_entry(sleep_entry);
+        ++g_scheduler64_sleep_denial_count;
+        return 0u;
+    }
+
+    ++g_scheduler64_sleep_count;
+    return 1u;
+}
+#endif
+
 u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame)
 {
     u32 current = g_runqueue.current_task;
@@ -323,14 +593,27 @@ u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame)
     current_task->frame_valid = 1u;
     current_task->saved_rip = frame->rip;
     current_task->saved_rsp = frame->rsp;
-    current_task->state = SCHEDULER64_TASK_READY;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    if (current_task->state == SCHEDULER64_TASK_RUNNING)
+#endif
+    {
+        current_task->state = SCHEDULER64_TASK_READY;
+    }
     g_runqueue.cs = frame->cs;
     g_runqueue.ss = frame->ss;
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    (void)scheduler64_sleep_wake_expired(pit_get_ticks());
+#endif
     next = scheduler64_next_runnable(current);
     if (next == SCHEDULER64_INVALID_TASK)
     {
-        current_task->state = SCHEDULER64_TASK_RUNNING;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        if (current_task->state == SCHEDULER64_TASK_READY)
+#endif
+        {
+            current_task->state = SCHEDULER64_TASK_RUNNING;
+        }
         return 0u;
     }
 
@@ -344,6 +627,55 @@ u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame)
     g_runqueue.ss = frame->ss;
     return 1u;
 }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_on_blocked_syscall(struct interrupt_frame64 *frame)
+{
+    u32 current = g_runqueue.current_task;
+    u32 next;
+    struct scheduler64_task *current_task;
+    struct scheduler64_task *next_task;
+
+    if ((g_runqueue.active == 0u)
+        || (current >= g_runqueue.task_count)
+        || (frame == 0))
+    {
+        return 0u;
+    }
+
+    current_task = &g_runqueue.tasks[current];
+    if ((current_task->frame_valid == 0u)
+        || (current_task->state != SCHEDULER64_TASK_BLOCKED)
+        || ((frame->cs & 0x3ull) != 0x3ull))
+    {
+        return 0u;
+    }
+
+    current_task->frame = *frame;
+    current_task->frame_valid = 1u;
+    current_task->saved_rip = frame->rip;
+    current_task->saved_rsp = frame->rsp;
+    g_runqueue.cs = frame->cs;
+    g_runqueue.ss = frame->ss;
+
+    next = scheduler64_next_runnable(current);
+    if (next == SCHEDULER64_INVALID_TASK)
+    {
+        ++g_runqueue.block_denials;
+        return 0u;
+    }
+
+    next_task = &g_runqueue.tasks[next];
+    next_task->state = SCHEDULER64_TASK_RUNNING;
+    ++next_task->dispatches;
+    g_runqueue.current_task = next;
+    ++g_runqueue.switches;
+    *frame = next_task->frame;
+    g_runqueue.cs = frame->cs;
+    g_runqueue.ss = frame->ss;
+    return 1u;
+}
+#endif
 
 u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result)
 {
@@ -390,18 +722,34 @@ u32 scheduler64_sleep_for_ticks(u32 requested_ticks)
     u64 guard_limit;
     u32 start_ticks;
     u32 elapsed_ticks;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u32 task_id;
+#endif
 
     start_ticks = pit_get_ticks();
     g_scheduler64_sleep_last_requested_ticks = requested_ticks;
     g_scheduler64_sleep_last_start_ticks = start_ticks;
     g_scheduler64_sleep_last_end_ticks = start_ticks;
     g_scheduler64_sleep_last_elapsed_ticks = 0u;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    g_scheduler64_sleep_last_task_id = SCHEDULER64_INVALID_TASK;
+    g_scheduler64_sleep_last_wake_tick = start_ticks;
+#endif
 
     if (requested_ticks == 0u)
     {
         ++g_scheduler64_sleep_count;
         return 1u;
     }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    task_id = scheduler64_runqueue_current_task_id();
+    if (task_id != SCHEDULER64_INVALID_TASK)
+    {
+        (void)task_id;
+        return scheduler64_sleep_start_current_task(requested_ticks, 0ull, 0, 0ull);
+    }
+#endif
 
     guard_limit =
         ((u64)requested_ticks * (u64)SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK)
@@ -433,6 +781,64 @@ u32 scheduler64_sleep_for_ticks(u32 requested_ticks)
     return 0u;
 }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_sleep_current_task_for_ticks(
+    u32 requested_ticks,
+    u64 resume_rax,
+    scheduler64_sleep_expiry_callback_t expiry_callback,
+    u64 callback_cookie)
+{
+    g_scheduler64_sleep_last_requested_ticks = requested_ticks;
+    g_scheduler64_sleep_last_start_ticks = pit_get_ticks();
+    g_scheduler64_sleep_last_end_ticks = g_scheduler64_sleep_last_start_ticks;
+    g_scheduler64_sleep_last_elapsed_ticks = 0u;
+    g_scheduler64_sleep_last_task_id = SCHEDULER64_INVALID_TASK;
+    g_scheduler64_sleep_last_wake_tick = g_scheduler64_sleep_last_start_ticks;
+    return scheduler64_sleep_start_current_task(
+        requested_ticks,
+        resume_rax,
+        expiry_callback,
+        callback_cookie);
+}
+
+u32 scheduler64_sleep_cancel_task(u32 task_id)
+{
+    u32 index;
+    u32 cancelled = 0u;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        if ((g_scheduler64_sleep_queue[index].active != 0u)
+            && (g_scheduler64_sleep_queue[index].task_id == task_id))
+        {
+            scheduler64_clear_sleep_entry(&g_scheduler64_sleep_queue[index]);
+            ++cancelled;
+        }
+    }
+
+    return cancelled;
+}
+#else
+u32 scheduler64_sleep_current_task_for_ticks(
+    u32 requested_ticks,
+    u64 resume_rax,
+    scheduler64_sleep_expiry_callback_t expiry_callback,
+    u64 callback_cookie)
+{
+    (void)requested_ticks;
+    (void)resume_rax;
+    (void)expiry_callback;
+    (void)callback_cookie;
+    return 0u;
+}
+
+u32 scheduler64_sleep_cancel_task(u32 task_id)
+{
+    (void)task_id;
+    return 0u;
+}
+#endif
+
 u32 scheduler64_runqueue_current_pid(void)
 {
     if ((g_runqueue.active == 0u)
@@ -443,6 +849,19 @@ u32 scheduler64_runqueue_current_pid(void)
 
     return g_runqueue.tasks[g_runqueue.current_task].pid;
 }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_current_task_id(void)
+{
+    if ((g_runqueue.active == 0u)
+        || (g_runqueue.current_task >= g_runqueue.task_count))
+    {
+        return SCHEDULER64_INVALID_TASK;
+    }
+
+    return g_runqueue.current_task;
+}
+#endif
 
 u32 scheduler64_runqueue_attempts(void)
 {
@@ -468,6 +887,49 @@ u32 scheduler64_runqueue_result(void)
 {
     return g_runqueue.result;
 }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_block_count(void)
+{
+    return g_runqueue.blocks;
+}
+
+u32 scheduler64_runqueue_wake_count(void)
+{
+    return g_runqueue.wakes;
+}
+
+u32 scheduler64_runqueue_block_denial_count(void)
+{
+    return g_runqueue.block_denials;
+}
+
+u32 scheduler64_runqueue_blocked_count(void)
+{
+    u32 index;
+    u32 count = 0u;
+
+    for (index = 0u; index < g_runqueue.task_count; ++index)
+    {
+        if (g_runqueue.tasks[index].state == SCHEDULER64_TASK_BLOCKED)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+u32 scheduler64_runqueue_task_state(u32 task_id)
+{
+    if (task_id >= g_runqueue.task_count)
+    {
+        return SCHEDULER64_TASK_UNUSED;
+    }
+
+    return g_runqueue.tasks[task_id].state;
+}
+#endif
 
 u32 scheduler64_runqueue_task_result(u32 task_id)
 {
@@ -578,3 +1040,36 @@ u32 scheduler64_sleep_last_end_ticks(void)
 {
     return g_scheduler64_sleep_last_end_ticks;
 }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_sleep_pending_count(void)
+{
+    u32 index;
+    u32 count = 0u;
+
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    {
+        if (g_scheduler64_sleep_queue[index].active != 0u)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+u32 scheduler64_sleep_wake_count(void)
+{
+    return g_scheduler64_sleep_wake_count;
+}
+
+u32 scheduler64_sleep_last_task_id(void)
+{
+    return g_scheduler64_sleep_last_task_id;
+}
+
+u32 scheduler64_sleep_last_wake_tick(void)
+{
+    return g_scheduler64_sleep_last_wake_tick;
+}
+#endif

@@ -1,8 +1,10 @@
 #include "windows_handle_x64.h"
 
+#include "fs_x64.h"
 #include "persona_audit_x64.h"
 #include "persona_x64.h"
 #include "process_x64.h"
+#include "scheduler_x64.h"
 #include "services.h"
 #include "windows_abi_x64.h"
 
@@ -28,6 +30,8 @@ typedef struct windows_handle64_event_object
     u32 signaled;
     u32 set_count;
     u32 wait_count;
+    u32 waiting_pid;
+    u32 waiting_task_id;
 } windows_handle64_event_object_t;
 
 typedef struct windows_handle64_mutant_object
@@ -38,6 +42,8 @@ typedef struct windows_handle64_mutant_object
     u32 recursion_count;
     u32 wait_count;
     u32 release_count;
+    u32 waiting_pid;
+    u32 waiting_task_id;
 } windows_handle64_mutant_object_t;
 
 static windows_handle64_event_object_t
@@ -83,6 +89,8 @@ static void windows_handle64_clear_event(windows_handle64_event_object_t *event)
     event->signaled = 0u;
     event->set_count = 0u;
     event->wait_count = 0u;
+    event->waiting_pid = PROCESS64_INVALID_PID;
+    event->waiting_task_id = SCHEDULER64_INVALID_TASK;
 }
 
 static void windows_handle64_clear_mutant(windows_handle64_mutant_object_t *mutant)
@@ -98,6 +106,8 @@ static void windows_handle64_clear_mutant(windows_handle64_mutant_object_t *muta
     mutant->recursion_count = 0u;
     mutant->wait_count = 0u;
     mutant->release_count = 0u;
+    mutant->waiting_pid = PROCESS64_INVALID_PID;
+    mutant->waiting_task_id = SCHEDULER64_INVALID_TASK;
 }
 
 static void windows_handle64_clear_entry(windows_handle64_entry_t *entry)
@@ -143,7 +153,8 @@ static u32 windows_handle64_valid_type(u32 object_type)
         || (object_type == WINDOWS_HANDLE64_TYPE_EVENT)
         || (object_type == WINDOWS_HANDLE64_TYPE_MUTANT)
         || (object_type == WINDOWS_HANDLE64_TYPE_PROCESS)
-        || (object_type == WINDOWS_HANDLE64_TYPE_THREAD))
+        || (object_type == WINDOWS_HANDLE64_TYPE_THREAD)
+        || (object_type == WINDOWS_HANDLE64_TYPE_KEY))
         ? 1u
         : 0u;
 }
@@ -375,6 +386,39 @@ static void windows_handle64_release_mutant_if_unreferenced(u32 mutant_token)
             --g_windows_handle64_mutant_live_count;
         }
     }
+}
+
+static u32 windows_handle64_backing_is_valid(
+    u32 capability_handle,
+    u32 owner_id,
+    u32 object_type,
+    u32 rights)
+{
+    if ((object_type == WINDOWS_HANDLE64_TYPE_FILE)
+        && (fs64_handle_is_node(capability_handle, owner_id) != 0u))
+    {
+        return 1u;
+    }
+
+    return ((capability64_owner(capability_handle, owner_id) == owner_id)
+        && ((capability64_rights(capability_handle, owner_id) & rights) == rights))
+        ? 1u
+        : 0u;
+}
+
+static void windows_handle64_revoke_backing(
+    u32 capability_handle,
+    u32 owner_id,
+    u32 object_type)
+{
+    if ((object_type == WINDOWS_HANDLE64_TYPE_FILE)
+        && (fs64_handle_is_node(capability_handle, owner_id) != 0u))
+    {
+        (void)fs64_revoke(capability_handle, owner_id);
+        return;
+    }
+
+    (void)capability64_revoke(capability_handle, owner_id);
 }
 
 static void windows_handle64_note_event_denial(u32 result)
@@ -698,9 +742,10 @@ u32 windows_handle64_release_process(u32 pid)
             if ((windows_handle64_prior_shared_entry_exists(table, index) == 0u)
                 && (global_shared == table_shared))
             {
-                (void)capability64_revoke(
+                windows_handle64_revoke_backing(
                     table->entries[index].capability_handle,
-                    table->owner_id);
+                    table->owner_id,
+                    table->entries[index].object_type);
             }
         }
     }
@@ -754,8 +799,11 @@ u64 windows_handle64_install(
     if ((table == 0)
         || (owner_id == 0u)
         || (capability_handle == CAPABILITY64_INVALID_HANDLE)
-        || (capability64_owner(capability_handle, owner_id) != owner_id)
-        || ((capability64_rights(capability_handle, owner_id) & rights) != rights))
+        || (windows_handle64_backing_is_valid(
+            capability_handle,
+            owner_id,
+            object_type,
+            rights) == 0u))
     {
         windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_HANDLE);
         return WINDOWS_HANDLE64_INVALID;
@@ -816,6 +864,13 @@ u64 windows_handle64_duplicate(
     target_capability = source_entry->capability_handle;
     if (source_owner != target_owner)
     {
+        if ((source_entry->object_type == WINDOWS_HANDLE64_TYPE_FILE)
+            && (fs64_handle_is_node(source_entry->capability_handle, source_owner) != 0u))
+        {
+            windows_handle64_note_denial(source_pid, WINDOWS_ABI64_STATUS_ACCESS_DENIED);
+            return WINDOWS_HANDLE64_INVALID;
+        }
+
         target_capability = capability64_delegate_persistent(
             source_entry->capability_handle,
             source_entry->rights,
@@ -837,13 +892,17 @@ u64 windows_handle64_duplicate(
     {
         if (source_owner != target_owner)
         {
-            (void)capability64_revoke(target_capability, target_owner);
+            windows_handle64_revoke_backing(
+                target_capability,
+                target_owner,
+                source_entry->object_type);
         }
         windows_handle64_note_denial(source_pid, WINDOWS_ABI64_STATUS_INVALID_PARAMETER);
         return WINDOWS_HANDLE64_INVALID;
     }
     if ((source_entry->object_type == WINDOWS_HANDLE64_TYPE_EVENT)
-        || (source_entry->object_type == WINDOWS_HANDLE64_TYPE_MUTANT))
+        || (source_entry->object_type == WINDOWS_HANDLE64_TYPE_MUTANT)
+        || (source_entry->object_type == WINDOWS_HANDLE64_TYPE_KEY))
     {
         windows_handle64_entry_t *target_entry =
             windows_handle64_find_entry(target_table, target_handle);
@@ -946,7 +1005,7 @@ u32 windows_handle64_close(u32 pid, u64 handle)
     }
     else
     {
-        (void)capability64_revoke(capability_handle, table->owner_id);
+        windows_handle64_revoke_backing(capability_handle, table->owner_id, object_type);
     }
 
     ++g_windows_handle64_close_count;
@@ -1079,6 +1138,107 @@ u64 windows_handle64_high_water_handle(u32 pid)
     return (table != 0) ? table->high_water_handle : WINDOWS_HANDLE64_INVALID;
 }
 
+u64 windows_handle64_key_create(
+    u32 pid,
+    u32 key_id,
+    u32 rights,
+    u32 flags)
+{
+    windows_handle64_table_t *table;
+    windows_handle64_entry_t *entry;
+    u32 owner_id = process64_principal(pid);
+    u32 capability_handle;
+    u64 handle;
+
+    windows_handle64_init();
+    if ((pid == PROCESS64_INVALID_PID)
+        || (owner_id == 0u)
+        || (key_id == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_WINDOWS_PE)
+        || (rights == 0u)
+        || ((flags & ~WINDOWS_HANDLE64_FLAGS_VALID) != 0u))
+    {
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_PARAMETER);
+        return WINDOWS_HANDLE64_INVALID;
+    }
+
+    if (windows_handle64_table_for_process(pid) == 0)
+    {
+        (void)windows_handle64_init_process(pid);
+    }
+    table = windows_handle64_table_for_process(pid);
+    if (table == 0)
+    {
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_HANDLE);
+        return WINDOWS_HANDLE64_INVALID;
+    }
+
+    capability_handle = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_INIT,
+        rights,
+        owner_id);
+    if (capability_handle == CAPABILITY64_INVALID_HANDLE)
+    {
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_NO_MEMORY);
+        return WINDOWS_HANDLE64_INVALID;
+    }
+
+    handle = windows_handle64_install_in_table(
+        table,
+        capability_handle,
+        WINDOWS_HANDLE64_TYPE_KEY,
+        rights,
+        flags);
+    if (handle == WINDOWS_HANDLE64_INVALID)
+    {
+        (void)capability64_revoke(capability_handle, owner_id);
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_NO_MEMORY);
+        return WINDOWS_HANDLE64_INVALID;
+    }
+
+    entry = windows_handle64_find_entry(table, handle);
+    if (entry == 0)
+    {
+        (void)windows_handle64_close(pid, handle);
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_HANDLE);
+        return WINDOWS_HANDLE64_INVALID;
+    }
+
+    entry->reserved = key_id;
+    g_windows_handle64_last_handle = handle;
+    g_windows_handle64_last_capability = capability_handle;
+    g_windows_handle64_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+    return handle;
+}
+
+u32 windows_handle64_key_id(u32 pid, u64 handle)
+{
+    windows_handle64_table_t *table = windows_handle64_table_for_process(pid);
+    windows_handle64_entry_t *entry;
+
+    if (table == 0)
+    {
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_HANDLE);
+        return 0u;
+    }
+
+    entry = windows_handle64_find_entry(table, handle);
+    if ((entry == 0)
+        || (entry->object_type != WINDOWS_HANDLE64_TYPE_KEY)
+        || (entry->reserved == 0u)
+        || (capability64_route(entry->capability_handle, CAPABILITY64_RIGHT_QUERY, table->owner_id)
+            == CAPABILITY64_INVALID_HANDLE))
+    {
+        windows_handle64_note_denial(pid, WINDOWS_ABI64_STATUS_INVALID_HANDLE);
+        return 0u;
+    }
+
+    g_windows_handle64_last_handle = handle;
+    g_windows_handle64_last_capability = entry->capability_handle;
+    g_windows_handle64_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+    return entry->reserved;
+}
+
 u64 windows_handle64_event_create(
     u32 pid,
     u32 manual_reset,
@@ -1166,6 +1326,8 @@ u64 windows_handle64_event_create(
         (initial_state != 0u) ? 1u : 0u;
     g_windows_handle64_events[event_index].set_count = 0u;
     g_windows_handle64_events[event_index].wait_count = 0u;
+    g_windows_handle64_events[event_index].waiting_pid = PROCESS64_INVALID_PID;
+    g_windows_handle64_events[event_index].waiting_task_id = SCHEDULER64_INVALID_TASK;
     entry->reserved = event_index + 1u;
     ++g_windows_handle64_event_create_count;
     ++g_windows_handle64_event_live_count;
@@ -1178,12 +1340,20 @@ u64 windows_handle64_event_create(
     return handle;
 }
 
-u32 windows_handle64_event_set(u32 pid, u64 handle, u32 *previous_state_out)
+u32 windows_handle64_event_set(
+    u32 pid,
+    u64 handle,
+    u32 *previous_state_out,
+    u32 *wake_task_out)
 {
     windows_handle64_event_object_t *event =
         windows_handle64_event_for_handle(pid, handle, CAPABILITY64_RIGHT_SEND);
     u32 previous_state;
 
+    if (wake_task_out != 0)
+    {
+        *wake_task_out = SCHEDULER64_INVALID_TASK;
+    }
     if (event == 0)
     {
         return 0u;
@@ -1191,6 +1361,19 @@ u32 windows_handle64_event_set(u32 pid, u64 handle, u32 *previous_state_out)
 
     previous_state = event->signaled;
     event->signaled = 1u;
+    if (event->waiting_task_id != SCHEDULER64_INVALID_TASK)
+    {
+        if (wake_task_out != 0)
+        {
+            *wake_task_out = event->waiting_task_id;
+        }
+        event->waiting_pid = PROCESS64_INVALID_PID;
+        event->waiting_task_id = SCHEDULER64_INVALID_TASK;
+        if (event->manual_reset == 0u)
+        {
+            event->signaled = 0u;
+        }
+    }
     ++event->set_count;
     ++g_windows_handle64_event_set_count;
     g_windows_handle64_event_last_state = event->signaled;
@@ -1231,6 +1414,58 @@ u32 windows_handle64_event_wait(u32 pid, u64 handle)
     g_windows_handle64_last_handle = handle;
     g_windows_handle64_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
     return WINDOWS_HANDLE64_EVENT_WAIT_SIGNALED;
+}
+
+u32 windows_handle64_event_arm_wait(u32 pid, u64 handle, u32 task_id)
+{
+    windows_handle64_event_object_t *event =
+        windows_handle64_event_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    if ((event == 0)
+        || (task_id == SCHEDULER64_INVALID_TASK)
+        || (event->signaled != 0u)
+        || (event->waiting_task_id != SCHEDULER64_INVALID_TASK))
+    {
+        windows_handle64_note_event_denial(WINDOWS_ABI64_STATUS_INVALID_PARAMETER);
+        return 0u;
+    }
+
+    event->waiting_pid = pid;
+    event->waiting_task_id = task_id;
+    return 1u;
+}
+
+u32 windows_handle64_event_cancel_wait(u32 pid, u64 handle, u32 task_id)
+{
+    windows_handle64_event_object_t *event =
+        windows_handle64_event_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    if ((event == 0)
+        || (event->waiting_pid != pid)
+        || (event->waiting_task_id != task_id))
+    {
+        return 0u;
+    }
+
+    event->waiting_pid = PROCESS64_INVALID_PID;
+    event->waiting_task_id = SCHEDULER64_INVALID_TASK;
+    return 1u;
+}
+
+u32 windows_handle64_event_waiter_task(u32 pid, u64 handle)
+{
+    windows_handle64_event_object_t *event =
+        windows_handle64_event_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    return (event != 0) ? event->waiting_task_id : SCHEDULER64_INVALID_TASK;
+}
+
+u32 windows_handle64_event_waiter_pid(u32 pid, u64 handle)
+{
+    windows_handle64_event_object_t *event =
+        windows_handle64_event_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    return (event != 0) ? event->waiting_pid : PROCESS64_INVALID_PID;
 }
 
 u32 windows_handle64_event_signaled(u32 pid, u64 handle)
@@ -1335,6 +1570,8 @@ u64 windows_handle64_mutant_create(
         (initial_owner != 0u) ? 1u : 0u;
     g_windows_handle64_mutants[mutant_index].wait_count = 0u;
     g_windows_handle64_mutants[mutant_index].release_count = 0u;
+    g_windows_handle64_mutants[mutant_index].waiting_pid = PROCESS64_INVALID_PID;
+    g_windows_handle64_mutants[mutant_index].waiting_task_id = SCHEDULER64_INVALID_TASK;
     entry->reserved = mutant_index + 1u;
     ++g_windows_handle64_mutant_create_count;
     ++g_windows_handle64_mutant_live_count;
@@ -1390,12 +1627,58 @@ u32 windows_handle64_mutant_wait(u32 pid, u64 handle)
     return WINDOWS_HANDLE64_MUTANT_WAIT_TIMEOUT;
 }
 
-u32 windows_handle64_mutant_release(u32 pid, u64 handle, u32 *previous_count_out)
+u32 windows_handle64_mutant_arm_wait(u32 pid, u64 handle, u32 task_id)
+{
+    windows_handle64_mutant_object_t *mutant =
+        windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    if ((mutant == 0)
+        || (task_id == SCHEDULER64_INVALID_TASK)
+        || (mutant->owner_pid == PROCESS64_INVALID_PID)
+        || (mutant->owner_pid == pid)
+        || (mutant->recursion_count == 0u)
+        || (mutant->waiting_task_id != SCHEDULER64_INVALID_TASK))
+    {
+        windows_handle64_note_mutant_denial(WINDOWS_ABI64_STATUS_INVALID_PARAMETER);
+        return 0u;
+    }
+
+    mutant->waiting_pid = pid;
+    mutant->waiting_task_id = task_id;
+    return 1u;
+}
+
+u32 windows_handle64_mutant_cancel_wait(u32 pid, u64 handle, u32 task_id)
+{
+    windows_handle64_mutant_object_t *mutant =
+        windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    if ((mutant == 0)
+        || (mutant->waiting_pid != pid)
+        || (mutant->waiting_task_id != task_id))
+    {
+        return 0u;
+    }
+
+    mutant->waiting_pid = PROCESS64_INVALID_PID;
+    mutant->waiting_task_id = SCHEDULER64_INVALID_TASK;
+    return 1u;
+}
+
+u32 windows_handle64_mutant_release(
+    u32 pid,
+    u64 handle,
+    u32 *previous_count_out,
+    u32 *wake_task_out)
 {
     windows_handle64_mutant_object_t *mutant =
         windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_SEND);
     u32 previous_count;
 
+    if (wake_task_out != 0)
+    {
+        *wake_task_out = SCHEDULER64_INVALID_TASK;
+    }
     if (mutant == 0)
     {
         return WINDOWS_ABI64_STATUS_INVALID_HANDLE;
@@ -1410,7 +1693,21 @@ u32 windows_handle64_mutant_release(u32 pid, u64 handle, u32 *previous_count_out
     --mutant->recursion_count;
     if (mutant->recursion_count == 0u)
     {
-        mutant->owner_pid = PROCESS64_INVALID_PID;
+        if (mutant->waiting_task_id != SCHEDULER64_INVALID_TASK)
+        {
+            if (wake_task_out != 0)
+            {
+                *wake_task_out = mutant->waiting_task_id;
+            }
+            mutant->owner_pid = mutant->waiting_pid;
+            mutant->recursion_count = 1u;
+            mutant->waiting_pid = PROCESS64_INVALID_PID;
+            mutant->waiting_task_id = SCHEDULER64_INVALID_TASK;
+        }
+        else
+        {
+            mutant->owner_pid = PROCESS64_INVALID_PID;
+        }
     }
     ++mutant->release_count;
     ++g_windows_handle64_mutant_release_count;
@@ -1440,6 +1737,22 @@ u32 windows_handle64_mutant_recursion(u32 pid, u64 handle)
         windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
 
     return (mutant != 0) ? mutant->recursion_count : 0u;
+}
+
+u32 windows_handle64_mutant_waiter_task(u32 pid, u64 handle)
+{
+    windows_handle64_mutant_object_t *mutant =
+        windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    return (mutant != 0) ? mutant->waiting_task_id : SCHEDULER64_INVALID_TASK;
+}
+
+u32 windows_handle64_mutant_waiter_pid(u32 pid, u64 handle)
+{
+    windows_handle64_mutant_object_t *mutant =
+        windows_handle64_mutant_for_handle(pid, handle, CAPABILITY64_RIGHT_QUERY);
+
+    return (mutant != 0) ? mutant->waiting_pid : PROCESS64_INVALID_PID;
 }
 
 u32 windows_handle64_event_create_count(void)

@@ -1,6 +1,8 @@
 #include "services_x64.h"
 
+#define PACKAGE_STORE_GENERATED_NO_ARCHIVE
 #include "bootstrap_catalog.h"
+#undef PACKAGE_STORE_GENERATED_NO_ARCHIVE
 #include "ipc.h"
 #include "services.h"
 

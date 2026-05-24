@@ -40,6 +40,23 @@ static inline u32 bootstrap_catalog_read_u32(const u8 *address)
 
 static inline int bootstrap_catalog_read_summary(struct bootstrap_catalog_summary *out_summary)
 {
+#if defined(PACKAGE_STORE_GENERATED_NO_ARCHIVE)
+    if (out_summary == NULL)
+    {
+        return 0;
+    }
+
+    out_summary->magic = LIMITLESS_BOOTSTRAP_CATALOG_MAGIC;
+    out_summary->version = PACKAGE_STORE_GENERATED_VERSION;
+    out_summary->signer_count = PACKAGE_STORE_GENERATED_SIGNER_COUNT;
+    out_summary->manifest_count = PACKAGE_STORE_GENERATED_MANIFEST_COUNT;
+    out_summary->payload_count = PACKAGE_STORE_GENERATED_PAYLOAD_COUNT;
+    out_summary->string_bytes = PACKAGE_STORE_GENERATED_STRING_BYTES;
+    out_summary->archive_checksum = PACKAGE_STORE_GENERATED_ARCHIVE_CHECKSUM;
+    out_summary->archive_size = PACKAGE_STORE_GENERATED_ARCHIVE_SIZE;
+
+    return 1;
+#else
     const u8 *archive = package_store_generated_archive;
 
     if (out_summary == NULL)
@@ -62,6 +79,7 @@ static inline int bootstrap_catalog_read_summary(struct bootstrap_catalog_summar
     out_summary->archive_size = PACKAGE_STORE_GENERATED_ARCHIVE_SIZE;
 
     return 1;
+#endif
 }
 
 static inline int bootstrap_catalog_is_valid(const struct bootstrap_catalog_summary *summary)

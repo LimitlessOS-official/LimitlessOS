@@ -1,6 +1,7 @@
 #include "vma_x64.h"
 
 #include "paging_x64.h"
+#include "persona_x64.h"
 #include "process_x64.h"
 
 /*
@@ -15,7 +16,7 @@
 
 #define VMA64_MAX_PROCESS_TREES 16u
 #define VMA64_MAX_STATIC_REGIONS 1152u
-#define VMA64_MAX_ANON_PAGES 8u
+#define VMA64_MAX_ANON_PAGES 16u
 #define VMA64_ANON_HINT_BASE 0x0000000044000000ull
 #define VMA64_ANON_HINT_LIMIT 0x0000000044200000ull
 #define VMA64_BRK_BASE_DEFAULT 0x0000000044100000ull
@@ -802,6 +803,15 @@ u32 vma64_insert(u32 pid, vma_region_t *region)
         cursor = cursor->next;
     }
 
+    bytes = region->virt_end - region->virt_base;
+    if (persona64_budget_check_vma_pages(
+            pid,
+            (u32)((tree->mapped_bytes + ((u64)VMA64_PAGE_BYTES - 1ull)) / VMA64_PAGE_BYTES),
+            (u32)((bytes + ((u64)VMA64_PAGE_BYTES - 1ull)) / VMA64_PAGE_BYTES)) == 0u)
+    {
+        return 0u;
+    }
+
     region->prev = previous;
     region->next = cursor;
     if (previous != 0)
@@ -841,7 +851,6 @@ u32 vma64_insert(u32 pid, vma_region_t *region)
         return 0u;
     }
 
-    bytes = region->virt_end - region->virt_base;
     ++tree->region_count;
     tree->mapped_bytes += bytes;
     if (tree->region_count > tree->peak_region_count)

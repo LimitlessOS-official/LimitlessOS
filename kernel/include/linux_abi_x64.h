@@ -185,6 +185,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_EMFILE 24u
 #define LINUX_ABI64_ERANGE 34u
 #define LINUX_ABI64_ENOSYS 38u
+#define LINUX_ABI64_ETIMEDOUT 110u
 #define LINUX_ABI64_ERROR_RETURN(error_code) (0ull - (u64)(error_code))
 
 typedef u64 (*linux_abi64_handler_t)(
@@ -562,10 +563,16 @@ u32 linux_abi64_futex_waiter_count(void);
 u32 linux_abi64_futex_eagain_count(void);
 u32 linux_abi64_futex_denial_count(void);
 u32 linux_abi64_futex_fault_count(void);
+u32 linux_abi64_futex_timed_wait_count(void);
+u32 linux_abi64_futex_timeout_count(void);
 u32 linux_abi64_futex_last_wait_pid(void);
 u64 linux_abi64_futex_last_wait_address(void);
 u32 linux_abi64_futex_last_wait_value(void);
+u32 linux_abi64_futex_last_wait_task_id(void);
 u32 linux_abi64_futex_last_wake_count(void);
+u32 linux_abi64_futex_last_timeout_task_id(void);
+u32 linux_abi64_futex_last_timeout_ticks(void);
+u32 linux_abi64_futex_last_timeout_result(void);
 u32 linux_abi64_clone_count(void);
 u32 linux_abi64_clone_thread_count(void);
 u32 linux_abi64_clone_denial_count(void);

@@ -1,7 +1,9 @@
 #include "pipe_x64.h"
 
 #include "fd_x64.h"
+#include "persona_x64.h"
 #include "process_x64.h"
+#include "scheduler_x64.h"
 
 /*
  * C.1-C.2 introduce the anonymous pipe object substrate. The implementation
@@ -14,6 +16,8 @@
 static pipe64_buffer_t g_pipe64_objects[PIPE64_MAX_OBJECTS];
 static u32 g_pipe64_initialized = 0u;
 static u32 g_pipe64_denials = 0u;
+static u32 g_pipe64_block_count = 0u;
+static u32 g_pipe64_wake_count = 0u;
 
 static void pipe64_zero_bytes(u8 *bytes, u32 byte_count)
 {
@@ -39,6 +43,11 @@ static void pipe64_clear_object(pipe64_buffer_t *pipe)
         return;
     }
 
+    if ((pipe->live != 0u) && (pipe->owner_pid != PROCESS64_INVALID_PID))
+    {
+        (void)persona64_budget_release_pipe(pipe->owner_pid, 1u);
+    }
+
     generation = pipe->generation;
     pipe->live = 0u;
     pipe->owner_pid = PROCESS64_INVALID_PID;
@@ -62,6 +71,8 @@ static void pipe64_clear_object(pipe64_buffer_t *pipe)
     pipe->byte_count_semaphore = 0u;
     pipe->writer_closed = 0u;
     pipe->reader_closed = 0u;
+    pipe->blocked_reader_task_id = SCHEDULER64_INVALID_TASK;
+    pipe->blocked_writer_task_id = SCHEDULER64_INVALID_TASK;
     pipe64_zero_bytes(pipe->bytes, PIPE64_BUFFER_BYTES);
 }
 
@@ -81,6 +92,96 @@ void pipe64_init(void)
     }
 
     g_pipe64_initialized = 1u;
+}
+
+static u32 pipe64_current_task_for_owner(u32 owner_id)
+{
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+    (void)owner_id;
+    return SCHEDULER64_INVALID_TASK;
+#else
+    u32 task_id = scheduler64_runqueue_current_task_id();
+    u32 task_pid;
+
+    if ((task_id == SCHEDULER64_INVALID_TASK)
+        || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_RUNNING))
+    {
+        return SCHEDULER64_INVALID_TASK;
+    }
+
+    task_pid = scheduler64_runqueue_task_pid(task_id);
+    if ((task_pid == PROCESS64_INVALID_PID)
+        || (process64_principal(task_pid) != owner_id))
+    {
+        return SCHEDULER64_INVALID_TASK;
+    }
+
+    return task_id;
+#endif
+}
+
+static u32 pipe64_block_current_task(u32 owner_id, u32 *blocked_task_slot)
+{
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+    (void)owner_id;
+    (void)blocked_task_slot;
+    ++g_pipe64_denials;
+    return 0u;
+#else
+    u32 task_id;
+
+    if ((blocked_task_slot == 0)
+        || (*blocked_task_slot != SCHEDULER64_INVALID_TASK))
+    {
+        ++g_pipe64_denials;
+        return 0u;
+    }
+
+    task_id = pipe64_current_task_for_owner(owner_id);
+    if (task_id == SCHEDULER64_INVALID_TASK)
+    {
+        ++g_pipe64_denials;
+        return 0u;
+    }
+
+    *blocked_task_slot = task_id;
+    if (scheduler64_runqueue_block_task(task_id) == 0u)
+    {
+        *blocked_task_slot = SCHEDULER64_INVALID_TASK;
+        ++g_pipe64_denials;
+        return 0u;
+    }
+
+    ++g_pipe64_block_count;
+    return 1u;
+#endif
+}
+
+static u32 pipe64_wake_blocked_task(u32 *blocked_task_slot)
+{
+#ifndef LIMITLESS_X64_UEFI_KERNEL
+    (void)blocked_task_slot;
+    return 0u;
+#else
+    u32 task_id;
+
+    if ((blocked_task_slot == 0)
+        || (*blocked_task_slot == SCHEDULER64_INVALID_TASK))
+    {
+        return 0u;
+    }
+
+    task_id = *blocked_task_slot;
+    *blocked_task_slot = SCHEDULER64_INVALID_TASK;
+    if (scheduler64_runqueue_wake_task(task_id) == 0u)
+    {
+        ++g_pipe64_denials;
+        return 0u;
+    }
+
+    ++g_pipe64_wake_count;
+    return 1u;
+#endif
 }
 
 static u32 pipe64_make_handle(u32 index, u32 generation, u32 kind)
@@ -207,6 +308,12 @@ u32 pipe64_create_flags(u32 pid, u32 flags, u32 *read_fd_out, u32 *write_fd_out)
         return 0u;
     }
 
+    if (persona64_budget_check_pipe(pid, 1u) == 0u)
+    {
+        ++g_pipe64_denials;
+        return 0u;
+    }
+
     for (index = 0u; index < PIPE64_MAX_OBJECTS; ++index)
     {
         if (g_pipe64_objects[index].live == 0u)
@@ -264,6 +371,14 @@ u32 pipe64_create_flags(u32 pid, u32 flags, u32 *read_fd_out, u32 *write_fd_out)
 
     pipe->read_fd = read_fd;
     pipe->write_fd = write_fd;
+    if (persona64_budget_commit_pipe(pid, 1u) == 0u)
+    {
+        (void)fd64_free(pid, write_fd);
+        (void)fd64_free(pid, read_fd);
+        pipe64_clear_object(pipe);
+        ++g_pipe64_denials;
+        return 0u;
+    }
     *read_fd_out = read_fd;
     *write_fd_out = write_fd;
     return 1u;
@@ -399,6 +514,16 @@ u32 pipe64_write(u32 pipe_handle, const u8 *input, u32 byte_count, u32 owner_id)
         spin_count = 0u;
         while (pipe->byte_count >= pipe->capacity)
         {
+            if (bytes_written != 0u)
+            {
+                return bytes_written;
+            }
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+            if (pipe64_block_current_task(owner_id, &pipe->blocked_writer_task_id) != 0u)
+            {
+                return PIPE64_IO_BLOCKED;
+            }
+#endif
             if ((pipe->reader_closed != 0u) || (spin_count >= PIPE64_SPIN_WAIT_LIMIT))
             {
                 return (bytes_written != 0u) ? bytes_written : PIPE64_IO_ERROR;
@@ -411,6 +536,11 @@ u32 pipe64_write(u32 pipe_handle, const u8 *input, u32 byte_count, u32 owner_id)
         ++pipe->byte_count;
         pipe->byte_count_semaphore = pipe->byte_count;
         ++bytes_written;
+    }
+
+    if (bytes_written != 0u)
+    {
+        (void)pipe64_wake_blocked_task(&pipe->blocked_reader_task_id);
     }
 
     return bytes_written;
@@ -452,6 +582,16 @@ u32 pipe64_read(u32 pipe_handle, u8 *output, u32 byte_count, u32 owner_id)
                 return bytes_read;
             }
 
+            if (bytes_read != 0u)
+            {
+                return bytes_read;
+            }
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+            if (pipe64_block_current_task(owner_id, &pipe->blocked_reader_task_id) != 0u)
+            {
+                return PIPE64_IO_BLOCKED;
+            }
+#endif
             if (spin_count >= PIPE64_SPIN_WAIT_LIMIT)
             {
                 return (bytes_read != 0u) ? bytes_read : PIPE64_IO_ERROR;
@@ -464,6 +604,11 @@ u32 pipe64_read(u32 pipe_handle, u8 *output, u32 byte_count, u32 owner_id)
         --pipe->byte_count;
         pipe->byte_count_semaphore = pipe->byte_count;
         ++bytes_read;
+    }
+
+    if ((bytes_read != 0u) && (pipe->byte_count < pipe->capacity))
+    {
+        (void)pipe64_wake_blocked_task(&pipe->blocked_writer_task_id);
     }
 
     return bytes_read;
@@ -489,6 +634,7 @@ u32 pipe64_revoke_handle(u32 pipe_handle, u32 owner_id)
         if (pipe->read_ref_count == 0u)
         {
             pipe->reader_closed = 1u;
+            (void)pipe64_wake_blocked_task(&pipe->blocked_writer_task_id);
         }
     }
     else if (kind == PIPE64_HANDLE_KIND_WRITE)
@@ -500,6 +646,7 @@ u32 pipe64_revoke_handle(u32 pipe_handle, u32 owner_id)
         if (pipe->write_ref_count == 0u)
         {
             pipe->writer_closed = 1u;
+            (void)pipe64_wake_blocked_task(&pipe->blocked_reader_task_id);
         }
     }
     else
@@ -560,6 +707,32 @@ u32 pipe64_writer_closed(u32 pipe_handle, u32 owner_id)
     pipe64_buffer_t *pipe = pipe64_find(pipe_handle, owner_id);
 
     return (pipe != 0) ? pipe->writer_closed : 0u;
+}
+
+u32 pipe64_blocked_reader_task(u32 pipe_handle, u32 owner_id)
+{
+    pipe64_buffer_t *pipe = pipe64_find(pipe_handle, owner_id);
+
+    return (pipe != 0) ? pipe->blocked_reader_task_id : SCHEDULER64_INVALID_TASK;
+}
+
+u32 pipe64_blocked_writer_task(u32 pipe_handle, u32 owner_id)
+{
+    pipe64_buffer_t *pipe = pipe64_find(pipe_handle, owner_id);
+
+    return (pipe != 0) ? pipe->blocked_writer_task_id : SCHEDULER64_INVALID_TASK;
+}
+
+u32 pipe64_block_count(void)
+{
+    pipe64_init();
+    return g_pipe64_block_count;
+}
+
+u32 pipe64_wake_count(void)
+{
+    pipe64_init();
+    return g_pipe64_wake_count;
 }
 
 u32 pipe64_denial_count(void)

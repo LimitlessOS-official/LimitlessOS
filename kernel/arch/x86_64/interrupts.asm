@@ -3,6 +3,42 @@ default rel
 
 extern interrupts64_dispatch
 extern syscall64_native_dispatch
+extern syscall64_native_complete_persona_return
+extern syscall64_native_linux_rdi
+extern syscall64_native_linux_rsi
+extern syscall64_native_linux_rdx
+extern syscall64_native_linux_r10
+extern syscall64_native_linux_r8
+extern syscall64_native_linux_r9
+extern syscall64_native_user_rsp
+extern syscall64_native_user_rbx
+extern syscall64_native_user_rbp
+extern syscall64_native_user_r12
+extern syscall64_native_user_r13
+extern syscall64_native_user_r14
+extern syscall64_native_user_r15
+extern syscall64_native_user_rip
+extern syscall64_native_return_to_user
+extern syscall64_native_switch_r15
+extern syscall64_native_switch_r14
+extern syscall64_native_switch_r13
+extern syscall64_native_switch_r12
+extern syscall64_native_switch_r11
+extern syscall64_native_switch_r10
+extern syscall64_native_switch_r9
+extern syscall64_native_switch_r8
+extern syscall64_native_switch_rdi
+extern syscall64_native_switch_rsi
+extern syscall64_native_switch_rbp
+extern syscall64_native_switch_rbx
+extern syscall64_native_switch_rdx
+extern syscall64_native_switch_rcx
+extern syscall64_native_switch_rax
+extern syscall64_native_switch_rip
+extern syscall64_native_switch_cs
+extern syscall64_native_switch_rflags
+extern syscall64_native_switch_rsp
+extern syscall64_native_switch_ss
 
 section .text
 
@@ -153,18 +189,73 @@ global syscall64_native_entry
 syscall64_native_entry:
     push r11
     push rcx
+    mov [rel syscall64_native_user_rip], rcx
+    mov [rel syscall64_native_linux_rdi], rdi
+    mov [rel syscall64_native_linux_rsi], rsi
+    mov [rel syscall64_native_linux_rdx], rdx
+    mov [rel syscall64_native_linux_r10], r10
+    mov [rel syscall64_native_linux_r8], r8
+    mov [rel syscall64_native_linux_r9], r9
+    mov [rel syscall64_native_user_rbx], rbx
+    mov [rel syscall64_native_user_rbp], rbp
+    mov [rel syscall64_native_user_r12], r12
+    mov [rel syscall64_native_user_r13], r13
+    mov [rel syscall64_native_user_r14], r14
+    mov [rel syscall64_native_user_r15], r15
     sub rsp, 40
+    lea r11, [rsp + 56]
+    mov [rel syscall64_native_user_rsp], r11
     mov rcx, rax
     mov r8, rdx
     mov r9, rsi
     mov rdx, rbx
     call syscall64_native_dispatch
+    mov [rsp + 32], rax
+    mov rcx, rax
+    mov rdx, [rsp + 40]
+    lea r8, [rsp + 56]
+    mov r9, [rsp + 48]
+    call syscall64_native_complete_persona_return
+    cmp eax, 0
+    jne .switch_to_frame
+    mov rax, [rsp + 32]
     add rsp, 40
     pop rcx
     pop r11
+    cmp dword [rel syscall64_native_return_to_user], 0
+    jne .return_to_user
     push r11
     popfq
     jmp rcx
+.return_to_user:
+    o64 sysret
+.switch_to_frame:
+    mov rax, [rel syscall64_native_switch_ss]
+    push rax
+    mov rax, [rel syscall64_native_switch_rsp]
+    push rax
+    mov rax, [rel syscall64_native_switch_rflags]
+    push rax
+    mov rax, [rel syscall64_native_switch_cs]
+    push rax
+    mov rax, [rel syscall64_native_switch_rip]
+    push rax
+    mov r15, [rel syscall64_native_switch_r15]
+    mov r14, [rel syscall64_native_switch_r14]
+    mov r13, [rel syscall64_native_switch_r13]
+    mov r12, [rel syscall64_native_switch_r12]
+    mov r11, [rel syscall64_native_switch_r11]
+    mov r10, [rel syscall64_native_switch_r10]
+    mov r9, [rel syscall64_native_switch_r9]
+    mov r8, [rel syscall64_native_switch_r8]
+    mov rdi, [rel syscall64_native_switch_rdi]
+    mov rsi, [rel syscall64_native_switch_rsi]
+    mov rbp, [rel syscall64_native_switch_rbp]
+    mov rbx, [rel syscall64_native_switch_rbx]
+    mov rdx, [rel syscall64_native_switch_rdx]
+    mov rcx, [rel syscall64_native_switch_rcx]
+    mov rax, [rel syscall64_native_switch_rax]
+    iretq
 
 %macro ISR64_NO_ERROR 1
 global interrupt64_isr%1

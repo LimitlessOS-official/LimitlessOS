@@ -3,7 +3,22 @@
 #include "launch_x64.h"
 #include "pit.h"
 #include "principal_x64.h"
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "persona_audit_x64.h"
+#include "persona_x64.h"
+#include "process_x64.h"
+#endif
 #include "services_x64.h"
+
+/*
+ * O.1 adds persona capability attenuation to the existing broker without
+ * exposing the private process64_record layout. Persona-owned capabilities are
+ * minted through capability64_grant_service_for_process(), carry the process
+ * persona mask, and deny delegation into a different persona while recording a
+ * capability-denied audit event. The scaffold checkpoint proves same-persona
+ * delegation works, cross-persona transfer is denied, and legacy untagged
+ * grants remain behavior-compatible.
+ */
 
 struct capability64_record
 {
@@ -17,6 +32,10 @@ struct capability64_record
     u32 expiry_tick;
     u32 runtime_generation;
     u32 runtime_token;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 persona_type;
+    u32 persona_mask;
+#endif
 };
 
 enum
@@ -36,6 +55,10 @@ static u32 g_expiration_count = 0u;
 static u32 g_owner_denial_count = 0u;
 static u32 g_principal_denial_count = 0u;
 static u32 g_runtime_stale_denial_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_persona_denial_count = 0u;
+static u32 g_persona_transfer_denial_count = 0u;
+#endif
 static u32 g_denial_count = 0u;
 
 static u32 capability64_normalize_owner(u32 owner_id)
@@ -85,6 +108,10 @@ static void capability64_clear(struct capability64_record *record)
     record->expiry_tick = 0u;
     record->runtime_generation = 0u;
     record->runtime_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record->persona_type = CAPABILITY64_PERSONA_UNTAGGED;
+    record->persona_mask = 0u;
+#endif
 }
 
 static int capability64_record_expired(const struct capability64_record *record)
@@ -195,6 +222,61 @@ static int capability64_record_runtime_is_current(struct capability64_record *re
     return 0;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 capability64_persona_pid_for_owner(u32 owner_id)
+{
+    return process64_pid_for_principal(capability64_normalize_owner(owner_id));
+}
+
+static void capability64_audit_persona_denial(
+    u32 recipient_owner_id,
+    u32 endpoint_class)
+{
+    u32 recipient_pid = capability64_persona_pid_for_owner(recipient_owner_id);
+
+    if (recipient_pid == PROCESS64_INVALID_PID)
+    {
+        return;
+    }
+
+    (void)persona_audit64_record(
+        recipient_pid,
+        (u8)PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+        (u16)endpoint_class,
+        PERSONA_AUDIT64_RESULT_DENY,
+        0ull);
+}
+
+static int capability64_record_allows_recipient_persona(
+    const struct capability64_record *record,
+    u32 recipient_owner_id)
+{
+    u32 recipient_pid;
+    u32 recipient_mask;
+
+    if ((record == NULL) || (record->persona_mask == 0u))
+    {
+        return 1;
+    }
+
+    recipient_pid = capability64_persona_pid_for_owner(recipient_owner_id);
+    recipient_mask = (recipient_pid != PROCESS64_INVALID_PID)
+        ? persona64_capability_mask(recipient_pid)
+        : 0u;
+
+    if ((recipient_mask != 0u) && ((record->persona_mask & recipient_mask) != 0u))
+    {
+        return 1;
+    }
+
+    ++g_persona_denial_count;
+    ++g_persona_transfer_denial_count;
+    ++g_denial_count;
+    capability64_audit_persona_denial(recipient_owner_id, record->endpoint_class);
+    return 0;
+}
+#endif
+
 void capability64_init(void)
 {
     u32 index;
@@ -211,6 +293,10 @@ void capability64_init(void)
         g_capabilities[index].expiry_tick = 0u;
         g_capabilities[index].runtime_generation = 0u;
         g_capabilities[index].runtime_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_capabilities[index].persona_type = CAPABILITY64_PERSONA_UNTAGGED;
+        g_capabilities[index].persona_mask = 0u;
+#endif
     }
 
     g_next_handle = CAPABILITY64_HANDLE_BASE;
@@ -223,10 +309,23 @@ void capability64_init(void)
     g_owner_denial_count = 0u;
     g_principal_denial_count = 0u;
     g_runtime_stale_denial_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_persona_denial_count = 0u;
+    g_persona_transfer_denial_count = 0u;
+#endif
     g_denial_count = 0u;
 }
 
-u32 capability64_grant_service(u32 endpoint_class, u32 requested_rights, u32 owner_id)
+static u32 capability64_grant_service_tagged(
+    u32 endpoint_class,
+    u32 requested_rights,
+    u32 owner_id
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ,
+    u32 persona_type,
+    u32 persona_mask
+#endif
+    )
 {
     u32 endpoint_id = services64_resolve_endpoint_class(endpoint_class);
     u32 allowed_rights = CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY;
@@ -276,9 +375,58 @@ u32 capability64_grant_service(u32 endpoint_class, u32 requested_rights, u32 own
     record->owner_id = owner_id;
     record->expiry_tick = CAPABILITY64_LEASE_PERMANENT;
     capability64_bind_runtime(record, endpoint_class);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record->persona_type = persona_type;
+    record->persona_mask = persona_mask;
+#endif
     ++g_grant_count;
 
     return record->handle;
+}
+
+u32 capability64_grant_service(u32 endpoint_class, u32 requested_rights, u32 owner_id)
+{
+    return capability64_grant_service_tagged(
+        endpoint_class,
+        requested_rights,
+        owner_id
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        ,
+        CAPABILITY64_PERSONA_UNTAGGED,
+        0u
+#endif
+        );
+}
+
+u32 capability64_grant_service_for_process(u32 endpoint_class, u32 requested_rights, u32 pid)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 owner_id = process64_principal(pid);
+    u32 persona_type = persona64_type(pid);
+    u32 persona_mask = persona64_capability_mask(pid);
+
+    if ((owner_id == 0u)
+        || (persona_type >= PERSONA64_TYPE_COUNT)
+        || (persona_mask == 0u))
+    {
+        ++g_persona_denial_count;
+        ++g_denial_count;
+        return CAPABILITY64_INVALID_HANDLE;
+    }
+
+    return capability64_grant_service_tagged(
+        endpoint_class,
+        requested_rights,
+        owner_id,
+        persona_type,
+        persona_mask);
+#else
+    (void)endpoint_class;
+    (void)requested_rights;
+    (void)pid;
+    ++g_denial_count;
+    return CAPABILITY64_INVALID_HANDLE;
+#endif
 }
 
 static u32 capability64_delegate_with_expiry(
@@ -336,6 +484,13 @@ static u32 capability64_delegate_with_expiry(
         return CAPABILITY64_INVALID_HANDLE;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (!capability64_record_allows_recipient_persona(source, recipient_owner_id))
+    {
+        return CAPABILITY64_INVALID_HANDLE;
+    }
+#endif
+
     record = capability64_find_free();
     if (record == NULL)
     {
@@ -353,6 +508,10 @@ static u32 capability64_delegate_with_expiry(
     record->expiry_tick = expiry_tick;
     record->runtime_generation = source->runtime_generation;
     record->runtime_token = source->runtime_token;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record->persona_type = source->persona_type;
+    record->persona_mask = source->persona_mask;
+#endif
     ++g_grant_count;
     ++g_delegate_count;
 
@@ -616,6 +775,64 @@ u32 capability64_runtime_token(u32 handle, u32 caller_owner_id)
     return record->runtime_token;
 }
 
+u32 capability64_persona_tag(u32 handle, u32 caller_owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    struct capability64_record *record = capability64_find_live(handle);
+
+    if (!capability64_principal_is_valid(caller_owner_id))
+    {
+        return CAPABILITY64_PERSONA_UNTAGGED;
+    }
+
+    if (record == NULL)
+    {
+        ++g_denial_count;
+        return CAPABILITY64_PERSONA_UNTAGGED;
+    }
+
+    if (!capability64_record_is_owned_by(record, caller_owner_id))
+    {
+        return CAPABILITY64_PERSONA_UNTAGGED;
+    }
+
+    return record->persona_type;
+#else
+    (void)handle;
+    (void)caller_owner_id;
+    return CAPABILITY64_PERSONA_UNTAGGED;
+#endif
+}
+
+u32 capability64_persona_mask(u32 handle, u32 caller_owner_id)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    struct capability64_record *record = capability64_find_live(handle);
+
+    if (!capability64_principal_is_valid(caller_owner_id))
+    {
+        return 0u;
+    }
+
+    if (record == NULL)
+    {
+        ++g_denial_count;
+        return 0u;
+    }
+
+    if (!capability64_record_is_owned_by(record, caller_owner_id))
+    {
+        return 0u;
+    }
+
+    return record->persona_mask;
+#else
+    (void)handle;
+    (void)caller_owner_id;
+    return 0u;
+#endif
+}
+
 u32 capability64_live_count(void)
 {
     u32 index;
@@ -763,6 +980,24 @@ u32 capability64_principal_denial_count(void)
 u32 capability64_runtime_stale_denial_count(void)
 {
     return g_runtime_stale_denial_count;
+}
+
+u32 capability64_persona_denial_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_persona_denial_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 capability64_persona_transfer_denial_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_persona_transfer_denial_count;
+#else
+    return 0u;
+#endif
 }
 
 u32 capability64_denial_count(void)

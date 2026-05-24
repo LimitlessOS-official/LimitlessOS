@@ -13,7 +13,11 @@
 #include "launch_x64.h"
 #include "mmio_x64.h"
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "linux_abi_x64.h"
 #include "network_socket_x64.h"
+#include "paging_x64.h"
+#include "persona_x64.h"
+#include "scheduler_x64.h"
 #endif
 #include "pci_x64.h"
 #include "pit.h"
@@ -25,6 +29,7 @@
 #include "shell_x64.h"
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #include "vma_x64.h"
+#include "windows_abi_x64.h"
 #endif
 #include "x64.h"
 #include "xhci_x64.h"
@@ -46,9 +51,61 @@ static volatile u32 g_native_syscall_count = 0u;
 static volatile u64 g_native_last_syscall_code = 0u;
 static volatile u64 g_native_star_value = 0u;
 static volatile u32 g_native_star_ready = 0u;
+volatile u64 syscall64_native_linux_rdi = 0ull;
+volatile u64 syscall64_native_linux_rsi = 0ull;
+volatile u64 syscall64_native_linux_rdx = 0ull;
+volatile u64 syscall64_native_linux_r10 = 0ull;
+volatile u64 syscall64_native_linux_r8 = 0ull;
+volatile u64 syscall64_native_linux_r9 = 0ull;
+volatile u64 syscall64_native_user_rsp = 0ull;
+volatile u64 syscall64_native_user_rbx = 0ull;
+volatile u64 syscall64_native_user_rbp = 0ull;
+volatile u64 syscall64_native_user_r12 = 0ull;
+volatile u64 syscall64_native_user_r13 = 0ull;
+volatile u64 syscall64_native_user_r14 = 0ull;
+volatile u64 syscall64_native_user_r15 = 0ull;
+volatile u64 syscall64_native_user_rip = 0ull;
+volatile u32 syscall64_native_return_to_user = 0u;
+volatile u64 syscall64_native_switch_r15 = 0ull;
+volatile u64 syscall64_native_switch_r14 = 0ull;
+volatile u64 syscall64_native_switch_r13 = 0ull;
+volatile u64 syscall64_native_switch_r12 = 0ull;
+volatile u64 syscall64_native_switch_r11 = 0ull;
+volatile u64 syscall64_native_switch_r10 = 0ull;
+volatile u64 syscall64_native_switch_r9 = 0ull;
+volatile u64 syscall64_native_switch_r8 = 0ull;
+volatile u64 syscall64_native_switch_rdi = 0ull;
+volatile u64 syscall64_native_switch_rsi = 0ull;
+volatile u64 syscall64_native_switch_rbp = 0ull;
+volatile u64 syscall64_native_switch_rbx = 0ull;
+volatile u64 syscall64_native_switch_rdx = 0ull;
+volatile u64 syscall64_native_switch_rcx = 0ull;
+volatile u64 syscall64_native_switch_rax = 0ull;
+volatile u64 syscall64_native_switch_rip = 0ull;
+volatile u64 syscall64_native_switch_cs = 0ull;
+volatile u64 syscall64_native_switch_rflags = 0ull;
+volatile u64 syscall64_native_switch_rsp = 0ull;
+volatile u64 syscall64_native_switch_ss = 0ull;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static volatile u32 g_native_persona_dispatch_count = 0u;
+static volatile u32 g_native_persona_linux_dispatch_count = 0u;
+static volatile u32 g_native_persona_windows_dispatch_count = 0u;
+static volatile u32 g_native_persona_fallback_count = 0u;
+static volatile u32 g_native_persona_last_pid = 0u;
+static volatile u32 g_native_persona_last_type = PERSONA64_TYPE_COUNT;
+static volatile u64 g_native_persona_last_result = 0ull;
+#endif
 static u32 g_input_diag_scancodes = 0xFFFFFFFFu;
 static u32 g_input_diag_pending = 0xFFFFFFFFu;
 static u32 g_input_diag_last_scancode = 0xFFFFFFFFu;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 syscall64_native_copy_windows_stack_args(
+    u32 pid,
+    u64 user_rsp,
+    u64 *out_args,
+    u32 max_args);
+#endif
 
 static void syscall64_refresh_input_diagnostics_if_changed(void)
 {
@@ -90,11 +147,71 @@ static void syscall64_refresh_input_diagnostics_if_changed(void)
 
 void syscall64_init(const struct boot_info *boot_info)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 physical_memory_bytes = 0ull;
+#endif
+
     g_boot_info = boot_info;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (boot_info != 0)
+    {
+        physical_memory_bytes =
+            ((u64)boot_info->conventional_memory_kb
+                + (u64)boot_info->extended_memory_kb) * 1024ull;
+    }
+    windows_abi64_configure_system_information(
+        physical_memory_bytes,
+        1u,
+        0u);
+#endif
     g_native_syscall_count = 0u;
     g_native_last_syscall_code = 0u;
     g_native_star_value = 0u;
     g_native_star_ready = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    syscall64_native_linux_rdi = 0ull;
+    syscall64_native_linux_rsi = 0ull;
+    syscall64_native_linux_rdx = 0ull;
+    syscall64_native_linux_r10 = 0ull;
+    syscall64_native_linux_r8 = 0ull;
+    syscall64_native_linux_r9 = 0ull;
+    syscall64_native_user_rsp = 0ull;
+    syscall64_native_user_rbx = 0ull;
+    syscall64_native_user_rbp = 0ull;
+    syscall64_native_user_r12 = 0ull;
+    syscall64_native_user_r13 = 0ull;
+    syscall64_native_user_r14 = 0ull;
+    syscall64_native_user_r15 = 0ull;
+    syscall64_native_user_rip = 0ull;
+    syscall64_native_return_to_user = 0u;
+    syscall64_native_switch_r15 = 0ull;
+    syscall64_native_switch_r14 = 0ull;
+    syscall64_native_switch_r13 = 0ull;
+    syscall64_native_switch_r12 = 0ull;
+    syscall64_native_switch_r11 = 0ull;
+    syscall64_native_switch_r10 = 0ull;
+    syscall64_native_switch_r9 = 0ull;
+    syscall64_native_switch_r8 = 0ull;
+    syscall64_native_switch_rdi = 0ull;
+    syscall64_native_switch_rsi = 0ull;
+    syscall64_native_switch_rbp = 0ull;
+    syscall64_native_switch_rbx = 0ull;
+    syscall64_native_switch_rdx = 0ull;
+    syscall64_native_switch_rcx = 0ull;
+    syscall64_native_switch_rax = 0ull;
+    syscall64_native_switch_rip = 0ull;
+    syscall64_native_switch_cs = 0ull;
+    syscall64_native_switch_rflags = 0ull;
+    syscall64_native_switch_rsp = 0ull;
+    syscall64_native_switch_ss = 0ull;
+    g_native_persona_dispatch_count = 0u;
+    g_native_persona_linux_dispatch_count = 0u;
+    g_native_persona_windows_dispatch_count = 0u;
+    g_native_persona_fallback_count = 0u;
+    g_native_persona_last_pid = 0u;
+    g_native_persona_last_type = PERSONA64_TYPE_COUNT;
+    g_native_persona_last_result = 0ull;
+#endif
     principal64_init();
     services64_init();
     launch64_init();
@@ -8399,9 +8516,158 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 
 u64 syscall64_native_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 pid;
+    u32 persona_type;
+    u64 windows_stack_args[8];
+    u32 windows_stack_arg_count;
+#endif
+
     ++g_native_syscall_count;
     g_native_last_syscall_code = number;
+    syscall64_native_return_to_user = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    pid = scheduler64_runqueue_current_pid();
+    persona_type = persona64_type(pid);
+    if (persona_type == PERSONA64_TYPE_LINUX_ELF)
+    {
+        ++g_native_persona_dispatch_count;
+        ++g_native_persona_linux_dispatch_count;
+        g_native_persona_last_pid = pid;
+        g_native_persona_last_type = persona_type;
+        syscall64_native_return_to_user = 1u;
+        g_native_persona_last_result = linux_abi64_dispatch(
+            pid,
+            (u32)number,
+            syscall64_native_linux_rdi,
+            syscall64_native_linux_rsi,
+            syscall64_native_linux_rdx,
+            syscall64_native_linux_r10,
+            syscall64_native_linux_r8,
+            syscall64_native_linux_r9,
+            syscall64_native_user_rip);
+        return g_native_persona_last_result;
+    }
+
+    if (persona_type == PERSONA64_TYPE_WINDOWS_PE)
+    {
+        windows_stack_arg_count = syscall64_native_copy_windows_stack_args(
+            pid,
+            syscall64_native_user_rsp,
+            windows_stack_args,
+            8u);
+        ++g_native_persona_dispatch_count;
+        ++g_native_persona_windows_dispatch_count;
+        g_native_persona_last_pid = pid;
+        g_native_persona_last_type = persona_type;
+        syscall64_native_return_to_user = 1u;
+        g_native_persona_last_result = (u64)windows_abi64_dispatch(
+            pid,
+            (u32)number,
+            syscall64_native_linux_r10,
+            syscall64_native_linux_rdx,
+            syscall64_native_linux_r8,
+            syscall64_native_linux_r9,
+            windows_stack_args,
+            windows_stack_arg_count,
+            syscall64_native_user_rip);
+        return g_native_persona_last_result;
+    }
+
+    ++g_native_persona_fallback_count;
+    g_native_persona_last_pid = pid;
+    g_native_persona_last_type = persona_type;
+#endif
     return syscall64_dispatch(number, arg0, arg1, arg2);
+}
+
+u32 syscall64_native_complete_persona_return(
+    u64 result,
+    u64 user_rip,
+    u64 user_rsp,
+    u64 user_rflags)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    struct interrupt_frame64 frame;
+    u32 task_id;
+    u32 pid;
+    u64 selectors;
+
+    if (syscall64_native_return_to_user == 0u)
+    {
+        return 0u;
+    }
+
+    task_id = scheduler64_runqueue_current_task_id();
+    if ((task_id == SCHEDULER64_INVALID_TASK)
+        || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_BLOCKED))
+    {
+        return 0u;
+    }
+
+    pid = scheduler64_runqueue_current_pid();
+    frame.r15 = syscall64_native_user_r15;
+    frame.r14 = syscall64_native_user_r14;
+    frame.r13 = syscall64_native_user_r13;
+    frame.r12 = syscall64_native_user_r12;
+    frame.r11 = 0ull;
+    frame.r10 = syscall64_native_linux_r10;
+    frame.r9 = syscall64_native_linux_r9;
+    frame.r8 = syscall64_native_linux_r8;
+    frame.rdi = syscall64_native_linux_rdi;
+    frame.rsi = syscall64_native_linux_rsi;
+    frame.rbp = syscall64_native_user_rbp;
+    frame.rbx = syscall64_native_user_rbx;
+    frame.rdx = syscall64_native_linux_rdx;
+    frame.rcx = user_rip;
+    frame.rax = result;
+    frame.vector = 0ull;
+    frame.error_code = 0ull;
+    frame.rip = user_rip;
+    frame.rflags = user_rflags;
+    frame.rsp = user_rsp;
+    frame.cs = scheduler64_runqueue_cs();
+    frame.ss = scheduler64_runqueue_ss();
+    if (((frame.cs & 0x3ull) != 0x3ull) || ((frame.ss & 0x3ull) != 0x3ull))
+    {
+        selectors = process64_runtime_user_entry_selectors(pid);
+        frame.cs = selectors & 0xFFFFull;
+        frame.ss = (selectors >> 16) & 0xFFFFull;
+    }
+
+    if (scheduler64_runqueue_on_blocked_syscall(&frame) == 0u)
+    {
+        return 0u;
+    }
+
+    syscall64_native_switch_r15 = frame.r15;
+    syscall64_native_switch_r14 = frame.r14;
+    syscall64_native_switch_r13 = frame.r13;
+    syscall64_native_switch_r12 = frame.r12;
+    syscall64_native_switch_r11 = frame.r11;
+    syscall64_native_switch_r10 = frame.r10;
+    syscall64_native_switch_r9 = frame.r9;
+    syscall64_native_switch_r8 = frame.r8;
+    syscall64_native_switch_rdi = frame.rdi;
+    syscall64_native_switch_rsi = frame.rsi;
+    syscall64_native_switch_rbp = frame.rbp;
+    syscall64_native_switch_rbx = frame.rbx;
+    syscall64_native_switch_rdx = frame.rdx;
+    syscall64_native_switch_rcx = frame.rcx;
+    syscall64_native_switch_rax = frame.rax;
+    syscall64_native_switch_rip = frame.rip;
+    syscall64_native_switch_cs = frame.cs;
+    syscall64_native_switch_rflags = frame.rflags;
+    syscall64_native_switch_rsp = frame.rsp;
+    syscall64_native_switch_ss = frame.ss;
+    return 1u;
+#else
+    (void)result;
+    (void)user_rip;
+    (void)user_rsp;
+    (void)user_rflags;
+    return 0u;
+#endif
 }
 
 u32 syscall64_native_count(void)
@@ -8423,3 +8689,105 @@ u32 syscall64_native_star_ready(void)
 {
     return g_native_star_ready;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 syscall64_native_user_u64_readable(u32 pid, u64 user_address)
+{
+    vma_region_t *region;
+    u32 first_prot;
+    u32 last_prot;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || ((user_address + 7ull) < user_address))
+    {
+        return 0u;
+    }
+
+    region = vma64_find(pid, user_address);
+    if ((region == 0)
+        || ((region->prot_flags & VMA64_PROT_READ) == 0u)
+        || ((user_address + 8ull) > region->virt_end))
+    {
+        return 0u;
+    }
+
+    if ((paging64_user_page_present(user_address) == 0u)
+        || (paging64_user_page_present(user_address + 7ull) == 0u))
+    {
+        return 0u;
+    }
+
+    first_prot = paging64_user_page_protection(user_address);
+    last_prot = paging64_user_page_protection(user_address + 7ull);
+    return (((first_prot & PAGING64_USER_PROT_READ) != 0u)
+        && ((last_prot & PAGING64_USER_PROT_READ) != 0u))
+        ? 1u
+        : 0u;
+}
+
+static u32 syscall64_native_copy_windows_stack_args(
+    u32 pid,
+    u64 user_rsp,
+    u64 *out_args,
+    u32 max_args)
+{
+    u32 copied = 0u;
+    u32 index;
+    u64 source_address;
+
+    if ((out_args == 0) || (max_args == 0u) || (user_rsp == 0ull))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < max_args; ++index)
+    {
+        source_address = user_rsp + 0x28ull + ((u64)index * 8ull);
+        if ((source_address < user_rsp)
+            || (syscall64_native_user_u64_readable(pid, source_address) == 0u))
+        {
+            break;
+        }
+
+        out_args[index] = *((volatile const u64 *)(u64)source_address);
+        ++copied;
+    }
+
+    return copied;
+}
+
+u32 syscall64_native_persona_dispatch_count(void)
+{
+    return g_native_persona_dispatch_count;
+}
+
+u32 syscall64_native_persona_linux_dispatch_count(void)
+{
+    return g_native_persona_linux_dispatch_count;
+}
+
+u32 syscall64_native_persona_windows_dispatch_count(void)
+{
+    return g_native_persona_windows_dispatch_count;
+}
+
+u32 syscall64_native_persona_fallback_count(void)
+{
+    return g_native_persona_fallback_count;
+}
+
+u32 syscall64_native_persona_last_pid(void)
+{
+    return g_native_persona_last_pid;
+}
+
+u32 syscall64_native_persona_last_type(void)
+{
+    return g_native_persona_last_type;
+}
+
+u64 syscall64_native_persona_last_result(void)
+{
+    return g_native_persona_last_result;
+}
+#endif

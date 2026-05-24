@@ -69,6 +69,7 @@ u32 fs64_stat_kernel(
     u32 byte_capacity,
     u32 owner_id);
 u32 fs64_revoke(u32 node_capability_handle, u32 owner_id);
+u32 fs64_handle_is_node(u32 node_capability_handle, u32 owner_id);
 u32 fs64_rename(
     u32 base_capability_handle,
     u64 path_address,

@@ -23,7 +23,7 @@ SECTIONS
     }
 
     . = ALIGN(16);
-    . = 0x100000;
+    . = MAX(., 0x100000);
 
     __bss_start = .;
     ___bss_start = .;

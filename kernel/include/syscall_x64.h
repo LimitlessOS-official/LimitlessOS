@@ -3488,10 +3488,24 @@ void syscall64_init(const struct boot_info *boot_info);
 void syscall64_native_init(void);
 u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2);
 u64 syscall64_native_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2);
+u32 syscall64_native_complete_persona_return(
+    u64 result,
+    u64 user_rip,
+    u64 user_rsp,
+    u64 user_rflags);
 u32 syscall64_native_count(void);
 u64 syscall64_native_last_code(void);
 u64 syscall64_native_star_value(void);
 u32 syscall64_native_star_ready(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 syscall64_native_persona_dispatch_count(void);
+u32 syscall64_native_persona_linux_dispatch_count(void);
+u32 syscall64_native_persona_windows_dispatch_count(void);
+u32 syscall64_native_persona_fallback_count(void);
+u32 syscall64_native_persona_last_pid(void);
+u32 syscall64_native_persona_last_type(void);
+u64 syscall64_native_persona_last_result(void);
+#endif
 u64 syscall64_native_invoke_asm(u64 number, u64 arg0, u64 arg1, u64 arg2);
 
 static inline u64 syscall64_invoke(u64 number, u64 arg0, u64 arg1, u64 arg2)
