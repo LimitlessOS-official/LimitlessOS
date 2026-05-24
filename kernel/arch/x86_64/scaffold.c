@@ -4999,6 +4999,32 @@ static void log_process_namespace(void)
         0xCDu, 0x80u,
         0xF4u
     };
+    static const u8 windows_k14d_kernel32_vm_heap_template[] = {
+        0x48u, 0x83u, 0xECu, 0x58u, 0x48u, 0xBBu, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u, 0x22u,
+        0x22u, 0x22u, 0x31u, 0xC9u, 0xBAu, 0x00u, 0x10u, 0x00u, 0x00u, 0x41u, 0xB8u, 0x00u,
+        0x30u, 0x00u, 0x00u, 0x41u, 0xB9u, 0x04u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x11u,
+        0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0x11u, 0xFFu, 0xD0u, 0x48u, 0x89u, 0x03u,
+        0x48u, 0x85u, 0xC0u, 0x74u, 0x03u, 0xC6u, 0x00u, 0x56u, 0x48u, 0x8Bu, 0x0Bu, 0xBAu,
+        0x00u, 0x10u, 0x00u, 0x00u, 0x41u, 0xB8u, 0x02u, 0x00u, 0x00u, 0x00u, 0x4Cu, 0x8Du,
+        0x4Bu, 0x08u, 0x48u, 0xB8u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u, 0x33u,
+        0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u, 0x10u, 0x48u, 0x8Bu, 0x0Bu, 0x31u, 0xD2u, 0x41u,
+        0xB8u, 0x00u, 0x80u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x44u, 0x44u, 0x44u, 0x44u, 0x44u,
+        0x44u, 0x44u, 0x44u, 0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u, 0x18u, 0x48u, 0xB8u, 0x55u,
+        0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0x55u, 0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u,
+        0x20u, 0x48u, 0x89u, 0xC1u, 0x31u, 0xD2u, 0x41u, 0xB8u, 0x20u, 0x00u, 0x00u, 0x00u,
+        0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0x66u, 0xFFu, 0xD0u,
+        0x48u, 0x89u, 0x43u, 0x28u, 0x48u, 0x85u, 0xC0u, 0x74u, 0x0Du, 0x48u, 0xBAu, 0x88u,
+        0x77u, 0x66u, 0x55u, 0x44u, 0x33u, 0x22u, 0x11u, 0x48u, 0x89u, 0x10u, 0x48u, 0x8Bu,
+        0x4Bu, 0x20u, 0x31u, 0xD2u, 0x4Cu, 0x8Bu, 0x43u, 0x28u, 0x41u, 0xB9u, 0x40u, 0x00u,
+        0x00u, 0x00u, 0x48u, 0xB8u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u, 0x77u,
+        0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u, 0x30u, 0x48u, 0x85u, 0xC0u, 0x74u, 0x07u, 0x48u,
+        0x8Bu, 0x10u, 0x48u, 0x89u, 0x53u, 0x38u, 0x48u, 0x8Bu, 0x4Bu, 0x20u, 0x31u, 0xD2u,
+        0x4Cu, 0x8Bu, 0x43u, 0x30u, 0x48u, 0xB8u, 0x88u, 0x88u, 0x88u, 0x88u, 0x88u, 0x88u,
+        0x88u, 0x88u, 0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u, 0x40u, 0x31u, 0xC9u, 0x31u, 0xD2u,
+        0x41u, 0xB8u, 0x20u, 0x00u, 0x00u, 0x00u, 0x48u, 0xB8u, 0x66u, 0x66u, 0x66u, 0x66u,
+        0x66u, 0x66u, 0x66u, 0x66u, 0xFFu, 0xD0u, 0x48u, 0x89u, 0x43u, 0x48u, 0xB8u, 0x99u,
+        0x99u, 0x99u, 0x99u, 0xBAu, 0xAAu, 0xAAu, 0xAAu, 0xAAu, 0xCDu, 0x80u, 0xF4u
+    };
     static const u8 windows_k14c_dll_name[] = "kernel32.dll";
     static const u8 windows_k14c_get_name[] = "GetStdHandle";
     static const u8 windows_k14c_write_name[] = "WriteConsoleA";
@@ -5171,6 +5197,69 @@ static void log_process_namespace(void)
     static u32 windows_k14c_clone_release;
     static u32 windows_k14c_cleanup;
     static u32 windows_k14c_positive;
+    static persona_audit64_record_t windows_k14d_record = {0};
+    static windows_shim64_ntdll_result_t windows_k14d_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k14d_kernel32_result;
+    static u32 windows_k14d_pid;
+    static u32 windows_k14d_audit_attach;
+    static u32 windows_k14d_vma_init;
+    static u32 windows_k14d_bind;
+    static u32 windows_k14d_ntdll_load;
+    static u32 windows_k14d_kernel32_load;
+    static u64 windows_k14d_code_addr;
+    static u64 windows_k14d_data_addr;
+    static u64 windows_k14d_code_map;
+    static u64 windows_k14d_data_map;
+    static u64 windows_k14d_stack_top;
+    static u32 windows_k14d_code_copy;
+    static u32 windows_k14d_data_init;
+    static u32 windows_k14d_task;
+    static u32 windows_k14d_runqueue_start;
+    static u32 windows_k14d_current_pid;
+    static u32 windows_k14d_transfer;
+    static u32 windows_k14d_aux;
+    static u64 windows_k14d_virtual_ptr;
+    static u32 windows_k14d_old_protect;
+    static u64 windows_k14d_virtual_protect_ret;
+    static u64 windows_k14d_virtual_free_ret;
+    static u64 windows_k14d_heap_handle;
+    static u64 windows_k14d_heap_ptr;
+    static u64 windows_k14d_heap_realloc_ptr;
+    static u64 windows_k14d_heap_copy_value;
+    static u64 windows_k14d_heap_free_ret;
+    static u64 windows_k14d_bad_heap_ptr;
+    static u32 windows_k14d_native_before;
+    static u32 windows_k14d_native_after;
+    static u32 windows_k14d_persona_before;
+    static u32 windows_k14d_persona_after;
+    static u32 windows_k14d_windows_before;
+    static u32 windows_k14d_windows_after;
+    static u32 windows_k14d_allocate_before;
+    static u32 windows_k14d_allocate_after;
+    static u32 windows_k14d_free_before;
+    static u32 windows_k14d_free_after;
+    static u32 windows_k14d_protect_before;
+    static u32 windows_k14d_protect_after;
+    static u32 windows_k14d_audit_before;
+    static u32 windows_k14d_audit_after;
+    static u32 windows_k14d_last_pid;
+    static u32 windows_k14d_last_type;
+    static u64 windows_k14d_last_result;
+    static u32 windows_k14d_read_record;
+    static u32 windows_k14d_return_match;
+    static u32 windows_k14d_dispatch_match;
+    static u32 windows_k14d_unmap_ntdll_text;
+    static u32 windows_k14d_unmap_ntdll_rdata;
+    static u32 windows_k14d_unmap_kernel32_text;
+    static u32 windows_k14d_unmap_kernel32_rdata;
+    static u32 windows_k14d_unmap_code;
+    static u32 windows_k14d_unmap_data;
+    static u32 windows_k14d_persona_release;
+    static u32 windows_k14d_audit_release;
+    static u32 windows_k14d_vma_release;
+    static u32 windows_k14d_clone_release;
+    static u32 windows_k14d_cleanup;
+    static u32 windows_k14d_positive;
     static u32 windows_k14_denied;
     static u32 windows_k14_denied_error;
     static u32 windows_k14_unmap_ntdll_text;
@@ -14644,6 +14733,329 @@ static void log_process_namespace(void)
             ? 1u
             : 0u;
 
+    windows_k14d_pid = process64_spawn_clone(console_pid);
+    windows_k14d_audit_attach =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k14d_pid)
+            : 0u;
+    windows_k14d_vma_init =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k14d_pid)
+            : 0u;
+    windows_k14d_bind =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k14d_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    windows_k14d_ntdll_load =
+        ((windows_k14d_bind == PERSONA64_ATTACH_OK) && (windows_k14d_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k14d_pid,
+                0x0000000044D20000ull,
+                &windows_k14d_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14d_kernel32_load =
+        (windows_k14d_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k14d_pid,
+                0x0000000044D80000ull,
+                &windows_k14d_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k14d_code_addr = 0x0000000044DE0000ull;
+    windows_k14d_data_addr = 0x0000000044DF0000ull;
+    windows_k14d_stack_top = windows_k14d_data_addr + 0x00000F00ull;
+    windows_k14d_code_map =
+        ((windows_k14d_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k14d_kernel32_result.virtual_alloc != 0ull)
+            && (windows_k14d_kernel32_result.heap_realloc != 0ull))
+            ? vma64_map_anon(
+                windows_k14d_pid,
+                windows_k14d_code_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE | VMA64_PROT_EXECUTE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    windows_k14d_data_map =
+        (windows_k14d_code_map == windows_k14d_code_addr)
+            ? vma64_map_anon(
+                windows_k14d_pid,
+                windows_k14d_data_addr,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_WRITE,
+                VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
+            : 0ull;
+    if (windows_k14d_data_map == windows_k14d_data_addr)
+    {
+        volatile u8 *windows_k14d_code = (volatile u8 *)(u64)windows_k14d_code_addr;
+        volatile u8 *windows_k14d_data = (volatile u8 *)(u64)windows_k14d_data_addr;
+
+        for (windows_k14_index = 0u; windows_k14_index < VMA64_PAGE_BYTES; ++windows_k14_index)
+        {
+            windows_k14d_data[windows_k14_index] = 0u;
+        }
+        for (windows_k14_index = 0u;
+            windows_k14_index < (u32)sizeof(windows_k14d_kernel32_vm_heap_template);
+            ++windows_k14_index)
+        {
+            windows_k14d_code[windows_k14_index] =
+                windows_k14d_kernel32_vm_heap_template[windows_k14_index];
+        }
+        SCAFFOLD_STORE_LE64(windows_k14d_code, 0x06u, windows_k14d_data_addr);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x23u,
+            windows_k14d_kernel32_result.virtual_alloc);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x4Cu,
+            windows_k14d_kernel32_result.virtual_protect);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x67u,
+            windows_k14d_kernel32_result.virtual_free);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x77u,
+            windows_k14d_kernel32_result.get_process_heap);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x92u,
+            windows_k14d_kernel32_result.heap_alloc);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0xC4u,
+            windows_k14d_kernel32_result.heap_realloc);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0xEAu,
+            windows_k14d_kernel32_result.heap_free);
+        SCAFFOLD_STORE_LE64(
+            windows_k14d_code,
+            0x104u,
+            windows_k14d_kernel32_result.heap_alloc);
+        SCAFFOLD_STORE_LE32(windows_k14d_code, 0x113u, X64_SYSCALL_USERMODE_PROBE_EXIT);
+        windows_k14d_code[0x117u] = 0xB9u;
+        SCAFFOLD_STORE_LE32(
+            windows_k14d_code,
+            0x118u,
+            WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT);
+        windows_k14d_code_copy =
+            ((windows_k14d_code[0] == 0x48u)
+                && (windows_k14d_code[0x23u] != 0x11u)
+                && (windows_k14d_code[0x92u] != 0x66u)
+                && (windows_k14d_code[0x11Eu] == 0xF4u))
+                ? 1u
+                : 0u;
+        windows_k14d_data_init =
+            ((*((volatile u64 *)(u64)(windows_k14d_data_addr + 0x00ull)) == 0ull)
+                && (*((volatile u64 *)(u64)(windows_k14d_data_addr + 0x20ull)) == 0ull)
+                && (*((volatile u64 *)(u64)(windows_k14d_data_addr + 0x48ull)) == 0ull))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+        windows_k14d_task =
+            scheduler64_runqueue_register_process_task(
+                windows_k14d_pid,
+                process64_runtime_token(windows_k14d_pid),
+                process64_runtime_user_entry_token(windows_k14d_pid),
+                windows_k14d_code_addr,
+                windows_k14d_stack_top,
+                (u64)process64_runtime_user_entry_selectors(windows_k14d_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k14d_pid));
+        windows_k14d_runqueue_start =
+            ((windows_k14d_code_copy != 0u)
+                && (windows_k14d_task != SCHEDULER64_INVALID_TASK))
+                ? scheduler64_runqueue_start(windows_k14d_task)
+                : 0u;
+        windows_k14d_current_pid = scheduler64_runqueue_current_pid();
+        windows_k14d_native_before = syscall64_native_count();
+        windows_k14d_persona_before = syscall64_native_persona_dispatch_count();
+        windows_k14d_windows_before = syscall64_native_persona_windows_dispatch_count();
+        windows_k14d_allocate_before = windows_abi64_allocate_count();
+        windows_k14d_free_before = windows_abi64_free_count();
+        windows_k14d_protect_before = windows_abi64_protect_count();
+        windows_k14d_audit_before = persona_audit64_count(windows_k14d_pid);
+        windows_k14d_transfer =
+            (windows_k14d_runqueue_start != 0u)
+                ? interrupts64_trigger_user_entry_probe(
+                    windows_k14d_code_addr,
+                    windows_k14d_stack_top,
+                    (u64)process64_runtime_user_entry_selectors(windows_k14d_pid),
+                    (u64)process64_runtime_user_entry_rflags(windows_k14d_pid))
+                : 0u;
+        windows_k14d_aux = interrupts64_user_entry_probe_aux();
+        scheduler64_runqueue_stop();
+        windows_k14d_native_after = syscall64_native_count();
+        windows_k14d_persona_after = syscall64_native_persona_dispatch_count();
+        windows_k14d_windows_after = syscall64_native_persona_windows_dispatch_count();
+        windows_k14d_allocate_after = windows_abi64_allocate_count();
+        windows_k14d_free_after = windows_abi64_free_count();
+        windows_k14d_protect_after = windows_abi64_protect_count();
+        windows_k14d_audit_after = persona_audit64_count(windows_k14d_pid);
+        windows_k14d_virtual_ptr =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x00ull));
+        windows_k14d_old_protect =
+            *((volatile u32 *)(u64)(windows_k14d_data_addr + 0x08ull));
+        windows_k14d_virtual_protect_ret =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x10ull));
+        windows_k14d_virtual_free_ret =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x18ull));
+        windows_k14d_heap_handle =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x20ull));
+        windows_k14d_heap_ptr =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x28ull));
+        windows_k14d_heap_realloc_ptr =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x30ull));
+        windows_k14d_heap_copy_value =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x38ull));
+        windows_k14d_heap_free_ret =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x40ull));
+        windows_k14d_bad_heap_ptr =
+            *((volatile u64 *)(u64)(windows_k14d_data_addr + 0x48ull));
+        windows_k14d_last_pid = syscall64_native_persona_last_pid();
+        windows_k14d_last_type = syscall64_native_persona_last_type();
+        windows_k14d_last_result = syscall64_native_persona_last_result();
+        windows_k14d_read_record =
+            (windows_k14d_audit_after > windows_k14d_audit_before)
+                ? persona_audit64_read(
+                    windows_k14d_pid,
+                    windows_k14d_audit_after - 1u,
+                    &windows_k14d_record)
+                : 0u;
+        windows_k14d_return_match =
+            (((u64)windows_k14d_transfer == (windows_k14d_data_addr & 0xFFFFFFFFull))
+                && (windows_k14d_aux == WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT)
+                && (windows_k14d_virtual_ptr != 0ull)
+                && (windows_k14d_old_protect == WINDOWS_ABI64_PAGE_READWRITE)
+                && (windows_k14d_virtual_protect_ret == 1ull)
+                && (windows_k14d_virtual_free_ret == 1ull)
+                && (windows_k14d_heap_handle == WINDOWS_SHIM64_KERNEL32_PROCESS_HEAP_HANDLE)
+                && (windows_k14d_heap_ptr != 0ull)
+                && (windows_k14d_heap_realloc_ptr != 0ull)
+                && (windows_k14d_heap_realloc_ptr != windows_k14d_heap_ptr)
+                && (windows_k14d_heap_copy_value == 0x1122334455667788ull)
+                && (windows_k14d_heap_free_ret == 1ull)
+                && (windows_k14d_bad_heap_ptr == 0ull))
+                ? 1u
+                : 0u;
+        windows_k14d_dispatch_match =
+            (((windows_k14d_native_after - windows_k14d_native_before) == 7u)
+                && ((windows_k14d_persona_after - windows_k14d_persona_before) == 7u)
+                && ((windows_k14d_windows_after - windows_k14d_windows_before) == 7u)
+                && ((windows_k14d_allocate_after - windows_k14d_allocate_before) == 3u)
+                && ((windows_k14d_protect_after - windows_k14d_protect_before) == 1u)
+                && ((windows_k14d_free_after - windows_k14d_free_before) == 3u)
+                && (windows_k14d_last_pid == windows_k14d_pid)
+                && (windows_k14d_last_type == PERSONA64_TYPE_WINDOWS_PE)
+                && (windows_k14d_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+                && ((windows_k14d_audit_after - windows_k14d_audit_before) == 7u)
+                && (windows_k14d_read_record != 0u)
+                && (windows_k14d_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+                && (windows_k14d_record.event_code == WINDOWS_ABI64_SYSCALL_NTFREEVIRTUALMEMORY)
+                && (windows_k14d_record.result == WINDOWS_ABI64_STATUS_SUCCESS))
+                ? 1u
+                : 0u;
+        scheduler64_runqueue_reset();
+    }
+    windows_k14d_unmap_ntdll_text =
+        (vma64_find(
+            windows_k14d_pid,
+            windows_k14d_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14d_pid,
+                windows_k14d_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k14d_pid,
+            windows_k14d_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14d_pid,
+                windows_k14d_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_unmap_kernel32_text =
+        (vma64_find(
+            windows_k14d_pid,
+            windows_k14d_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14d_pid,
+                windows_k14d_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k14d_pid,
+            windows_k14d_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k14d_pid,
+                windows_k14d_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_unmap_code =
+        (vma64_find(windows_k14d_pid, windows_k14d_code_addr) != 0)
+            ? vma64_unmap(windows_k14d_pid, windows_k14d_code_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_unmap_data =
+        (vma64_find(windows_k14d_pid, windows_k14d_data_addr) != 0)
+            ? vma64_unmap(windows_k14d_pid, windows_k14d_data_addr, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k14d_persona_release =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k14d_pid)
+            : 0u;
+    windows_k14d_audit_release =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k14d_pid)
+            : 0u;
+    windows_k14d_vma_release =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k14d_pid)
+            : 0u;
+    windows_k14d_clone_release =
+        (windows_k14d_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k14d_pid)
+            : 0u;
+    windows_k14d_cleanup =
+        ((windows_k14d_unmap_ntdll_text != 0u)
+            && (windows_k14d_unmap_ntdll_rdata != 0u)
+            && (windows_k14d_unmap_kernel32_text != 0u)
+            && (windows_k14d_unmap_kernel32_rdata != 0u)
+            && (windows_k14d_unmap_code != 0u)
+            && (windows_k14d_unmap_data != 0u)
+            && (windows_k14d_persona_release != 0u)
+            && (windows_k14d_audit_release != 0u)
+            && (windows_k14d_vma_release == 0u)
+            && (windows_k14d_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k14d_positive =
+        ((windows_k14d_pid != PROCESS64_INVALID_PID)
+            && (windows_k14d_audit_attach != 0u)
+            && (windows_k14d_vma_init != 0u)
+            && (windows_k14d_bind == PERSONA64_ATTACH_OK)
+            && (windows_k14d_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k14d_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k14d_code_map == windows_k14d_code_addr)
+            && (windows_k14d_data_map == windows_k14d_data_addr)
+            && (windows_k14d_code_copy != 0u)
+            && (windows_k14d_data_init != 0u)
+            && (windows_k14d_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k14d_runqueue_start != 0u)
+            && (windows_k14d_current_pid == windows_k14d_pid)
+            && (windows_k14d_return_match != 0u)
+            && (windows_k14d_dispatch_match != 0u)
+            && (windows_k14d_cleanup != 0u))
+            ? 1u
+            : 0u;
     windows_shim64_init();
     windows_k15_pid = console_pid;
     windows_k15_audit_attach =
@@ -37244,8 +37656,8 @@ static void log_process_namespace(void)
             && (linux_p3_result.initial_rsp != 0ull)
             && (linux_p3_result.stack_result.error == ELF64_ERROR_NONE)
             && (linux_p3_result.stack_result.alignment_ok != 0u)
-            && (linux_p3_result.transfer_ready == 0u)
-            && (linux_p3_result.error == LINUX_DYNAMIC64_ERROR_TRANSFER))
+            && (linux_p3_result.transfer_ready != 0u)
+            && (linux_p3_result.error == LINUX_DYNAMIC64_ERROR_NONE))
             ? 1u
             : 0u;
     linux_p3_missing_prepare =
@@ -42654,6 +43066,99 @@ static void log_process_namespace(void)
     write_dec_u32(windows_k14c_clone_release);
     write_string(" positive ");
     write_dec_u32(windows_k14c_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K14d kernel32-vmheap maps ");
+    write_hex_u64(windows_k14d_code_map);
+    write_string("/");
+    write_hex_u64(windows_k14d_data_map);
+    write_string(" deps ");
+    write_dec_u32(windows_k14d_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k14d_kernel32_load);
+    write_string(" run ");
+    write_hex_u32(windows_k14d_transfer);
+    write_string("/");
+    write_dec_u32(windows_k14d_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k14d_task);
+    write_string("/");
+    write_dec_u32(windows_k14d_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k14d_current_pid);
+    write_string(" vm ");
+    write_hex_u64(windows_k14d_virtual_ptr);
+    write_string("/");
+    write_hex_u32(windows_k14d_old_protect);
+    write_string("/");
+    write_hex_u64(windows_k14d_virtual_protect_ret);
+    write_string("/");
+    write_hex_u64(windows_k14d_virtual_free_ret);
+    write_string(" heap ");
+    write_hex_u64(windows_k14d_heap_handle);
+    write_string("/");
+    write_hex_u64(windows_k14d_heap_ptr);
+    write_string("/");
+    write_hex_u64(windows_k14d_heap_realloc_ptr);
+    write_string("/");
+    write_hex_u64(windows_k14d_heap_copy_value);
+    write_string("/");
+    write_hex_u64(windows_k14d_heap_free_ret);
+    write_string(" deny ");
+    write_hex_u64(windows_k14d_bad_heap_ptr);
+    write_string(" sys ");
+    write_dec_u32(windows_k14d_native_after - windows_k14d_native_before);
+    write_string("/");
+    write_dec_u32(windows_k14d_persona_after - windows_k14d_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k14d_windows_after - windows_k14d_windows_before);
+    write_string(" vmcalls ");
+    write_dec_u32(windows_k14d_allocate_after - windows_k14d_allocate_before);
+    write_string("/");
+    write_dec_u32(windows_k14d_protect_after - windows_k14d_protect_before);
+    write_string("/");
+    write_dec_u32(windows_k14d_free_after - windows_k14d_free_before);
+    write_string(" audit ");
+    write_dec_u32(windows_k14d_audit_after - windows_k14d_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k14d_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k14d_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k14d_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k14d_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k14d_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k14d_last_type);
+    write_string("/");
+    write_hex_u64(windows_k14d_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k14d_return_match);
+    write_string("/");
+    write_dec_u32(windows_k14d_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k14d_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k14d_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14d_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k14d_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k14d_unmap_code);
+    write_string("/");
+    write_dec_u32(windows_k14d_unmap_data);
+    write_string("/");
+    write_dec_u32(windows_k14d_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k14d_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k14d_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k14d_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k14d_positive);
     write_line("");
     write_string("[x64] windows-shim-K15 crt load ");
     write_dec_u32(windows_k15_load);

@@ -80,9 +80,11 @@ static u32 g_kernel_mmio_pt_initialized = 0u;
 static u64 g_paging64_kernel_physical_base = 0ull;
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
-static u64 g_paging64_vma_user_pt[PAGING64_ENTRY_COUNT] __attribute__((aligned(PAGING64_PAGE_BYTES)));
-static u32 g_paging64_vma_user_pt_initialized = 0u;
-static u32 g_paging64_vma_user_pd_index = 0xFFFFFFFFu;
+#define PAGING64_VMA_USER_PT_COUNT 32u
+static u64 g_paging64_vma_user_pts[PAGING64_VMA_USER_PT_COUNT][PAGING64_ENTRY_COUNT]
+    __attribute__((aligned(PAGING64_PAGE_BYTES)));
+static u32 g_paging64_vma_user_pt_initialized[PAGING64_VMA_USER_PT_COUNT];
+static u32 g_paging64_vma_user_pd_index[PAGING64_VMA_USER_PT_COUNT];
 #endif
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
@@ -619,23 +621,61 @@ u32 paging64_install_user_stack_mapping(u32 stack_top, u32 stack_bytes)
 }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+static u32 paging64_vma_user_pt_find_slot(u32 pd_index)
+{
+    u32 slot;
+
+    for (slot = 0u; slot < PAGING64_VMA_USER_PT_COUNT; ++slot)
+    {
+        if ((g_paging64_vma_user_pt_initialized[slot] != 0u)
+            && (g_paging64_vma_user_pd_index[slot] == pd_index))
+        {
+            return slot;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static u32 paging64_vma_user_pt_acquire_slot(u32 pd_index)
+{
+    u32 slot = paging64_vma_user_pt_find_slot(pd_index);
+
+    if (slot != 0xFFFFFFFFu)
+    {
+        return slot;
+    }
+
+    for (slot = 0u; slot < PAGING64_VMA_USER_PT_COUNT; ++slot)
+    {
+        if (g_paging64_vma_user_pt_initialized[slot] == 0u)
+        {
+            paging64_zero_table((volatile u64 *)g_paging64_vma_user_pts[slot]);
+            g_paging64_vma_user_pd_index[slot] = pd_index;
+            g_paging64_vma_user_pt_initialized[slot] = 1u;
+            return slot;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
 static volatile u64 *paging64_user_page_entry_slot(u64 virtual_address)
 {
-    volatile u64 *vma_pt = (volatile u64 *)g_paging64_vma_user_pt;
     u32 pml4_index = paging64_index64(virtual_address, 39u);
     u32 pdpt_index = paging64_index64(virtual_address, 30u);
     u32 pd_index = paging64_index64(virtual_address, 21u);
     u32 pt_index = paging64_index64(virtual_address, 12u);
+    u32 slot = paging64_vma_user_pt_find_slot(pd_index);
 
     if ((pml4_index != 0u)
         || (pdpt_index != paging64_index64(0x40000000ull, 30u))
-        || (g_paging64_vma_user_pt_initialized == 0u)
-        || (g_paging64_vma_user_pd_index != pd_index))
+        || (slot == 0xFFFFFFFFu))
     {
         return 0;
     }
 
-    return &vma_pt[pt_index];
+    return &g_paging64_vma_user_pts[slot][pt_index];
 }
 
 u32 paging64_install_user_page_mapping(u64 virtual_address, u64 physical_address, u32 protection_flags)
@@ -643,12 +683,13 @@ u32 paging64_install_user_page_mapping(u64 virtual_address, u64 physical_address
     volatile u64 *pml4 = (volatile u64 *)(u64)PAGING64_PML4_PHYSICAL;
     volatile u64 *pdpt = (volatile u64 *)(u64)PAGING64_PDPT_PHYSICAL;
     volatile u64 *runtime_pd = (volatile u64 *)(u64)PAGING64_RUNTIME_PD_PHYSICAL;
-    volatile u64 *vma_pt = (volatile u64 *)g_paging64_vma_user_pt;
+    volatile u64 *vma_pt;
     u32 pml4_index = paging64_index64(virtual_address, 39u);
     u32 pdpt_index = paging64_index64(virtual_address, 30u);
     u32 pd_index = paging64_index64(virtual_address, 21u);
     u32 pt_index = paging64_index64(virtual_address, 12u);
-    u64 vma_pt_physical = paging64_kernel_physical_alias(g_paging64_vma_user_pt);
+    u32 slot;
+    u64 vma_pt_physical;
     u64 pte_flags;
 
     if (((virtual_address & ((u64)PAGING64_PAGE_BYTES - 1ull)) != 0ull)
@@ -665,17 +706,13 @@ u32 paging64_install_user_page_mapping(u64 virtual_address, u64 physical_address
         return 0u;
     }
 
-    if (g_paging64_vma_user_pt_initialized == 0u)
+    slot = paging64_vma_user_pt_acquire_slot(pd_index);
+    if (slot == 0xFFFFFFFFu)
     {
-        paging64_zero_table(vma_pt);
-        g_paging64_vma_user_pt_initialized = 1u;
-        g_paging64_vma_user_pd_index = pd_index;
+        return 0u;
     }
-    else if (g_paging64_vma_user_pd_index != pd_index)
-    {
-        paging64_zero_table(vma_pt);
-        g_paging64_vma_user_pd_index = pd_index;
-    }
+    vma_pt = (volatile u64 *)g_paging64_vma_user_pts[slot];
+    vma_pt_physical = paging64_kernel_physical_alias(g_paging64_vma_user_pts[slot]);
     if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
     {
         wrmsr64(PAGING64_EFER_MSR, rdmsr64(PAGING64_EFER_MSR) | PAGING64_EFER_NXE);

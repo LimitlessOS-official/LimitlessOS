@@ -187,8 +187,6 @@ syscall64_native_invoke_asm:
 
 global syscall64_native_entry
 syscall64_native_entry:
-    push r11
-    push rcx
     mov [rel syscall64_native_user_rip], rcx
     mov [rel syscall64_native_linux_rdi], rdi
     mov [rel syscall64_native_linux_rsi], rsi
@@ -202,9 +200,11 @@ syscall64_native_entry:
     mov [rel syscall64_native_user_r13], r13
     mov [rel syscall64_native_user_r14], r14
     mov [rel syscall64_native_user_r15], r15
+    mov [rel syscall64_native_user_rsp], rsp
+    lea rsp, [rel syscall64_native_kernel_stack_top]
+    push r11
+    push rcx
     sub rsp, 40
-    lea r11, [rsp + 56]
-    mov [rel syscall64_native_user_rsp], r11
     mov rcx, rax
     mov r8, rdx
     mov r9, rsi
@@ -213,7 +213,7 @@ syscall64_native_entry:
     mov [rsp + 32], rax
     mov rcx, rax
     mov rdx, [rsp + 40]
-    lea r8, [rsp + 56]
+    mov r8, [rel syscall64_native_user_rsp]
     mov r9, [rsp + 48]
     call syscall64_native_complete_persona_return
     cmp eax, 0
@@ -224,10 +224,12 @@ syscall64_native_entry:
     pop r11
     cmp dword [rel syscall64_native_return_to_user], 0
     jne .return_to_user
+    mov rsp, [rel syscall64_native_user_rsp]
     push r11
     popfq
     jmp rcx
 .return_to_user:
+    mov rsp, [rel syscall64_native_user_rsp]
     o64 sysret
 .switch_to_frame:
     mov rax, [rel syscall64_native_switch_ss]
@@ -422,3 +424,9 @@ usermode64_probe_exit_result:
     dd 0
 usermode64_probe_active:
     dd 0
+
+section .bss
+align 16
+syscall64_native_kernel_stack:
+    resb 16384
+syscall64_native_kernel_stack_top:
