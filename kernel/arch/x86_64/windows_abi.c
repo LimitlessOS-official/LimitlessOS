@@ -30,7 +30,8 @@
  * over the scheduler sleep queue. K.11 adds NtQueryInformationProcess for the
  * current-process pseudo handle. K.12 adds NtQuerySystemInformation for a
  * minimal, truthful system-information surface derived from boot memory and
- * current VMA accounting. It
+ * current VMA accounting, and K.17 adds NtClose over the scoped handle table
+ * for real CloseHandle teardown. It
  * integrates with persona_audit_x64.h for truthful NTSTATUS audit records,
  * vma_x64.h/paging_x64.h for user-buffer validation, and
  * console_x64.h/input_x64.h/capability_x64.h/windows_vfs_x64.h so reads,
@@ -44,6 +45,7 @@
 #define WINDOWS_ABI64_MAX_PIT_TICK_HZ 1193182u
 #define WINDOWS_ABI64_WAIT_TIMEOUT_RECORDS 4u
 #define WINDOWS_ABI64_100NS_PER_SECOND 10000000ull
+#define WINDOWS_ABI64_FILE_POSITION_RECORDS 16u
 
 typedef struct windows_abi64_wait_timeout_record
 {
@@ -57,10 +59,20 @@ typedef struct windows_abi64_wait_timeout_record
     u64 rip;
 } windows_abi64_wait_timeout_record_t;
 
+typedef struct windows_abi64_file_position_record
+{
+    u32 active;
+    u32 pid;
+    u64 handle;
+    u64 position;
+} windows_abi64_file_position_record_t;
+
 static u32 g_windows_abi64_initialized = 0u;
 static windows_abi64_handler_t g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_LIMIT];
 static windows_abi64_wait_timeout_record_t
     g_windows_abi64_wait_timeout_records[WINDOWS_ABI64_WAIT_TIMEOUT_RECORDS];
+static windows_abi64_file_position_record_t
+    g_windows_abi64_file_position_records[WINDOWS_ABI64_FILE_POSITION_RECORDS];
 static u32 g_windows_abi64_dispatch_count = 0u;
 static u32 g_windows_abi64_unimplemented_count = 0u;
 static u32 g_windows_abi64_invalid_service_count = 0u;
@@ -119,6 +131,28 @@ static u32 g_windows_abi64_create_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
 static u32 g_windows_abi64_create_last_path_hash = 0u;
 static u32 g_windows_abi64_create_last_path_bytes = 0u;
 static u32 g_windows_abi64_create_last_shim_id = 0u;
+static u32 g_windows_abi64_query_file_count = 0u;
+static u32 g_windows_abi64_query_file_denial_count = 0u;
+static u32 g_windows_abi64_query_file_fault_count = 0u;
+static u32 g_windows_abi64_query_file_last_class = 0u;
+static u32 g_windows_abi64_query_file_last_handle_low = 0u;
+static u32 g_windows_abi64_query_file_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+static u32 g_windows_abi64_query_file_last_return_length = 0u;
+static u32 g_windows_abi64_set_file_count = 0u;
+static u32 g_windows_abi64_set_file_denial_count = 0u;
+static u32 g_windows_abi64_set_file_fault_count = 0u;
+static u32 g_windows_abi64_set_file_last_class = 0u;
+static u32 g_windows_abi64_set_file_last_handle_low = 0u;
+static u32 g_windows_abi64_set_file_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+static u32 g_windows_abi64_close_count = 0u;
+static u32 g_windows_abi64_close_denial_count = 0u;
+static u32 g_windows_abi64_close_last_handle_low = 0u;
+static u32 g_windows_abi64_close_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+static u32 g_windows_abi64_terminate_count = 0u;
+static u32 g_windows_abi64_terminate_denial_count = 0u;
+static u32 g_windows_abi64_terminate_last_pid = PROCESS64_INVALID_PID;
+static u32 g_windows_abi64_terminate_last_status = WINDOWS_ABI64_STATUS_SUCCESS;
+static u32 g_windows_abi64_terminate_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
 static u32 g_windows_abi64_event_create_count = 0u;
 static u32 g_windows_abi64_event_set_count = 0u;
 static u32 g_windows_abi64_event_wait_count = 0u;
@@ -335,6 +369,98 @@ static windows_abi64_wait_timeout_record_t *windows_abi64_wait_timeout_for_task(
     }
 
     return 0;
+}
+
+static void windows_abi64_clear_file_position_record(
+    windows_abi64_file_position_record_t *record)
+{
+    if (record == 0)
+    {
+        return;
+    }
+
+    record->active = 0u;
+    record->pid = PROCESS64_INVALID_PID;
+    record->handle = WINDOWS_HANDLE64_INVALID;
+    record->position = 0ull;
+}
+
+static windows_abi64_file_position_record_t *windows_abi64_file_position_record_for(
+    u32 pid,
+    u64 handle,
+    u32 create_if_missing)
+{
+    windows_abi64_file_position_record_t *free_record = 0;
+    u32 index;
+
+    for (index = 0u; index < WINDOWS_ABI64_FILE_POSITION_RECORDS; ++index)
+    {
+        windows_abi64_file_position_record_t *record =
+            &g_windows_abi64_file_position_records[index];
+
+        if ((record->active != 0u)
+            && (record->pid == pid)
+            && (record->handle == handle))
+        {
+            return record;
+        }
+        if ((free_record == 0) && (record->active == 0u))
+        {
+            free_record = record;
+        }
+    }
+
+    if ((create_if_missing == 0u) || (free_record == 0))
+    {
+        return 0;
+    }
+
+    free_record->active = 1u;
+    free_record->pid = pid;
+    free_record->handle = handle;
+    free_record->position = 0ull;
+    return free_record;
+}
+
+static void windows_abi64_file_position_record_clear_for(u32 pid, u64 handle)
+{
+    u32 index;
+
+    for (index = 0u; index < WINDOWS_ABI64_FILE_POSITION_RECORDS; ++index)
+    {
+        windows_abi64_file_position_record_t *record =
+            &g_windows_abi64_file_position_records[index];
+
+        if ((record->active != 0u)
+            && (record->pid == pid)
+            && (record->handle == handle))
+        {
+            windows_abi64_clear_file_position_record(record);
+        }
+    }
+}
+
+static u32 windows_abi64_is_standard_file_handle(u64 handle)
+{
+    return ((handle == WINDOWS_ABI64_STDIN_HANDLE)
+        || (handle == WINDOWS_ABI64_STDOUT_HANDLE)
+        || (handle == WINDOWS_ABI64_STDERR_HANDLE))
+        ? 1u
+        : 0u;
+}
+
+static u32 windows_abi64_file_handle_is_scoped(u32 pid, u64 handle)
+{
+    if (windows_abi64_is_standard_file_handle(handle) != 0u)
+    {
+        return 1u;
+    }
+
+    return ((windows_handle64_entry_type(pid, handle) == WINDOWS_HANDLE64_TYPE_FILE)
+        && (windows_handle64_entry_capability(pid, handle)
+            != CAPABILITY64_INVALID_HANDLE))
+        ? 1u
+        : 0u;
 }
 
 static u32 windows_abi64_relative_timeout_to_ticks(
@@ -2122,6 +2248,475 @@ static u32 windows_abi64_ntcreatefile_dispatch(
     return windows_abi64_create_record_result(
         pid,
         WINDOWS_ABI64_STATUS_SUCCESS,
+        rip,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+}
+
+static u32 windows_abi64_query_file_record_result(
+    u32 pid,
+    u32 result,
+    u32 return_length,
+    u64 rip,
+    u8 event_type)
+{
+    g_windows_abi64_query_file_last_result = result;
+    g_windows_abi64_query_file_last_return_length = return_length;
+    (void)persona_audit64_record(
+        pid,
+        event_type,
+        WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE,
+        result,
+        rip);
+    return result;
+}
+
+static u32 windows_abi64_ntqueryinformationfile_dispatch(
+    u32 pid,
+    u64 rcx,
+    u64 rdx,
+    u64 r8,
+    u64 r9,
+    const u64 *stack_args,
+    u32 stack_arg_count,
+    u64 rip)
+{
+    windows_abi64_file_position_record_t *position_record;
+    u64 file_handle = rcx;
+    u64 io_status_block = rdx;
+    u64 file_information = r8;
+    u64 information_length = r9;
+    u32 information_class;
+    u32 required_length;
+    u32 result;
+
+    g_windows_abi64_query_file_last_handle_low = (u32)file_handle;
+    g_windows_abi64_query_file_last_class = 0u;
+    g_windows_abi64_query_file_last_return_length = 0u;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_WINDOWS_PE))
+    {
+        ++g_windows_abi64_query_file_denial_count;
+        return windows_abi64_query_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_HANDLE,
+            0u,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+    if ((stack_args == 0)
+        || (stack_arg_count < 1u)
+        || (stack_args[0] > 0xFFFFFFFFull)
+        || (information_length > 0xFFFFFFFFull))
+    {
+        ++g_windows_abi64_query_file_denial_count;
+        return windows_abi64_query_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_PARAMETER,
+            0u,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    information_class = (u32)stack_args[0];
+    g_windows_abi64_query_file_last_class = information_class;
+    if (information_class == WINDOWS_ABI64_FILE_POSITION_INFORMATION_CLASS)
+    {
+        required_length = WINDOWS_ABI64_FILE_POSITION_INFORMATION_BYTES;
+    }
+    else if (information_class == WINDOWS_ABI64_FILE_STANDARD_INFORMATION_CLASS)
+    {
+        required_length = WINDOWS_ABI64_FILE_STANDARD_INFORMATION_BYTES;
+    }
+    else
+    {
+        required_length = 0u;
+    }
+
+    if ((io_status_block == 0ull)
+        || (file_information == 0ull)
+        || (required_length == 0u)
+        || (windows_abi64_user_buffer_writable(
+                pid,
+                io_status_block,
+                WINDOWS_ABI64_IO_STATUS_BLOCK_BYTES) == 0u))
+    {
+        if (required_length == 0u)
+        {
+            ++g_windows_abi64_query_file_denial_count;
+            return windows_abi64_query_file_record_result(
+                pid,
+                WINDOWS_ABI64_STATUS_INVALID_INFO_CLASS,
+                0u,
+                rip,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+        }
+
+        ++g_windows_abi64_query_file_fault_count;
+        return windows_abi64_query_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_ACCESS_VIOLATION,
+            required_length,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    if (windows_abi64_file_handle_is_scoped(pid, file_handle) == 0u)
+    {
+        ++g_windows_abi64_query_file_denial_count;
+        result = WINDOWS_ABI64_STATUS_INVALID_HANDLE;
+        (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+        return windows_abi64_query_file_record_result(
+            pid,
+            result,
+            required_length,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+    if (information_length < (u64)required_length)
+    {
+        ++g_windows_abi64_query_file_denial_count;
+        result = WINDOWS_ABI64_STATUS_INFO_LENGTH_MISMATCH;
+        (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+        return windows_abi64_query_file_record_result(
+            pid,
+            result,
+            required_length,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+    if (windows_abi64_user_buffer_writable(pid, file_information, required_length) == 0u)
+    {
+        ++g_windows_abi64_query_file_fault_count;
+        return windows_abi64_query_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_ACCESS_VIOLATION,
+            required_length,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    if (information_class == WINDOWS_ABI64_FILE_POSITION_INFORMATION_CLASS)
+    {
+        position_record =
+            windows_abi64_file_position_record_for(pid, file_handle, 0u);
+        windows_abi64_store_u64(
+            file_information,
+            (position_record != 0) ? position_record->position : 0ull);
+    }
+    else
+    {
+        if (windows_abi64_is_standard_file_handle(file_handle) == 0u)
+        {
+            ++g_windows_abi64_query_file_denial_count;
+            result = WINDOWS_ABI64_STATUS_NOT_IMPLEMENTED;
+            (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+            return windows_abi64_query_file_record_result(
+                pid,
+                result,
+                required_length,
+                rip,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+        }
+        windows_abi64_zero_user(file_information, required_length);
+        windows_abi64_store_u32(file_information + 16ull, 1u);
+    }
+
+    result = WINDOWS_ABI64_STATUS_SUCCESS;
+    (void)windows_abi64_store_io_status(
+        pid,
+        io_status_block,
+        result,
+        (u64)required_length);
+    ++g_windows_abi64_query_file_count;
+    return windows_abi64_query_file_record_result(
+        pid,
+        result,
+        required_length,
+        rip,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+}
+
+static u32 windows_abi64_set_file_record_result(
+    u32 pid,
+    u32 result,
+    u64 rip,
+    u8 event_type)
+{
+    g_windows_abi64_set_file_last_result = result;
+    (void)persona_audit64_record(
+        pid,
+        event_type,
+        WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE,
+        result,
+        rip);
+    return result;
+}
+
+static u32 windows_abi64_ntsetinformationfile_dispatch(
+    u32 pid,
+    u64 rcx,
+    u64 rdx,
+    u64 r8,
+    u64 r9,
+    const u64 *stack_args,
+    u32 stack_arg_count,
+    u64 rip)
+{
+    windows_abi64_file_position_record_t *position_record;
+    u64 file_handle = rcx;
+    u64 io_status_block = rdx;
+    u64 file_information = r8;
+    u64 information_length = r9;
+    u32 information_class;
+    u32 result;
+
+    g_windows_abi64_set_file_last_handle_low = (u32)file_handle;
+    g_windows_abi64_set_file_last_class = 0u;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_WINDOWS_PE))
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        return windows_abi64_set_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_HANDLE,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+    if ((stack_args == 0)
+        || (stack_arg_count < 1u)
+        || (stack_args[0] > 0xFFFFFFFFull)
+        || (information_length > 0xFFFFFFFFull))
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        return windows_abi64_set_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_PARAMETER,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    information_class = (u32)stack_args[0];
+    g_windows_abi64_set_file_last_class = information_class;
+    if (information_class != WINDOWS_ABI64_FILE_POSITION_INFORMATION_CLASS)
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        return windows_abi64_set_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_INFO_CLASS,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+    if ((io_status_block == 0ull)
+        || (file_information == 0ull)
+        || (windows_abi64_user_buffer_writable(
+                pid,
+                io_status_block,
+                WINDOWS_ABI64_IO_STATUS_BLOCK_BYTES) == 0u)
+        || (windows_abi64_user_buffer_readable(
+                pid,
+                file_information,
+                WINDOWS_ABI64_FILE_POSITION_INFORMATION_BYTES) == 0u))
+    {
+        ++g_windows_abi64_set_file_fault_count;
+        return windows_abi64_set_file_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_ACCESS_VIOLATION,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+    if (information_length < (u64)WINDOWS_ABI64_FILE_POSITION_INFORMATION_BYTES)
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        result = WINDOWS_ABI64_STATUS_INFO_LENGTH_MISMATCH;
+        (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+        return windows_abi64_set_file_record_result(
+            pid,
+            result,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+    if (windows_abi64_file_handle_is_scoped(pid, file_handle) == 0u)
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        result = WINDOWS_ABI64_STATUS_INVALID_HANDLE;
+        (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+        return windows_abi64_set_file_record_result(
+            pid,
+            result,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+
+    position_record =
+        windows_abi64_file_position_record_for(pid, file_handle, 1u);
+    if (position_record == 0)
+    {
+        ++g_windows_abi64_set_file_denial_count;
+        result = WINDOWS_ABI64_STATUS_NO_MEMORY;
+        (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+        return windows_abi64_set_file_record_result(
+            pid,
+            result,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    position_record->position = windows_abi64_load_user_u64(file_information);
+    result = WINDOWS_ABI64_STATUS_SUCCESS;
+    (void)windows_abi64_store_io_status(pid, io_status_block, result, 0ull);
+    ++g_windows_abi64_set_file_count;
+    return windows_abi64_set_file_record_result(
+        pid,
+        result,
+        rip,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+}
+
+static u32 windows_abi64_close_record_result(
+    u32 pid,
+    u32 result,
+    u64 rip,
+    u8 event_type)
+{
+    g_windows_abi64_close_last_result = result;
+    (void)persona_audit64_record(
+        pid,
+        event_type,
+        WINDOWS_ABI64_SYSCALL_NTCLOSE,
+        result,
+        rip);
+    return result;
+}
+
+static u32 windows_abi64_ntclose_dispatch(
+    u32 pid,
+    u64 rcx,
+    u64 rdx,
+    u64 r8,
+    u64 r9,
+    const u64 *stack_args,
+    u32 stack_arg_count,
+    u64 rip)
+{
+    u64 handle = rcx;
+    u32 result;
+
+    (void)rdx;
+    (void)r8;
+    (void)r9;
+    (void)stack_args;
+    (void)stack_arg_count;
+    g_windows_abi64_close_last_handle_low = (u32)handle;
+    g_windows_abi64_close_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_WINDOWS_PE))
+    {
+        ++g_windows_abi64_close_denial_count;
+        return windows_abi64_close_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_HANDLE,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+    if (windows_handle64_close(pid, handle) == 0u)
+    {
+        ++g_windows_abi64_close_denial_count;
+        result = windows_handle64_last_result();
+        if (result == WINDOWS_ABI64_STATUS_SUCCESS)
+        {
+            result = WINDOWS_ABI64_STATUS_INVALID_HANDLE;
+        }
+        return windows_abi64_close_record_result(
+            pid,
+            result,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+
+    windows_abi64_file_position_record_clear_for(pid, handle);
+    ++g_windows_abi64_close_count;
+    return windows_abi64_close_record_result(
+        pid,
+        WINDOWS_ABI64_STATUS_SUCCESS,
+        rip,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+}
+
+static u32 windows_abi64_terminate_record_result(
+    u32 pid,
+    u32 result,
+    u32 status,
+    u64 rip,
+    u8 event_type)
+{
+    g_windows_abi64_terminate_last_pid = pid;
+    g_windows_abi64_terminate_last_status = status;
+    g_windows_abi64_terminate_last_result = result;
+    (void)persona_audit64_record(
+        pid,
+        event_type,
+        WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS,
+        result,
+        rip);
+    return result;
+}
+
+static u32 windows_abi64_ntterminateprocess_dispatch(
+    u32 pid,
+    u64 rcx,
+    u64 rdx,
+    u64 r8,
+    u64 r9,
+    const u64 *stack_args,
+    u32 stack_arg_count,
+    u64 rip)
+{
+    u64 process_handle = rcx;
+    u64 exit_status = rdx;
+    u32 status = (u32)exit_status;
+    u32 result;
+
+    (void)r8;
+    (void)r9;
+    (void)stack_args;
+    (void)stack_arg_count;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_WINDOWS_PE))
+    {
+        ++g_windows_abi64_terminate_denial_count;
+        return windows_abi64_terminate_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_HANDLE,
+            status,
+            rip,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED);
+    }
+    if ((process_handle != WINDOWS_ABI64_CURRENT_PROCESS_HANDLE)
+        || (exit_status > 0xFFFFFFFFull))
+    {
+        ++g_windows_abi64_terminate_denial_count;
+        return windows_abi64_terminate_record_result(
+            pid,
+            WINDOWS_ABI64_STATUS_INVALID_PARAMETER,
+            status,
+            rip,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
+    }
+
+    ++g_windows_abi64_terminate_count;
+    result = WINDOWS_ABI64_STATUS_SUCCESS;
+    return windows_abi64_terminate_record_result(
+        pid,
+        result,
+        status,
         rip,
         PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED);
 }
@@ -4054,6 +4649,12 @@ void windows_abi64_init(void)
         windows_abi64_ntreadfile_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTWRITEFILE] =
         windows_abi64_ntwritefile_dispatch;
+    g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE] =
+        windows_abi64_ntsetinformationfile_dispatch;
+    g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTCLOSE] =
+        windows_abi64_ntclose_dispatch;
+    g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE] =
+        windows_abi64_ntqueryinformationfile_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTOPENKEY] =
         windows_abi64_ntopenkey_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY] =
@@ -4066,6 +4667,8 @@ void windows_abi64_init(void)
         windows_abi64_ntcreatekey_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTFREEVIRTUALMEMORY] =
         windows_abi64_ntfreevirtualmemory_dispatch;
+    g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS] =
+        windows_abi64_ntterminateprocess_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION] =
         windows_abi64_ntquerysysteminformation_dispatch;
     g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTPROTECTVIRTUALMEMORY] =
@@ -4089,6 +4692,11 @@ void windows_abi64_init(void)
     {
         windows_abi64_clear_wait_timeout_record(
             &g_windows_abi64_wait_timeout_records[index]);
+    }
+    for (index = 0u; index < WINDOWS_ABI64_FILE_POSITION_RECORDS; ++index)
+    {
+        windows_abi64_clear_file_position_record(
+            &g_windows_abi64_file_position_records[index]);
     }
     g_windows_abi64_dispatch_count = 0u;
     g_windows_abi64_unimplemented_count = 0u;
@@ -4148,6 +4756,28 @@ void windows_abi64_init(void)
     g_windows_abi64_create_last_path_hash = 0u;
     g_windows_abi64_create_last_path_bytes = 0u;
     g_windows_abi64_create_last_shim_id = 0u;
+    g_windows_abi64_query_file_count = 0u;
+    g_windows_abi64_query_file_denial_count = 0u;
+    g_windows_abi64_query_file_fault_count = 0u;
+    g_windows_abi64_query_file_last_class = 0u;
+    g_windows_abi64_query_file_last_handle_low = 0u;
+    g_windows_abi64_query_file_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+    g_windows_abi64_query_file_last_return_length = 0u;
+    g_windows_abi64_set_file_count = 0u;
+    g_windows_abi64_set_file_denial_count = 0u;
+    g_windows_abi64_set_file_fault_count = 0u;
+    g_windows_abi64_set_file_last_class = 0u;
+    g_windows_abi64_set_file_last_handle_low = 0u;
+    g_windows_abi64_set_file_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+    g_windows_abi64_close_count = 0u;
+    g_windows_abi64_close_denial_count = 0u;
+    g_windows_abi64_close_last_handle_low = 0u;
+    g_windows_abi64_close_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
+    g_windows_abi64_terminate_count = 0u;
+    g_windows_abi64_terminate_denial_count = 0u;
+    g_windows_abi64_terminate_last_pid = PROCESS64_INVALID_PID;
+    g_windows_abi64_terminate_last_status = WINDOWS_ABI64_STATUS_SUCCESS;
+    g_windows_abi64_terminate_last_result = WINDOWS_ABI64_STATUS_SUCCESS;
     g_windows_abi64_event_create_count = 0u;
     g_windows_abi64_event_set_count = 0u;
     g_windows_abi64_event_wait_count = 0u;
@@ -5117,4 +5747,167 @@ u32 windows_abi64_create_last_path_bytes(void)
 u32 windows_abi64_create_last_shim_id(void)
 {
     return g_windows_abi64_create_last_shim_id;
+}
+
+u32 windows_abi64_query_file_entry_installed(void)
+{
+    if (g_windows_abi64_initialized == 0u)
+    {
+        windows_abi64_init();
+    }
+
+    return (g_windows_abi64_dispatch_table[
+        WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE]
+        == windows_abi64_ntqueryinformationfile_dispatch)
+        ? 1u
+        : 0u;
+}
+
+u32 windows_abi64_query_file_count(void)
+{
+    return g_windows_abi64_query_file_count;
+}
+
+u32 windows_abi64_query_file_denial_count(void)
+{
+    return g_windows_abi64_query_file_denial_count;
+}
+
+u32 windows_abi64_query_file_fault_count(void)
+{
+    return g_windows_abi64_query_file_fault_count;
+}
+
+u32 windows_abi64_query_file_last_class(void)
+{
+    return g_windows_abi64_query_file_last_class;
+}
+
+u32 windows_abi64_query_file_last_handle_low(void)
+{
+    return g_windows_abi64_query_file_last_handle_low;
+}
+
+u32 windows_abi64_query_file_last_result(void)
+{
+    return g_windows_abi64_query_file_last_result;
+}
+
+u32 windows_abi64_query_file_last_return_length(void)
+{
+    return g_windows_abi64_query_file_last_return_length;
+}
+
+u32 windows_abi64_set_file_entry_installed(void)
+{
+    if (g_windows_abi64_initialized == 0u)
+    {
+        windows_abi64_init();
+    }
+
+    return (g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE]
+        == windows_abi64_ntsetinformationfile_dispatch)
+        ? 1u
+        : 0u;
+}
+
+u32 windows_abi64_set_file_count(void)
+{
+    return g_windows_abi64_set_file_count;
+}
+
+u32 windows_abi64_set_file_denial_count(void)
+{
+    return g_windows_abi64_set_file_denial_count;
+}
+
+u32 windows_abi64_set_file_fault_count(void)
+{
+    return g_windows_abi64_set_file_fault_count;
+}
+
+u32 windows_abi64_set_file_last_class(void)
+{
+    return g_windows_abi64_set_file_last_class;
+}
+
+u32 windows_abi64_set_file_last_handle_low(void)
+{
+    return g_windows_abi64_set_file_last_handle_low;
+}
+
+u32 windows_abi64_set_file_last_result(void)
+{
+    return g_windows_abi64_set_file_last_result;
+}
+
+u32 windows_abi64_close_entry_installed(void)
+{
+    if (g_windows_abi64_initialized == 0u)
+    {
+        windows_abi64_init();
+    }
+
+    return (g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTCLOSE]
+        == windows_abi64_ntclose_dispatch)
+        ? 1u
+        : 0u;
+}
+
+u32 windows_abi64_close_count(void)
+{
+    return g_windows_abi64_close_count;
+}
+
+u32 windows_abi64_close_denial_count(void)
+{
+    return g_windows_abi64_close_denial_count;
+}
+
+u32 windows_abi64_close_last_handle_low(void)
+{
+    return g_windows_abi64_close_last_handle_low;
+}
+
+u32 windows_abi64_close_last_result(void)
+{
+    return g_windows_abi64_close_last_result;
+}
+
+u32 windows_abi64_terminate_entry_installed(void)
+{
+    if (g_windows_abi64_initialized == 0u)
+    {
+        windows_abi64_init();
+    }
+
+    return (g_windows_abi64_dispatch_table[WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS]
+        == windows_abi64_ntterminateprocess_dispatch)
+        ? 1u
+        : 0u;
+}
+
+u32 windows_abi64_terminate_count(void)
+{
+    return g_windows_abi64_terminate_count;
+}
+
+u32 windows_abi64_terminate_denial_count(void)
+{
+    return g_windows_abi64_terminate_denial_count;
+}
+
+u32 windows_abi64_terminate_last_pid(void)
+{
+    return g_windows_abi64_terminate_last_pid;
+}
+
+u32 windows_abi64_terminate_last_status(void)
+{
+    return g_windows_abi64_terminate_last_status;
+}
+
+u32 windows_abi64_terminate_last_result(void)
+{
+    return g_windows_abi64_terminate_last_result;
 }

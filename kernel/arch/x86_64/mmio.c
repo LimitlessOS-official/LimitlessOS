@@ -157,6 +157,8 @@ enum
     MMIO64_NVME_FAT_WRITE_TABLE_CID = 0x004Cu,
     MMIO64_NVME_FAT_WRITE_DIR_CID = 0x004Du,
     MMIO64_NVME_FAT_WRITE_DATA_CID = 0x004Eu,
+    MMIO64_NVME_M5_MARKER_WRITE_CID = 0x004Fu,
+    MMIO64_NVME_M5_MARKER_READ_CID = 0x0050u,
     MMIO64_NVME_FAT_EXPECTED_FILE_BYTES = 30u,
     MMIO64_NVME_FAT_EXPECTED_FILE_CRC32 = 0xD4F8C331u,
     MMIO64_NVME_FAT_EXPECTED_LFN_BYTES = 35u,
@@ -3422,6 +3424,15 @@ static u32 g_nvme_gpt_fat32_sectors = 0u;
 static u32 g_nvme_gpt_vbr = 0u;
 static u32 g_nvme_gpt_fs_authority = 0u;
 static u32 g_nvme_gpt_write_authority = 0u;
+static u32 g_nvme_gpt_m5_safe_targets = 0u;
+static u32 g_nvme_gpt_m5_forbidden_targets = 0u;
+static u32 g_nvme_gpt_m5_unknown_targets = 0u;
+static u32 g_nvme_gpt_m5_boot_partition = 0u;
+static u32 g_nvme_gpt_m5_root_partition = 0u;
+static u32 g_nvme_gpt_m5_boot_start = 0u;
+static u32 g_nvme_gpt_m5_root_start = 0u;
+static u32 g_nvme_gpt_m5_forbidden_denied = 0u;
+static u32 g_nvme_gpt_m5_no_write_authority = 0u;
 static u32 g_nvme_gpt_unavailable = 1u;
 static u32 g_nvme_gpt_error = 0u;
 static u32 g_nvme_fat_token = 0u;
@@ -3813,23 +3824,69 @@ static u32 mmio64_crc32_update(u32 crc, const u8 *bytes, u32 byte_count)
     return crc;
 }
 
-static u32 mmio64_guid_is_gpt_basic_data(const u8 *bytes, u32 offset)
+static u32 mmio64_guid_matches(const u8 *bytes, u32 offset, const u8 *guid)
 {
-    static const u8 basic_data_guid[16] = {
-        0xA2u, 0xA0u, 0xD0u, 0xEBu, 0xE5u, 0xB9u, 0x33u, 0x44u,
-        0x87u, 0xC0u, 0x68u, 0xB6u, 0xB7u, 0x26u, 0x99u, 0xC7u
-    };
     u32 index;
 
     for (index = 0u; index < 16u; ++index)
     {
-        if (bytes[offset + index] != basic_data_guid[index])
+        if (bytes[offset + index] != guid[index])
         {
             return 0u;
         }
     }
 
     return 1u;
+}
+
+static u32 mmio64_guid_is_gpt_basic_data(const u8 *bytes, u32 offset)
+{
+    static const u8 basic_data_guid[16] = {
+        0xA2u, 0xA0u, 0xD0u, 0xEBu, 0xE5u, 0xB9u, 0x33u, 0x44u,
+        0x87u, 0xC0u, 0x68u, 0xB6u, 0xB7u, 0x26u, 0x99u, 0xC7u
+    };
+
+    return mmio64_guid_matches(bytes, offset, basic_data_guid);
+}
+
+static u32 mmio64_guid_is_gpt_efi_system(const u8 *bytes, u32 offset)
+{
+    static const u8 efi_system_guid[16] = {
+        0x28u, 0x73u, 0x2Au, 0xC1u, 0x1Fu, 0xF8u, 0xD2u, 0x11u,
+        0xBAu, 0x4Bu, 0x00u, 0xA0u, 0xC9u, 0x3Eu, 0xC9u, 0x3Bu
+    };
+
+    return mmio64_guid_matches(bytes, offset, efi_system_guid);
+}
+
+static u32 mmio64_guid_is_gpt_microsoft_reserved(const u8 *bytes, u32 offset)
+{
+    static const u8 microsoft_reserved_guid[16] = {
+        0x16u, 0xE3u, 0xC9u, 0xE3u, 0x5Cu, 0x0Bu, 0xB8u, 0x4Du,
+        0x81u, 0x7Du, 0xF9u, 0x2Du, 0xF0u, 0x02u, 0x15u, 0xAEu
+    };
+
+    return mmio64_guid_matches(bytes, offset, microsoft_reserved_guid);
+}
+
+static u32 mmio64_guid_is_gpt_limitless_boot(const u8 *bytes, u32 offset)
+{
+    static const u8 limitless_boot_guid[16] = {
+        0x4Fu, 0x53u, 0x4Fu, 0x4Cu, 0x49u, 0x53u, 0x49u, 0x4Du,
+        0x94u, 0x4Cu, 0x49u, 0x4Du, 0x49u, 0x54u, 0x4Cu, 0x02u
+    };
+
+    return mmio64_guid_matches(bytes, offset, limitless_boot_guid);
+}
+
+static u32 mmio64_guid_is_gpt_limitless_root(const u8 *bytes, u32 offset)
+{
+    static const u8 limitless_root_guid[16] = {
+        0x4Fu, 0x53u, 0x4Fu, 0x4Cu, 0x49u, 0x53u, 0x49u, 0x4Du,
+        0x94u, 0x4Cu, 0x49u, 0x4Du, 0x49u, 0x54u, 0x4Cu, 0x01u
+    };
+
+    return mmio64_guid_matches(bytes, offset, limitless_root_guid);
 }
 
 static int mmio64_range_fits(u32 offset, u32 byte_count, u32 limit);
@@ -12913,6 +12970,15 @@ static void mmio64_reset_nvme_gpt(void)
     g_nvme_gpt_vbr = 0u;
     g_nvme_gpt_fs_authority = 0u;
     g_nvme_gpt_write_authority = 0u;
+    g_nvme_gpt_m5_safe_targets = 0u;
+    g_nvme_gpt_m5_forbidden_targets = 0u;
+    g_nvme_gpt_m5_unknown_targets = 0u;
+    g_nvme_gpt_m5_boot_partition = 0u;
+    g_nvme_gpt_m5_root_partition = 0u;
+    g_nvme_gpt_m5_boot_start = 0u;
+    g_nvme_gpt_m5_root_start = 0u;
+    g_nvme_gpt_m5_forbidden_denied = 0u;
+    g_nvme_gpt_m5_no_write_authority = 0u;
     g_nvme_gpt_unavailable = 1u;
     g_nvme_gpt_error = 0u;
 }
@@ -13343,7 +13409,7 @@ static u32 mmio64_nvme_wait_completion(
     return 0u;
 }
 
-static u32 mmio64_nvme_submit_single_block_read(
+static u32 mmio64_nvme_submit_block_read(
     volatile u32 *registers,
     u32 io_sq_tail_offset,
     u32 io_cq_head_offset,
@@ -13352,11 +13418,19 @@ static u32 mmio64_nvme_submit_single_block_read(
     u32 expected_phase,
     u32 command_id,
     u32 lba,
+    u32 block_count,
     u64 data_physical,
     u32 *status_out)
 {
     volatile u32 *completion;
     u32 command_offset = queue_slot * 64u;
+
+    if ((block_count == 0u)
+        || (block_count > (MMIO64_NVME_IO_BUFFER_BYTES / 512u)))
+    {
+        *status_out = 0xFFFFFFFFu;
+        return 0u;
+    }
 
     mmio64_zero_bytes(g_nvme_io_data_buffer, MMIO64_NVME_IO_BUFFER_BYTES);
     mmio64_zero_bytes(g_nvme_io_submission_queue + command_offset, 64u);
@@ -13375,8 +13449,12 @@ static u32 mmio64_nvme_submit_single_block_read(
     mmio64_write_u32(
         g_nvme_io_submission_queue,
         command_offset + 28u,
-        (u32)(data_physical >> 32));
+            (u32)(data_physical >> 32));
     mmio64_write_u32(g_nvme_io_submission_queue, command_offset + 40u, lba);
+    mmio64_write_u32(
+        g_nvme_io_submission_queue,
+        command_offset + 48u,
+        block_count - 1u);
     mmio64_nvme_fence();
     mmio64_nvme_write_reg32(registers, io_sq_tail_offset, next_tail);
 
@@ -13393,6 +13471,32 @@ static u32 mmio64_nvme_submit_single_block_read(
 
     mmio64_nvme_write_reg32(registers, io_cq_head_offset, next_tail);
     return (*status_out == 0u) ? 1u : 0u;
+}
+
+static u32 mmio64_nvme_submit_single_block_read(
+    volatile u32 *registers,
+    u32 io_sq_tail_offset,
+    u32 io_cq_head_offset,
+    u32 queue_slot,
+    u32 next_tail,
+    u32 expected_phase,
+    u32 command_id,
+    u32 lba,
+    u64 data_physical,
+    u32 *status_out)
+{
+    return mmio64_nvme_submit_block_read(
+        registers,
+        io_sq_tail_offset,
+        io_cq_head_offset,
+        queue_slot,
+        next_tail,
+        expected_phase,
+        command_id,
+        lba,
+        1u,
+        data_physical,
+        status_out);
 }
 
 static u32 mmio64_nvme_submit_single_block_write(
@@ -14068,7 +14172,7 @@ u32 mmio64_scan_nvme_gpt(
     }
 
     if ((error == 0u)
-        && (mmio64_nvme_submit_single_block_read(
+        && (mmio64_nvme_submit_block_read(
                 registers,
                 io_sq_tail_offset,
                 io_cq_head_offset,
@@ -14077,6 +14181,7 @@ u32 mmio64_scan_nvme_gpt(
                 0u,
                 MMIO64_NVME_GPT_READ_ENTRY_CID,
                 MMIO64_NVME_GPT_ENTRY_LBA,
+                MMIO64_NVME_IO_BUFFER_BYTES / 512u,
                 data_physical,
                 &completion_status) == 0u))
     {
@@ -14102,6 +14207,55 @@ u32 mmio64_scan_nvme_gpt(
             if (guid_nonzero != 0u)
             {
                 ++g_nvme_gpt_partitions;
+                first_lba = mmio64_read_u64(g_nvme_io_data_buffer, entry_offset + 32u);
+                last_lba = mmio64_read_u64(g_nvme_io_data_buffer, entry_offset + 40u);
+                if ((first_lba <= 0xFFFFFFFFull)
+                    && (last_lba <= 0xFFFFFFFFull)
+                    && (last_lba >= first_lba))
+                {
+                    if (mmio64_guid_is_gpt_limitless_boot(
+                            g_nvme_io_data_buffer,
+                            entry_offset) != 0u)
+                    {
+                        ++g_nvme_gpt_m5_safe_targets;
+                        if (g_nvme_gpt_m5_boot_start == 0u)
+                        {
+                            g_nvme_gpt_m5_boot_partition = entry_index + 1u;
+                            g_nvme_gpt_m5_boot_start = (u32)first_lba;
+                        }
+                    }
+                    else if (mmio64_guid_is_gpt_limitless_root(
+                            g_nvme_io_data_buffer,
+                            entry_offset) != 0u)
+                    {
+                        ++g_nvme_gpt_m5_safe_targets;
+                        if (g_nvme_gpt_m5_root_start == 0u)
+                        {
+                            g_nvme_gpt_m5_root_partition = entry_index + 1u;
+                            g_nvme_gpt_m5_root_start = (u32)first_lba;
+                        }
+                    }
+                    else if ((mmio64_guid_is_gpt_basic_data(
+                                g_nvme_io_data_buffer,
+                                entry_offset) != 0u)
+                        || (mmio64_guid_is_gpt_efi_system(
+                                g_nvme_io_data_buffer,
+                                entry_offset) != 0u)
+                        || (mmio64_guid_is_gpt_microsoft_reserved(
+                                g_nvme_io_data_buffer,
+                                entry_offset) != 0u))
+                    {
+                        ++g_nvme_gpt_m5_forbidden_targets;
+                    }
+                    else
+                    {
+                        ++g_nvme_gpt_m5_unknown_targets;
+                    }
+                }
+                else
+                {
+                    ++g_nvme_gpt_m5_unknown_targets;
+                }
             }
 
             if ((g_nvme_gpt_fat32_start == 0u)
@@ -14120,6 +14274,14 @@ u32 mmio64_scan_nvme_gpt(
                 }
             }
         }
+
+        g_nvme_gpt_m5_forbidden_denied =
+            ((g_nvme_gpt_m5_forbidden_targets != 0u)
+                && (g_nvme_gpt_write_authority == 0u))
+                ? 1u
+                : 0u;
+        g_nvme_gpt_m5_no_write_authority =
+            (g_nvme_gpt_write_authority == 0u) ? 1u : 0u;
 
         if ((g_nvme_gpt_partitions == 0u)
             || (g_nvme_gpt_fat32_start != MMIO64_NVME_GPT_FAT32_EXPECTED_START)
@@ -14334,6 +14496,21 @@ static void mmio64_nvme_fat_close_runtime(
     (void)paging64_kernel_mmio_write_window_close(doorbell_page);
 }
 
+static void mmio64_nvme_fat_advance_queue(Mmio64NvmeFatReader *reader)
+{
+    if (reader->queue_slot == 0u)
+    {
+        reader->queue_slot = 1u;
+        reader->next_tail = 0u;
+    }
+    else
+    {
+        reader->queue_slot = 0u;
+        reader->next_tail = 1u;
+        reader->expected_phase ^= 1u;
+    }
+}
+
 static u32 mmio64_nvme_fat_read_lba(
     Mmio64NvmeFatReader *reader,
     u32 lba,
@@ -14356,18 +14533,7 @@ static u32 mmio64_nvme_fat_read_lba(
         return 0u;
     }
 
-    if (reader->queue_slot == 0u)
-    {
-        reader->queue_slot = 1u;
-        reader->next_tail = 0u;
-    }
-    else
-    {
-        reader->queue_slot = 0u;
-        reader->next_tail = 1u;
-        reader->expected_phase ^= 1u;
-    }
-
+    mmio64_nvme_fat_advance_queue(reader);
     return 1u;
 }
 
@@ -14393,18 +14559,7 @@ static u32 mmio64_nvme_fat_write_lba(
         return 0u;
     }
 
-    if (reader->queue_slot == 0u)
-    {
-        reader->queue_slot = 1u;
-        reader->next_tail = 0u;
-    }
-    else
-    {
-        reader->queue_slot = 0u;
-        reader->next_tail = 1u;
-        reader->expected_phase ^= 1u;
-    }
-
+    mmio64_nvme_fat_advance_queue(reader);
     ++g_nvme_fat_flushes;
     return 1u;
 }
@@ -15978,6 +16133,109 @@ static u32 mmio64_nvme_rw_shell_authorized(u32 owner_id)
         == services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_BLOCK)) ? 1u : 0u;
 }
 
+u32 mmio64_nvme_m5_write_boot_marker(
+    u32 scoped_write_capability,
+    u32 owner_id,
+    const u8 *data,
+    u32 byte_count,
+    u32 *bytes_written,
+    u32 *checksum_out)
+{
+    Mmio64NvmeFatReader reader;
+    Mmio64Fat32Volume volume;
+    u32 doorbell_page = 0u;
+    u32 status = 0u;
+    u32 index;
+    u32 ok = 0u;
+
+    if (bytes_written != (u32 *)0)
+    {
+        *bytes_written = 0u;
+    }
+    if (checksum_out != (u32 *)0)
+    {
+        *checksum_out = 0u;
+    }
+
+    if ((data == (const u8 *)0)
+        || (byte_count == 0u)
+        || (byte_count > 512u)
+        || (bytes_written == (u32 *)0)
+        || (checksum_out == (u32 *)0)
+        || (scoped_write_capability != g_nvme_rw_shell_capability)
+        || (mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
+        || (g_nvme_rw_write_authority == 0u)
+        || (g_nvme_rw_commit_authority == 0u)
+        || (g_nvme_rw_unavailable != 0u)
+        || (g_nvme_gpt_signature == 0u)
+        || (g_nvme_gpt_unavailable != 0u)
+        || (g_nvme_gpt_m5_safe_targets != 2u)
+        || (g_nvme_gpt_m5_unknown_targets != 0u)
+        || (g_nvme_gpt_m5_forbidden_denied == 0u)
+        || (g_nvme_gpt_m5_boot_partition == 0u)
+        || (g_nvme_gpt_m5_root_partition == 0u)
+        || (g_nvme_gpt_m5_boot_start == 0u)
+        || (g_nvme_gpt_m5_root_start == 0u)
+        || (g_nvme_gpt_m5_boot_start == g_nvme_gpt_fat32_start)
+        || (g_nvme_gpt_m5_boot_start == g_nvme_gpt_m5_root_start)
+        || (mmio64_nvme_fat_open_runtime(&reader, &volume, &doorbell_page) == 0u))
+    {
+        return 0u;
+    }
+
+    mmio64_zero_bytes(g_nvme_io_data_buffer, 512u);
+    for (index = 0u; index < byte_count; ++index)
+    {
+        g_nvme_io_data_buffer[index] = data[index];
+    }
+
+    if (mmio64_nvme_submit_single_block_write(
+            reader.registers,
+            reader.io_sq_tail_offset,
+            reader.io_cq_head_offset,
+            reader.queue_slot,
+            reader.next_tail,
+            reader.expected_phase,
+            MMIO64_NVME_M5_MARKER_WRITE_CID,
+            g_nvme_gpt_m5_boot_start,
+            reader.data_physical,
+            &status) != 0u)
+    {
+        mmio64_nvme_fat_advance_queue(&reader);
+        if (mmio64_nvme_submit_single_block_read(
+                reader.registers,
+                reader.io_sq_tail_offset,
+                reader.io_cq_head_offset,
+                reader.queue_slot,
+                reader.next_tail,
+                reader.expected_phase,
+                MMIO64_NVME_M5_MARKER_READ_CID,
+                g_nvme_gpt_m5_boot_start,
+                reader.data_physical,
+                &status) != 0u)
+        {
+            mmio64_nvme_fat_advance_queue(&reader);
+            ok = 1u;
+            for (index = 0u; index < byte_count; ++index)
+            {
+                if (g_nvme_io_data_buffer[index] != data[index])
+                {
+                    ok = 0u;
+                    break;
+                }
+            }
+            if (ok != 0u)
+            {
+                *bytes_written = byte_count;
+                *checksum_out = mmio64_checksum_bytes(g_nvme_io_data_buffer, byte_count);
+            }
+        }
+    }
+
+    mmio64_nvme_fat_close_runtime(&reader, &volume, doorbell_page);
+    return ok;
+}
+
 static u32 mmio64_nvme_rw_write_existing_file(
     Mmio64NvmeFatReader *reader,
     const Mmio64Fat32Volume *volume,
@@ -16774,6 +17032,51 @@ u32 mmio64_nvme_gpt_fs_authority(void)
 u32 mmio64_nvme_gpt_write_authority(void)
 {
     return g_nvme_gpt_write_authority;
+}
+
+u32 mmio64_nvme_gpt_m5_safe_targets(void)
+{
+    return g_nvme_gpt_m5_safe_targets;
+}
+
+u32 mmio64_nvme_gpt_m5_forbidden_targets(void)
+{
+    return g_nvme_gpt_m5_forbidden_targets;
+}
+
+u32 mmio64_nvme_gpt_m5_unknown_targets(void)
+{
+    return g_nvme_gpt_m5_unknown_targets;
+}
+
+u32 mmio64_nvme_gpt_m5_boot_partition(void)
+{
+    return g_nvme_gpt_m5_boot_partition;
+}
+
+u32 mmio64_nvme_gpt_m5_root_partition(void)
+{
+    return g_nvme_gpt_m5_root_partition;
+}
+
+u32 mmio64_nvme_gpt_m5_boot_start(void)
+{
+    return g_nvme_gpt_m5_boot_start;
+}
+
+u32 mmio64_nvme_gpt_m5_root_start(void)
+{
+    return g_nvme_gpt_m5_root_start;
+}
+
+u32 mmio64_nvme_gpt_m5_forbidden_denied(void)
+{
+    return g_nvme_gpt_m5_forbidden_denied;
+}
+
+u32 mmio64_nvme_gpt_m5_no_write_authority(void)
+{
+    return g_nvme_gpt_m5_no_write_authority;
 }
 
 u32 mmio64_nvme_gpt_unavailable(void)

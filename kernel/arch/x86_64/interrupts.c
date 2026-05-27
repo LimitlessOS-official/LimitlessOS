@@ -637,6 +637,20 @@ u32 interrupts64_trigger_user_runqueue_probe(
     return result;
 }
 
+u32 interrupts64_complete_user_entry_probe(u32 result, u32 aux)
+{
+    if (g_user_entry_probe_mode != X64_USER_PROBE_BASIC)
+    {
+        return 0u;
+    }
+
+    ++g_user_entry_probe_exits;
+    g_user_entry_probe_result = result;
+    g_user_entry_probe_aux = aux;
+    usermode64_probe_complete((u64)result);
+    return 1u;
+}
+
 u32 interrupts64_exception_count(void)
 {
     return g_exception_count;

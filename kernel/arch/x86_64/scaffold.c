@@ -130,6 +130,12 @@ __attribute__((section(".rodata")))
 const char g_x64_scaffold_plan[] =
     "higher-half execution, native syscall entry, and shared capability services";
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "linux_q1_hello_elf.inc"
+#include "windows_k16_hello_pe.inc"
+#include "windows_k17_heap_pe.inc"
+#endif
+
 #ifndef LIMITLESS_X64_UEFI_KERNEL
 static volatile u16 *const VGA_BUFFER = (volatile u16 *)(u64)0x00000000000B8000ull;
 static u32 g_console_row = 0u;
@@ -3505,8 +3511,10 @@ static void log_process_namespace(void)
     static const char elf_e6_argv1[] = "--persona";
     static const char elf_e6_envp0[] = "PATH=/bin";
     static const char elf_e6_envp1[] = "TERM=limitless";
+    static const char linux_q1_argv0[] = "/bin/linux-q1-hello";
     const char *elf_e6_argv[2];
     const char *elf_e6_envp[2];
+    const char *linux_q1_argv[1];
     static elf64_header_t elf_e1_header;
     static elf64_header_t elf_e1_bad_header;
     static elf64_header_t elf_e2_header;
@@ -4436,6 +4444,10 @@ static void log_process_namespace(void)
     static u32 windows_k9_wait_count;
     static u32 windows_k9_denial_count;
     static u32 windows_k9_fault_count;
+    static u32 windows_k9_handle_events_created_before;
+    static u32 windows_k9_handle_events_set_before;
+    static u32 windows_k9_handle_events_wait_before;
+    static u32 windows_k9_handle_event_denials_before;
     static u32 windows_k9_handle_events_created;
     static u32 windows_k9_handle_events_set;
     static u32 windows_k9_handle_events_wait;
@@ -5260,6 +5272,205 @@ static void log_process_namespace(void)
     static u32 windows_k14d_clone_release;
     static u32 windows_k14d_cleanup;
     static u32 windows_k14d_positive;
+    static persona_audit64_record_t windows_k16_record = {0};
+    static windows_shim64_ntdll_result_t windows_k16_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k16_kernel32_result;
+    static windows_shim64_registry_t windows_k16_registry;
+    static pe64_header_t windows_k16_header;
+    static pe64_section_t windows_k16_sections[PE64_MAX_SECTIONS];
+    static pe64_section_summary_t windows_k16_summary;
+    static pe64_map_result_t windows_k16_map_result;
+    static pe64_import_result_t windows_k16_import_result;
+    static pe64_entry_result_t windows_k16_entry_result;
+    static u32 windows_k16_pid;
+    static u32 windows_k16_audit_attach;
+    static u32 windows_k16_vma_init;
+    static u32 windows_k16_bind;
+    static u32 windows_k16_ntdll_load;
+    static u32 windows_k16_kernel32_load;
+    static u32 windows_k16_registry_build;
+    static u32 windows_k16_header_parse;
+    static u32 windows_k16_parse;
+    static u32 windows_k16_map;
+    static u32 windows_k16_resolve;
+    static u32 windows_k16_prepare;
+    static u64 windows_k16_base;
+    static u64 windows_k16_stack_base;
+    static u64 windows_k16_exit_iat;
+    static u64 windows_k16_get_iat;
+    static u64 windows_k16_write_iat;
+    static u64 windows_k16_exit_iat_before;
+    static u64 windows_k16_get_iat_before;
+    static u64 windows_k16_write_iat_before;
+    static u64 windows_k16_exit_iat_after;
+    static u64 windows_k16_get_iat_after;
+    static u64 windows_k16_write_iat_after;
+    static u32 windows_k16_task;
+    static u32 windows_k16_runqueue_start;
+    static u32 windows_k16_current_pid;
+    static u32 windows_k16_transfer;
+    static u32 windows_k16_aux;
+    static u32 windows_k16_console_before_count;
+    static u32 windows_k16_console_after_count;
+    static u32 windows_k16_console_before_bytes;
+    static u32 windows_k16_console_after_bytes;
+    static u32 windows_k16_native_before;
+    static u32 windows_k16_native_after;
+    static u32 windows_k16_persona_before;
+    static u32 windows_k16_persona_after;
+    static u32 windows_k16_windows_before;
+    static u32 windows_k16_windows_after;
+    static u32 windows_k16_write_before;
+    static u32 windows_k16_write_after;
+    static u32 windows_k16_terminate_before;
+    static u32 windows_k16_terminate_after;
+    static u32 windows_k16_audit_before;
+    static u32 windows_k16_audit_after;
+    static u32 windows_k16_last_pid;
+    static u32 windows_k16_last_type;
+    static u64 windows_k16_last_result;
+    static u32 windows_k16_terminate_last_pid;
+    static u32 windows_k16_terminate_last_status;
+    static u32 windows_k16_terminate_last_result;
+    static u32 windows_k16_read_record;
+    static u32 windows_k16_return_match;
+    static u32 windows_k16_dispatch_match;
+    static u32 windows_k16_unmap_ntdll_text;
+    static u32 windows_k16_unmap_ntdll_rdata;
+    static u32 windows_k16_unmap_kernel32_text;
+    static u32 windows_k16_unmap_kernel32_rdata;
+    static u32 windows_k16_unmap_text;
+    static u32 windows_k16_unmap_rdata;
+    static u32 windows_k16_unmap_pdata;
+    static u32 windows_k16_unmap_xdata;
+    static u32 windows_k16_unmap_idata;
+    static u32 windows_k16_unmap_stack;
+    static u32 windows_k16_persona_release;
+    static u32 windows_k16_audit_release;
+    static u32 windows_k16_vma_release;
+    static u32 windows_k16_clone_release;
+    static u32 windows_k16_cleanup;
+    static u32 windows_k16_positive;
+    static persona_audit64_record_t windows_k17_record = {0};
+    static windows_shim64_ntdll_result_t windows_k17_ntdll_result;
+    static windows_shim64_kernel32_result_t windows_k17_kernel32_result;
+    static windows_shim64_registry_t windows_k17_registry;
+    static pe64_header_t windows_k17_header;
+    static pe64_section_t windows_k17_sections[PE64_MAX_SECTIONS];
+    static pe64_section_summary_t windows_k17_summary;
+    static pe64_map_result_t windows_k17_map_result;
+    static pe64_import_result_t windows_k17_import_result;
+    static pe64_entry_result_t windows_k17_entry_result;
+    static u32 windows_k17_pid;
+    static u32 windows_k17_audit_attach;
+    static u32 windows_k17_vma_init;
+    static u32 windows_k17_bind;
+    static u32 windows_k17_ntdll_load;
+    static u32 windows_k17_kernel32_load;
+    static u32 windows_k17_registry_build;
+    static u32 windows_k17_header_parse;
+    static u32 windows_k17_parse;
+    static u32 windows_k17_map;
+    static u32 windows_k17_resolve;
+    static u32 windows_k17_prepare;
+    static u64 windows_k17_base;
+    static u64 windows_k17_stack_base;
+    static u64 windows_k17_close_iat;
+    static u64 windows_k17_exit_iat;
+    static u64 windows_k17_get_heap_iat;
+    static u64 windows_k17_get_std_iat;
+    static u64 windows_k17_heap_alloc_iat;
+    static u64 windows_k17_heap_free_iat;
+    static u64 windows_k17_set_pointer_iat;
+    static u64 windows_k17_write_iat;
+    static u64 windows_k17_create_event_iat;
+    static u64 windows_k17_close_iat_before;
+    static u64 windows_k17_exit_iat_before;
+    static u64 windows_k17_get_heap_iat_before;
+    static u64 windows_k17_get_std_iat_before;
+    static u64 windows_k17_heap_alloc_iat_before;
+    static u64 windows_k17_heap_free_iat_before;
+    static u64 windows_k17_set_pointer_iat_before;
+    static u64 windows_k17_write_iat_before;
+    static u64 windows_k17_create_event_iat_before;
+    static u64 windows_k17_close_iat_after;
+    static u64 windows_k17_exit_iat_after;
+    static u64 windows_k17_get_heap_iat_after;
+    static u64 windows_k17_get_std_iat_after;
+    static u64 windows_k17_heap_alloc_iat_after;
+    static u64 windows_k17_heap_free_iat_after;
+    static u64 windows_k17_set_pointer_iat_after;
+    static u64 windows_k17_write_iat_after;
+    static u64 windows_k17_create_event_iat_after;
+    static u32 windows_k17_task;
+    static u32 windows_k17_runqueue_start;
+    static u32 windows_k17_current_pid;
+    static u32 windows_k17_transfer;
+    static u32 windows_k17_aux;
+    static u32 windows_k17_console_before_count;
+    static u32 windows_k17_console_after_count;
+    static u32 windows_k17_console_before_bytes;
+    static u32 windows_k17_console_after_bytes;
+    static u32 windows_k17_native_before;
+    static u32 windows_k17_native_after;
+    static u32 windows_k17_persona_before;
+    static u32 windows_k17_persona_after;
+    static u32 windows_k17_windows_before;
+    static u32 windows_k17_windows_after;
+    static u32 windows_k17_write_before;
+    static u32 windows_k17_write_after;
+    static u32 windows_k17_allocate_before;
+    static u32 windows_k17_allocate_after;
+    static u32 windows_k17_free_before;
+    static u32 windows_k17_free_after;
+    static u32 windows_k17_query_file_before;
+    static u32 windows_k17_query_file_after;
+    static u32 windows_k17_set_file_before;
+    static u32 windows_k17_set_file_after;
+    static u32 windows_k17_close_before;
+    static u32 windows_k17_close_after;
+    static u32 windows_k17_handle_close_before;
+    static u32 windows_k17_handle_close_after;
+    static u32 windows_k17_event_create_before;
+    static u32 windows_k17_event_create_after;
+    static u32 windows_k17_event_live_before;
+    static u32 windows_k17_event_live_after;
+    static u32 windows_k17_handle_live_after;
+    static u32 windows_k17_terminate_before;
+    static u32 windows_k17_terminate_after;
+    static u32 windows_k17_audit_before;
+    static u32 windows_k17_audit_after;
+    static u32 windows_k17_last_pid;
+    static u32 windows_k17_last_type;
+    static u64 windows_k17_last_result;
+    static u32 windows_k17_close_last_handle;
+    static u32 windows_k17_close_last_result;
+    static u32 windows_k17_set_file_last_class;
+    static u32 windows_k17_set_file_last_handle;
+    static u32 windows_k17_set_file_last_result;
+    static u32 windows_k17_terminate_last_pid;
+    static u32 windows_k17_terminate_last_status;
+    static u32 windows_k17_terminate_last_result;
+    static u32 windows_k17_read_record;
+    static u32 windows_k17_return_match;
+    static u32 windows_k17_iat_match;
+    static u32 windows_k17_dispatch_match;
+    static u32 windows_k17_unmap_ntdll_text;
+    static u32 windows_k17_unmap_ntdll_rdata;
+    static u32 windows_k17_unmap_kernel32_text;
+    static u32 windows_k17_unmap_kernel32_rdata;
+    static u32 windows_k17_unmap_text;
+    static u32 windows_k17_unmap_rdata;
+    static u32 windows_k17_unmap_pdata;
+    static u32 windows_k17_unmap_xdata;
+    static u32 windows_k17_unmap_idata;
+    static u32 windows_k17_unmap_stack;
+    static u32 windows_k17_persona_release;
+    static u32 windows_k17_audit_release;
+    static u32 windows_k17_vma_release;
+    static u32 windows_k17_clone_release;
+    static u32 windows_k17_cleanup;
+    static u32 windows_k17_positive;
     static u32 windows_k14_denied;
     static u32 windows_k14_denied_error;
     static u32 windows_k14_unmap_ntdll_text;
@@ -7425,6 +7636,87 @@ static void log_process_namespace(void)
     static u32 linux_p2j_positive;
     static void *linux_p2j_vma_ctx;
     static void *linux_p2j_audit_ctx;
+    static elf64_launch_result_t linux_q1_result;
+    static u32 linux_q1_pid;
+    static u32 linux_q1_owner;
+    static u32 linux_q1_stdin_cap;
+    static u32 linux_q1_stdout_cap;
+    static u32 linux_q1_stderr_cap;
+    static u32 linux_q1_vma_init;
+    static u32 linux_q1_fd_init;
+    static u32 linux_q1_audit_attach;
+    static u32 linux_q1_bind;
+    static u64 linux_q1_load_bias;
+    static u64 linux_q1_stack_base;
+    static u32 linux_q1_launch;
+    static u32 linux_q1_exit_probe_arm;
+    static u32 linux_q1_exit_probe_clear;
+    static u32 linux_q1_task;
+    static u32 linux_q1_runqueue_start;
+    static u32 linux_q1_current_pid;
+    static u32 linux_q1_transfer;
+    static u32 linux_q1_aux;
+    static u32 linux_q1_native_before;
+    static u32 linux_q1_native_after;
+    static u32 linux_q1_persona_before;
+    static u32 linux_q1_persona_after;
+    static u32 linux_q1_linux_before;
+    static u32 linux_q1_linux_after;
+    static u32 linux_q1_write_before;
+    static u32 linux_q1_write_after;
+    static u32 linux_q1_write_bytes_before;
+    static u32 linux_q1_write_bytes_after;
+    static u32 linux_q1_mmap_before;
+    static u32 linux_q1_mmap_after;
+    static u32 linux_q1_arch_before;
+    static u32 linux_q1_arch_after;
+    static u32 linux_q1_set_tid_before;
+    static u32 linux_q1_set_tid_after;
+    static u32 linux_q1_exit_group_before;
+    static u32 linux_q1_exit_group_after;
+    static u32 linux_q1_poll_before;
+    static u32 linux_q1_poll_after;
+    static u32 linux_q1_open_before;
+    static u32 linux_q1_open_after;
+    static u32 linux_q1_brk_query_before;
+    static u32 linux_q1_brk_query_after;
+    static u32 linux_q1_brk_extend_before;
+    static u32 linux_q1_brk_extend_after;
+    static u32 linux_q1_console_before_count;
+    static u32 linux_q1_console_after_count;
+    static u32 linux_q1_console_before_bytes;
+    static u32 linux_q1_console_after_bytes;
+    static u32 linux_q1_last_pid;
+    static u32 linux_q1_last_type;
+    static u64 linux_q1_last_result;
+    static u32 linux_q1_exited;
+    static u32 linux_q1_exit_code;
+    static u32 linux_q1_last_exit_pid;
+    static u32 linux_q1_last_exit_code;
+    static u32 linux_q1_last_vma;
+    static u32 linux_q1_last_fd;
+    static u32 linux_q1_last_persona;
+    static u32 linux_q1_last_audit_release;
+    static u32 linux_q1_last_audit_recorded;
+    static u32 linux_q1_slots_detached;
+    static u32 linux_q1_reattach_vma;
+    static u32 linux_q1_reattach_fd;
+    static u32 linux_q1_reattach_audit;
+    static u32 linux_q1_audit_count_after_reattach;
+    static u32 linux_q1_vma_release;
+    static u32 linux_q1_fd_release;
+    static u32 linux_q1_audit_release;
+    static u32 linux_q1_clone_release;
+    static u32 linux_q1_pages_clear;
+    static u32 linux_q1_launch_match;
+    static u32 linux_q1_dispatch_match;
+    static u32 linux_q1_console_match;
+    static u32 linux_q1_exit_match;
+    static u32 linux_q1_cleanup;
+    static u32 linux_q1_positive;
+    static void *linux_q1_vma_ctx;
+    static void *linux_q1_fd_ctx;
+    static void *linux_q1_audit_ctx;
     static const u8 linux_p2b_harness_template[251] = {
         0x49u, 0xBCu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u, 0x11u, 0x11u, 0x49u, 0x8Du,
         0x7Cu, 0x24u, 0x20u, 0x49u, 0x8Du, 0x34u, 0x24u, 0x48u, 0xB8u, 0x01u, 0x00u, 0x00u,
@@ -9684,6 +9976,7 @@ static void log_process_namespace(void)
     linux_p1_envp[0] = linux_p1_env0;
     linux_p2_argv[0] = linux_p2_argv0;
     linux_p2_envp[0] = linux_p2_env0;
+    linux_q1_argv[0] = linux_q1_argv0;
 #endif
 
     write_string("[x64] processes total ");
@@ -14682,7 +14975,7 @@ static void log_process_namespace(void)
                 == (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE))
             && (windows_k14_result.rdata_protection == PAGING64_USER_PROT_READ)
             && (windows_k14_result.ntdll_ready != 0u)
-            && (windows_k14_result.nt_call_bridge_mask == 0x000000FFu)
+            && (windows_k14_result.nt_call_bridge_mask == 0x00000FFFu)
             && (windows_k14_result.live_stub_count
                 == WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT)
             && (windows_k14_result.unavailable_stub_count
@@ -15056,6 +15349,800 @@ static void log_process_namespace(void)
             && (windows_k14d_cleanup != 0u))
             ? 1u
             : 0u;
+
+    windows_shim64_init();
+    windows_k16_base = 0x0000000044E40000ull;
+    windows_k16_stack_base = 0x0000000044EC0000ull;
+    windows_k16_exit_iat = windows_k16_base + 0x00005048ull;
+    windows_k16_get_iat = windows_k16_base + 0x00005050ull;
+    windows_k16_write_iat = windows_k16_base + 0x00005058ull;
+    windows_k16_pid = process64_spawn_clone(console_pid);
+    windows_k16_audit_attach =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k16_pid)
+            : 0u;
+    windows_k16_vma_init =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k16_pid)
+            : 0u;
+    windows_k16_bind =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k16_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    windows_k16_ntdll_load =
+        ((windows_k16_bind == PERSONA64_ATTACH_OK) && (windows_k16_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k16_pid,
+                0x0000000044D20000ull,
+                &windows_k16_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k16_kernel32_load =
+        (windows_k16_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k16_pid,
+                0x0000000044D80000ull,
+                &windows_k16_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k16_registry_build =
+        (windows_k16_kernel32_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_combined_registry(windows_k16_pid, &windows_k16_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k16_header_parse =
+        (windows_k16_registry_build == WINDOWS_SHIM64_OK)
+            ? pe64_parse_header(
+                windows_k16_hello_pe_bytes,
+                windows_k16_hello_pe_size,
+                &windows_k16_header)
+            : PE64_DENIED;
+    windows_k16_parse =
+        (windows_k16_header_parse == PE64_OK)
+            ? pe64_parse_sections(
+                windows_k16_hello_pe_bytes,
+                windows_k16_hello_pe_size,
+                &windows_k16_header,
+                windows_k16_sections,
+                PE64_MAX_SECTIONS,
+                &windows_k16_summary)
+            : PE64_DENIED;
+    windows_k16_map =
+        (windows_k16_parse == PE64_OK)
+            ? pe64_map_sections(
+                windows_k16_pid,
+                &windows_k16_header,
+                windows_k16_sections,
+                windows_k16_summary.section_count,
+                windows_k16_hello_pe_bytes,
+                windows_k16_hello_pe_size,
+                windows_k16_base,
+                &windows_k16_map_result)
+            : PE64_DENIED;
+    windows_k16_exit_iat_before =
+        (paging64_user_page_present(windows_k16_exit_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_exit_iat)
+            : 0ull;
+    windows_k16_get_iat_before =
+        (paging64_user_page_present(windows_k16_get_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_get_iat)
+            : 0ull;
+    windows_k16_write_iat_before =
+        (paging64_user_page_present(windows_k16_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_write_iat)
+            : 0ull;
+    windows_k16_resolve =
+        (windows_k16_map == PE64_OK)
+            ? pe64_resolve_imports(
+                windows_k16_pid,
+                &windows_k16_header,
+                windows_k16_sections,
+                windows_k16_summary.section_count,
+                windows_k16_base,
+                &windows_k16_registry.registry,
+                &windows_k16_import_result)
+            : PE64_DENIED;
+    windows_k16_exit_iat_after =
+        (paging64_user_page_present(windows_k16_exit_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_exit_iat)
+            : 0ull;
+    windows_k16_get_iat_after =
+        (paging64_user_page_present(windows_k16_get_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_get_iat)
+            : 0ull;
+    windows_k16_write_iat_after =
+        (paging64_user_page_present(windows_k16_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k16_write_iat)
+            : 0ull;
+    windows_k16_prepare =
+        (windows_k16_resolve == PE64_OK)
+            ? pe64_launch_entry(
+                windows_k16_pid,
+                &windows_k16_header,
+                windows_k16_sections,
+                windows_k16_summary.section_count,
+                windows_k16_base,
+                windows_k16_stack_base,
+                PE64_ENTRY_STACK_BYTES,
+                windows_k16_ntdll_result.ldr_initialize_thunk,
+                0u,
+                &windows_k16_entry_result)
+            : PE64_DENIED;
+    scheduler64_runqueue_reset();
+    windows_k16_task =
+        (windows_k16_prepare == PE64_OK)
+            ? scheduler64_runqueue_register_process_task(
+                windows_k16_pid,
+                process64_runtime_token(windows_k16_pid),
+                process64_runtime_user_entry_token(windows_k16_pid),
+                windows_k16_entry_result.transfer_rip,
+                windows_k16_entry_result.initial_rsp,
+                (u64)process64_runtime_user_entry_selectors(windows_k16_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k16_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k16_runqueue_start =
+        (windows_k16_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_start(windows_k16_task)
+            : 0u;
+    windows_k16_current_pid = scheduler64_runqueue_current_pid();
+    windows_k16_console_before_count = console64_write_count();
+    windows_k16_console_before_bytes = console64_byte_count();
+    windows_k16_native_before = syscall64_native_count();
+    windows_k16_persona_before = syscall64_native_persona_dispatch_count();
+    windows_k16_windows_before = syscall64_native_persona_windows_dispatch_count();
+    windows_k16_write_before = windows_abi64_write_count();
+    windows_k16_terminate_before = windows_abi64_terminate_count();
+    windows_k16_audit_before = persona_audit64_count(windows_k16_pid);
+    windows_k16_transfer =
+        (windows_k16_runqueue_start != 0u)
+            ? interrupts64_trigger_user_entry_probe_args(
+                windows_k16_entry_result.transfer_rip,
+                windows_k16_entry_result.initial_rsp,
+                (u64)windows_k16_entry_result.transfer_selectors,
+                (u64)windows_k16_entry_result.transfer_rflags,
+                windows_k16_entry_result.arg_rcx,
+                windows_k16_entry_result.arg_rdx,
+                windows_k16_entry_result.arg_r8,
+                &windows_k16_aux)
+            : 0u;
+    scheduler64_runqueue_stop();
+    windows_k16_console_after_count = console64_write_count();
+    windows_k16_console_after_bytes = console64_byte_count();
+    windows_k16_native_after = syscall64_native_count();
+    windows_k16_persona_after = syscall64_native_persona_dispatch_count();
+    windows_k16_windows_after = syscall64_native_persona_windows_dispatch_count();
+    windows_k16_write_after = windows_abi64_write_count();
+    windows_k16_terminate_after = windows_abi64_terminate_count();
+    windows_k16_audit_after = persona_audit64_count(windows_k16_pid);
+    windows_k16_last_pid = syscall64_native_persona_last_pid();
+    windows_k16_last_type = syscall64_native_persona_last_type();
+    windows_k16_last_result = syscall64_native_persona_last_result();
+    windows_k16_terminate_last_pid = windows_abi64_terminate_last_pid();
+    windows_k16_terminate_last_status = windows_abi64_terminate_last_status();
+    windows_k16_terminate_last_result = windows_abi64_terminate_last_result();
+    windows_k16_read_record =
+        (windows_k16_audit_after > windows_k16_audit_before)
+            ? persona_audit64_read(
+                windows_k16_pid,
+                windows_k16_audit_after - 1u,
+                &windows_k16_record)
+            : 0u;
+    windows_k16_return_match =
+        ((windows_k16_transfer == 0x4B313658u)
+            && (windows_k16_aux == 0u))
+            ? 1u
+            : 0u;
+    windows_k16_dispatch_match =
+        (((windows_k16_native_after - windows_k16_native_before) == 2u)
+            && ((windows_k16_persona_after - windows_k16_persona_before) == 2u)
+            && ((windows_k16_windows_after - windows_k16_windows_before) == 2u)
+            && ((windows_k16_write_after - windows_k16_write_before) == 1u)
+            && ((windows_k16_terminate_after - windows_k16_terminate_before) == 1u)
+            && ((windows_k16_console_after_count - windows_k16_console_before_count) == 1u)
+            && ((windows_k16_console_after_bytes - windows_k16_console_before_bytes) == 4u)
+            && (windows_k16_last_pid == windows_k16_pid)
+            && (windows_k16_last_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (windows_k16_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+            && ((windows_k16_audit_after - windows_k16_audit_before) == 2u)
+            && (windows_k16_read_record != 0u)
+            && (windows_k16_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (windows_k16_record.event_code == WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS)
+            && (windows_k16_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k16_terminate_last_pid == windows_k16_pid)
+            && (windows_k16_terminate_last_status == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k16_terminate_last_result == WINDOWS_ABI64_STATUS_SUCCESS))
+            ? 1u
+            : 0u;
+    scheduler64_runqueue_reset();
+    windows_k16_unmap_ntdll_text =
+        (vma64_find(
+            windows_k16_pid,
+            windows_k16_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k16_pid,
+                windows_k16_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k16_pid,
+            windows_k16_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k16_pid,
+                windows_k16_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_kernel32_text =
+        (vma64_find(
+            windows_k16_pid,
+            windows_k16_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k16_pid,
+                windows_k16_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k16_pid,
+            windows_k16_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k16_pid,
+                windows_k16_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_text =
+        (vma64_find(windows_k16_pid, windows_k16_base + 0x00001000ull) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_base + 0x00001000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_rdata =
+        (vma64_find(windows_k16_pid, windows_k16_base + 0x00002000ull) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_base + 0x00002000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_pdata =
+        (vma64_find(windows_k16_pid, windows_k16_base + 0x00003000ull) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_base + 0x00003000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_xdata =
+        (vma64_find(windows_k16_pid, windows_k16_base + 0x00004000ull) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_base + 0x00004000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_idata =
+        (vma64_find(windows_k16_pid, windows_k16_base + 0x00005000ull) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_base + 0x00005000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k16_unmap_stack =
+        (vma64_find(windows_k16_pid, windows_k16_stack_base) != 0)
+            ? vma64_unmap(windows_k16_pid, windows_k16_stack_base, PE64_ENTRY_STACK_BYTES)
+            : 1u;
+    windows_k16_persona_release =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k16_pid)
+            : 0u;
+    windows_k16_audit_release =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k16_pid)
+            : 0u;
+    windows_k16_vma_release =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k16_pid)
+            : 0u;
+    windows_k16_clone_release =
+        (windows_k16_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k16_pid)
+            : 0u;
+    windows_k16_cleanup =
+        ((windows_k16_unmap_ntdll_text != 0u)
+            && (windows_k16_unmap_ntdll_rdata != 0u)
+            && (windows_k16_unmap_kernel32_text != 0u)
+            && (windows_k16_unmap_kernel32_rdata != 0u)
+            && (windows_k16_unmap_text != 0u)
+            && (windows_k16_unmap_rdata != 0u)
+            && (windows_k16_unmap_pdata != 0u)
+            && (windows_k16_unmap_xdata != 0u)
+            && (windows_k16_unmap_idata != 0u)
+            && (windows_k16_unmap_stack != 0u)
+            && (windows_k16_persona_release != 0u)
+            && (windows_k16_audit_release != 0u)
+            && (windows_k16_vma_release == 0u)
+            && (windows_k16_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k16_positive =
+        ((windows_k16_pid != PROCESS64_INVALID_PID)
+            && (windows_k16_audit_attach != 0u)
+            && (windows_k16_vma_init != 0u)
+            && (windows_k16_bind == PERSONA64_ATTACH_OK)
+            && (windows_k16_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k16_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k16_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k16_header_parse == PE64_OK)
+            && (windows_k16_parse == PE64_OK)
+            && (windows_k16_map == PE64_OK)
+            && (windows_k16_resolve == PE64_OK)
+            && (windows_k16_prepare == PE64_OK)
+            && (windows_k16_header.error == PE64_ERROR_NONE)
+            && (windows_k16_summary.error == PE64_ERROR_NONE)
+            && (windows_k16_map_result.error == PE64_ERROR_NONE)
+            && (windows_k16_summary.section_count == 5u)
+            && (windows_k16_map_result.mapped_count == 5u)
+            && (windows_k16_import_result.descriptor_count == 1u)
+            && (windows_k16_import_result.thunk_count == 3u)
+            && (windows_k16_import_result.resolved_count == 3u)
+            && (windows_k16_exit_iat_before == 0x0000000000005068ull)
+            && (windows_k16_get_iat_before == 0x0000000000005076ull)
+            && (windows_k16_write_iat_before == 0x0000000000005086ull)
+            && (windows_k16_exit_iat_after == windows_k16_kernel32_result.exit_process)
+            && (windows_k16_get_iat_after == windows_k16_kernel32_result.get_std_handle)
+            && (windows_k16_write_iat_after == windows_k16_kernel32_result.write_console_a)
+            && (windows_k16_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k16_runqueue_start != 0u)
+            && (windows_k16_current_pid == windows_k16_pid)
+            && (windows_k16_return_match != 0u)
+            && (windows_k16_dispatch_match != 0u)
+            && (windows_k16_cleanup != 0u))
+            ? 1u
+            : 0u;
+
+    windows_shim64_init();
+    windows_k17_base = 0x0000000045100000ull;
+    windows_k17_stack_base = 0x0000000045180000ull;
+    windows_k17_close_iat = windows_k17_base + 0x00005098ull;
+    windows_k17_exit_iat = windows_k17_base + 0x000050A0ull;
+    windows_k17_get_heap_iat = windows_k17_base + 0x000050A8ull;
+    windows_k17_get_std_iat = windows_k17_base + 0x000050B0ull;
+    windows_k17_heap_alloc_iat = windows_k17_base + 0x000050B8ull;
+    windows_k17_heap_free_iat = windows_k17_base + 0x000050C0ull;
+    windows_k17_set_pointer_iat = windows_k17_base + 0x000050C8ull;
+    windows_k17_write_iat = windows_k17_base + 0x000050D0ull;
+    windows_k17_create_event_iat = windows_k17_base + 0x000050E0ull;
+    windows_k17_pid = process64_spawn_clone(console_pid);
+    windows_k17_audit_attach =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(windows_k17_pid)
+            : 0u;
+    windows_k17_vma_init =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(windows_k17_pid)
+            : 0u;
+    windows_k17_bind =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_windows_pe(windows_k17_pid, windows_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    windows_k17_ntdll_load =
+        ((windows_k17_bind == PERSONA64_ATTACH_OK) && (windows_k17_vma_init != 0u))
+            ? windows_shim64_load_ntdll(
+                windows_k17_pid,
+                WINDOWS_SHIM64_NTDLL_DEFAULT_BASE,
+                &windows_k17_ntdll_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k17_kernel32_load =
+        (windows_k17_ntdll_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_load_kernel32(
+                windows_k17_pid,
+                WINDOWS_SHIM64_KERNEL32_DEFAULT_BASE,
+                &windows_k17_kernel32_result)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k17_registry_build =
+        (windows_k17_kernel32_load == WINDOWS_SHIM64_OK)
+            ? windows_shim64_combined_registry(windows_k17_pid, &windows_k17_registry)
+            : WINDOWS_SHIM64_DENIED;
+    windows_k17_header_parse =
+        (windows_k17_registry_build == WINDOWS_SHIM64_OK)
+            ? pe64_parse_header(
+                windows_k17_heap_pe_bytes,
+                windows_k17_heap_pe_size,
+                &windows_k17_header)
+            : PE64_DENIED;
+    windows_k17_parse =
+        (windows_k17_header_parse == PE64_OK)
+            ? pe64_parse_sections(
+                windows_k17_heap_pe_bytes,
+                windows_k17_heap_pe_size,
+                &windows_k17_header,
+                windows_k17_sections,
+                PE64_MAX_SECTIONS,
+                &windows_k17_summary)
+            : PE64_DENIED;
+    windows_k17_map =
+        (windows_k17_parse == PE64_OK)
+            ? pe64_map_sections(
+                windows_k17_pid,
+                &windows_k17_header,
+                windows_k17_sections,
+                windows_k17_summary.section_count,
+                windows_k17_heap_pe_bytes,
+                windows_k17_heap_pe_size,
+                windows_k17_base,
+                &windows_k17_map_result)
+            : PE64_DENIED;
+    windows_k17_close_iat_before =
+        (paging64_user_page_present(windows_k17_close_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_close_iat)
+            : 0ull;
+    windows_k17_exit_iat_before =
+        (paging64_user_page_present(windows_k17_exit_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_exit_iat)
+            : 0ull;
+    windows_k17_get_heap_iat_before =
+        (paging64_user_page_present(windows_k17_get_heap_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_get_heap_iat)
+            : 0ull;
+    windows_k17_get_std_iat_before =
+        (paging64_user_page_present(windows_k17_get_std_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_get_std_iat)
+            : 0ull;
+    windows_k17_heap_alloc_iat_before =
+        (paging64_user_page_present(windows_k17_heap_alloc_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_heap_alloc_iat)
+            : 0ull;
+    windows_k17_heap_free_iat_before =
+        (paging64_user_page_present(windows_k17_heap_free_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_heap_free_iat)
+            : 0ull;
+    windows_k17_set_pointer_iat_before =
+        (paging64_user_page_present(windows_k17_set_pointer_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_set_pointer_iat)
+            : 0ull;
+    windows_k17_write_iat_before =
+        (paging64_user_page_present(windows_k17_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_write_iat)
+            : 0ull;
+    windows_k17_create_event_iat_before =
+        (paging64_user_page_present(windows_k17_create_event_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_create_event_iat)
+            : 0ull;
+    windows_k17_resolve =
+        (windows_k17_map == PE64_OK)
+            ? pe64_resolve_imports(
+                windows_k17_pid,
+                &windows_k17_header,
+                windows_k17_sections,
+                windows_k17_summary.section_count,
+                windows_k17_base,
+                &windows_k17_registry.registry,
+                &windows_k17_import_result)
+            : PE64_DENIED;
+    windows_k17_close_iat_after =
+        (paging64_user_page_present(windows_k17_close_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_close_iat)
+            : 0ull;
+    windows_k17_exit_iat_after =
+        (paging64_user_page_present(windows_k17_exit_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_exit_iat)
+            : 0ull;
+    windows_k17_get_heap_iat_after =
+        (paging64_user_page_present(windows_k17_get_heap_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_get_heap_iat)
+            : 0ull;
+    windows_k17_get_std_iat_after =
+        (paging64_user_page_present(windows_k17_get_std_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_get_std_iat)
+            : 0ull;
+    windows_k17_heap_alloc_iat_after =
+        (paging64_user_page_present(windows_k17_heap_alloc_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_heap_alloc_iat)
+            : 0ull;
+    windows_k17_heap_free_iat_after =
+        (paging64_user_page_present(windows_k17_heap_free_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_heap_free_iat)
+            : 0ull;
+    windows_k17_set_pointer_iat_after =
+        (paging64_user_page_present(windows_k17_set_pointer_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_set_pointer_iat)
+            : 0ull;
+    windows_k17_write_iat_after =
+        (paging64_user_page_present(windows_k17_write_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_write_iat)
+            : 0ull;
+    windows_k17_create_event_iat_after =
+        (paging64_user_page_present(windows_k17_create_event_iat) != 0u)
+            ? *((volatile u64 *)(u64)windows_k17_create_event_iat)
+            : 0ull;
+    windows_k17_prepare =
+        (windows_k17_resolve == PE64_OK)
+            ? pe64_launch_entry(
+                windows_k17_pid,
+                &windows_k17_header,
+                windows_k17_sections,
+                windows_k17_summary.section_count,
+                windows_k17_base,
+                windows_k17_stack_base,
+                PE64_ENTRY_STACK_BYTES,
+                windows_k17_ntdll_result.ldr_initialize_thunk,
+                0u,
+                &windows_k17_entry_result)
+            : PE64_DENIED;
+
+    scheduler64_runqueue_reset();
+    windows_k17_task =
+        (windows_k17_prepare == PE64_OK)
+            ? scheduler64_runqueue_register_process_task(
+                windows_k17_pid,
+                process64_runtime_token(windows_k17_pid),
+                process64_runtime_user_entry_token(windows_k17_pid),
+                windows_k17_entry_result.transfer_rip,
+                windows_k17_entry_result.initial_rsp,
+                (u64)process64_runtime_user_entry_selectors(windows_k17_pid),
+                (u64)process64_runtime_user_entry_rflags(windows_k17_pid))
+            : SCHEDULER64_INVALID_TASK;
+    windows_k17_runqueue_start =
+        (windows_k17_task != SCHEDULER64_INVALID_TASK)
+            ? scheduler64_runqueue_start(windows_k17_task)
+            : 0u;
+    windows_k17_current_pid = scheduler64_runqueue_current_pid();
+    windows_k17_console_before_count = console64_write_count();
+    windows_k17_console_before_bytes = console64_byte_count();
+    windows_k17_native_before = syscall64_native_count();
+    windows_k17_persona_before = syscall64_native_persona_dispatch_count();
+    windows_k17_windows_before = syscall64_native_persona_windows_dispatch_count();
+    windows_k17_write_before = windows_abi64_write_count();
+    windows_k17_allocate_before = windows_abi64_allocate_count();
+    windows_k17_free_before = windows_abi64_free_count();
+    windows_k17_query_file_before = windows_abi64_query_file_count();
+    windows_k17_set_file_before = windows_abi64_set_file_count();
+    windows_k17_close_before = windows_abi64_close_count();
+    windows_k17_handle_close_before = windows_handle64_close_count();
+    windows_k17_event_create_before = windows_abi64_event_create_count();
+    windows_k17_event_live_before = windows_handle64_event_live_count();
+    windows_k17_terminate_before = windows_abi64_terminate_count();
+    windows_k17_audit_before = persona_audit64_count(windows_k17_pid);
+    windows_k17_transfer =
+        (windows_k17_runqueue_start != 0u)
+            ? interrupts64_trigger_user_entry_probe_args(
+                windows_k17_entry_result.transfer_rip,
+                windows_k17_entry_result.initial_rsp,
+                (u64)windows_k17_entry_result.transfer_selectors,
+                (u64)windows_k17_entry_result.transfer_rflags,
+                windows_k17_entry_result.arg_rcx,
+                windows_k17_entry_result.arg_rdx,
+                windows_k17_entry_result.arg_r8,
+                &windows_k17_aux)
+            : 0u;
+    scheduler64_runqueue_stop();
+
+    windows_k17_console_after_count = console64_write_count();
+    windows_k17_console_after_bytes = console64_byte_count();
+    windows_k17_native_after = syscall64_native_count();
+    windows_k17_persona_after = syscall64_native_persona_dispatch_count();
+    windows_k17_windows_after = syscall64_native_persona_windows_dispatch_count();
+    windows_k17_write_after = windows_abi64_write_count();
+    windows_k17_allocate_after = windows_abi64_allocate_count();
+    windows_k17_free_after = windows_abi64_free_count();
+    windows_k17_query_file_after = windows_abi64_query_file_count();
+    windows_k17_set_file_after = windows_abi64_set_file_count();
+    windows_k17_close_after = windows_abi64_close_count();
+    windows_k17_handle_close_after = windows_handle64_close_count();
+    windows_k17_event_create_after = windows_abi64_event_create_count();
+    windows_k17_event_live_after = windows_handle64_event_live_count();
+    windows_k17_handle_live_after = windows_handle64_live_count(windows_k17_pid);
+    windows_k17_terminate_after = windows_abi64_terminate_count();
+    windows_k17_audit_after = persona_audit64_count(windows_k17_pid);
+    windows_k17_last_pid = syscall64_native_persona_last_pid();
+    windows_k17_last_type = syscall64_native_persona_last_type();
+    windows_k17_last_result = syscall64_native_persona_last_result();
+    windows_k17_close_last_handle = windows_abi64_close_last_handle_low();
+    windows_k17_close_last_result = windows_abi64_close_last_result();
+    windows_k17_set_file_last_class = windows_abi64_set_file_last_class();
+    windows_k17_set_file_last_handle = windows_abi64_set_file_last_handle_low();
+    windows_k17_set_file_last_result = windows_abi64_set_file_last_result();
+    windows_k17_terminate_last_pid = windows_abi64_terminate_last_pid();
+    windows_k17_terminate_last_status = windows_abi64_terminate_last_status();
+    windows_k17_terminate_last_result = windows_abi64_terminate_last_result();
+    windows_k17_read_record =
+        (windows_k17_audit_after > windows_k17_audit_before)
+            ? persona_audit64_read(
+                windows_k17_pid,
+                windows_k17_audit_after - 1u,
+                &windows_k17_record)
+            : 0u;
+    windows_k17_return_match =
+        ((windows_k17_transfer == 0x4B313658u)
+            && (windows_k17_aux == 0u))
+            ? 1u
+            : 0u;
+    windows_k17_iat_match =
+        ((windows_k17_close_iat_before == 0x00000000000050F0ull)
+            && (windows_k17_exit_iat_before == 0x00000000000050FEull)
+            && (windows_k17_get_heap_iat_before == 0x000000000000510Cull)
+            && (windows_k17_get_std_iat_before == 0x000000000000511Eull)
+            && (windows_k17_heap_alloc_iat_before == 0x000000000000512Eull)
+            && (windows_k17_heap_free_iat_before == 0x000000000000513Aull)
+            && (windows_k17_set_pointer_iat_before == 0x0000000000005146ull)
+            && (windows_k17_write_iat_before == 0x000000000000515Aull)
+            && (windows_k17_create_event_iat_before == 0x000000000000516Aull)
+            && (windows_k17_close_iat_after == windows_k17_kernel32_result.close_handle)
+            && (windows_k17_exit_iat_after == windows_k17_kernel32_result.exit_process)
+            && (windows_k17_get_heap_iat_after
+                == windows_k17_kernel32_result.get_process_heap)
+            && (windows_k17_get_std_iat_after
+                == windows_k17_kernel32_result.get_std_handle)
+            && (windows_k17_heap_alloc_iat_after
+                == windows_k17_kernel32_result.heap_alloc)
+            && (windows_k17_heap_free_iat_after
+                == windows_k17_kernel32_result.heap_free)
+            && (windows_k17_set_pointer_iat_after
+                == windows_k17_kernel32_result.set_file_pointer_ex)
+            && (windows_k17_write_iat_after
+                == windows_k17_kernel32_result.write_console_a)
+            && (windows_k17_create_event_iat_after
+                == (windows_k17_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RVA_NT_CREATE_EVENT)))
+            ? 1u
+            : 0u;
+    windows_k17_dispatch_match =
+        (((windows_k17_native_after - windows_k17_native_before) == 7u)
+            && ((windows_k17_persona_after - windows_k17_persona_before) == 7u)
+            && ((windows_k17_windows_after - windows_k17_windows_before) == 7u)
+            && ((windows_k17_write_after - windows_k17_write_before) == 1u)
+            && ((windows_k17_allocate_after - windows_k17_allocate_before) == 1u)
+            && ((windows_k17_free_after - windows_k17_free_before) == 1u)
+            && ((windows_k17_query_file_after - windows_k17_query_file_before) == 0u)
+            && ((windows_k17_set_file_after - windows_k17_set_file_before) == 1u)
+            && ((windows_k17_close_after - windows_k17_close_before) == 1u)
+            && ((windows_k17_handle_close_after - windows_k17_handle_close_before) == 1u)
+            && ((windows_k17_event_create_after - windows_k17_event_create_before) == 1u)
+            && (windows_k17_event_live_after == windows_k17_event_live_before)
+            && (windows_k17_handle_live_after == 0u)
+            && ((windows_k17_terminate_after - windows_k17_terminate_before) == 1u)
+            && ((windows_k17_console_after_count - windows_k17_console_before_count) == 1u)
+            && ((windows_k17_console_after_bytes - windows_k17_console_before_bytes) == 9u)
+            && (windows_k17_last_pid == windows_k17_pid)
+            && (windows_k17_last_type == PERSONA64_TYPE_WINDOWS_PE)
+            && (windows_k17_last_result == (u64)WINDOWS_ABI64_STATUS_SUCCESS)
+            && ((windows_k17_audit_after - windows_k17_audit_before) == 7u)
+            && (windows_k17_read_record != 0u)
+            && (windows_k17_record.event_type == PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED)
+            && (windows_k17_record.event_code == WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS)
+            && (windows_k17_record.result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k17_close_last_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k17_set_file_last_class
+                == WINDOWS_ABI64_FILE_POSITION_INFORMATION_CLASS)
+            && (windows_k17_set_file_last_handle == (u32)WINDOWS_ABI64_STDOUT_HANDLE)
+            && (windows_k17_set_file_last_result == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k17_terminate_last_pid == windows_k17_pid)
+            && (windows_k17_terminate_last_status == WINDOWS_ABI64_STATUS_SUCCESS)
+            && (windows_k17_terminate_last_result == WINDOWS_ABI64_STATUS_SUCCESS))
+            ? 1u
+            : 0u;
+
+    scheduler64_runqueue_reset();
+    windows_k17_unmap_ntdll_text =
+        (vma64_find(
+            windows_k17_pid,
+            windows_k17_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k17_pid,
+                windows_k17_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_ntdll_rdata =
+        (vma64_find(
+            windows_k17_pid,
+            windows_k17_ntdll_result.image_base
+                + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k17_pid,
+                windows_k17_ntdll_result.image_base
+                    + (u64)WINDOWS_SHIM64_NTDLL_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_kernel32_text =
+        (vma64_find(
+            windows_k17_pid,
+            windows_k17_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA) != 0)
+            ? vma64_unmap(
+                windows_k17_pid,
+                windows_k17_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_TEXT_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_kernel32_rdata =
+        (vma64_find(
+            windows_k17_pid,
+            windows_k17_kernel32_result.image_base
+                + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA) != 0)
+            ? vma64_unmap(
+                windows_k17_pid,
+                windows_k17_kernel32_result.image_base
+                    + (u64)WINDOWS_SHIM64_KERNEL32_RDATA_RVA,
+                VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_text =
+        (vma64_find(windows_k17_pid, windows_k17_base + 0x00001000ull) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_base + 0x00001000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_rdata =
+        (vma64_find(windows_k17_pid, windows_k17_base + 0x00002000ull) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_base + 0x00002000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_pdata =
+        (vma64_find(windows_k17_pid, windows_k17_base + 0x00003000ull) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_base + 0x00003000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_xdata =
+        (vma64_find(windows_k17_pid, windows_k17_base + 0x00004000ull) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_base + 0x00004000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_idata =
+        (vma64_find(windows_k17_pid, windows_k17_base + 0x00005000ull) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_base + 0x00005000ull, VMA64_PAGE_BYTES)
+            : 1u;
+    windows_k17_unmap_stack =
+        (vma64_find(windows_k17_pid, windows_k17_stack_base) != 0)
+            ? vma64_unmap(windows_k17_pid, windows_k17_stack_base, PE64_ENTRY_STACK_BYTES)
+            : 1u;
+    windows_k17_persona_release =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? persona64_release(windows_k17_pid)
+            : 0u;
+    windows_k17_audit_release =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_release(windows_k17_pid)
+            : 0u;
+    windows_k17_vma_release =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? vma64_release_process(windows_k17_pid)
+            : 0u;
+    windows_k17_clone_release =
+        (windows_k17_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(windows_k17_pid)
+            : 0u;
+    windows_k17_cleanup =
+        ((windows_k17_unmap_ntdll_text != 0u)
+            && (windows_k17_unmap_ntdll_rdata != 0u)
+            && (windows_k17_unmap_kernel32_text != 0u)
+            && (windows_k17_unmap_kernel32_rdata != 0u)
+            && (windows_k17_unmap_text != 0u)
+            && (windows_k17_unmap_rdata != 0u)
+            && (windows_k17_unmap_pdata != 0u)
+            && (windows_k17_unmap_xdata != 0u)
+            && (windows_k17_unmap_idata != 0u)
+            && (windows_k17_unmap_stack != 0u)
+            && (windows_k17_persona_release != 0u)
+            && (windows_k17_audit_release != 0u)
+            && (windows_k17_vma_release == 0u)
+            && (windows_k17_clone_release != 0u))
+            ? 1u
+            : 0u;
+    windows_k17_positive =
+        ((windows_k17_pid != PROCESS64_INVALID_PID)
+            && (windows_k17_audit_attach != 0u)
+            && (windows_k17_vma_init != 0u)
+            && (windows_k17_bind == PERSONA64_ATTACH_OK)
+            && (windows_k17_ntdll_load == WINDOWS_SHIM64_OK)
+            && (windows_k17_kernel32_load == WINDOWS_SHIM64_OK)
+            && (windows_k17_registry_build == WINDOWS_SHIM64_OK)
+            && (windows_k17_header_parse == PE64_OK)
+            && (windows_k17_parse == PE64_OK)
+            && (windows_k17_map == PE64_OK)
+            && (windows_k17_resolve == PE64_OK)
+            && (windows_k17_prepare == PE64_OK)
+            && (windows_k17_header.error == PE64_ERROR_NONE)
+            && (windows_k17_summary.error == PE64_ERROR_NONE)
+            && (windows_k17_map_result.error == PE64_ERROR_NONE)
+            && (windows_k17_summary.section_count == 5u)
+            && (windows_k17_map_result.mapped_count == 5u)
+            && (windows_k17_import_result.descriptor_count == 2u)
+            && (windows_k17_import_result.thunk_count == 9u)
+            && (windows_k17_import_result.resolved_count == 9u)
+            && (windows_k17_task != SCHEDULER64_INVALID_TASK)
+            && (windows_k17_runqueue_start != 0u)
+            && (windows_k17_current_pid == windows_k17_pid)
+            && (windows_k17_iat_match != 0u)
+            && (windows_k17_return_match != 0u)
+            && (windows_k17_dispatch_match != 0u)
+            && (windows_k17_cleanup != 0u))
+            ? 1u
+            : 0u;
+
     windows_shim64_init();
     windows_k15_pid = console_pid;
     windows_k15_audit_attach =
@@ -28706,7 +29793,7 @@ static void log_process_namespace(void)
             && (windows_k1_context_match != 0u)
             && (windows_k1_table_size == WINDOWS_ABI64_SYSCALL_LIMIT)
             && (windows_k1_table_ready != 0u)
-            && (windows_k1_unimplemented_entries == (WINDOWS_ABI64_SYSCALL_LIMIT - 16u))
+            && (windows_k1_unimplemented_entries == (WINDOWS_ABI64_SYSCALL_LIMIT - 20u))
             && (windows_k1_entry_read == 0u)
             && (windows_k1_entry_write == 0u)
             && (windows_k1_entry_allocate == 0u)
@@ -30484,6 +31571,10 @@ static void log_process_namespace(void)
     windows_k9_entry_wait = windows_abi64_wait_entry_installed();
     windows_k9_entry_create = windows_abi64_create_event_entry_installed();
     windows_k9_entry_set = windows_abi64_set_event_entry_installed();
+    windows_k9_handle_events_created_before = windows_handle64_event_create_count();
+    windows_k9_handle_events_set_before = windows_handle64_event_set_count();
+    windows_k9_handle_events_wait_before = windows_handle64_event_wait_count();
+    windows_k9_handle_event_denials_before = windows_handle64_event_denial_count();
     windows_k9_page = vma64_map_anon(
         windows_k9_pid,
         0x0000000045060000ull,
@@ -30704,10 +31795,14 @@ static void log_process_namespace(void)
     windows_k9_wait_count = windows_abi64_event_wait_count();
     windows_k9_denial_count = windows_abi64_event_denial_count();
     windows_k9_fault_count = windows_abi64_event_fault_count();
-    windows_k9_handle_events_created = windows_handle64_event_create_count();
-    windows_k9_handle_events_set = windows_handle64_event_set_count();
-    windows_k9_handle_events_wait = windows_handle64_event_wait_count();
-    windows_k9_handle_event_denials = windows_handle64_event_denial_count();
+    windows_k9_handle_events_created =
+        windows_handle64_event_create_count() - windows_k9_handle_events_created_before;
+    windows_k9_handle_events_set =
+        windows_handle64_event_set_count() - windows_k9_handle_events_set_before;
+    windows_k9_handle_events_wait =
+        windows_handle64_event_wait_count() - windows_k9_handle_events_wait_before;
+    windows_k9_handle_event_denials =
+        windows_handle64_event_denial_count() - windows_k9_handle_event_denials_before;
     windows_k9_handle_events_live_before_close = windows_handle64_event_live_count();
     windows_k9_last_handle = windows_abi64_event_last_handle_low();
     windows_k9_last_prev = windows_abi64_event_last_previous_state();
@@ -37737,6 +38832,273 @@ static void log_process_namespace(void)
             && (linux_p3_cleanup != 0u))
             ? 1u
             : 0u;
+    linux_q1_pid = process64_spawn_clone(init_pid);
+    linux_q1_vma_init =
+        (linux_q1_pid != PROCESS64_INVALID_PID)
+            ? vma64_init_process(linux_q1_pid)
+            : 0u;
+    linux_q1_audit_attach =
+        (linux_q1_pid != PROCESS64_INVALID_PID)
+            ? persona_audit64_attach(linux_q1_pid)
+            : 0u;
+    linux_q1_owner = process64_principal(linux_q1_pid);
+    linux_q1_stdin_cap =
+        (linux_q1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_INPUT,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_q1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_q1_stdout_cap =
+        (linux_q1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_q1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_q1_stderr_cap =
+        (linux_q1_owner != 0u)
+            ? capability64_grant_service(
+                SERVICE_ENDPOINT_CLASS_CONSOLE,
+                CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+                linux_q1_owner)
+            : CAPABILITY64_INVALID_HANDLE;
+    linux_q1_fd_init =
+        ((linux_q1_stdin_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_q1_stdout_cap != CAPABILITY64_INVALID_HANDLE)
+            && (linux_q1_stderr_cap != CAPABILITY64_INVALID_HANDLE))
+            ? fd64_init_process(
+                linux_q1_pid,
+                linux_q1_owner,
+                linux_q1_stdin_cap,
+                linux_q1_stdout_cap,
+                linux_q1_stderr_cap)
+            : 0u;
+    linux_q1_bind =
+        (linux_q1_pid != PROCESS64_INVALID_PID)
+            ? persona64_init_linux_elf(linux_q1_pid, linux_abi64_dispatch_table())
+            : PERSONA64_ATTACH_DENIED;
+    linux_q1_load_bias = 0ull;
+    linux_q1_stack_base = 0x0000000053000000ull;
+    linux_q1_launch =
+        ((linux_q1_vma_init != 0u)
+            && (linux_q1_audit_attach != 0u)
+            && (linux_q1_fd_init != 0u)
+            && (linux_q1_bind == PERSONA64_ATTACH_OK))
+            ? elf64_launch_static(
+                linux_q1_pid,
+                linux_q1_hello_elf_bytes,
+                linux_q1_hello_elf_size,
+                linux_q1_load_bias,
+                linux_q1_stack_base,
+                ELF64_STATIC_STACK_BYTES,
+                1u,
+                linux_q1_argv,
+                0u,
+                0,
+                0u,
+                &linux_q1_result)
+            : ELF64_DENIED;
+    linux_q1_launch_match =
+        ((linux_q1_launch == ELF64_OK)
+            && (linux_q1_result.error == ELF64_ERROR_NONE)
+            && (linux_q1_result.header.type == ELF64_TYPE_EXEC)
+            && (linux_q1_result.phdr_summary.load_count == 3u)
+            && (linux_q1_result.phdr_summary.interp_count == 0u)
+            && (linux_q1_result.phdr_summary.dynamic_count == 0u)
+            && (linux_q1_result.load_result.mapped_count == 3u)
+            && (linux_q1_result.entry_rip == linux_q1_result.header.entry)
+            && (linux_q1_result.transfer_ready != 0u)
+            && (linux_q1_result.stack_result.alignment_ok != 0u))
+            ? 1u
+            : 0u;
+    if (linux_q1_launch_match != 0u)
+    {
+        linux_q1_vma_ctx = process64_vma_root(linux_q1_pid);
+        linux_q1_fd_ctx = process64_fd_table(linux_q1_pid);
+        linux_q1_audit_ctx = process64_audit_ctx(linux_q1_pid);
+        scheduler64_runqueue_reset();
+        linux_q1_exit_probe_arm =
+            syscall64_native_arm_linux_exit_probe(linux_q1_pid, 0x4C513158u);
+        linux_q1_task =
+            scheduler64_runqueue_register_process_task(
+                linux_q1_pid,
+                process64_runtime_token(linux_q1_pid),
+                process64_runtime_user_entry_token(linux_q1_pid),
+                linux_q1_result.transfer_rip,
+                linux_q1_result.initial_rsp,
+                (u64)linux_q1_result.transfer_selectors,
+                (u64)process64_runtime_user_entry_rflags(linux_q1_pid));
+        linux_q1_runqueue_start =
+            (linux_q1_task != SCHEDULER64_INVALID_TASK)
+                ? scheduler64_runqueue_start(linux_q1_task)
+                : 0u;
+        linux_q1_current_pid = scheduler64_runqueue_current_pid();
+        linux_q1_native_before = syscall64_native_count();
+        linux_q1_persona_before = syscall64_native_persona_dispatch_count();
+        linux_q1_linux_before = syscall64_native_persona_linux_dispatch_count();
+        linux_q1_write_before = linux_abi64_write_count();
+        linux_q1_write_bytes_before = linux_abi64_write_byte_count();
+        linux_q1_mmap_before = linux_abi64_mmap_count();
+        linux_q1_arch_before = linux_abi64_arch_prctl_count();
+        linux_q1_set_tid_before = linux_abi64_set_tid_address_count();
+        linux_q1_exit_group_before = linux_abi64_exit_group_count();
+        linux_q1_poll_before = linux_abi64_poll_count();
+        linux_q1_open_before = linux_abi64_open_count();
+        linux_q1_brk_query_before = linux_abi64_brk_query_count();
+        linux_q1_brk_extend_before = linux_abi64_brk_extend_count();
+        linux_q1_console_before_count = console64_write_count();
+        linux_q1_console_before_bytes = console64_byte_count();
+        linux_q1_transfer =
+            ((linux_q1_exit_probe_arm != 0u) && (linux_q1_runqueue_start != 0u))
+                ? interrupts64_trigger_user_entry_probe(
+                    linux_q1_result.transfer_rip,
+                    linux_q1_result.initial_rsp,
+                    (u64)linux_q1_result.transfer_selectors,
+                    (u64)process64_runtime_user_entry_rflags(linux_q1_pid))
+                : 0u;
+        linux_q1_aux = interrupts64_user_entry_probe_aux();
+        linux_q1_native_after = syscall64_native_count();
+        linux_q1_persona_after = syscall64_native_persona_dispatch_count();
+        linux_q1_linux_after = syscall64_native_persona_linux_dispatch_count();
+        linux_q1_write_after = linux_abi64_write_count();
+        linux_q1_write_bytes_after = linux_abi64_write_byte_count();
+        linux_q1_mmap_after = linux_abi64_mmap_count();
+        linux_q1_arch_after = linux_abi64_arch_prctl_count();
+        linux_q1_set_tid_after = linux_abi64_set_tid_address_count();
+        linux_q1_exit_group_after = linux_abi64_exit_group_count();
+        linux_q1_poll_after = linux_abi64_poll_count();
+        linux_q1_open_after = linux_abi64_open_count();
+        linux_q1_brk_query_after = linux_abi64_brk_query_count();
+        linux_q1_brk_extend_after = linux_abi64_brk_extend_count();
+        linux_q1_console_after_count = console64_write_count();
+        linux_q1_console_after_bytes = console64_byte_count();
+        linux_q1_last_pid = syscall64_native_persona_last_pid();
+        linux_q1_last_type = syscall64_native_persona_last_type();
+        linux_q1_last_result = syscall64_native_persona_last_result();
+        linux_q1_exited = linux_abi64_process_exited(linux_q1_pid);
+        linux_q1_exit_code = linux_abi64_exit_code(linux_q1_pid);
+        linux_q1_last_exit_pid = linux_abi64_last_exit_pid();
+        linux_q1_last_exit_code = linux_abi64_last_exit_code();
+        linux_q1_last_vma = linux_abi64_last_exit_vma_regions();
+        linux_q1_last_fd = linux_abi64_last_exit_fd_entries();
+        linux_q1_last_persona = linux_abi64_last_exit_persona_released();
+        linux_q1_last_audit_release = linux_abi64_last_exit_audit_released();
+        linux_q1_last_audit_recorded = linux_abi64_last_exit_audit_recorded();
+        linux_q1_slots_detached =
+            ((process64_vma_root(linux_q1_pid) == 0)
+                && (process64_fd_table(linux_q1_pid) == 0)
+                && (process64_persona_ctx(linux_q1_pid) == 0)
+                && (process64_audit_ctx(linux_q1_pid) == 0))
+                ? 1u
+                : 0u;
+        linux_q1_exit_probe_clear = syscall64_native_clear_linux_exit_probe(linux_q1_pid);
+        scheduler64_runqueue_stop();
+        scheduler64_runqueue_reset();
+        linux_q1_reattach_vma =
+            ((linux_q1_vma_ctx != 0) && (process64_vma_root(linux_q1_pid) == 0))
+                ? process64_attach_vma(linux_q1_pid, linux_q1_vma_ctx)
+                : 0u;
+        linux_q1_reattach_fd =
+            ((linux_q1_fd_ctx != 0) && (process64_fd_table(linux_q1_pid) == 0))
+                ? process64_attach_fd(linux_q1_pid, linux_q1_fd_ctx)
+                : 0u;
+        linux_q1_reattach_audit =
+            ((linux_q1_audit_ctx != 0) && (process64_audit_ctx(linux_q1_pid) == 0))
+                ? process64_attach_audit(linux_q1_pid, linux_q1_audit_ctx)
+                : 0u;
+        linux_q1_audit_count_after_reattach =
+            (linux_q1_reattach_audit != 0u)
+                ? persona_audit64_count(linux_q1_pid)
+                : 0u;
+    }
+    linux_q1_dispatch_match =
+        (((linux_q1_native_after - linux_q1_native_before) >= 4u)
+            && ((linux_q1_persona_after - linux_q1_persona_before)
+                == (linux_q1_native_after - linux_q1_native_before))
+            && ((linux_q1_linux_after - linux_q1_linux_before)
+                == (linux_q1_native_after - linux_q1_native_before))
+            && ((linux_q1_write_after - linux_q1_write_before) == 1u)
+            && ((linux_q1_write_bytes_after - linux_q1_write_bytes_before) == 6u)
+            && ((linux_q1_arch_after - linux_q1_arch_before) == 1u)
+            && ((linux_q1_set_tid_after - linux_q1_set_tid_before) == 1u)
+            && ((linux_q1_exit_group_after - linux_q1_exit_group_before) == 1u)
+            && (linux_q1_last_pid == linux_q1_pid)
+            && (linux_q1_last_type == PERSONA64_TYPE_LINUX_ELF))
+            ? 1u
+            : 0u;
+    linux_q1_console_match =
+        (((linux_q1_console_after_count - linux_q1_console_before_count) == 1u)
+            && ((linux_q1_console_after_bytes - linux_q1_console_before_bytes) == 6u))
+            ? 1u
+            : 0u;
+    linux_q1_exit_match =
+        ((linux_q1_transfer == 0x4C513158u)
+            && (linux_q1_aux == 0u)
+            && (linux_q1_exited != 0u)
+            && (linux_q1_exit_code == 0u)
+            && (linux_q1_last_exit_pid == linux_q1_pid)
+            && (linux_q1_last_exit_code == 0u)
+            && (linux_q1_last_vma == 0u)
+            && (linux_q1_last_fd == 0u)
+            && (linux_q1_last_persona != 0u)
+            && (linux_q1_last_audit_release == 0u)
+            && (linux_q1_last_audit_recorded != 0u)
+            && (linux_q1_slots_detached != 0u))
+            ? 1u
+            : 0u;
+    linux_q1_vma_release =
+        (linux_q1_reattach_vma != 0u)
+            ? vma64_release_process(linux_q1_pid)
+            : 0u;
+    linux_q1_fd_release =
+        (linux_q1_reattach_fd != 0u)
+            ? fd64_release_process(linux_q1_pid)
+            : 0u;
+    linux_q1_audit_release =
+        (linux_q1_reattach_audit != 0u)
+            ? persona_audit64_release(linux_q1_pid)
+            : 0u;
+    linux_q1_clone_release =
+        (linux_q1_pid != PROCESS64_INVALID_PID)
+            ? process64_release_clone(linux_q1_pid)
+            : 0u;
+    linux_q1_pages_clear =
+        (((linux_q1_result.load_result.first_mapped_vaddr != 0ull)
+                && (paging64_user_page_present(linux_q1_result.load_result.first_mapped_vaddr) == 0u))
+            && (paging64_user_page_present(linux_q1_stack_base) == 0u))
+            ? 1u
+            : 0u;
+    linux_q1_cleanup =
+        ((linux_q1_reattach_vma != 0u)
+            && (linux_q1_vma_release >= 5u)
+            && (linux_q1_reattach_fd != 0u)
+            && (linux_q1_fd_release >= 3u)
+            && (linux_q1_reattach_audit != 0u)
+            && (linux_q1_audit_count_after_reattach != 0u)
+            && (linux_q1_audit_release != 0u)
+            && (linux_q1_clone_release != 0u)
+            && (linux_q1_pages_clear != 0u))
+            ? 1u
+            : 0u;
+    linux_q1_positive =
+        ((linux_q1_pid != PROCESS64_INVALID_PID)
+            && (linux_q1_vma_init != 0u)
+            && (linux_q1_audit_attach != 0u)
+            && (linux_q1_fd_init != 0u)
+            && (linux_q1_bind == PERSONA64_ATTACH_OK)
+            && (linux_q1_launch_match != 0u)
+            && (linux_q1_exit_probe_arm != 0u)
+            && (linux_q1_exit_probe_clear != 0u)
+            && (linux_q1_task != SCHEDULER64_INVALID_TASK)
+            && (linux_q1_runqueue_start != 0u)
+            && (linux_q1_current_pid == linux_q1_pid)
+            && (linux_q1_dispatch_match != 0u)
+            && (linux_q1_console_match != 0u)
+            && (linux_q1_exit_match != 0u)
+            && (linux_q1_cleanup != 0u))
+            ? 1u
+            : 0u;
 #endif
     fd_cleanup = fd64_release_process(init_pid);
     fd_post_detach = ((process64_fd_table(init_pid) == 0) && (fd64_live_count(init_pid) == 0u)) ? 1u : 0u;
@@ -43160,6 +44522,292 @@ static void log_process_namespace(void)
     write_string(" positive ");
     write_dec_u32(windows_k14d_positive);
     write_line("");
+    write_string("[x64] windows-shim-K16 real-pe launch base ");
+    write_hex_u64(windows_k16_base);
+    write_string("/");
+    write_hex_u64(windows_k16_stack_base);
+    write_string(" deps ");
+    write_dec_u32(windows_k16_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k16_kernel32_load);
+    write_string("/");
+    write_dec_u32(windows_k16_registry_build);
+    write_string(" parse ");
+    write_dec_u32(windows_k16_header_parse);
+    write_string("/");
+    write_dec_u32(windows_k16_parse);
+    write_string("/");
+    write_dec_u32(windows_k16_map);
+    write_string("/");
+    write_dec_u32(windows_k16_resolve);
+    write_string("/");
+    write_dec_u32(windows_k16_prepare);
+    write_string("/");
+    write_dec_u32(windows_k16_header.error);
+    write_string("/");
+    write_dec_u32(windows_k16_summary.error);
+    write_string("/");
+    write_dec_u32(windows_k16_map_result.error);
+    write_string(" sections ");
+    write_dec_u32(windows_k16_summary.section_count);
+    write_string("/");
+    write_dec_u32(windows_k16_map_result.mapped_count);
+    write_string(" imports ");
+    write_dec_u32(windows_k16_import_result.descriptor_count);
+    write_string("/");
+    write_dec_u32(windows_k16_import_result.thunk_count);
+    write_string("/");
+    write_dec_u32(windows_k16_import_result.resolved_count);
+    write_string(" iat ");
+    write_hex_u64(windows_k16_exit_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k16_exit_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k16_get_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k16_get_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k16_write_iat_before);
+    write_string("/");
+    write_hex_u64(windows_k16_write_iat_after);
+    write_string(" run ");
+    write_hex_u32(windows_k16_transfer);
+    write_string("/");
+    write_dec_u32(windows_k16_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k16_task);
+    write_string("/");
+    write_dec_u32(windows_k16_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k16_current_pid);
+    write_string(" console ");
+    write_dec_u32(windows_k16_console_after_count - windows_k16_console_before_count);
+    write_string("/");
+    write_dec_u32(windows_k16_console_after_bytes - windows_k16_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(windows_k16_native_after - windows_k16_native_before);
+    write_string(" persona ");
+    write_dec_u32(windows_k16_persona_after - windows_k16_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k16_windows_after - windows_k16_windows_before);
+    write_string(" calls ");
+    write_dec_u32(windows_k16_write_after - windows_k16_write_before);
+    write_string("/");
+    write_dec_u32(windows_k16_terminate_after - windows_k16_terminate_before);
+    write_string(" audit ");
+    write_dec_u32(windows_k16_audit_after - windows_k16_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k16_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k16_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k16_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k16_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k16_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k16_last_type);
+    write_string("/");
+    write_hex_u64(windows_k16_last_result);
+    write_string(" term ");
+    write_dec_u32(windows_k16_terminate_last_pid);
+    write_string("/");
+    write_hex_u32(windows_k16_terminate_last_status);
+    write_string("/");
+    write_hex_u32(windows_k16_terminate_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k16_return_match);
+    write_string("/");
+    write_dec_u32(windows_k16_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k16_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_text);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_rdata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_pdata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_xdata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_idata);
+    write_string("/");
+    write_dec_u32(windows_k16_unmap_stack);
+    write_string("/");
+    write_dec_u32(windows_k16_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k16_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k16_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k16_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k16_positive);
+    write_line("");
+    write_string("[x64] windows-shim-K17 heap-pe launch base ");
+    write_hex_u64(windows_k17_base);
+    write_string("/");
+    write_hex_u64(windows_k17_stack_base);
+    write_string(" deps ");
+    write_dec_u32(windows_k17_ntdll_load);
+    write_string("/");
+    write_dec_u32(windows_k17_kernel32_load);
+    write_string("/");
+    write_dec_u32(windows_k17_registry_build);
+    write_string(" parse ");
+    write_dec_u32(windows_k17_header_parse);
+    write_string("/");
+    write_dec_u32(windows_k17_parse);
+    write_string("/");
+    write_dec_u32(windows_k17_map);
+    write_string("/");
+    write_dec_u32(windows_k17_resolve);
+    write_string("/");
+    write_dec_u32(windows_k17_prepare);
+    write_string("/");
+    write_dec_u32(windows_k17_header.error);
+    write_string("/");
+    write_dec_u32(windows_k17_summary.error);
+    write_string("/");
+    write_dec_u32(windows_k17_map_result.error);
+    write_string(" sections ");
+    write_dec_u32(windows_k17_summary.section_count);
+    write_string("/");
+    write_dec_u32(windows_k17_map_result.mapped_count);
+    write_string(" imports ");
+    write_dec_u32(windows_k17_import_result.descriptor_count);
+    write_string("/");
+    write_dec_u32(windows_k17_import_result.thunk_count);
+    write_string("/");
+    write_dec_u32(windows_k17_import_result.resolved_count);
+    write_string(" iat ");
+    write_dec_u32(windows_k17_iat_match);
+    write_string("/");
+    write_hex_u64(windows_k17_close_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k17_set_pointer_iat_after);
+    write_string("/");
+    write_hex_u64(windows_k17_create_event_iat_after);
+    write_string(" run ");
+    write_hex_u32(windows_k17_transfer);
+    write_string("/");
+    write_dec_u32(windows_k17_aux);
+    write_string(" task ");
+    write_dec_u32(windows_k17_task);
+    write_string("/");
+    write_dec_u32(windows_k17_runqueue_start);
+    write_string("/");
+    write_dec_u32(windows_k17_current_pid);
+    write_string(" console ");
+    write_dec_u32(windows_k17_console_after_count - windows_k17_console_before_count);
+    write_string("/");
+    write_dec_u32(windows_k17_console_after_bytes - windows_k17_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(windows_k17_native_after - windows_k17_native_before);
+    write_string(" persona ");
+    write_dec_u32(windows_k17_persona_after - windows_k17_persona_before);
+    write_string("/");
+    write_dec_u32(windows_k17_windows_after - windows_k17_windows_before);
+    write_string(" calls ");
+    write_dec_u32(windows_k17_write_after - windows_k17_write_before);
+    write_string("/");
+    write_dec_u32(windows_k17_allocate_after - windows_k17_allocate_before);
+    write_string("/");
+    write_dec_u32(windows_k17_free_after - windows_k17_free_before);
+    write_string("/");
+    write_dec_u32(windows_k17_query_file_after - windows_k17_query_file_before);
+    write_string("/");
+    write_dec_u32(windows_k17_set_file_after - windows_k17_set_file_before);
+    write_string("/");
+    write_dec_u32(windows_k17_close_after - windows_k17_close_before);
+    write_string("/");
+    write_dec_u32(windows_k17_handle_close_after - windows_k17_handle_close_before);
+    write_string("/");
+    write_dec_u32(windows_k17_event_create_after - windows_k17_event_create_before);
+    write_string("/");
+    write_dec_u32(windows_k17_terminate_after - windows_k17_terminate_before);
+    write_string(" handles ");
+    write_dec_u32(windows_k17_event_live_before);
+    write_string("/");
+    write_dec_u32(windows_k17_event_live_after);
+    write_string("/");
+    write_dec_u32(windows_k17_handle_live_after);
+    write_string(" audit ");
+    write_dec_u32(windows_k17_audit_after - windows_k17_audit_before);
+    write_string("/");
+    write_dec_u32(windows_k17_read_record);
+    write_string("/");
+    write_dec_u32((u32)windows_k17_record.event_type);
+    write_string("/");
+    write_dec_u32((u32)windows_k17_record.event_code);
+    write_string("/");
+    write_hex_u32(windows_k17_record.result);
+    write_string(" last ");
+    write_dec_u32(windows_k17_last_pid);
+    write_string("/");
+    write_dec_u32(windows_k17_last_type);
+    write_string("/");
+    write_hex_u64(windows_k17_last_result);
+    write_string(" close ");
+    write_dec_u32(windows_k17_close_last_handle);
+    write_string("/");
+    write_hex_u32(windows_k17_close_last_result);
+    write_string(" set ");
+    write_dec_u32(windows_k17_set_file_last_class);
+    write_string("/");
+    write_dec_u32(windows_k17_set_file_last_handle);
+    write_string("/");
+    write_hex_u32(windows_k17_set_file_last_result);
+    write_string(" term ");
+    write_dec_u32(windows_k17_terminate_last_pid);
+    write_string("/");
+    write_hex_u32(windows_k17_terminate_last_status);
+    write_string("/");
+    write_hex_u32(windows_k17_terminate_last_result);
+    write_string(" match ");
+    write_dec_u32(windows_k17_return_match);
+    write_string("/");
+    write_dec_u32(windows_k17_iat_match);
+    write_string("/");
+    write_dec_u32(windows_k17_dispatch_match);
+    write_string(" cleanup ");
+    write_dec_u32(windows_k17_unmap_ntdll_text);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_ntdll_rdata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_kernel32_text);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_kernel32_rdata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_text);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_rdata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_pdata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_xdata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_idata);
+    write_string("/");
+    write_dec_u32(windows_k17_unmap_stack);
+    write_string("/");
+    write_dec_u32(windows_k17_persona_release);
+    write_string("/");
+    write_dec_u32(windows_k17_audit_release);
+    write_string("/");
+    write_dec_u32(windows_k17_vma_release);
+    write_string("/");
+    write_dec_u32(windows_k17_clone_release);
+    write_string(" positive ");
+    write_dec_u32(windows_k17_positive);
+    write_line("");
     write_string("[x64] windows-shim-K15 crt load ");
     write_dec_u32(windows_k15_load);
     write_string(" dep ");
@@ -46683,6 +48331,133 @@ static void log_process_namespace(void)
     write_string(" positive ");
     write_dec_u32(linux_p2j_positive);
     write_line("");
+    write_string("[x64] linux-Q1 musl-static elf size ");
+    write_dec_u32(linux_q1_hello_elf_size);
+    write_string(" entry ");
+    write_hex_u64(linux_q1_result.header.entry);
+    write_string(" load ");
+    write_dec_u32(linux_q1_launch);
+    write_string("/");
+    write_dec_u32(linux_q1_result.error);
+    write_string("/");
+    write_dec_u32(linux_q1_result.header.type);
+    write_string("/");
+    write_dec_u32(linux_q1_result.phdr_summary.load_count);
+    write_string("/");
+    write_dec_u32(linux_q1_result.phdr_summary.interp_count);
+    write_string("/");
+    write_dec_u32(linux_q1_result.phdr_summary.dynamic_count);
+    write_string(" mapped ");
+    write_dec_u32(linux_q1_result.load_result.mapped_count);
+    write_string("/");
+    write_hex_u64(linux_q1_result.load_result.first_mapped_vaddr);
+    write_string("/");
+    write_hex_u64(linux_q1_result.stack_base);
+    write_string(" ready ");
+    write_dec_u32(linux_q1_result.transfer_ready);
+    write_string("/");
+    write_dec_u32(linux_q1_result.stack_result.alignment_ok);
+    write_string("/");
+    write_dec_u32(linux_q1_launch_match);
+    write_string(" run ");
+    write_hex_u32(linux_q1_transfer);
+    write_string("/");
+    write_dec_u32(linux_q1_aux);
+    write_string(" probe ");
+    write_dec_u32(linux_q1_exit_probe_arm);
+    write_string("/");
+    write_dec_u32(linux_q1_exit_probe_clear);
+    write_string(" task ");
+    write_dec_u32(linux_q1_task);
+    write_string("/");
+    write_dec_u32(linux_q1_runqueue_start);
+    write_string("/");
+    write_dec_u32(linux_q1_current_pid);
+    write_string(" console ");
+    write_dec_u32(linux_q1_console_after_count - linux_q1_console_before_count);
+    write_string("/");
+    write_dec_u32(linux_q1_console_after_bytes - linux_q1_console_before_bytes);
+    write_string(" native ");
+    write_dec_u32(linux_q1_native_after - linux_q1_native_before);
+    write_string(" persona ");
+    write_dec_u32(linux_q1_persona_after - linux_q1_persona_before);
+    write_string("/");
+    write_dec_u32(linux_q1_linux_after - linux_q1_linux_before);
+    write_string(" calls ");
+    write_dec_u32(linux_q1_write_after - linux_q1_write_before);
+    write_string("/");
+    write_dec_u32(linux_q1_mmap_after - linux_q1_mmap_before);
+    write_string("/");
+    write_dec_u32(linux_q1_arch_after - linux_q1_arch_before);
+    write_string("/");
+    write_dec_u32(linux_q1_set_tid_after - linux_q1_set_tid_before);
+    write_string("/");
+    write_dec_u32(linux_q1_exit_group_after - linux_q1_exit_group_before);
+    write_string("/");
+    write_dec_u32(linux_q1_poll_after - linux_q1_poll_before);
+    write_string("/");
+    write_dec_u32(linux_q1_open_after - linux_q1_open_before);
+    write_string("/");
+    write_dec_u32(linux_q1_brk_query_after - linux_q1_brk_query_before);
+    write_string("/");
+    write_dec_u32(linux_q1_brk_extend_after - linux_q1_brk_extend_before);
+    write_string(" bytes ");
+    write_dec_u32(linux_q1_write_bytes_after - linux_q1_write_bytes_before);
+    write_string(" last ");
+    write_dec_u32(linux_q1_last_pid);
+    write_string("/");
+    write_dec_u32(linux_q1_last_type);
+    write_string("/");
+    write_hex_u64(linux_q1_last_result);
+    write_string(" exit ");
+    write_dec_u32(linux_q1_exited);
+    write_string("/");
+    write_dec_u32(linux_q1_exit_code);
+    write_string("/");
+    write_dec_u32(linux_q1_last_exit_pid);
+    write_string("/");
+    write_dec_u32(linux_q1_last_exit_code);
+    write_string("/");
+    write_dec_u32(linux_q1_last_vma);
+    write_string("/");
+    write_dec_u32(linux_q1_last_fd);
+    write_string("/");
+    write_dec_u32(linux_q1_last_persona);
+    write_string("/");
+    write_dec_u32(linux_q1_last_audit_release);
+    write_string("/");
+    write_dec_u32(linux_q1_last_audit_recorded);
+    write_string("/");
+    write_dec_u32(linux_q1_slots_detached);
+    write_string(" cleanup ");
+    write_dec_u32(linux_q1_reattach_vma);
+    write_string("/");
+    write_dec_u32(linux_q1_vma_release);
+    write_string("/");
+    write_dec_u32(linux_q1_reattach_fd);
+    write_string("/");
+    write_dec_u32(linux_q1_fd_release);
+    write_string("/");
+    write_dec_u32(linux_q1_reattach_audit);
+    write_string("/");
+    write_dec_u32(linux_q1_audit_count_after_reattach);
+    write_string("/");
+    write_dec_u32(linux_q1_audit_release);
+    write_string("/");
+    write_dec_u32(linux_q1_clone_release);
+    write_string("/");
+    write_dec_u32(linux_q1_pages_clear);
+    write_string("/");
+    write_dec_u32(linux_q1_cleanup);
+    write_string(" match ");
+    write_dec_u32(linux_q1_dispatch_match);
+    write_string("/");
+    write_dec_u32(linux_q1_console_match);
+    write_string("/");
+    write_dec_u32(linux_q1_exit_match);
+    write_string(" positive ");
+    write_dec_u32(linux_q1_positive);
+    write_line("");
 #endif
     write_string("[x64] pipe-C1 object-bytes ");
     write_dec_u32((u32)sizeof(pipe64_buffer_t));
@@ -49938,6 +51713,60 @@ static void log_installer_ux_surface(void)
 #endif
 }
 
+static void log_installer_commit_surface(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)installer_ux64_commit_probe();
+    write_labeled_dec_u32("[x64] drs-installer-commit drs-installer-commit-attempted ", installer_ux64_commit_attempted());
+    write_labeled_dec_u32(" drs-installer-commit-runtime-fat-target ", installer_ux64_commit_runtime_fat_target());
+    write_labeled_dec_u32(" drs-installer-commit-confirmation-token ", installer_ux64_commit_confirmation_token());
+    write_labeled_dec_u32(" drs-installer-commit-scoped-write-cap ", installer_ux64_commit_scoped_write_cap());
+    write_labeled_dec_u32(" drs-installer-commit-bad-token-denied ", installer_ux64_commit_bad_token_denied());
+    write_labeled_dec_u32(" drs-installer-commit-wrong-owner-denied ", installer_ux64_commit_wrong_owner_denied());
+    write_labeled_dec_u32(" drs-installer-commit-write ", installer_ux64_commit_write());
+    write_labeled_dec_u32(" drs-installer-commit-readback ", installer_ux64_commit_readback());
+    write_labeled_dec_u32(" drs-installer-commit-bytes ", installer_ux64_commit_bytes());
+    write_string(" drs-installer-commit-checksum ");
+    write_hex_u32(installer_ux64_commit_checksum());
+    write_labeled_dec_u32(" drs-installer-commit-audit ", installer_ux64_commit_audit_count());
+    write_labeled_dec_u32(" drs-installer-commit-no-ambient ", installer_ux64_commit_no_ambient_authority());
+    write_labeled_dec_u32(" drs-installer-commit-unavailable ", installer_ux64_commit_unavailable());
+    write_labeled_dec_u32(" error ", installer_ux64_commit_error());
+    write_string(" mode ");
+    write_line(installer_ux64_commit_mode());
+#endif
+}
+
+static void log_installer_target_surface(void)
+{
+    (void)installer_ux64_target_probe();
+    write_labeled_dec_u32("[x64] drs-installer-target drs-installer-target-attempted ", installer_ux64_target_attempted());
+    write_labeled_dec_u32(" drs-installer-target-confirmation-token ", installer_ux64_target_confirmation_token());
+    write_labeled_dec_u32(" drs-installer-target-classified ", installer_ux64_target_classified());
+    write_labeled_dec_u32(" drs-installer-target-boot-partition ", installer_ux64_target_boot_partition());
+    write_labeled_dec_u32(" drs-installer-target-root-partition ", installer_ux64_target_root_partition());
+    write_labeled_dec_u32(" drs-installer-target-boot-start ", installer_ux64_target_boot_start());
+    write_labeled_dec_u32(" drs-installer-target-root-start ", installer_ux64_target_root_start());
+    write_labeled_dec_u32(" drs-installer-target-forbidden-denied ", installer_ux64_target_forbidden_denied());
+    write_labeled_dec_u32(" drs-installer-target-bad-token-denied ", installer_ux64_target_bad_token_denied());
+    write_labeled_dec_u32(" drs-installer-target-wrong-target-denied ", installer_ux64_target_wrong_target_denied());
+    write_labeled_dec_u32(" drs-installer-target-wrong-owner-denied ", installer_ux64_target_wrong_owner_denied());
+    write_labeled_dec_u32(" drs-installer-target-m5-write-cap ", installer_ux64_target_m5_write_cap());
+    write_labeled_dec_u32(" drs-installer-target-write ", installer_ux64_target_write());
+    write_labeled_dec_u32(" drs-installer-target-readback ", installer_ux64_target_readback());
+    write_labeled_dec_u32(" drs-installer-target-bytes ", installer_ux64_target_bytes());
+    write_string(" drs-installer-target-checksum ");
+    write_hex_u32(installer_ux64_target_checksum());
+    write_labeled_dec_u32(" drs-installer-target-write-denied ", installer_ux64_target_write_denied());
+    write_labeled_dec_u32(" drs-installer-target-format-denied ", installer_ux64_target_format_denied());
+    write_labeled_dec_u32(" drs-installer-target-boot-entry-denied ", installer_ux64_target_boot_entry_denied());
+    write_labeled_dec_u32(" drs-installer-target-no-ambient ", installer_ux64_target_no_ambient_authority());
+    write_labeled_dec_u32(" drs-installer-target-unavailable ", installer_ux64_target_unavailable());
+    write_labeled_dec_u32(" error ", installer_ux64_target_error());
+    write_string(" mode ");
+    write_line(installer_ux64_target_mode());
+}
+
 static void log_ai_policy_surface(void)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -50836,6 +52665,15 @@ static void log_pci_storage_surface(void)
     write_labeled_dec_u32(" drs-nvme-gpt-vbr ", mmio64_nvme_gpt_vbr());
     write_labeled_dec_u32(" fs-authority ", mmio64_nvme_gpt_fs_authority());
     write_labeled_dec_u32(" write-authority ", mmio64_nvme_gpt_write_authority());
+    write_labeled_dec_u32(" m5-safe-targets ", mmio64_nvme_gpt_m5_safe_targets());
+    write_labeled_dec_u32(" m5-forbidden-targets ", mmio64_nvme_gpt_m5_forbidden_targets());
+    write_labeled_dec_u32(" m5-unknown-targets ", mmio64_nvme_gpt_m5_unknown_targets());
+    write_labeled_dec_u32(" m5-boot-partition ", mmio64_nvme_gpt_m5_boot_partition());
+    write_labeled_dec_u32(" m5-root-partition ", mmio64_nvme_gpt_m5_root_partition());
+    write_labeled_dec_u32(" m5-boot-start ", mmio64_nvme_gpt_m5_boot_start());
+    write_labeled_dec_u32(" m5-root-start ", mmio64_nvme_gpt_m5_root_start());
+    write_labeled_dec_u32(" m5-forbidden-denied ", mmio64_nvme_gpt_m5_forbidden_denied());
+    write_labeled_dec_u32(" m5-no-write-authority ", mmio64_nvme_gpt_m5_no_write_authority());
     write_labeled_dec_u32(" unavailable ", mmio64_nvme_gpt_unavailable());
     write_labeled_dec_u32(" error ", mmio64_nvme_gpt_error());
     write_line("");
@@ -55324,6 +57162,10 @@ static void log_http_surface(void)
 static void log_network_socket_surface(void)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    static const u8 net_n1_url[] = "example.com";
+    static u8 net_n1_response[4096u];
+    u32 net_n1_bytes = 0u;
+
     network_socket64_probe();
     write_labeled_dec_u32("[x64] drs-socket drs-socket-api ", network_socket64_api_published());
     write_labeled_dec_u32(" drs-socket-service ", network_socket64_service_registered());
@@ -55345,6 +57187,30 @@ static void log_network_socket_surface(void)
     write_labeled_dec_u32(" fs-authority ", network_socket64_fs_authority());
     write_labeled_dec_u32(" storage-authority ", network_socket64_storage_authority());
     write_labeled_dec_u32(" ambient-authority ", network_socket64_ambient_authority());
+    write_line("");
+
+    (void)network_socket64_curl_http(
+        net_n1_url,
+        (u32)(sizeof(net_n1_url) - 1u),
+        net_n1_response,
+        sizeof(net_n1_response),
+        PRINCIPAL64_ID_CONSOLE_CLIENT,
+        &net_n1_bytes);
+    write_labeled_dec_u32("[x64] net-N1 dns ", network_socket64_curl_dns_resolved());
+    write_labeled_dec_u32(" connect ", network_socket64_curl_tcp_connect());
+    write_labeled_dec_u32(" http-get ", network_socket64_curl_http_get());
+    write_labeled_dec_u32(" response-bytes ", network_socket64_curl_response_bytes());
+    write_labeled_dec_u32(" truncated ", network_socket64_curl_truncated());
+    write_labeled_dec_u32(" close ", network_socket64_curl_close());
+    write_labeled_dec_u32(" cap-minted ", network_socket64_curl_cap_minted());
+    write_labeled_dec_u32(" cap-destroyed ", network_socket64_curl_cap_destroyed());
+    write_labeled_dec_u32(" nondelegable-denied ", network_socket64_curl_non_delegable_denied());
+    write_labeled_dec_u32(" socket-count ", network_socket64_socket_count());
+    write_labeled_dec_u32(" fs-authority ", network_socket64_fs_authority());
+    write_labeled_dec_u32(" storage-authority ", network_socket64_storage_authority());
+    write_labeled_dec_u32(" ambient-authority ", network_socket64_ambient_authority());
+    write_labeled_dec_u32(" url-denied ", network_socket64_curl_url_denied());
+    write_labeled_dec_u32(" error ", network_socket64_curl_error());
     write_line("");
 #endif
 }
@@ -57743,6 +59609,8 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     run_user_entry_input_cli_probe();
     run_user_entry_shell_stream_probe();
     log_nvme_rw_surface();
+    log_installer_commit_surface();
+    log_installer_target_surface();
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     log_ai_action_surface();
 #endif

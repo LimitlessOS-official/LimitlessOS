@@ -14,6 +14,13 @@ u32 network_socket64_listen_tcp(u32 network_capability, u32 local_port, u32 owne
 u32 network_socket64_send(u32 socket_handle, u32 byte_count, u32 owner_id);
 u32 network_socket64_recv_status(u32 socket_handle, u32 owner_id);
 u32 network_socket64_close(u32 socket_handle, u32 owner_id);
+u32 network_socket64_curl_http(
+    const u8 *url,
+    u32 url_bytes,
+    u8 *destination,
+    u32 destination_capacity,
+    u32 owner_id,
+    u32 *bytes_read);
 void network_socket64_probe(void);
 
 u32 network_socket64_api_published(void);
@@ -36,5 +43,17 @@ u32 network_socket64_last_response_bytes(void);
 u32 network_socket64_fs_authority(void);
 u32 network_socket64_storage_authority(void);
 u32 network_socket64_ambient_authority(void);
+u32 network_socket64_curl_attempted(void);
+u32 network_socket64_curl_cap_minted(void);
+u32 network_socket64_curl_non_delegable_denied(void);
+u32 network_socket64_curl_dns_resolved(void);
+u32 network_socket64_curl_tcp_connect(void);
+u32 network_socket64_curl_http_get(void);
+u32 network_socket64_curl_response_bytes(void);
+u32 network_socket64_curl_truncated(void);
+u32 network_socket64_curl_close(void);
+u32 network_socket64_curl_cap_destroyed(void);
+u32 network_socket64_curl_url_denied(void);
+u32 network_socket64_curl_error(void);
 
 #endif

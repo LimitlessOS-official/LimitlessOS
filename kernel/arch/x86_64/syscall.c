@@ -34,6 +34,8 @@
 #include "x64.h"
 #include "xhci_x64.h"
 
+#define SYSCALL64_LINUX_EXIT_PROBE_RESULT 0x4C513158u
+
 enum
 {
     EFER_MSR = 0xC0000080u,
@@ -94,6 +96,8 @@ static volatile u32 g_native_persona_fallback_count = 0u;
 static volatile u32 g_native_persona_last_pid = 0u;
 static volatile u32 g_native_persona_last_type = PERSONA64_TYPE_COUNT;
 static volatile u64 g_native_persona_last_result = 0ull;
+static volatile u32 g_native_linux_exit_probe_pid = PROCESS64_INVALID_PID;
+static volatile u32 g_native_linux_exit_probe_result = SYSCALL64_LINUX_EXIT_PROBE_RESULT;
 #endif
 static u32 g_input_diag_scancodes = 0xFFFFFFFFu;
 static u32 g_input_diag_pending = 0xFFFFFFFFu;
@@ -8599,13 +8603,25 @@ u32 syscall64_native_complete_persona_return(
     }
 
     task_id = scheduler64_runqueue_current_task_id();
+    pid = scheduler64_runqueue_current_pid();
+    if ((task_id != SCHEDULER64_INVALID_TASK)
+        && (g_native_persona_last_pid == pid)
+        && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF)
+        && (g_native_linux_exit_probe_pid == pid)
+        && (linux_abi64_process_exited(pid) != 0u)
+        && (interrupts64_complete_user_entry_probe(
+            g_native_linux_exit_probe_result,
+            linux_abi64_exit_code(pid)) != 0u))
+    {
+        return 1u;
+    }
+
     if ((task_id == SCHEDULER64_INVALID_TASK)
         || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_BLOCKED))
     {
         return 0u;
     }
 
-    pid = scheduler64_runqueue_current_pid();
     frame.r15 = syscall64_native_user_r15;
     frame.r14 = syscall64_native_user_r14;
     frame.r13 = syscall64_native_user_r13;
@@ -8679,6 +8695,32 @@ u64 syscall64_native_last_code(void)
 {
     return g_native_last_syscall_code;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 syscall64_native_arm_linux_exit_probe(u32 pid, u32 result)
+{
+    if ((pid == PROCESS64_INVALID_PID) || (process64_principal(pid) == 0u))
+    {
+        return 0u;
+    }
+
+    g_native_linux_exit_probe_pid = pid;
+    g_native_linux_exit_probe_result = result;
+    return 1u;
+}
+
+u32 syscall64_native_clear_linux_exit_probe(u32 pid)
+{
+    if (g_native_linux_exit_probe_pid != pid)
+    {
+        return 0u;
+    }
+
+    g_native_linux_exit_probe_pid = PROCESS64_INVALID_PID;
+    g_native_linux_exit_probe_result = SYSCALL64_LINUX_EXIT_PROBE_RESULT;
+    return 1u;
+}
+#endif
 
 u64 syscall64_native_star_value(void)
 {

@@ -26,6 +26,8 @@ param(
 
     [switch]$RequestBootEntryChange,
 
+    [string]$BootPayloadImagePath = "",
+
     [string]$JsonOutputPath = ""
 )
 
@@ -49,6 +51,19 @@ function Fail-Installer
     Write-Host "installer-result: refused"
     Write-Host "installer-error: $Reason"
     exit 2
+}
+
+function Get-InstallerBytesSha256
+{
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($sha.ComputeHash($Bytes)).Replace("-", "")
+    }
+    finally {
+        $sha.Dispose()
+    }
 }
 
 $isPhysical = $PhysicalDriveNumber -ge 0
@@ -92,6 +107,9 @@ $report = [PSCustomObject]@{
     capabilities = $capabilities
     destructiveWritesRequested = ($Mode -eq "Install")
     bootEntryChangeRequested = [bool]$RequestBootEntryChange
+    bootPayloadImage = $null
+    bootPayloadBytes = 0
+    bootPayloadSha256 = ""
     result = "unknown"
     error = ""
     beforeSha256 = $beforeHash
@@ -227,6 +245,23 @@ foreach ($target in @($bootPartition, $rootPartition)) {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($BootPayloadImagePath)) {
+    $BootPayloadImagePath = Join-Path $root "dist\limitlessos-x86_64-uefi.img"
+}
+$BootPayloadImagePath = [System.IO.Path]::GetFullPath($BootPayloadImagePath)
+if (-not (Test-Path -LiteralPath $BootPayloadImagePath)) {
+    Fail-Installer -Reason "boot payload image not found: $BootPayloadImagePath" -Report $report
+}
+$bootPayloadBytes = [System.IO.File]::ReadAllBytes($BootPayloadImagePath)
+$bootPayloadSha256 = Get-InstallerBytesSha256 -Bytes $bootPayloadBytes
+$bootPartitionBytes = [int64]$bootPartition.sectors * $Script:M5SectorBytes
+if ($bootPayloadBytes.Length -gt $bootPartitionBytes) {
+    Fail-Installer -Reason "boot payload image exceeds selected boot partition capacity" -Report $report
+}
+$report.bootPayloadImage = $BootPayloadImagePath
+$report.bootPayloadBytes = $bootPayloadBytes.Length
+$report.bootPayloadSha256 = $bootPayloadSha256
+
 $forbiddenBefore = @{}
 foreach ($partition in $partitions) {
     $classification = Get-M5PartitionClassification -Partition $partition
@@ -244,12 +279,10 @@ foreach ($partition in $partitions) {
 
 $writeStream = [System.IO.File]::Open($targetPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::Read)
 try {
-    $bootText = "LIMITLESSOS_BOOT_V1`nmanifest=BOOTMAN.TXT`nchecksum-source=dist-limitlessos-x86_64.iso`n"
     $rootText = "LIMITLESSOS_ROOT_V1`nprofile=Product`ncapability=scoped-installer-write`n"
-    $bootBytes = [System.Text.Encoding]::ASCII.GetBytes($bootText)
     $rootBytes = [System.Text.Encoding]::ASCII.GetBytes($rootText)
-    $writeStream.Seek(([int64]$bootPartition.firstLba * $Script:M5SectorBytes) + 1024, [System.IO.SeekOrigin]::Begin) | Out-Null
-    $writeStream.Write($bootBytes, 0, $bootBytes.Length)
+    $writeStream.Seek(([int64]$bootPartition.firstLba * $Script:M5SectorBytes), [System.IO.SeekOrigin]::Begin) | Out-Null
+    $writeStream.Write($bootPayloadBytes, 0, $bootPayloadBytes.Length)
     $writeStream.Seek(([int64]$rootPartition.firstLba * $Script:M5SectorBytes) + 1024, [System.IO.SeekOrigin]::Begin) | Out-Null
     $writeStream.Write($rootBytes, 0, $rootBytes.Length)
     $writeStream.Flush()
@@ -260,9 +293,11 @@ finally {
 
 $report.writesPerformed = 2
 $report.auditRecords += [PSCustomObject]@{
-    operation = "write-boot-marker"
+    operation = "write-uefi-boot-partition"
     partition = $BootPartitionNumber
     authority = "scoped write + format"
+    bytes = $bootPayloadBytes.Length
+    sha256 = $bootPayloadSha256
 }
 $report.auditRecords += [PSCustomObject]@{
     operation = "write-root-marker"
@@ -271,11 +306,14 @@ $report.auditRecords += [PSCustomObject]@{
 }
 
 $verified = $true
+$bootPayloadVerified = $false
 $stream = [System.IO.File]::Open($targetPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
 try {
-    $bootVerify = [System.Text.Encoding]::ASCII.GetString((Read-M5Bytes -Stream $stream -Offset (([int64]$bootPartition.firstLba * $Script:M5SectorBytes) + 1024) -Count 32))
+    $bootVerifyBytes = Read-M5Bytes -Stream $stream -Offset ([int64]$bootPartition.firstLba * $Script:M5SectorBytes) -Count $bootPayloadBytes.Length
+    $bootVerifySha256 = Get-InstallerBytesSha256 -Bytes $bootVerifyBytes
     $rootVerify = [System.Text.Encoding]::ASCII.GetString((Read-M5Bytes -Stream $stream -Offset (([int64]$rootPartition.firstLba * $Script:M5SectorBytes) + 1024) -Count 32))
-    if (-not $bootVerify.StartsWith("LIMITLESSOS_BOOT_V1") -or -not $rootVerify.StartsWith("LIMITLESSOS_ROOT_V1")) {
+    $bootPayloadVerified = ($bootVerifySha256 -eq $bootPayloadSha256)
+    if (-not $bootPayloadVerified -or -not $rootVerify.StartsWith("LIMITLESSOS_ROOT_V1")) {
         $verified = $false
     }
 }
@@ -311,8 +349,11 @@ Write-Host "installer-result: install-ok"
 Write-Host "installer-writes: 2"
 Write-Host "installer-verified-boot-files: 1"
 Write-Host "installer-verified-manifests: 1"
+Write-Host "installer-verified-bootable-uefi-payload: 1"
 Write-Host "installer-verified-forbidden-unchanged: 1"
 Write-Host "installer-boot-entry-modified: 0"
+Write-Host "installer-boot-payload-bytes: $($bootPayloadBytes.Length)"
+Write-Host "installer-boot-payload-sha256: $bootPayloadSha256"
 Write-Host "installer-before-sha256: $beforeHash"
 Write-Host "installer-after-sha256: $afterHash"
 if (-not [string]::IsNullOrWhiteSpace($JsonOutputPath)) {

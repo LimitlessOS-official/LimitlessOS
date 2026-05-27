@@ -24,12 +24,16 @@
 #define WINDOWS_ABI64_SYSCALL_NTREADFILE 0x00000006u
 #define WINDOWS_ABI64_SYSCALL_UNIMPLEMENTED_PROBE 0x00000007u
 #define WINDOWS_ABI64_SYSCALL_NTWRITEFILE 0x00000008u
+#define WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE 0x0000000Du
+#define WINDOWS_ABI64_SYSCALL_NTCLOSE 0x0000000Fu
+#define WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE 0x00000010u
 #define WINDOWS_ABI64_SYSCALL_NTOPENKEY 0x00000012u
 #define WINDOWS_ABI64_SYSCALL_NTQUERYVALUEKEY 0x00000017u
 #define WINDOWS_ABI64_SYSCALL_NTALLOCATEVIRTUALMEMORY 0x00000018u
 #define WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONPROCESS 0x00000019u
 #define WINDOWS_ABI64_SYSCALL_NTCREATEKEY 0x0000001Du
 #define WINDOWS_ABI64_SYSCALL_NTFREEVIRTUALMEMORY 0x0000001Eu
+#define WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS 0x0000002Cu
 #define WINDOWS_ABI64_SYSCALL_NTQUERYSYSTEMINFORMATION 0x00000036u
 #define WINDOWS_ABI64_SYSCALL_NTPROTECTVIRTUALMEMORY 0x00000050u
 #define WINDOWS_ABI64_SYSCALL_NTCREATEFILE 0x00000055u
@@ -70,6 +74,10 @@
 #define WINDOWS_ABI64_FILE_OVERWRITE 4u
 #define WINDOWS_ABI64_FILE_OVERWRITE_IF 5u
 #define WINDOWS_ABI64_FILE_OPENED 1ull
+#define WINDOWS_ABI64_FILE_STANDARD_INFORMATION_CLASS 5u
+#define WINDOWS_ABI64_FILE_POSITION_INFORMATION_CLASS 14u
+#define WINDOWS_ABI64_FILE_STANDARD_INFORMATION_BYTES 24u
+#define WINDOWS_ABI64_FILE_POSITION_INFORMATION_BYTES 8u
 #define WINDOWS_ABI64_MEM_COMMIT 0x00001000u
 #define WINDOWS_ABI64_MEM_RESERVE 0x00002000u
 #define WINDOWS_ABI64_MEM_DECOMMIT 0x00004000u
@@ -241,5 +249,31 @@ u32 windows_abi64_create_last_result(void);
 u32 windows_abi64_create_last_path_hash(void);
 u32 windows_abi64_create_last_path_bytes(void);
 u32 windows_abi64_create_last_shim_id(void);
+u32 windows_abi64_query_file_entry_installed(void);
+u32 windows_abi64_query_file_count(void);
+u32 windows_abi64_query_file_denial_count(void);
+u32 windows_abi64_query_file_fault_count(void);
+u32 windows_abi64_query_file_last_class(void);
+u32 windows_abi64_query_file_last_handle_low(void);
+u32 windows_abi64_query_file_last_result(void);
+u32 windows_abi64_query_file_last_return_length(void);
+u32 windows_abi64_set_file_entry_installed(void);
+u32 windows_abi64_set_file_count(void);
+u32 windows_abi64_set_file_denial_count(void);
+u32 windows_abi64_set_file_fault_count(void);
+u32 windows_abi64_set_file_last_class(void);
+u32 windows_abi64_set_file_last_handle_low(void);
+u32 windows_abi64_set_file_last_result(void);
+u32 windows_abi64_close_entry_installed(void);
+u32 windows_abi64_close_count(void);
+u32 windows_abi64_close_denial_count(void);
+u32 windows_abi64_close_last_handle_low(void);
+u32 windows_abi64_close_last_result(void);
+u32 windows_abi64_terminate_entry_installed(void);
+u32 windows_abi64_terminate_count(void);
+u32 windows_abi64_terminate_denial_count(void);
+u32 windows_abi64_terminate_last_pid(void);
+u32 windows_abi64_terminate_last_status(void);
+u32 windows_abi64_terminate_last_result(void);
 
 #endif

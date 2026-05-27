@@ -69,6 +69,8 @@ u32 virtio_net64_http_connected(void);
 u32 virtio_net64_http_sent(void);
 u32 virtio_net64_http_status(void);
 u32 virtio_net64_http_response_bytes(void);
+u32 virtio_net64_http_captured_bytes(void);
+u32 virtio_net64_http_copy_response(u8 *destination, u32 capacity);
 u32 virtio_net64_http_unavailable(void);
 u32 virtio_net64_http_error(void);
 u32 virtio_net64_fs_authority(void);

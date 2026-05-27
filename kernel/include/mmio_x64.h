@@ -7369,6 +7369,13 @@ u32 mmio64_nvme_fat_shell_read_file(
     u32 byte_capacity,
     u32 owner_id,
     u32 *bytes_read);
+u32 mmio64_nvme_m5_write_boot_marker(
+    u32 scoped_write_capability,
+    u32 owner_id,
+    const u8 *data,
+    u32 byte_count,
+    u32 *bytes_written,
+    u32 *checksum_out);
 u32 mmio64_nvme_probe_found(void);
 u64 mmio64_nvme_probe_bar0(void);
 u32 mmio64_nvme_probe_ready(void);
@@ -7398,6 +7405,15 @@ u32 mmio64_nvme_gpt_fat32_sectors(void);
 u32 mmio64_nvme_gpt_vbr(void);
 u32 mmio64_nvme_gpt_fs_authority(void);
 u32 mmio64_nvme_gpt_write_authority(void);
+u32 mmio64_nvme_gpt_m5_safe_targets(void);
+u32 mmio64_nvme_gpt_m5_forbidden_targets(void);
+u32 mmio64_nvme_gpt_m5_unknown_targets(void);
+u32 mmio64_nvme_gpt_m5_boot_partition(void);
+u32 mmio64_nvme_gpt_m5_root_partition(void);
+u32 mmio64_nvme_gpt_m5_boot_start(void);
+u32 mmio64_nvme_gpt_m5_root_start(void);
+u32 mmio64_nvme_gpt_m5_forbidden_denied(void);
+u32 mmio64_nvme_gpt_m5_no_write_authority(void);
 u32 mmio64_nvme_gpt_unavailable(void);
 u32 mmio64_nvme_gpt_error(void);
 u32 mmio64_nvme_fat_bpb(void);

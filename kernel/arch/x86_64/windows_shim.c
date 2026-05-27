@@ -23,7 +23,10 @@
  * natively yet remain explicit unavailable stubs, so the scaffold verifies
  * linkage/import resolution without fabricated Win32 success. K.14d extends
  * kernel32 with VirtualAlloc/VirtualFree/VirtualProtect and a process-local
- * heap wrapper backed by the existing audited NT VM switchboard.
+ * heap wrapper backed by the existing audited NT VM switchboard. K.16 wires
+ * ExitProcess to NtTerminateProcess so a real imported PE can exit through the
+ * audited NT syscall bridge. K.17 adds live CloseHandle and SetFilePointerEx
+ * helpers backed by NtClose and the scoped file-position NT calls.
  */
 
 typedef struct windows_shim64_export
@@ -59,7 +62,11 @@ static const windows_shim64_export_t g_windows_shim64_ntdll_exports[
     { "NtCreateEvent", 22u, WINDOWS_SHIM64_NTDLL_RVA_NT_CREATE_EVENT },
     { "NtCreateMutant", 23u, WINDOWS_SHIM64_NTDLL_RVA_NT_CREATE_MUTANT },
     { "NtReleaseMutant", 24u, WINDOWS_SHIM64_NTDLL_RVA_NT_RELEASE_MUTANT },
-    { "NtSetEvent", 25u, WINDOWS_SHIM64_NTDLL_RVA_NT_SET_EVENT }
+    { "NtSetEvent", 25u, WINDOWS_SHIM64_NTDLL_RVA_NT_SET_EVENT },
+    { "NtQueryInformationFile", 26u, WINDOWS_SHIM64_NTDLL_RVA_NT_QUERY_INFORMATION_FILE },
+    { "NtSetInformationFile", 27u, WINDOWS_SHIM64_NTDLL_RVA_NT_SET_INFORMATION_FILE },
+    { "NtTerminateProcess", 28u, WINDOWS_SHIM64_NTDLL_RVA_NT_TERMINATE_PROCESS },
+    { "NtClose", 29u, WINDOWS_SHIM64_NTDLL_RVA_NT_CLOSE }
 };
 
 static const windows_shim64_export_t g_windows_shim64_kernel32_exports[
@@ -89,7 +96,8 @@ static const windows_shim64_export_t g_windows_shim64_kernel32_exports[
     { "HeapReAlloc", 23u, WINDOWS_SHIM64_KERNEL32_RVA_HEAP_REALLOC },
     { "LoadLibraryA", 24u, WINDOWS_SHIM64_KERNEL32_RVA_LOAD_LIBRARY_A },
     { "LoadLibraryW", 25u, WINDOWS_SHIM64_KERNEL32_RVA_LOAD_LIBRARY_W },
-    { "GetProcAddress", 26u, WINDOWS_SHIM64_KERNEL32_RVA_GET_PROC_ADDRESS }
+    { "GetProcAddress", 26u, WINDOWS_SHIM64_KERNEL32_RVA_GET_PROC_ADDRESS },
+    { "SetFilePointerEx", 27u, WINDOWS_SHIM64_KERNEL32_RVA_SET_FILE_POINTER_EX }
 };
 
 static const u8 g_windows_shim64_kernel32_get_std_handle_helper[] = {
@@ -135,6 +143,60 @@ static const u8 g_windows_shim64_kernel32_write_file_helper[] = {
     0x31u, 0xC0u,
     0x48u, 0x83u, 0xC4u, 0x78u,
     0xC3u
+};
+
+static const u8 g_windows_shim64_kernel32_exit_process_helper[] = {
+    0x51u,
+    0x48u, 0x89u, 0xCAu,
+    0x48u, 0xC7u, 0xC1u, 0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0x4Cu, 0x8Bu, 0xD1u,
+    0xB8u, (u8)(WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS & 0xFFu),
+    (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 8) & 0xFFu),
+    (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 16) & 0xFFu),
+    (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 24) & 0xFFu),
+    0x0Fu, 0x05u,
+    0x59u,
+    0xBBu, 0x58u, 0x36u, 0x31u, 0x4Bu,
+    0xB8u, (u8)(X64_SYSCALL_USERMODE_PROBE_EXIT & 0xFFu),
+    (u8)((X64_SYSCALL_USERMODE_PROBE_EXIT >> 8) & 0xFFu),
+    (u8)((X64_SYSCALL_USERMODE_PROBE_EXIT >> 16) & 0xFFu),
+    (u8)((X64_SYSCALL_USERMODE_PROBE_EXIT >> 24) & 0xFFu),
+    0xCDu, 0x80u,
+    0xEBu, 0xFEu
+};
+
+static const u8 g_windows_shim64_kernel32_close_handle_helper[] = {
+    0x49u, 0x89u, 0xCAu, 0xB8u, 0x0Fu, 0x00u, 0x00u, 0x00u,
+    0x0Fu, 0x05u, 0x85u, 0xC0u, 0x0Fu, 0x94u, 0xC0u, 0x0Fu,
+    0xB6u, 0xC0u, 0xC3u
+};
+
+static const u8 g_windows_shim64_kernel32_set_file_pointer_ex_helper[] = {
+    0x48u, 0x81u, 0xECu, 0xA8u, 0x00u, 0x00u, 0x00u, 0x48u, 0x89u, 0x8Cu, 0x24u, 0x80u,
+    0x00u, 0x00u, 0x00u, 0x48u, 0x89u, 0x94u, 0x24u, 0x88u, 0x00u, 0x00u, 0x00u, 0x4Cu,
+    0x89u, 0x84u, 0x24u, 0x90u, 0x00u, 0x00u, 0x00u, 0x4Cu, 0x89u, 0x8Cu, 0x24u, 0x98u,
+    0x00u, 0x00u, 0x00u, 0x41u, 0x83u, 0xF9u, 0x00u, 0x74u, 0x11u, 0x41u, 0x83u, 0xF9u,
+    0x01u, 0x74u, 0x15u, 0x41u, 0x83u, 0xF9u, 0x02u, 0x74u, 0x51u, 0xE9u, 0xDEu, 0x00u,
+    0x00u, 0x00u, 0x48u, 0x8Bu, 0x84u, 0x24u, 0x88u, 0x00u, 0x00u, 0x00u, 0xEBu, 0x7Eu,
+    0x48u, 0xC7u, 0x44u, 0x24u, 0x28u, 0x0Eu, 0x00u, 0x00u, 0x00u, 0x48u, 0x8Bu, 0x8Cu,
+    0x24u, 0x80u, 0x00u, 0x00u, 0x00u, 0x48u, 0x8Du, 0x54u, 0x24u, 0x30u, 0x4Cu, 0x8Du,
+    0x44u, 0x24u, 0x40u, 0x41u, 0xB9u, 0x08u, 0x00u, 0x00u, 0x00u, 0x49u, 0x89u, 0xCAu,
+    0xB8u, 0x10u, 0x00u, 0x00u, 0x00u, 0x0Fu, 0x05u, 0x85u, 0xC0u, 0x0Fu, 0x85u, 0xA1u,
+    0x00u, 0x00u, 0x00u, 0x48u, 0x8Bu, 0x44u, 0x24u, 0x40u, 0x48u, 0x03u, 0x84u, 0x24u,
+    0x88u, 0x00u, 0x00u, 0x00u, 0xEBu, 0x3Cu, 0x48u, 0xC7u, 0x44u, 0x24u, 0x28u, 0x05u,
+    0x00u, 0x00u, 0x00u, 0x48u, 0x8Bu, 0x8Cu, 0x24u, 0x80u, 0x00u, 0x00u, 0x00u, 0x48u,
+    0x8Du, 0x54u, 0x24u, 0x30u, 0x4Cu, 0x8Du, 0x44u, 0x24u, 0x40u, 0x41u, 0xB9u, 0x18u,
+    0x00u, 0x00u, 0x00u, 0x49u, 0x89u, 0xCAu, 0xB8u, 0x10u, 0x00u, 0x00u, 0x00u, 0x0Fu,
+    0x05u, 0x85u, 0xC0u, 0x75u, 0x63u, 0x48u, 0x8Bu, 0x44u, 0x24u, 0x48u, 0x48u, 0x03u,
+    0x84u, 0x24u, 0x88u, 0x00u, 0x00u, 0x00u, 0x48u, 0x89u, 0x44u, 0x24u, 0x40u, 0x48u,
+    0xC7u, 0x44u, 0x24u, 0x28u, 0x0Eu, 0x00u, 0x00u, 0x00u, 0x48u, 0x8Bu, 0x8Cu, 0x24u,
+    0x80u, 0x00u, 0x00u, 0x00u, 0x48u, 0x8Du, 0x54u, 0x24u, 0x30u, 0x4Cu, 0x8Du, 0x44u,
+    0x24u, 0x40u, 0x41u, 0xB9u, 0x08u, 0x00u, 0x00u, 0x00u, 0x49u, 0x89u, 0xCAu, 0xB8u,
+    0x0Du, 0x00u, 0x00u, 0x00u, 0x0Fu, 0x05u, 0x85u, 0xC0u, 0x75u, 0x22u, 0x48u, 0x8Bu,
+    0x94u, 0x24u, 0x90u, 0x00u, 0x00u, 0x00u, 0x48u, 0x85u, 0xD2u, 0x74u, 0x08u, 0x48u,
+    0x8Bu, 0x44u, 0x24u, 0x40u, 0x48u, 0x89u, 0x02u, 0xB8u, 0x01u, 0x00u, 0x00u, 0x00u,
+    0x48u, 0x81u, 0xC4u, 0xA8u, 0x00u, 0x00u, 0x00u, 0xC3u, 0x31u, 0xC0u, 0x48u, 0x81u,
+    0xC4u, 0xA8u, 0x00u, 0x00u, 0x00u, 0xC3u
 };
 
 static const u8 g_windows_shim64_kernel32_vm_heap_helper[] = {
@@ -390,12 +452,56 @@ static const u8 g_windows_shim64_ntdll_image[WINDOWS_SHIM64_NTDLL_FILE_BYTES] = 
     [0x243] = 0x00u,
     [0x244] = 0xC0u,
     [0x245] = 0xC3u,
+    [0x248] = 0x4Cu,
+    [0x249] = 0x8Bu,
+    [0x24A] = 0xD1u,
+    [0x24B] = 0xB8u,
+    [0x24C] = (u8)(WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE & 0xFFu),
+    [0x24D] = (u8)((WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE >> 8) & 0xFFu),
+    [0x24E] = (u8)((WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE >> 16) & 0xFFu),
+    [0x24F] = (u8)((WINDOWS_ABI64_SYSCALL_NTQUERYINFORMATIONFILE >> 24) & 0xFFu),
+    [0x250] = 0x0Fu,
+    [0x251] = 0x05u,
+    [0x252] = 0xC3u,
+    [0x254] = 0x4Cu,
+    [0x255] = 0x8Bu,
+    [0x256] = 0xD1u,
+    [0x257] = 0xB8u,
+    [0x258] = (u8)(WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE & 0xFFu),
+    [0x259] = (u8)((WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE >> 8) & 0xFFu),
+    [0x25A] = (u8)((WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE >> 16) & 0xFFu),
+    [0x25B] = (u8)((WINDOWS_ABI64_SYSCALL_NTSETINFORMATIONFILE >> 24) & 0xFFu),
+    [0x25C] = 0x0Fu,
+    [0x25D] = 0x05u,
+    [0x25E] = 0xC3u,
     [0x260] = 0xB8u,
     [0x261] = 0x02u,
     [0x262] = 0x00u,
     [0x263] = 0x00u,
     [0x264] = 0xC0u,
     [0x265] = 0xC3u,
+    [0x268] = 0x4Cu,
+    [0x269] = 0x8Bu,
+    [0x26A] = 0xD1u,
+    [0x26B] = 0xB8u,
+    [0x26C] = (u8)(WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS & 0xFFu),
+    [0x26D] = (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 8) & 0xFFu),
+    [0x26E] = (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 16) & 0xFFu),
+    [0x26F] = (u8)((WINDOWS_ABI64_SYSCALL_NTTERMINATEPROCESS >> 24) & 0xFFu),
+    [0x270] = 0x0Fu,
+    [0x271] = 0x05u,
+    [0x272] = 0xC3u,
+    [0x274] = 0x4Cu,
+    [0x275] = 0x8Bu,
+    [0x276] = 0xD1u,
+    [0x277] = 0xB8u,
+    [0x278] = (u8)(WINDOWS_ABI64_SYSCALL_NTCLOSE & 0xFFu),
+    [0x279] = (u8)((WINDOWS_ABI64_SYSCALL_NTCLOSE >> 8) & 0xFFu),
+    [0x27A] = (u8)((WINDOWS_ABI64_SYSCALL_NTCLOSE >> 16) & 0xFFu),
+    [0x27B] = (u8)((WINDOWS_ABI64_SYSCALL_NTCLOSE >> 24) & 0xFFu),
+    [0x27C] = 0x0Fu,
+    [0x27D] = 0x05u,
+    [0x27E] = 0xC3u,
     [0x280] = 0xB8u,
     [0x281] = 0x02u,
     [0x282] = 0x00u,
@@ -924,6 +1030,13 @@ static void windows_shim64_put_kernel32_stub(
         return;
     }
 
+    if (rva == WINDOWS_SHIM64_KERNEL32_RVA_EXIT_PROCESS)
+    {
+        windows_shim64_put_kernel32_jump(
+            rva,
+            WINDOWS_SHIM64_KERNEL32_RVA_HELPER_EXIT_PROCESS);
+        return;
+    }
     if (rva == WINDOWS_SHIM64_KERNEL32_RVA_GET_STD_HANDLE)
     {
         windows_shim64_put_kernel32_jump(
@@ -937,6 +1050,13 @@ static void windows_shim64_put_kernel32_stub(
         windows_shim64_put_kernel32_jump(
             rva,
             WINDOWS_SHIM64_KERNEL32_RVA_HELPER_WRITE_FILE);
+        return;
+    }
+    if (rva == WINDOWS_SHIM64_KERNEL32_RVA_CLOSE_HANDLE)
+    {
+        windows_shim64_put_kernel32_jump(
+            rva,
+            WINDOWS_SHIM64_KERNEL32_RVA_HELPER_CLOSE_HANDLE);
         return;
     }
     if (rva == WINDOWS_SHIM64_KERNEL32_RVA_VIRTUAL_ALLOC)
@@ -1020,6 +1140,13 @@ static void windows_shim64_put_kernel32_stub(
         windows_shim64_put_kernel32_jump(
             rva,
             WINDOWS_SHIM64_KERNEL32_RVA_HELPER_HEAP_REALLOC);
+        return;
+    }
+    if (rva == WINDOWS_SHIM64_KERNEL32_RVA_SET_FILE_POINTER_EX)
+    {
+        windows_shim64_put_kernel32_jump(
+            rva,
+            WINDOWS_SHIM64_KERNEL32_RVA_HELPER_SET_FILE_POINTER_EX);
         return;
     }
 
@@ -1127,6 +1254,18 @@ static void windows_shim64_build_kernel32_image(void)
         WINDOWS_SHIM64_KERNEL32_RVA_HELPER_VM_HEAP_BASE,
         g_windows_shim64_kernel32_vm_heap_helper,
         (u32)sizeof(g_windows_shim64_kernel32_vm_heap_helper));
+    windows_shim64_put_kernel32_helper(
+        WINDOWS_SHIM64_KERNEL32_RVA_HELPER_EXIT_PROCESS,
+        g_windows_shim64_kernel32_exit_process_helper,
+        (u32)sizeof(g_windows_shim64_kernel32_exit_process_helper));
+    windows_shim64_put_kernel32_helper(
+        WINDOWS_SHIM64_KERNEL32_RVA_HELPER_CLOSE_HANDLE,
+        g_windows_shim64_kernel32_close_handle_helper,
+        (u32)sizeof(g_windows_shim64_kernel32_close_handle_helper));
+    windows_shim64_put_kernel32_helper(
+        WINDOWS_SHIM64_KERNEL32_RVA_HELPER_SET_FILE_POINTER_EX,
+        g_windows_shim64_kernel32_set_file_pointer_ex_helper,
+        (u32)sizeof(g_windows_shim64_kernel32_set_file_pointer_ex_helper));
 
     name_offset = WINDOWS_SHIM64_KERNEL32_RDATA_RAW_OFFSET;
     name_offset =
@@ -1355,6 +1494,7 @@ static void windows_shim64_clear_kernel32_result(
     result->load_library_a = 0ull;
     result->load_library_w = 0ull;
     result->get_proc_address = 0ull;
+    result->set_file_pointer_ex = 0ull;
     result->file_bytes = 0u;
     result->image_bytes = 0u;
     result->section_count = 0u;
@@ -1785,6 +1925,8 @@ u32 windows_shim64_load_kernel32(
     out_result->load_library_a = image_base + (u64)WINDOWS_SHIM64_KERNEL32_RVA_LOAD_LIBRARY_A;
     out_result->load_library_w = image_base + (u64)WINDOWS_SHIM64_KERNEL32_RVA_LOAD_LIBRARY_W;
     out_result->get_proc_address = image_base + (u64)WINDOWS_SHIM64_KERNEL32_RVA_GET_PROC_ADDRESS;
+    out_result->set_file_pointer_ex =
+        image_base + (u64)WINDOWS_SHIM64_KERNEL32_RVA_SET_FILE_POINTER_EX;
     out_result->file_bytes = WINDOWS_SHIM64_KERNEL32_FILE_BYTES;
     out_result->image_bytes = header.size_of_image;
     out_result->section_count = section_summary.section_count;
@@ -1816,7 +1958,11 @@ u32 windows_shim64_load_kernel32(
             | ((windows_abi64_free_entry_installed() != 0u) ? 0x00000010u : 0u)
             | ((windows_abi64_protect_entry_installed() != 0u) ? 0x00000020u : 0u)
             | ((windows_abi64_query_system_entry_installed() != 0u) ? 0x00000040u : 0u)
-            | ((windows_abi64_query_process_entry_installed() != 0u) ? 0x00000080u : 0u);
+            | ((windows_abi64_query_process_entry_installed() != 0u) ? 0x00000080u : 0u)
+            | ((windows_abi64_query_file_entry_installed() != 0u) ? 0x00000100u : 0u)
+            | ((windows_abi64_set_file_entry_installed() != 0u) ? 0x00000200u : 0u)
+            | ((windows_abi64_terminate_entry_installed() != 0u) ? 0x00000400u : 0u)
+            | ((windows_abi64_close_entry_installed() != 0u) ? 0x00000800u : 0u);
     out_result->live_stub_count = WINDOWS_SHIM64_KERNEL32_LIVE_SYMBOL_COUNT;
     out_result->unavailable_stub_count = WINDOWS_SHIM64_KERNEL32_UNAVAILABLE_SYMBOL_COUNT;
 

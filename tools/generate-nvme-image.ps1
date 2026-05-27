@@ -123,18 +123,43 @@ Set-U32Le -Bytes $imageBytes -Offset ($mbrOffset + 12) -Value ([uint32]($totalSe
 $imageBytes[510] = 0x55
 $imageBytes[511] = 0xAA
 
-# GPT partition entry array. The type GUID is Microsoft Basic Data, used here for
-# the minimal FAT32 fixture partition.
+# GPT partition entry array. Entry 0 remains the Microsoft Basic Data FAT32
+# fixture used by the runtime NVMe file tests. Later entries model an M5-style
+# installer target mix without granting kernel write authority to them.
 $entryArrayBytes = 128 * 128
 $entries = New-Object byte[] $entryArrayBytes
 $basicDataGuid = [byte[]]@(0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7)
-$uniqueGuid = [byte[]]@(0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x4E, 0x56, 0x4D, 0x45, 0x30, 0x31)
-Set-Bytes -Bytes $entries -Offset 0 -Value $basicDataGuid
-Set-Bytes -Bytes $entries -Offset 16 -Value $uniqueGuid
-Set-U64Le -Bytes $entries -Offset 32 -Value ([uint64]$partitionStart)
-Set-U64Le -Bytes $entries -Offset 40 -Value ([uint64]$partitionLast)
-$partitionName = [System.Text.Encoding]::Unicode.GetBytes("LIMITLESS NVME")
-Set-Bytes -Bytes $entries -Offset 56 -Value $partitionName
+$efiSystemGuid = [byte[]]@(0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B)
+$microsoftReservedGuid = [byte[]]@(0x16, 0xE3, 0xC9, 0xE3, 0x5C, 0x0B, 0xB8, 0x4D, 0x81, 0x7D, 0xF9, 0x2D, 0xF0, 0x02, 0x15, 0xAE)
+$limitlessBootGuid = [byte[]]@(0x4F, 0x53, 0x4F, 0x4C, 0x49, 0x53, 0x49, 0x4D, 0x94, 0x4C, 0x49, 0x4D, 0x49, 0x54, 0x4C, 0x02)
+$limitlessRootGuid = [byte[]]@(0x4F, 0x53, 0x4F, 0x4C, 0x49, 0x53, 0x49, 0x4D, 0x94, 0x4C, 0x49, 0x4D, 0x49, 0x54, 0x4C, 0x01)
+
+function Set-GptEntry
+{
+    param(
+        [byte[]]$Entries,
+        [int]$Index,
+        [byte[]]$TypeGuid,
+        [byte[]]$UniqueGuid,
+        [uint64]$FirstLba,
+        [uint64]$LastLba,
+        [string]$Name
+    )
+
+    $offset = $Index * 128
+    Set-Bytes -Bytes $Entries -Offset $offset -Value $TypeGuid
+    Set-Bytes -Bytes $Entries -Offset ($offset + 16) -Value $UniqueGuid
+    Set-U64Le -Bytes $Entries -Offset ($offset + 32) -Value $FirstLba
+    Set-U64Le -Bytes $Entries -Offset ($offset + 40) -Value $LastLba
+    Set-Bytes -Bytes $Entries -Offset ($offset + 56) -Value ([System.Text.Encoding]::Unicode.GetBytes($Name))
+}
+
+Set-GptEntry -Entries $entries -Index 0 -TypeGuid $basicDataGuid -UniqueGuid ([byte[]]@(0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x4E, 0x56, 0x4D, 0x45, 0x30, 0x31)) -FirstLba ([uint64]$partitionStart) -LastLba ([uint64]$partitionLast) -Name "LIMITLESS NVME"
+Set-GptEntry -Entries $entries -Index 1 -TypeGuid $efiSystemGuid -UniqueGuid ([byte[]]@(0x21, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x45, 0x53, 0x50, 0x30, 0x30, 0x31)) -FirstLba 12288 -LastLba 12799 -Name "SYSTEM"
+Set-GptEntry -Entries $entries -Index 2 -TypeGuid $microsoftReservedGuid -UniqueGuid ([byte[]]@(0x22, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x4D, 0x53, 0x52, 0x30, 0x30, 0x31)) -FirstLba 12800 -LastLba 13055 -Name "MSR"
+Set-GptEntry -Entries $entries -Index 3 -TypeGuid $basicDataGuid -UniqueGuid ([byte[]]@(0x23, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x57, 0x49, 0x4E, 0x30, 0x30, 0x31)) -FirstLba 13056 -LastLba 16383 -Name "Windows"
+Set-GptEntry -Entries $entries -Index 4 -TypeGuid $limitlessBootGuid -UniqueGuid ([byte[]]@(0x24, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x4C, 0x4F, 0x53, 0x42, 0x54, 0x31)) -FirstLba 16384 -LastLba 20479 -Name "Limitless Boot"
+Set-GptEntry -Entries $entries -Index 5 -TypeGuid $limitlessRootGuid -UniqueGuid ([byte[]]@(0x25, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x80, 0x57, 0x4C, 0x4F, 0x53, 0x52, 0x54, 0x31)) -FirstLba 20480 -LastLba 32733 -Name "Limitless Root"
 $entryArrayCrc = Get-Crc32 -Bytes $entries -Offset 0 -Count $entries.Length
 Set-Bytes -Bytes $imageBytes -Offset (2 * $sectorBytes) -Value $entries
 
@@ -389,6 +414,13 @@ $meta = @(
     "total-sectors=$totalSectors",
     "fat32-start-lba=$partitionStart",
     "fat32-sectors=$partitionSectors",
+    "m5-safe-targets=2",
+    "m5-forbidden-targets=4",
+    "m5-unknown-targets=0",
+    "m5-boot-partition=5",
+    "m5-root-partition=6",
+    "m5-boot-start-lba=16384",
+    "m5-root-start-lba=20480",
     "fat32-vbr-signature=0x55AA",
     "nvme-file-path=/NVME.TXT",
     "nvme-file-lba=$fileContentLba",

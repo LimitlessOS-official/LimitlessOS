@@ -491,7 +491,7 @@ function Assert-RuntimeShellSurfaceSource
     foreach ($requiredText in @(
         "Builtins: apps help hwval info lock net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write",
-        "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present",
+        "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
         "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
         "Product GUI: Terminal, File Manager, Settings, Installer, Assistant through brokered desktop input/display",
@@ -507,7 +507,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
         "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
-        "Network (hardware-gated): use net",
+        "Network (hardware-gated): use net or net curl example.com",
         "Brokered socket API: capability-scoped TCP-client foundation in net",
         "Hardware validation: use hwval; read-only; MSI evidence pending",
         "Package trust: use pkginfo or Settings",

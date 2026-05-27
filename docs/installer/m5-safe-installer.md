@@ -2,6 +2,16 @@
 
 Status: implemented as a host-side, raw-image verified safety path. No installer code was added to the BIOS-constrained Product kernel.
 
+Step 4a update: the host-side M5 install path now writes the built UEFI boot image into the scoped `LIMITLESS-BOOT` target partition, verifies the payload readback by SHA-256, and boots the written target image under OVMF until the LimitlessOS login proof is observed.
+
+Step 4b update: the UEFI kernel now has a scoped installer commit bridge over the existing NVMe FAT write route. It requires the internal confirmation token, proves bad-token and wrong-owner denials, writes only a small `/INSTALL.TXT` audit marker through the delegated block capability, reads it back, and reports `mode nvme-fat-marker-only`.
+
+Step 4c update: the deterministic NVMe GPT fixture now includes an M5-style target mix: existing Windows/ESP/MSR/basic-data partitions plus dedicated LimitlessOS boot/root GPT entries. The UEFI kernel scanner classifies the LimitlessOS entries as safe targets, classifies existing OS/data partitions as forbidden targets, reports the LimitlessOS boot/root LBAs, and still reports no GPT write authority.
+
+Step 4d update: the UEFI kernel now performs an M5 target preflight over the classified GPT entries. It requires the explicit `INSTALL-LIMITLESSOS-M5:5/6` token, verifies dedicated boot/root partition numbers and LBAs, proves bad-token/wrong-target/wrong-owner denials, and reports `m5-target-preflight-only` with target writes still denied because no scoped M5 install-write capability exists yet.
+
+Step 4e update: the UEFI kernel now uses the existing scoped NVMe write capability to write one marker block to the classified LimitlessOS boot GPT partition and read it back. The path still does not format partitions, install a boot entry, write a bootable target image from inside the kernel, or grant GPT write authority.
+
 M5 is a safety milestone, not a UI milestone. The installer tooling exists to prove partition classification, explicit authority, confirmation, and write fencing before any MSI Cyborg 15 A13VE internal install is product-approved.
 
 ## Product Boundary
@@ -15,7 +25,7 @@ M5 is a safety milestone, not a UI milestone. The installer tooling exists to pr
 ## Boot Contract
 
 - BIOS remains capped at 1024 sectors, with hard failure below 96 reserve and warning below 128 reserve.
-- Current BIOS reserve is 99 sectors, so installer code must stay out of the BIOS-constrained Product kernel.
+- Current BIOS reserve is 101 sectors, so installer code must stay out of the BIOS-constrained Product kernel.
 - UEFI remains governed by `KERNEL64.BIN` byte budget, `BOOTMAN.TXT` byte/checksum correctness, placement/load correctness, and artifact inventory correctness.
 - UEFI is not blocked by the BIOS 1024-sector ceiling.
 
@@ -150,6 +160,7 @@ It proves:
 - write requires scoped write capability
 - boot-entry modification requires separate explicit authority
 - failed confirmation prevents writes
-- successful fixture install verifies boot/root markers and manifests
+- successful fixture install verifies the bootable UEFI payload, root marker, and manifests
+- the written target image boots under OVMF to the login screen proof
 - forbidden partitions remain unchanged
 - no ambient authority is introduced

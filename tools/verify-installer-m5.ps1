@@ -113,6 +113,131 @@ function Get-RepoRelativePath
     return $fullPath
 }
 
+function ConvertTo-M5QemuArgumentString
+{
+    param([string[]]$Arguments)
+
+    return (($Arguments | ForEach-Object {
+        if ($_ -match '[\s"]') {
+            '"' + ($_ -replace '"', '\"') + '"'
+        }
+        else {
+            $_
+        }
+    }) -join " ")
+}
+
+function Get-M5QemuCommand
+{
+    $qemu = Get-Command qemu-system-x86_64 -ErrorAction SilentlyContinue
+    if ($qemu) {
+        return $qemu.Source
+    }
+
+    $fallback = "C:\Program Files\qemu\qemu-system-x86_64.exe"
+    if (Test-Path -LiteralPath $fallback) {
+        return $fallback
+    }
+
+    Fail-M5Installer "QEMU is not installed or not on PATH."
+}
+
+function Get-M5QemuEdk2CodePath
+{
+    $candidates = @(
+        (Join-Path $root "tools\ovmf\edk2-x86_64-code.fd"),
+        "C:\Program Files\qemu\share\edk2-x86_64-code.fd"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    Fail-M5Installer "QEMU EDK2 x86_64 firmware was not found."
+}
+
+function Invoke-M5WrittenImageBootCheck
+{
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$ImagePath
+    )
+
+    $qemu = Get-M5QemuCommand
+    $firmwarePath = Get-M5QemuEdk2CodePath
+    $debugPath = Join-Path $EvidenceDir "$Name.debug.log"
+    $serialPath = Join-Path $EvidenceDir "$Name.serial.log"
+    $stderrPath = Join-Path $EvidenceDir "$Name.stderr.txt"
+    $outputPath = Join-Path $EvidenceDir "$Name.output.txt"
+    Remove-Item -LiteralPath $debugPath, $serialPath, $stderrPath, $outputPath -Force -ErrorAction SilentlyContinue
+
+    $arguments = @(
+        "-display", "none",
+        "-monitor", "none",
+        "-no-reboot",
+        "-no-shutdown",
+        "-serial", "file:$serialPath",
+        "-debugcon", "file:$debugPath",
+        "-global", "isa-debugcon.iobase=0xe9",
+        "-machine", "q35",
+        "-drive", "if=pflash,format=raw,readonly=on,file=$firmwarePath",
+        "-device", "uefi-vars-x64",
+        "-drive", "if=none,id=installtarget,format=raw,snapshot=on,file=$ImagePath",
+        "-device", "nvme,drive=installtarget,serial=LIMITLESSINSTALL,bootindex=1"
+    )
+    $process = Start-Process `
+        -FilePath $qemu `
+        -ArgumentList (ConvertTo-M5QemuArgumentString -Arguments $arguments) `
+        -WorkingDirectory $root `
+        -WindowStyle Hidden `
+        -PassThru `
+        -RedirectStandardError $stderrPath
+
+    $booted = $false
+    try {
+        $deadline = (Get-Date).AddSeconds(240)
+        while ((Get-Date) -lt $deadline) {
+            $debugText = if (Test-Path -LiteralPath $debugPath) { Get-Content -LiteralPath $debugPath -Raw } else { "" }
+            $serialText = if (Test-Path -LiteralPath $serialPath) { Get-Content -LiteralPath $serialPath -Raw } else { "" }
+            $combinedText = "$debugText`n$serialText"
+            $loaderMatched = $combinedText -match '\[uefi\] loader payload read KERNEL64\.BIN bytes [1-9][0-9]* .* match 1'
+            $loginMatched = $combinedText -match '\[x64\] drs-login drs-login-screen 1'
+            if ($loaderMatched -and $loginMatched) {
+                $booted = $true
+                break
+            }
+            Start-Sleep -Milliseconds 1000
+        }
+    }
+    finally {
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+        }
+    }
+
+    $combined = New-Object System.Collections.Generic.List[string]
+    foreach ($path in @($debugPath, $serialPath, $stderrPath)) {
+        if (Test-Path -LiteralPath $path) {
+            foreach ($line in Get-Content -LiteralPath $path) {
+                $combined.Add($line)
+            }
+        }
+    }
+    $combined | Set-Content -LiteralPath $outputPath -Encoding UTF8
+
+    if (-not $booted) {
+        Fail-M5Installer "$Name did not boot the written NVMe image to the login proof. See $outputPath"
+    }
+
+    return [PSCustomObject]@{
+        name = $Name
+        exitCode = 0
+        outputPath = $outputPath
+        lines = @($combined.ToArray())
+    }
+}
+
 $records = New-Object System.Collections.Generic.List[object]
 
 $dryRunCommon = @("-Mode", "DryRun", "-GrantHardwareInventoryCapability", "-GrantReadOnlyBlockCapability")
@@ -261,11 +386,17 @@ $records.Add($record)
 Assert-Output -Lines $record.lines -Pattern "installer-result: install-ok" -Message "valid LimitlessOS target install did not complete."
 Assert-Output -Lines $record.lines -Pattern "installer-verified-boot-files: 1" -Message "install did not verify boot files."
 Assert-Output -Lines $record.lines -Pattern "installer-verified-manifests: 1" -Message "install did not verify manifests."
+Assert-Output -Lines $record.lines -Pattern "installer-verified-bootable-uefi-payload: 1" -Message "install did not verify the bootable UEFI payload."
+Assert-Output -Lines $record.lines -Pattern "installer-boot-payload-bytes: [1-9][0-9]*" -Message "install did not report boot payload bytes."
+Assert-Output -Lines $record.lines -Pattern "installer-boot-payload-sha256: [0-9A-F]{64}" -Message "install did not report boot payload checksum."
 Assert-Output -Lines $record.lines -Pattern "installer-verified-forbidden-unchanged: 1" -Message "install did not prove forbidden partitions unchanged."
 Assert-Output -Lines $record.lines -Pattern "installer-boot-entry-modified: 0" -Message "install modified boot entries unexpectedly."
 if ((Get-M5ImageHash -Path $installOk) -eq $installBefore) {
     Fail-M5Installer "valid install did not modify the dedicated LimitlessOS target."
 }
+$bootRecord = Invoke-M5WrittenImageBootCheck -Name "boot-installed-valid-limitless-target" -ImagePath $installOk
+$records.Add($bootRecord)
+Assert-Output -Lines $bootRecord.lines -Pattern "\[x64\] drs-login drs-login-screen 1" -Message "written install image did not reach the login screen."
 
 $summary = [PSCustomObject]@{
     milestone = "M5 Safe Installer + Partition Protection"
@@ -280,6 +411,7 @@ $summary = [PSCustomObject]@{
     bootEntryRequiresSeparateAuthority = $true
     failedConfirmationPreventsWrites = $true
     successfulInstallVerified = $true
+    bootableWrittenImageVerified = $true
     noAmbientAuthority = $true
     records = @($records | ForEach-Object {
         [PSCustomObject]@{
@@ -301,5 +433,6 @@ Write-Host "  scoped-write-capability-required 1"
 Write-Host "  boot-entry-authority-required 1"
 Write-Host "  failed-confirmation-prevents-writes 1"
 Write-Host "  successful-install-verifies-manifests 1"
+Write-Host "  bootable-written-image-verified 1"
 Write-Host "  no-ambient-authority 1"
 Write-Host "  evidence $summaryPath"

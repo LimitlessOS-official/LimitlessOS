@@ -8,6 +8,7 @@
 
 #define NETWORK_SOCKET64_HANDLE_BASE 0x534B0000u
 #define NETWORK_SOCKET64_TABLE_LIMIT 4u
+#define NETWORK_SOCKET64_CURL_MAX_BYTES 4096u
 
 struct network_socket64_record
 {
@@ -37,6 +38,18 @@ static u32 g_recv_status_granted = 0u;
 static u32 g_close_count = 0u;
 static u32 g_last_http_status = 0u;
 static u32 g_last_response_bytes = 0u;
+static u32 g_curl_attempted = 0u;
+static u32 g_curl_cap_minted = 0u;
+static u32 g_curl_non_delegable_denied = 0u;
+static u32 g_curl_dns_resolved = 0u;
+static u32 g_curl_tcp_connect = 0u;
+static u32 g_curl_http_get = 0u;
+static u32 g_curl_response_bytes = 0u;
+static u32 g_curl_truncated = 0u;
+static u32 g_curl_close = 0u;
+static u32 g_curl_cap_destroyed = 0u;
+static u32 g_curl_url_denied = 0u;
+static u32 g_curl_error = 0u;
 
 static void network_socket64_clear_record(struct network_socket64_record *record)
 {
@@ -102,6 +115,68 @@ static u32 network_socket64_online(void)
         : 0u;
 }
 
+static u32 network_socket64_text_length(const char *text)
+{
+    u32 length = 0u;
+
+    if (text == 0)
+    {
+        return 0u;
+    }
+
+    while (text[length] != '\0')
+    {
+        ++length;
+    }
+
+    return length;
+}
+
+static u32 network_socket64_url_equals(const u8 *url, u32 url_bytes, const char *expected)
+{
+    u32 index;
+    u32 expected_bytes = network_socket64_text_length(expected);
+
+    if ((url == 0) || (expected == 0) || (url_bytes != expected_bytes))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < expected_bytes; ++index)
+    {
+        if (url[index] != (u8)expected[index])
+        {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+static u32 network_socket64_url_allowed(const u8 *url, u32 url_bytes)
+{
+    return (network_socket64_url_equals(url, url_bytes, "example.com") != 0u)
+        || (network_socket64_url_equals(url, url_bytes, "example.com/") != 0u)
+        || (network_socket64_url_equals(url, url_bytes, "http://example.com") != 0u)
+        || (network_socket64_url_equals(url, url_bytes, "http://example.com/") != 0u);
+}
+
+static void network_socket64_reset_curl_state(void)
+{
+    g_curl_attempted = 0u;
+    g_curl_cap_minted = 0u;
+    g_curl_non_delegable_denied = 0u;
+    g_curl_dns_resolved = 0u;
+    g_curl_tcp_connect = 0u;
+    g_curl_http_get = 0u;
+    g_curl_response_bytes = 0u;
+    g_curl_truncated = 0u;
+    g_curl_close = 0u;
+    g_curl_cap_destroyed = 0u;
+    g_curl_url_denied = 0u;
+    g_curl_error = 0u;
+}
+
 void network_socket64_init(void)
 {
     u32 index;
@@ -126,6 +201,7 @@ void network_socket64_init(void)
     g_close_count = 0u;
     g_last_http_status = 0u;
     g_last_response_bytes = 0u;
+    network_socket64_reset_curl_state();
 }
 
 u32 network_socket64_open_tcp(u32 network_capability, u32 remote_ipv4, u32 remote_port, u32 owner_id)
@@ -223,6 +299,49 @@ u32 network_socket64_recv_status(u32 socket_handle, u32 owner_id)
     return record->response_bytes;
 }
 
+static u32 network_socket64_recv_http_response(
+    u32 socket_handle,
+    u32 network_capability,
+    u32 owner_id,
+    u8 *destination,
+    u32 destination_capacity,
+    u32 *bytes_read)
+{
+    struct network_socket64_record *record = network_socket64_find(socket_handle);
+    u32 copy_capacity;
+    u32 copied;
+
+    if (bytes_read != 0)
+    {
+        *bytes_read = 0u;
+    }
+
+    if ((record == 0) || (record->owner_id != owner_id)
+        || (network_socket64_route_capability(network_capability, owner_id) == 0u)
+        || (destination == 0) || (destination_capacity == 0u))
+    {
+        return 0u;
+    }
+
+    copy_capacity = (destination_capacity < NETWORK_SOCKET64_CURL_MAX_BYTES)
+        ? destination_capacity
+        : NETWORK_SOCKET64_CURL_MAX_BYTES;
+    copied = virtio_net64_http_copy_response(destination, copy_capacity);
+    if (copied == 0u)
+    {
+        return 0u;
+    }
+
+    if (bytes_read != 0)
+    {
+        *bytes_read = copied;
+    }
+    g_last_http_status = record->http_status;
+    g_last_response_bytes = record->response_bytes;
+
+    return 1u;
+}
+
 u32 network_socket64_close(u32 socket_handle, u32 owner_id)
 {
     struct network_socket64_record *record = network_socket64_find(socket_handle);
@@ -235,6 +354,113 @@ u32 network_socket64_close(u32 socket_handle, u32 owner_id)
     network_socket64_clear_record(record);
     ++g_close_count;
     return 1u;
+}
+
+u32 network_socket64_curl_http(
+    const u8 *url,
+    u32 url_bytes,
+    u8 *destination,
+    u32 destination_capacity,
+    u32 owner_id,
+    u32 *bytes_read)
+{
+    u32 cap;
+    u32 delegated;
+    u32 socket;
+    u32 copied = 0u;
+    u32 result = 0u;
+
+    network_socket64_reset_curl_state();
+    g_curl_attempted = 1u;
+    if (bytes_read != 0)
+    {
+        *bytes_read = 0u;
+    }
+
+    if ((url == 0) || (url_bytes == 0u) || (destination == 0) || (destination_capacity == 0u))
+    {
+        g_curl_error = 1u;
+        return 0u;
+    }
+
+    if (network_socket64_url_allowed(url, url_bytes) == 0u)
+    {
+        g_curl_url_denied = 1u;
+        g_curl_error = 2u;
+        return 0u;
+    }
+
+    cap = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_NETWORK,
+        CAPABILITY64_RIGHT_SEND | CAPABILITY64_RIGHT_QUERY,
+        owner_id);
+    if (cap == CAPABILITY64_INVALID_HANDLE)
+    {
+        g_curl_error = 3u;
+        return 0u;
+    }
+    g_curl_cap_minted = 1u;
+
+    delegated = capability64_delegate_persistent(
+        cap,
+        CAPABILITY64_RIGHT_SEND,
+        CAPABILITY64_CONTEXT(owner_id, PRINCIPAL64_ID_POLICY_CLIENT));
+    if (delegated == CAPABILITY64_INVALID_HANDLE)
+    {
+        g_curl_non_delegable_denied = 1u;
+    }
+
+    g_curl_dns_resolved = ((virtio_net64_dns_response() != 0u)
+            && (virtio_net64_dns_resolved() != 0u))
+        ? 1u
+        : 0u;
+
+    socket = network_socket64_open_tcp(cap, virtio_net64_dns_resolved(), 80u, owner_id);
+    if (socket == NETWORK_SOCKET64_INVALID_HANDLE)
+    {
+        g_curl_error = 4u;
+    }
+    else
+    {
+        g_curl_tcp_connect = 1u;
+        g_curl_http_get = ((virtio_net64_http_sent() != 0u)
+                && (virtio_net64_http_status() != 0u))
+            ? 1u
+            : 0u;
+
+        if (network_socket64_recv_http_response(
+                socket,
+                cap,
+                owner_id,
+                destination,
+                destination_capacity,
+                &copied) != 0u)
+        {
+            if (bytes_read != 0)
+            {
+                *bytes_read = copied;
+            }
+            g_curl_response_bytes = copied;
+            g_curl_truncated = (virtio_net64_http_response_bytes() > copied) ? 1u : 0u;
+            result = 1u;
+        }
+        else
+        {
+            g_curl_error = 5u;
+        }
+
+        if (network_socket64_close(socket, owner_id) != 0u)
+        {
+            g_curl_close = 1u;
+        }
+    }
+
+    if (capability64_revoke(cap, owner_id) != 0u)
+    {
+        g_curl_cap_destroyed = 1u;
+    }
+
+    return result;
 }
 
 void network_socket64_probe(void)
@@ -401,4 +627,64 @@ u32 network_socket64_storage_authority(void)
 u32 network_socket64_ambient_authority(void)
 {
     return 0u;
+}
+
+u32 network_socket64_curl_attempted(void)
+{
+    return g_curl_attempted;
+}
+
+u32 network_socket64_curl_cap_minted(void)
+{
+    return g_curl_cap_minted;
+}
+
+u32 network_socket64_curl_non_delegable_denied(void)
+{
+    return g_curl_non_delegable_denied;
+}
+
+u32 network_socket64_curl_dns_resolved(void)
+{
+    return g_curl_dns_resolved;
+}
+
+u32 network_socket64_curl_tcp_connect(void)
+{
+    return g_curl_tcp_connect;
+}
+
+u32 network_socket64_curl_http_get(void)
+{
+    return g_curl_http_get;
+}
+
+u32 network_socket64_curl_response_bytes(void)
+{
+    return g_curl_response_bytes;
+}
+
+u32 network_socket64_curl_truncated(void)
+{
+    return g_curl_truncated;
+}
+
+u32 network_socket64_curl_close(void)
+{
+    return g_curl_close;
+}
+
+u32 network_socket64_curl_cap_destroyed(void)
+{
+    return g_curl_cap_destroyed;
+}
+
+u32 network_socket64_curl_url_denied(void)
+{
+    return g_curl_url_denied;
+}
+
+u32 network_socket64_curl_error(void)
+{
+    return g_curl_error;
 }

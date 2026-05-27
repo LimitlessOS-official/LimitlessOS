@@ -63,6 +63,7 @@ u32 interrupts64_trigger_user_runqueue_probe(
     u64 target_rip,
     u64 target_rsp,
     u64 rflags);
+u32 interrupts64_complete_user_entry_probe(u32 result, u32 aux);
 u32 interrupts64_exception_count(void);
 u32 interrupts64_breakpoint_count(void);
 u32 interrupts64_invalid_opcode_count(void);

@@ -47,6 +47,7 @@
 #define VIRTIO_NET64_BACKEND_NONE 0u
 #define VIRTIO_NET64_BACKEND_VIRTIO 1u
 #define VIRTIO_NET64_BACKEND_E1000E 2u
+#define VIRTIO_NET64_HTTP_CAPTURE_BYTES 4096u
 
 #define VIRTIO_NET64_STATUS_ACKNOWLEDGE 0x01u
 #define VIRTIO_NET64_STATUS_DRIVER 0x02u
@@ -156,6 +157,7 @@ static u32 g_virtio_net_http_connected = 0u;
 static u32 g_virtio_net_http_sent = 0u;
 static u32 g_virtio_net_http_status = 0u;
 static u32 g_virtio_net_http_response_bytes = 0u;
+static u32 g_virtio_net_http_capture_bytes = 0u;
 static u32 g_virtio_net_http_unavailable = 1u;
 static u32 g_virtio_net_http_error = 0u;
 static u32 g_virtio_net_arp_wait_ip = 0u;
@@ -168,6 +170,7 @@ static u32 g_virtio_net_tcp_fin_seen = 0u;
 static u32 g_virtio_net_backend = VIRTIO_NET64_BACKEND_NONE;
 static u8 g_virtio_net_mac[6];
 static u8 g_virtio_net_arp_mac[6];
+static u8 g_virtio_net_http_capture[VIRTIO_NET64_HTTP_CAPTURE_BYTES];
 static u8 g_virtio_net_arp_wait_mac[6];
 static u8 g_virtio_net_dns_mac[6];
 
@@ -1566,6 +1569,27 @@ static u32 virtio_net64_parse_http_status(const u8 *payload, u32 payload_bytes)
     return 0u;
 }
 
+static void virtio_net64_capture_http_payload(const u8 *payload, u32 payload_bytes)
+{
+    u32 index;
+    u32 remaining;
+    u32 copy_bytes;
+
+    if ((payload == 0) || (payload_bytes == 0u)
+        || (g_virtio_net_http_capture_bytes >= VIRTIO_NET64_HTTP_CAPTURE_BYTES))
+    {
+        return;
+    }
+
+    remaining = VIRTIO_NET64_HTTP_CAPTURE_BYTES - g_virtio_net_http_capture_bytes;
+    copy_bytes = (payload_bytes < remaining) ? payload_bytes : remaining;
+    for (index = 0u; index < copy_bytes; ++index)
+    {
+        g_virtio_net_http_capture[g_virtio_net_http_capture_bytes + index] = payload[index];
+    }
+    g_virtio_net_http_capture_bytes += copy_bytes;
+}
+
 static u32 virtio_net64_parse_tcp_segment(const u8 *bytes, u32 byte_count)
 {
     const u8 *frame;
@@ -1643,6 +1667,7 @@ static u32 virtio_net64_parse_tcp_segment(const u8 *bytes, u32 byte_count)
                 g_virtio_net_http_status =
                     virtio_net64_parse_http_status(payload, tcp_payload_bytes);
             }
+            virtio_net64_capture_http_payload(payload, tcp_payload_bytes);
             g_virtio_net_http_response_bytes += tcp_payload_bytes;
             g_virtio_net_tcp_remote_next += tcp_payload_bytes;
             g_virtio_net_tcp_ack_due = 1u;
@@ -1838,6 +1863,7 @@ void virtio_net64_register_candidate(
     g_virtio_net_http_sent = 0u;
     g_virtio_net_http_status = 0u;
     g_virtio_net_http_response_bytes = 0u;
+    g_virtio_net_http_capture_bytes = 0u;
     g_virtio_net_http_unavailable = ((flags & VIRTIO_NET64_MMIO_FLAG_PRESENT) != 0u) ? 0u : 1u;
     g_virtio_net_http_error = 0u;
     g_virtio_net_arp_wait_ip = 0u;
@@ -1852,6 +1878,7 @@ void virtio_net64_register_candidate(
     virtio_net64_zero(g_virtio_net_arp_mac, sizeof(g_virtio_net_arp_mac));
     virtio_net64_zero(g_virtio_net_arp_wait_mac, sizeof(g_virtio_net_arp_wait_mac));
     virtio_net64_zero(g_virtio_net_dns_mac, sizeof(g_virtio_net_dns_mac));
+    virtio_net64_zero(g_virtio_net_http_capture, sizeof(g_virtio_net_http_capture));
 
     (void)g_virtio_net_address;
     (void)g_virtio_net_vendor_device;
@@ -1892,6 +1919,7 @@ static void virtio_net64_reset_exchange_state(u32 present)
     g_virtio_net_http_sent = 0u;
     g_virtio_net_http_status = 0u;
     g_virtio_net_http_response_bytes = 0u;
+    g_virtio_net_http_capture_bytes = 0u;
     g_virtio_net_http_unavailable = (present != 0u) ? 0u : 1u;
     g_virtio_net_http_error = 0u;
     g_virtio_net_arp_wait_ip = 0u;
@@ -1904,6 +1932,7 @@ static void virtio_net64_reset_exchange_state(u32 present)
     virtio_net64_zero(g_virtio_net_arp_mac, sizeof(g_virtio_net_arp_mac));
     virtio_net64_zero(g_virtio_net_arp_wait_mac, sizeof(g_virtio_net_arp_wait_mac));
     virtio_net64_zero(g_virtio_net_dns_mac, sizeof(g_virtio_net_dns_mac));
+    virtio_net64_zero(g_virtio_net_http_capture, sizeof(g_virtio_net_http_capture));
 }
 
 static void virtio_net64_run_probe_exchange(void)
@@ -2262,6 +2291,32 @@ u32 virtio_net64_http_status(void)
 u32 virtio_net64_http_response_bytes(void)
 {
     return g_virtio_net_http_response_bytes;
+}
+
+u32 virtio_net64_http_captured_bytes(void)
+{
+    return g_virtio_net_http_capture_bytes;
+}
+
+u32 virtio_net64_http_copy_response(u8 *destination, u32 capacity)
+{
+    u32 index;
+    u32 copy_bytes;
+
+    if ((destination == 0) || (capacity == 0u))
+    {
+        return 0u;
+    }
+
+    copy_bytes = (g_virtio_net_http_capture_bytes < capacity)
+        ? g_virtio_net_http_capture_bytes
+        : capacity;
+    for (index = 0u; index < copy_bytes; ++index)
+    {
+        destination[index] = g_virtio_net_http_capture[index];
+    }
+
+    return copy_bytes;
 }
 
 u32 virtio_net64_http_unavailable(void)

@@ -26,7 +26,7 @@
 
 #define SHELL64_MAX_LINE_BYTES 128u
 #define SHELL64_MAX_PATH_BYTES 128u
-#define SHELL64_IO_BYTES 512u
+#define SHELL64_IO_BYTES 4096u
 #define SHELL64_KERNEL_HIGH_BASE_HIGH32 0xFFFFFFFFu
 #define SHELL64_KERNEL_HIGH_BASE_LOW32 0x80000000u
 
@@ -441,6 +441,56 @@ static u32 shell64_print_network_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "socket denied: raw packet, listen, send without broker data-plane authority\n");
 #endif
     return shell64_write_text(console_capability_handle, owner_id, "authority: brokered\n");
+}
+
+static u32 shell64_net_curl(
+    u32 console_capability_handle,
+    u32 owner_id,
+    u32 url_start,
+    u32 url_length)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 byte_count = 0u;
+    u32 result;
+
+    result = network_socket64_curl_http(
+        &g_shell64_line[url_start],
+        url_length,
+        g_shell64_io,
+        sizeof(g_shell64_io),
+        owner_id,
+        &byte_count);
+    if (result == 0u)
+    {
+        if (network_socket64_curl_url_denied() != 0u)
+        {
+            return shell64_write_text(
+                console_capability_handle,
+                owner_id,
+                "curl denied: only example.com is brokered\n");
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "curl unavailable\n");
+    }
+
+    if (byte_count != 0u)
+    {
+        (void)shell64_write(console_capability_handle, owner_id, g_shell64_io, byte_count);
+        if (g_shell64_io[byte_count - 1u] != (u8)'\n')
+        {
+            (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+        }
+    }
+    if (network_socket64_curl_truncated() != 0u)
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "[truncated to 4096 bytes]\n");
+    }
+
+    return byte_count;
+#else
+    (void)url_start;
+    (void)url_length;
+    return shell64_write_text(console_capability_handle, owner_id, "curl unavailable\n");
+#endif
 }
 
 static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner_id)
@@ -1012,7 +1062,7 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
 
     if (shell64_token_equals(token_start, token_length, "net"))
     {
-        return shell64_write_text(console_capability_handle, owner_id, "usage: net - show brokered network status\n");
+        return shell64_write_text(console_capability_handle, owner_id, "usage: net [curl example.com]\n");
     }
 
     if (shell64_token_equals(token_start, token_length, "hwval"))
@@ -1197,7 +1247,7 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "Product apps:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "APPEND\nCAT\nCOPY\nDELETE\nLS\nMKDIR\nMOVE\nNETHELLO\nRENAME\nSTAT\nTOUCH\nWRITE\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Product services:\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Network (hardware-gated): use net or net curl example.com\n");
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_text(console_capability_handle, owner_id, "Brokered socket API: capability-scoped TCP-client foundation in net\n");
 #endif
@@ -1559,7 +1609,7 @@ u32 shell64_execute_line(
         }
         (void)shell64_write_builtins_line(console_capability_handle, owner_id);
         (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease when virtio-net/e1000e hardware is present\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
         (void)shell64_write_gui_status_line(console_capability_handle, owner_id);
@@ -1587,7 +1637,21 @@ u32 shell64_execute_line(
 
     if (shell64_token_equals(command_start, command_length, "net"))
     {
-        return shell64_print_network_status(console_capability_handle, owner_id);
+        first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+        if (first_length == 0u)
+        {
+            return shell64_print_network_status(console_capability_handle, owner_id);
+        }
+        if (shell64_token_equals(first_start, first_length, "curl"))
+        {
+            second_length = shell64_next_token(&cursor, line_byte_count, &second_start);
+            if (second_length == 0u)
+            {
+                return shell64_write_text(console_capability_handle, owner_id, "usage: net curl example.com\n");
+            }
+            return shell64_net_curl(console_capability_handle, owner_id, second_start, second_length);
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "usage: net [curl example.com]\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "hwval"))

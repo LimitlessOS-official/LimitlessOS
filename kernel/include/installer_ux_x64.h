@@ -39,6 +39,44 @@ u32 installer_ux64_formats_planned(void);
 u32 installer_ux64_boot_entries_planned(void);
 u32 installer_ux64_package_ops_planned(void);
 u32 installer_ux64_real_install_approved(void);
+u32 installer_ux64_commit_probe(void);
+u32 installer_ux64_commit_attempted(void);
+u32 installer_ux64_commit_runtime_fat_target(void);
+u32 installer_ux64_commit_confirmation_token(void);
+u32 installer_ux64_commit_scoped_write_cap(void);
+u32 installer_ux64_commit_bad_token_denied(void);
+u32 installer_ux64_commit_wrong_owner_denied(void);
+u32 installer_ux64_commit_write(void);
+u32 installer_ux64_commit_readback(void);
+u32 installer_ux64_commit_bytes(void);
+u32 installer_ux64_commit_checksum(void);
+u32 installer_ux64_commit_audit_count(void);
+u32 installer_ux64_commit_no_ambient_authority(void);
+u32 installer_ux64_commit_unavailable(void);
+u32 installer_ux64_commit_error(void);
+u32 installer_ux64_target_probe(void);
+u32 installer_ux64_target_attempted(void);
+u32 installer_ux64_target_confirmation_token(void);
+u32 installer_ux64_target_classified(void);
+u32 installer_ux64_target_boot_partition(void);
+u32 installer_ux64_target_root_partition(void);
+u32 installer_ux64_target_boot_start(void);
+u32 installer_ux64_target_root_start(void);
+u32 installer_ux64_target_forbidden_denied(void);
+u32 installer_ux64_target_bad_token_denied(void);
+u32 installer_ux64_target_wrong_target_denied(void);
+u32 installer_ux64_target_wrong_owner_denied(void);
+u32 installer_ux64_target_m5_write_cap(void);
+u32 installer_ux64_target_write(void);
+u32 installer_ux64_target_readback(void);
+u32 installer_ux64_target_bytes(void);
+u32 installer_ux64_target_checksum(void);
+u32 installer_ux64_target_write_denied(void);
+u32 installer_ux64_target_format_denied(void);
+u32 installer_ux64_target_boot_entry_denied(void);
+u32 installer_ux64_target_no_ambient_authority(void);
+u32 installer_ux64_target_unavailable(void);
+u32 installer_ux64_target_error(void);
 const char *installer_ux64_mode(void);
 const char *installer_ux64_selected_profile(void);
 const char *installer_ux64_recommendation_text(void);
@@ -48,6 +86,8 @@ const char *installer_ux64_cloud_status(void);
 const char *installer_ux64_ai_status(void);
 const char *installer_ux64_plan_status(void);
 const char *installer_ux64_dryrun_status(void);
+const char *installer_ux64_commit_mode(void);
+const char *installer_ux64_target_mode(void);
 #else
 static inline void installer_ux64_init(void) {}
 static inline u32 installer_ux64_product(void) { return 0u; }
@@ -84,6 +124,44 @@ static inline u32 installer_ux64_formats_planned(void) { return 0u; }
 static inline u32 installer_ux64_boot_entries_planned(void) { return 0u; }
 static inline u32 installer_ux64_package_ops_planned(void) { return 0u; }
 static inline u32 installer_ux64_real_install_approved(void) { return 0u; }
+static inline u32 installer_ux64_commit_probe(void) { return 0u; }
+static inline u32 installer_ux64_commit_attempted(void) { return 0u; }
+static inline u32 installer_ux64_commit_runtime_fat_target(void) { return 0u; }
+static inline u32 installer_ux64_commit_confirmation_token(void) { return 0u; }
+static inline u32 installer_ux64_commit_scoped_write_cap(void) { return 0u; }
+static inline u32 installer_ux64_commit_bad_token_denied(void) { return 0u; }
+static inline u32 installer_ux64_commit_wrong_owner_denied(void) { return 0u; }
+static inline u32 installer_ux64_commit_write(void) { return 0u; }
+static inline u32 installer_ux64_commit_readback(void) { return 0u; }
+static inline u32 installer_ux64_commit_bytes(void) { return 0u; }
+static inline u32 installer_ux64_commit_checksum(void) { return 0u; }
+static inline u32 installer_ux64_commit_audit_count(void) { return 0u; }
+static inline u32 installer_ux64_commit_no_ambient_authority(void) { return 0u; }
+static inline u32 installer_ux64_commit_unavailable(void) { return 1u; }
+static inline u32 installer_ux64_commit_error(void) { return 0u; }
+static inline u32 installer_ux64_target_probe(void) { return 0u; }
+static inline u32 installer_ux64_target_attempted(void) { return 0u; }
+static inline u32 installer_ux64_target_confirmation_token(void) { return 0u; }
+static inline u32 installer_ux64_target_classified(void) { return 0u; }
+static inline u32 installer_ux64_target_boot_partition(void) { return 0u; }
+static inline u32 installer_ux64_target_root_partition(void) { return 0u; }
+static inline u32 installer_ux64_target_boot_start(void) { return 0u; }
+static inline u32 installer_ux64_target_root_start(void) { return 0u; }
+static inline u32 installer_ux64_target_forbidden_denied(void) { return 0u; }
+static inline u32 installer_ux64_target_bad_token_denied(void) { return 0u; }
+static inline u32 installer_ux64_target_wrong_target_denied(void) { return 0u; }
+static inline u32 installer_ux64_target_wrong_owner_denied(void) { return 0u; }
+static inline u32 installer_ux64_target_m5_write_cap(void) { return 0u; }
+static inline u32 installer_ux64_target_write(void) { return 0u; }
+static inline u32 installer_ux64_target_readback(void) { return 0u; }
+static inline u32 installer_ux64_target_bytes(void) { return 0u; }
+static inline u32 installer_ux64_target_checksum(void) { return 0u; }
+static inline u32 installer_ux64_target_write_denied(void) { return 0u; }
+static inline u32 installer_ux64_target_format_denied(void) { return 1u; }
+static inline u32 installer_ux64_target_boot_entry_denied(void) { return 1u; }
+static inline u32 installer_ux64_target_no_ambient_authority(void) { return 1u; }
+static inline u32 installer_ux64_target_unavailable(void) { return 1u; }
+static inline u32 installer_ux64_target_error(void) { return 0u; }
 static inline const char *installer_ux64_mode(void) { return "unavailable"; }
 static inline const char *installer_ux64_selected_profile(void) { return "unavailable"; }
 static inline const char *installer_ux64_recommendation_text(void) { return "unavailable"; }
@@ -93,6 +171,8 @@ static inline const char *installer_ux64_cloud_status(void) { return "unavailabl
 static inline const char *installer_ux64_ai_status(void) { return "unavailable"; }
 static inline const char *installer_ux64_plan_status(void) { return "unavailable"; }
 static inline const char *installer_ux64_dryrun_status(void) { return "no-writes"; }
+static inline const char *installer_ux64_commit_mode(void) { return "unavailable"; }
+static inline const char *installer_ux64_target_mode(void) { return "unavailable"; }
 #endif
 
 #endif
