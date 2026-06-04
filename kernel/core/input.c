@@ -1,7 +1,6 @@
 #include "input.h"
 
 #include "klog.h"
-#include "ramfs.h"
 #include "userspace.h"
 #include "x86.h"
 
@@ -130,28 +129,11 @@ static u8 input_translate_scancode(u8 scancode)
 
 void input_init(void)
 {
-    const u8 *startup_bytes = NULL;
-    u32 startup_length = 0u;
-    u32 index;
-
     input_reset_queue();
-    startup_bytes = ramfs_startup_script_bytes(&startup_length);
-
-    for (index = 0u; index < startup_length; ++index)
-    {
-        input_enqueue_byte(startup_bytes[index]);
-    }
 
     klog_write_string("[input] bootstrap queue ");
-    klog_write_dec_u32(startup_length);
+    klog_write_dec_u32(input_queue_count);
     klog_write_line(" bytes");
-
-    if (input_drop_count != 0u)
-    {
-        klog_write_string("[input] dropped ");
-        klog_write_dec_u32(input_drop_count);
-        klog_write_line(" bootstrap bytes");
-    }
 }
 
 void input_handle_keyboard_interrupt(void)

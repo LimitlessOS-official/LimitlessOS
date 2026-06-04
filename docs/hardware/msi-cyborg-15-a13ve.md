@@ -4,6 +4,8 @@ Status: M18.1 physical validation pending user evidence.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
+Post-M21 hardware progress must be based on real device output. Synthetic process tests and QEMU-only driver evidence do not count as MSI laptop network, storage, or daily-driver validation.
+
 ## Safety Rules
 
 - Boot through the UEFI USB entry only.
@@ -40,8 +42,14 @@ This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on a
 - [ ] Confirm keyboard input works in Terminal.
 - [ ] Run `help`.
 - [ ] Run `apps`.
+- [ ] Run `pwd`.
+- [ ] Run `ls /`.
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
+- [ ] Run `net`.
+- [ ] Record the exact shell prompt text.
+- [ ] Record whether Terminal input pauses for roughly 10 seconds before commands run.
+- [ ] Record whether clicking/focusing Terminal clears or drops typed input.
 - [ ] Run `lock`, then unlock with the correct password and confirm the existing session resumes.
 - [ ] Confirm `help`, `apps`, `pkginfo`, and `hwval` remain truthful.
 - [ ] Run Product apps in Terminal: `append`, `cat`, `copy`, `delete`, `ls`, `mkdir`, `move`, `rename`, `stat`, `touch`, `write`.
@@ -111,7 +119,11 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 - File Manager result:
 - Settings result:
 - Network status:
+- Network controller hardware IDs:
+- `net` output:
 - NVMe detection result:
+- User-visible storage path result:
+- Terminal delay/focus result:
 - Installer dry-run result:
 - Internal storage write status:
 - Forbidden partition detection status:

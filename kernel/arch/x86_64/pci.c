@@ -68,7 +68,9 @@ enum
     PCI_INTEL_LPSS_I2C_TGL_FIRST = 0xA0E8u,
     PCI_INTEL_LPSS_I2C_TGL_LAST = 0xA0EFu,
     PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST = 0x51E8u,
-    PCI_INTEL_LPSS_I2C_ADL_RPL_LAST = 0x51EFu,
+    PCI_INTEL_LPSS_I2C_ADL_RPL_LAST = 0x51EBu,
+    PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_FIRST = 0x51D8u,
+    PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_LAST = 0x51D9u,
     PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST = 0x51C5u,
     PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST = 0x51C6u,
     PCI_INTEL_LPSS_I2C_ICL_FIRST = 0x34E8u,
@@ -343,6 +345,25 @@ static void pci64_enable_memory_busmaster(u32 bus, u32 device, u32 function)
         (status_command & 0xFFFF0000u) | command);
 }
 
+static void pci64_enable_memory_decode(u32 bus, u32 device, u32 function)
+{
+    u32 status_command = pci64_read_config(bus, device, function, PCI_STATUS_COMMAND);
+    u32 command = status_command & 0xFFFFu;
+
+    if ((command & PCI_COMMAND_MEMORY) != 0u)
+    {
+        return;
+    }
+
+    command |= PCI_COMMAND_MEMORY;
+    pci64_write_config_ecam(
+        bus,
+        device,
+        function,
+        PCI_STATUS_COMMAND,
+        (status_command & 0xFFFF0000u) | command);
+}
+
 static u32 pci64_bar_raw(u32 bus, u32 device, u32 function, u32 bar_index)
 {
     if (bar_index >= 6u)
@@ -485,6 +506,8 @@ static u32 pci64_is_lpss_i2c_device(u32 device_id)
             && (device_id <= PCI_INTEL_LPSS_I2C_TGL_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_ADL_RPL_LAST))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_ICL_FIRST)
@@ -502,6 +525,8 @@ static u32 pci64_is_lpss_i2c_pointer_candidate(u32 device_id)
 {
     return ((device_id >= (PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST + 1u))
             && (device_id <= (PCI_INTEL_LPSS_I2C_ADL_RPL_FIRST + 3u)))
+        || ((device_id >= PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_FIRST)
+            && (device_id <= PCI_INTEL_LPSS_I2C_ADL_RPL_EXTRA_LAST))
         || ((device_id >= PCI_INTEL_LPSS_I2C_RPL_PCH_P_FIRST)
             && (device_id <= PCI_INTEL_LPSS_I2C_RPL_PCH_P_LAST));
 }
@@ -674,21 +699,22 @@ static void pci64_note_function(u32 bus, u32 device, u32 function)
         && (vendor == PCI_INTEL_VENDOR)
         && (pci64_is_lpss_i2c_device(device_id) != 0u))
     {
-        u32 lpss_address = (bus << 16) | (device << 8) | function;
-        u32 lpss_bar0 = pci64_bar_raw(bus, device, function, 0u);
-        u32 lpss_bar1 = pci64_bar_raw(bus, device, function, 1u);
+        u32 lpss_address;
+        u32 lpss_bar0;
+        u32 lpss_bar1;
+
+        pci64_enable_memory_decode(bus, device, function);
+        lpss_address = (bus << 16) | (device << 8) | function;
+        lpss_bar0 = pci64_bar_raw(bus, device, function, 0u);
+        lpss_bar1 = pci64_bar_raw(bus, device, function, 1u);
 
         ++g_lpss_i2c_count;
-        if ((pci64_is_lpss_i2c_pointer_candidate(device_id) != 0u)
-            || (pci64_is_lpss_i2c_primary_keyboard_candidate(device_id) == 0u))
-        {
-            pci64_note_lpss_i2c_pointer_candidate(
-                lpss_address,
-                vendor_device,
-                class_register,
-                lpss_bar0,
-                lpss_bar1);
-        }
+        pci64_note_lpss_i2c_pointer_candidate(
+            lpss_address,
+            vendor_device,
+            class_register,
+            lpss_bar0,
+            lpss_bar1);
 
         if ((pci64_is_lpss_i2c_pointer_candidate(device_id) != 0u)
             && (g_second_lpss_i2c_address == 0xFFFFFFFFu))

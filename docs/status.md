@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-05-19
+Last updated: 2026-05-28
 
 ## Accepted Baseline
 
@@ -19,6 +19,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 M21 is `native app SDK foundation`.
 
 M1 cleanup-final through M20 native app execution pipeline are accepted, and M18.1 closed the UEFI real-firmware handoff compatibility boundary. M19 shifted networking from hardware-gated proof to app-facing brokered service: UEFI Product publishes a network service endpoint plus a narrow syscall-level TCP-client socket contract over the existing broker-owned DHCP/DNS/HTTP path. M21 now provides the first manifest-driven native app SDK foundation over that service. Product builds read `apps/native/*.json`, assemble app binaries, generate `.APP` descriptors, stage descriptor/binary pairs into `/APPS`, sign package payload records, and load apps by name through a generic descriptor parser before Ring-3 launch. M21 is not an ELF loader, server socket API, raw packet API, arbitrary app network data plane, or Linux/Windows app persona.
+
+Post-M21 acceptance is now governed by `docs/real-binary-gate.md`. Synthetic processes, repo-built flat binaries, embedded byte arrays, and denial-only telemetry may remain regression evidence, but they no longer count as forward Product capability evidence. The next execution claim must use a real externally built binary loaded from a user-visible path and must record provenance, command, output, and failure behavior.
 
 ## Product Profile
 

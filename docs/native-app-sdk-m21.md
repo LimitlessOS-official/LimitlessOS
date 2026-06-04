@@ -2,6 +2,8 @@
 
 M21 turns the M20 native execution path into a build-time and kernel-side app model that can grow without editing kernel code for each new app.
 
+`NETHELLO` is a repo-built SDK fixture and regression test. It proves the descriptor/package/launch plumbing can be exercised, but it is not evidence that arbitrary software, ELF binaries, PE binaries, Mach-O binaries, or third-party apps run. Future execution milestones must satisfy `docs/real-binary-gate.md` and run an externally built binary from a user-visible path.
+
 ## Build Input
 
 Native apps are declared as JSON manifests under `apps/native/`. The current manifest is `apps/native/nethello.json`.

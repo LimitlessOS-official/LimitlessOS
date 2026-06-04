@@ -570,19 +570,29 @@ function Assert-RuntimeShellSurfaceSource
         Fail-M1 "x86_64 runtime shell source does not guard empty write/append text against stale help drift."
     }
 
-    foreach ($staleProbeText in @("commands: apps help info pwd ls cat stat write", "LimitlessOS /APPS index", "*.APP files are launcher descriptors.")) {
+    foreach ($staleProbeText in @(
+        "commands: apps help info pwd ls cat stat write",
+        "LimitlessOS /APPS index",
+        "*.APP files are launcher descriptors.",
+        "USER_SHELL_STREAM_PROBE_OFFSET",
+        "SHELL_STREAM",
+        "USER_INPUT_CLI_PROBE_OFFSET",
+        "USER_CLI_PROBE_OFFSET",
+        "[x64:input] $ ",
+        "[x64:user] $ "
+    )) {
         if ($runtimeSource.Contains($staleProbeText)) {
             Fail-M1 "x86_64 runtime probe still emits stale app/help surface text: $staleProbeText"
         }
     }
     foreach ($requiredProbeText in @(
-        "Builtins apps help hwval info lock net pkginfo pwd",
-        "Product apps product set",
-        "Unavail ASK-not-AI ECHO aliases",
-        "HELLO.TXT INDEX.TXT internal"
+        "[x64:shell] persistent ring3 shell online",
+        "[x64] $ ",
+        "SYSCALL_INPUT_READ_KEYBOARD",
+        "SYSCALL_SHELL_EXECUTE_LINE"
     )) {
         if (-not $runtimeSource.Contains($requiredProbeText)) {
-            Fail-M1 "x86_64 runtime probe is missing required M1-labeled output: $requiredProbeText"
+            Fail-M1 "x86_64 runtime probe is missing required live-shell source text: $requiredProbeText"
         }
     }
 }

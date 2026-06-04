@@ -20,6 +20,7 @@
 #define DISPLAY64_MARKER_HEIGHT 8u
 #define DISPLAY64_MAX_TEXT_BYTES 128u
 #define DISPLAY64_MAX_CONSOLE_BYTES 512u
+#define DISPLAY64_CONSOLE_REPLAY_BYTES 8192u
 #define DISPLAY64_KERNEL_HIGH_BASE_HIGH32 0xFFFFFFFFu
 #define DISPLAY64_KERNEL_HIGH_BASE_LOW32 0x80000000u
 #define DISPLAY64_TEXT_START_X 24u
@@ -29,19 +30,42 @@
 #define DISPLAY64_FONT_SCALE 2u
 #define DISPLAY64_FONT_ADVANCE ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_SCALE)
 #define DISPLAY64_LINE_ADVANCE ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_SCALE)
-#define DISPLAY64_TEXT_RGB 0x00F8FBFFu
+#define DISPLAY64_RGB_DESKTOP_BG 0x001A1A1Eu
+#define DISPLAY64_RGB_BAR_BG 0x00111114u
+#define DISPLAY64_RGB_SURFACE 0x00242428u
+#define DISPLAY64_RGB_SURFACE_BORDER 0x003A3A40u
+#define DISPLAY64_RGB_CONTENT 0x001E1E22u
+#define DISPLAY64_RGB_TITLE_UNFOCUSED 0x002C2C32u
+#define DISPLAY64_RGB_TASK_BUTTON 0x002A2A30u
+#define DISPLAY64_RGB_TASK_BUTTON_BORDER 0x004A4A56u
+#define DISPLAY64_RGB_POPOVER_HOVER 0x002E2E36u
+#define DISPLAY64_RGB_ACCENT 0x00CC3333u
+#define DISPLAY64_RGB_FOCUS_BLUE 0x002E86C1u
+#define DISPLAY64_RGB_TEXT_PRIMARY 0x00F0F0F2u
+#define DISPLAY64_RGB_TEXT_SECONDARY 0x009A9AA8u
+#define DISPLAY64_RGB_TEXT_ON_ACCENT 0x00FFFFFFu
+#define DISPLAY64_RGB_FIELD 0x00161618u
+#define DISPLAY64_RGB_CLOSE 0x00E05252u
+#define DISPLAY64_RGB_APP_TERMINAL 0x001A6B3Au
+#define DISPLAY64_RGB_APP_FILES 0x001A4A7Au
+#define DISPLAY64_RGB_APP_SETTINGS 0x005A3A7Au
+#define DISPLAY64_RGB_APP_ASSISTANT 0x007A3A1Au
+#define DISPLAY64_RGB_APP_INSTALLER 0x005A5A3Au
+#define DISPLAY64_RGB_WARNING 0x00D8A45Du
+#define DISPLAY64_RGB_DISABLED_TEXT 0x006E6E78u
+#define DISPLAY64_TEXT_RGB DISPLAY64_RGB_TEXT_PRIMARY
 #define DISPLAY64_PANEL_X DISPLAY64_TEXT_START_X
 #define DISPLAY64_PANEL_Y DISPLAY64_TEXT_START_Y
 #define DISPLAY64_PANEL_WIDTH 360u
 #define DISPLAY64_PANEL_HEIGHT (DISPLAY64_LINE_ADVANCE + 4u)
-#define DISPLAY64_PANEL_RGB 0x00101822u
+#define DISPLAY64_PANEL_RGB DISPLAY64_RGB_CONTENT
 #define DISPLAY64_CONSOLE_VIEWPORT_WIDTH 960u
 #define DISPLAY64_CONSOLE_VIEWPORT_HEIGHT 648u
 #define DISPLAY64_DIAG_MARGIN 16u
 #define DISPLAY64_DIAG_PANEL_WIDTH 424u
 #define DISPLAY64_DIAG_PANEL_HEIGHT 144u
 #define DISPLAY64_DIAG_RGB 0x00182214u
-#define DISPLAY64_DIAG_TEXT_RGB 0x00EAF7D7u
+#define DISPLAY64_DIAG_TEXT_RGB DISPLAY64_RGB_TEXT_PRIMARY
 #define DISPLAY64_MOUSE_DIAG_PANEL_WIDTH 336u
 #define DISPLAY64_MOUSE_DIAG_PANEL_HEIGHT 144u
 #define DISPLAY64_MOUSE_DIAG_RGB 0x0014212Cu
@@ -52,8 +76,8 @@
 #define DISPLAY64_PAGE_BYTES 4096ull
 #define DISPLAY64_COMPOSITOR_CURSOR_WIDTH 12u
 #define DISPLAY64_COMPOSITOR_CURSOR_HEIGHT 20u
-#define DISPLAY64_COMPOSITOR_CURSOR_RGB 0x00F8FBFFu
-#define DISPLAY64_COMPOSITOR_CURSOR_SHADOW_RGB 0x00040A10u
+#define DISPLAY64_COMPOSITOR_CURSOR_RGB DISPLAY64_RGB_TEXT_PRIMARY
+#define DISPLAY64_COMPOSITOR_CURSOR_SHADOW_RGB 0x00000000u
 #define DISPLAY64_FONT_TRANSPARENT 0xFFFFFFFFu
 #define DISPLAY64_FONT_SMALL 0u
 #define DISPLAY64_FONT_NORMAL 1u
@@ -104,6 +128,10 @@ static u32 g_display_console_line_clear_count = 0u;
 static u32 g_display_console_wrap_count = 0u;
 static u32 g_display_console_scroll_count = 0u;
 static u32 g_display_console_line_dirty = 0u;
+static u8 g_display_console_replay[DISPLAY64_CONSOLE_REPLAY_BYTES];
+static u32 g_display_console_replay_head = 0u;
+static u32 g_display_console_replay_count = 0u;
+static u32 g_display_console_replay_overflow = 0u;
 static u32 g_display_text_x = DISPLAY64_TEXT_START_X;
 static u32 g_display_text_y = DISPLAY64_TEXT_START_Y;
 static u32 g_display_console_x = DISPLAY64_TEXT_START_X;
@@ -1114,8 +1142,8 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
     }
 
     framebuffer = display64_physical_framebuffer();
-    panel_pixel = display64_make_pixel(0x0012212Cu);
-    text_pixel = display64_make_pixel(0x0046D9A6u);
+    panel_pixel = display64_make_pixel(DISPLAY64_RGB_SURFACE);
+    text_pixel = display64_make_pixel(DISPLAY64_RGB_ACCENT);
     for (row = 0u; row < panel_h; ++row)
     {
         for (column = 0u; column < panel_w; ++column)
@@ -1510,6 +1538,76 @@ static u32 display64_render_text_bytes(
     return drawn;
 }
 
+static void display64_console_replay_append(const u8 *bytes, u32 byte_count)
+{
+    u32 index;
+
+    if (bytes == 0)
+    {
+        return;
+    }
+
+    for (index = 0u; index < byte_count; ++index)
+    {
+        if (g_display_console_replay_count < DISPLAY64_CONSOLE_REPLAY_BYTES)
+        {
+            u32 write_index =
+                (g_display_console_replay_head + g_display_console_replay_count)
+                    % DISPLAY64_CONSOLE_REPLAY_BYTES;
+            g_display_console_replay[write_index] = bytes[index];
+            ++g_display_console_replay_count;
+        }
+        else
+        {
+            g_display_console_replay[g_display_console_replay_head] = bytes[index];
+            g_display_console_replay_head =
+                (g_display_console_replay_head + 1u) % DISPLAY64_CONSOLE_REPLAY_BYTES;
+            ++g_display_console_replay_overflow;
+        }
+    }
+}
+
+static u32 display64_console_replay_render(u32 *token)
+{
+    u32 drawn = 0u;
+
+    if ((g_display_console_replay_count == 0u) || !display64_has_framebuffer())
+    {
+        return 0u;
+    }
+
+    g_display_text_x = g_display_console_x;
+    g_display_text_y = g_display_console_y;
+    g_display_console_line_dirty = 0u;
+
+    if ((g_display_console_replay_head + g_display_console_replay_count)
+        <= DISPLAY64_CONSOLE_REPLAY_BYTES)
+    {
+        drawn += display64_render_text_bytes(
+            &g_display_console_replay[g_display_console_replay_head],
+            g_display_console_replay_count,
+            token,
+            1u);
+    }
+    else
+    {
+        u32 first_count = DISPLAY64_CONSOLE_REPLAY_BYTES - g_display_console_replay_head;
+        u32 second_count = g_display_console_replay_count - first_count;
+        drawn += display64_render_text_bytes(
+            &g_display_console_replay[g_display_console_replay_head],
+            first_count,
+            token,
+            1u);
+        drawn += display64_render_text_bytes(
+            g_display_console_replay,
+            second_count,
+            token,
+            1u);
+    }
+
+    return drawn;
+}
+
 static u32 display64_diag_append_char(char *buffer, u32 cursor, u32 capacity, char value)
 {
     if (cursor + 1u >= capacity)
@@ -1695,6 +1793,43 @@ static void display64_compositor_draw_rect(u32 x, u32 y, u32 width, u32 height, 
     display64_compositor_fill_rect(x, y + height - 1u, width, 1u, rgb);
     display64_compositor_fill_rect(x, y, 1u, height, rgb);
     display64_compositor_fill_rect(x + width - 1u, y, 1u, height, rgb);
+}
+
+static u32 display64_rgb(u32 red, u32 green, u32 blue)
+{
+    return ((red & 0xFFu) << 16u) | ((green & 0xFFu) << 8u) | (blue & 0xFFu);
+}
+
+static void display64_compositor_fill_round_rect_4(u32 x, u32 y, u32 width, u32 height, u32 rgb)
+{
+    if ((width == 0u) || (height == 0u))
+    {
+        return;
+    }
+
+    if ((width < 8u) || (height < 8u))
+    {
+        display64_compositor_fill_rect(x, y, width, height, rgb);
+        return;
+    }
+
+    display64_compositor_fill_rect(x + 4u, y, width - 8u, height, rgb);
+    display64_compositor_fill_rect(x + 2u, y + 1u, width - 4u, height - 2u, rgb);
+    display64_compositor_fill_rect(x + 1u, y + 2u, width - 2u, height - 4u, rgb);
+    display64_compositor_fill_rect(x, y + 4u, width, height - 8u, rgb);
+}
+
+static void display64_compositor_fill_circle_16(u32 x, u32 y, u32 rgb)
+{
+    display64_compositor_fill_rect(x + 5u, y, 6u, 1u, rgb);
+    display64_compositor_fill_rect(x + 3u, y + 1u, 10u, 1u, rgb);
+    display64_compositor_fill_rect(x + 2u, y + 2u, 12u, 1u, rgb);
+    display64_compositor_fill_rect(x + 1u, y + 3u, 14u, 1u, rgb);
+    display64_compositor_fill_rect(x, y + 4u, 16u, 8u, rgb);
+    display64_compositor_fill_rect(x + 1u, y + 12u, 14u, 1u, rgb);
+    display64_compositor_fill_rect(x + 2u, y + 13u, 12u, 1u, rgb);
+    display64_compositor_fill_rect(x + 3u, y + 14u, 10u, 1u, rgb);
+    display64_compositor_fill_rect(x + 5u, y + 15u, 6u, 1u, rgb);
 }
 
 static u32 display64_string_length(const char *text)
@@ -1929,23 +2064,38 @@ static void display64_draw_label_value(
 
 static void display64_font_draw_status_bar(void)
 {
-    u32 y;
+    u32 y = 0u;
+    u32 height;
+    u32 brand_y;
+    u32 time_y;
     u32 time_x;
+    const char *time_text = "time --:--";
 
     if (!display64_has_framebuffer())
     {
         return;
     }
 
-    y = (g_display_boot_info->framebuffer_height > DISPLAY64_STATUS_BAR_HEIGHT)
-        ? (g_display_boot_info->framebuffer_height - DISPLAY64_STATUS_BAR_HEIGHT)
+    height = display64_min_u32(40u, g_display_boot_info->framebuffer_height);
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, height, DISPLAY64_RGB_BAR_BG);
+    if (height != 0u)
+    {
+        display64_compositor_fill_rect(0u, y + height - 1u, g_display_boot_info->framebuffer_width, 1u, DISPLAY64_RGB_SURFACE_BORDER);
+    }
+    brand_y = (height > display64_font_height(DISPLAY64_FONT_LARGE))
+        ? (y + ((height - display64_font_height(DISPLAY64_FONT_LARGE)) / 2u))
+        : y;
+    (void)display64_draw_font_text(10u, brand_y, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    time_x = (g_display_boot_info->framebuffer_width
+            > (display64_font_text_advance(time_text, DISPLAY64_FONT_NORMAL) + 12u))
+        ? (g_display_boot_info->framebuffer_width
+            - display64_font_text_advance(time_text, DISPLAY64_FONT_NORMAL)
+            - 12u)
         : 0u;
-    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, DISPLAY64_STATUS_BAR_HEIGHT, 0x000D1520u);
-    (void)display64_draw_font_text(8u, y + 4u, "LimitlessOS", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    time_x = (g_display_boot_info->framebuffer_width > 112u)
-        ? (g_display_boot_info->framebuffer_width - 112u)
-        : 0u;
-    (void)display64_draw_font_text(time_x, y + 4u, "time --:--", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    time_y = (height > display64_font_height(DISPLAY64_FONT_NORMAL))
+        ? (y + ((height - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u))
+        : y;
+    (void)display64_draw_font_text(time_x, time_y, time_text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
 }
 
 void display64_compositor_probe(u32 cursor_x, u32 cursor_y, u32 buttons)
@@ -1974,8 +2124,8 @@ void display64_compositor_probe(u32 cursor_x, u32 cursor_y, u32 buttons)
     probe_y = (g_display_boot_info->framebuffer_height > 56u)
         ? (g_display_boot_info->framebuffer_height - 56u)
         : 0u;
-    display64_compositor_fill_rect(12u, probe_y, 128u, 28u, 0x0014263Cu);
-    display64_compositor_draw_rect(12u, probe_y, 128u, 28u, 0x0046D9A6u);
+    display64_compositor_fill_rect(12u, probe_y, 128u, 28u, DISPLAY64_RGB_SURFACE);
+    display64_compositor_draw_rect(12u, probe_y, 128u, 28u, DISPLAY64_RGB_SURFACE_BORDER);
     (void)display64_compositor_present();
 }
 
@@ -2048,7 +2198,7 @@ void display64_font_probe(void)
 
     g_display_font_active = 1u;
     display64_font_draw_status_bar();
-    (void)display64_draw_font_text(24u, 40u, "DISPLAY ONLINE", DISPLAY64_FONT_LARGE, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(24u, 48u, "DISPLAY ONLINE", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_compositor_present();
 }
 
@@ -2059,6 +2209,16 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     u32 panel_x;
     u32 panel_y;
     u32 field_w;
+    u32 field_x;
+    u32 username_y;
+    u32 password_y;
+    u32 button_y;
+    u32 button_text_x;
+    u32 button_text_y;
+    u32 inset;
+    u32 red;
+    u32 green;
+    u32 blue;
 
     if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
     {
@@ -2066,39 +2226,66 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     }
 
     panel_w = display64_min_u32(520u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
-    panel_h = 312u;
+    panel_h = 344u;
     panel_x = (g_display_boot_info->framebuffer_width > panel_w) ? ((g_display_boot_info->framebuffer_width - panel_w) / 2u) : 0u;
     panel_y = (g_display_boot_info->framebuffer_height > panel_h) ? ((g_display_boot_info->framebuffer_height - panel_h) / 2u) : 0u;
-    field_w = (panel_w > 96u) ? (panel_w - 96u) : panel_w;
+    field_x = panel_x + 34u;
+    field_w = (panel_w > 68u) ? (panel_w - 68u) : panel_w;
+    username_y = panel_y + 186u;
+    password_y = panel_y + 246u;
+    button_y = panel_y + 286u;
 
-    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, 0x00060D14u);
-    display64_compositor_fill_rect(panel_x, panel_y, panel_w, panel_h, 0x00101A24u);
-    display64_compositor_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x0046D9A6u);
-    (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 70u, "M10 local console authentication", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 102u, title, DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 126u, message, DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, 0x000E0E10u);
+    inset = 8u;
+    red = 0x10u;
+    green = 0x10u;
+    blue = 0x12u;
+    while ((inset < (g_display_boot_info->framebuffer_width / 2u))
+        && (inset < (g_display_boot_info->framebuffer_height / 2u)))
+    {
+        display64_compositor_fill_rect(
+            inset,
+            inset,
+            g_display_boot_info->framebuffer_width - (inset * 2u),
+            g_display_boot_info->framebuffer_height - (inset * 2u),
+            display64_rgb(red, green, blue));
+        inset += 8u;
+        red = (red < 0x1Eu) ? (red + 2u) : 0x1Eu;
+        green = (green < 0x1Eu) ? (green + 2u) : 0x1Eu;
+        blue = (blue < 0x22u) ? (blue + 2u) : 0x22u;
+    }
 
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 164u, "Username", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_fill_rect(panel_x + 34u, panel_y + 184u, field_w, 28u, 0x000B111Au);
-    display64_compositor_draw_rect(panel_x + 34u, panel_y + 184u, field_w, 28u, 0x0061748Au);
-    (void)display64_draw_font_text(panel_x + 44u, panel_y + 190u, "limitless", DISPLAY64_FONT_NORMAL, 0x00D9EAF6u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(panel_x, panel_y, panel_w, panel_h, DISPLAY64_RGB_SURFACE);
+    display64_compositor_draw_rect(panel_x, panel_y, panel_w, panel_h, DISPLAY64_RGB_SURFACE_BORDER);
+    (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 74u, "M10 local console authentication", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 108u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 132u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 224u, "Password", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_fill_rect(panel_x + 34u, panel_y + 244u, field_w, 28u, 0x000B111Au);
-    display64_compositor_draw_rect(panel_x + 34u, panel_y + 244u, field_w, 28u, 0x0061748Au);
-    (void)display64_draw_font_text(panel_x + 44u, panel_y + 250u, "********", DISPLAY64_FONT_NORMAL, 0x00D9EAF6u, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_fill_rect(panel_x + panel_w - 132u, panel_y + 244u, 96u, 28u, 0x003C8FCEu);
-    display64_compositor_draw_rect(panel_x + panel_w - 132u, panel_y + 244u, 96u, 28u, 0x00F8FBFFu);
-    (void)display64_draw_font_text(panel_x + panel_w - 104u, panel_y + 250u, "Login", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(field_x, panel_y + 166u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(field_x, username_y, field_w, 28u, DISPLAY64_RGB_FIELD);
+    display64_compositor_draw_rect(field_x, username_y, field_w, 28u, DISPLAY64_RGB_SURFACE_BORDER);
+    (void)display64_draw_font_text(field_x + 10u, username_y + 6u, "limitless", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+
+    (void)display64_draw_font_text(field_x, panel_y + 226u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(field_x, password_y, field_w, 28u, DISPLAY64_RGB_FIELD);
+    display64_compositor_draw_rect(field_x, password_y, field_w, 28u, DISPLAY64_RGB_FOCUS_BLUE);
+    (void)display64_draw_font_text(field_x + 10u, password_y + 6u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+
+    display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 32u, DISPLAY64_RGB_ACCENT);
+    button_text_x = (field_w > display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL))
+        ? (field_x + ((field_w - display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL)) / 2u))
+        : field_x;
+    button_text_y = button_y + 8u;
+    (void)display64_draw_font_text(button_text_x, button_text_y, "Login", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
 
     if (failures != 0u)
     {
-        display64_draw_label_value(panel_x + 34u, panel_y + 286u, "Failed attempts ", failures, 0x00F0A060u);
+        display64_draw_label_value(field_x, panel_y + 326u, "Failed attempts ", failures, DISPLAY64_RGB_WARNING);
     }
     if (lockout_seconds != 0u)
     {
-        display64_draw_label_value(panel_x + 260u, panel_y + 286u, "Lockout ", lockout_seconds, 0x00F0A060u);
+        display64_draw_label_value(panel_x + 260u, panel_y + 326u, "Lockout ", lockout_seconds, DISPLAY64_RGB_WARNING);
     }
 
     (void)display64_compositor_present();
@@ -2475,31 +2662,42 @@ static void display64_wm_present_window(u32 handle)
         return;
     }
 
-    title_rgb = (window->focused != 0u) ? 0x003C8FCEu : 0x00303A45u;
-    display64_compositor_fill_rect(window->x, window->y, window->width, window->height, 0x000B111Au);
-    display64_compositor_draw_rect(window->x, window->y, window->width, window->height, 0x0061748Au);
+    title_rgb = (window->focused != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TITLE_UNFOCUSED;
+    display64_compositor_fill_rect(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE);
+    display64_compositor_draw_rect(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE_BORDER);
     display64_compositor_fill_rect(
         window->x + DISPLAY64_WM_BORDER,
         window->y + DISPLAY64_WM_BORDER,
         window->width - (DISPLAY64_WM_BORDER * 2u),
-        DISPLAY64_WM_TITLE_HEIGHT,
+        DISPLAY64_WM_TITLE_HEIGHT - DISPLAY64_WM_BORDER,
         title_rgb);
-    content_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 2u;
-    content_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + 4u))
-        ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - 4u)
+    display64_compositor_fill_rect(
+        window->x + DISPLAY64_WM_BORDER,
+        window->y + DISPLAY64_WM_TITLE_HEIGHT,
+        window->width - (DISPLAY64_WM_BORDER * 2u),
+        1u,
+        DISPLAY64_RGB_SURFACE_BORDER);
+    content_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + DISPLAY64_WM_BORDER;
+    content_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + (DISPLAY64_WM_BORDER * 2u)))
+        ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - (DISPLAY64_WM_BORDER * 2u))
         : 0u;
-    display64_compositor_fill_rect(window->x + 2u, content_y, window->width - 4u, content_h, DISPLAY64_PANEL_RGB);
+    display64_compositor_fill_rect(
+        window->x + DISPLAY64_WM_BORDER,
+        content_y,
+        window->width - (DISPLAY64_WM_BORDER * 2u),
+        content_h,
+        DISPLAY64_RGB_CONTENT);
     (void)display64_draw_font_text(
-        window->x + 8u,
-        window->y + 7u,
+        window->x + 10u,
+        window->y + ((DISPLAY64_WM_TITLE_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u),
         window->title,
         DISPLAY64_FONT_NORMAL,
-        0x00F8FBFFu,
+        (window->focused != 0u) ? DISPLAY64_RGB_TEXT_ON_ACCENT : DISPLAY64_RGB_TEXT_PRIMARY,
         DISPLAY64_FONT_TRANSPARENT);
-    close_x = (window->width > 28u) ? (window->x + window->width - 22u) : window->x;
-    close_y = window->y + 7u;
-    display64_compositor_draw_rect(close_x, close_y, 14u, 14u, 0x00F8FBFFu);
-    (void)display64_draw_font_text(close_x + 4u, close_y - 1u, "X", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    close_x = (window->width > 32u) ? (window->x + window->width - 24u) : window->x;
+    close_y = window->y + ((DISPLAY64_WM_TITLE_HEIGHT - 16u) / 2u);
+    display64_compositor_fill_circle_16(close_x, close_y, DISPLAY64_RGB_CLOSE);
+    (void)display64_draw_font_text(close_x + 5u, close_y + 4u, "X", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
     ++g_display_wm_present_count;
 }
 
@@ -2515,7 +2713,7 @@ void display64_wm_probe(void)
         return;
     }
 
-    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, 0x00081218u);
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, DISPLAY64_RGB_DESKTOP_BG);
     display64_font_draw_status_bar();
     width = display64_min_u32(920u, (g_display_boot_info->framebuffer_width > 64u) ? (g_display_boot_info->framebuffer_width - 64u) : g_display_boot_info->framebuffer_width);
     height = display64_min_u32(560u, (g_display_boot_info->framebuffer_height > 112u) ? (g_display_boot_info->framebuffer_height - 112u) : g_display_boot_info->framebuffer_height);
@@ -2552,28 +2750,63 @@ static void display64_desktop_draw_launcher_button(u32 x, u32 y)
 {
     u32 row;
     u32 column;
+    u32 active;
+    u32 bg_rgb;
+    u32 dot_rgb;
 
-    display64_compositor_fill_rect(x, y, 28u, 24u, 0x00213A4Eu);
-    display64_compositor_draw_rect(x, y, 28u, 24u, 0x007FD1FFu);
-    for (row = 0u; row < 2u; ++row)
+    active = ((g_display_desktop_launcher_open != 0u)
+        || display64_point_in_rect(
+            g_display_compositor_cursor_x,
+            g_display_compositor_cursor_y,
+            x,
+            y,
+            DISPLAY64_DESKTOP_LAUNCHER_BUTTON_WIDTH,
+            DISPLAY64_DESKTOP_LAUNCHER_BUTTON_HEIGHT))
+        ? 1u
+        : 0u;
+    bg_rgb = (active != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TASK_BUTTON;
+    dot_rgb = (active != 0u) ? DISPLAY64_RGB_TEXT_ON_ACCENT : DISPLAY64_RGB_TEXT_PRIMARY;
+
+    display64_compositor_fill_round_rect_4(x, y, 28u, 24u, DISPLAY64_RGB_TASK_BUTTON_BORDER);
+    display64_compositor_fill_round_rect_4(x + 1u, y + 1u, 26u, 22u, bg_rgb);
+    for (row = 0u; row < 3u; ++row)
     {
         for (column = 0u; column < 3u; ++column)
         {
             display64_compositor_fill_rect(
-                x + 6u + (column * 7u),
-                y + 5u + (row * 8u),
-                4u,
-                4u,
-                0x00F8FBFFu);
+                x + 7u + (column * 6u),
+                y + 5u + (row * 6u),
+                3u,
+                3u,
+                dot_rgb);
         }
     }
 }
 
-static void display64_desktop_draw_window_button(u32 x, u32 y, const char *title)
+static void display64_desktop_draw_window_button(u32 x, u32 y, const char *title, u32 active)
 {
-    display64_compositor_fill_rect(x, y, 116u, 24u, 0x00192633u);
-    display64_compositor_draw_rect(x, y, 116u, 24u, 0x00426174u);
-    (void)display64_draw_font_text(x + 8u, y + 4u, title, DISPLAY64_FONT_NORMAL, 0x00D9EAF6u, DISPLAY64_FONT_TRANSPARENT);
+    u32 bg_rgb = (active != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TASK_BUTTON;
+    u32 text_rgb = (active != 0u) ? DISPLAY64_RGB_TEXT_ON_ACCENT : DISPLAY64_RGB_TEXT_PRIMARY;
+
+    display64_compositor_fill_round_rect_4(
+        x,
+        y,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT,
+        DISPLAY64_RGB_TASK_BUTTON_BORDER);
+    display64_compositor_fill_round_rect_4(
+        x + 1u,
+        y + 1u,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH - 2u,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT - 2u,
+        bg_rgb);
+    (void)display64_draw_font_text(
+        x + 8u,
+        y + ((DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u),
+        title,
+        DISPLAY64_FONT_NORMAL,
+        text_rgb,
+        DISPLAY64_FONT_TRANSPARENT);
 }
 
 static void display64_desktop_draw_taskbar(void)
@@ -2582,13 +2815,19 @@ static void display64_desktop_draw_taskbar(void)
     u32 clock_x;
     u32 button_x = DISPLAY64_DESKTOP_WINDOW_BUTTON_X;
     u32 index;
+    u32 uptime;
+    u32 clock_text_x;
+    u32 clock_text_y;
+    u32 clock_text_w;
+    char uptime_text[12];
 
     if (!display64_has_framebuffer())
     {
         return;
     }
 
-    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, DISPLAY64_DESKTOP_TASKBAR_HEIGHT, 0x00091118u);
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, DISPLAY64_DESKTOP_TASKBAR_HEIGHT, DISPLAY64_RGB_BAR_BG);
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, 1u, DISPLAY64_RGB_SURFACE_BORDER);
     display64_desktop_draw_launcher_button(DISPLAY64_DESKTOP_LAUNCHER_BUTTON_X, y + 4u);
     clock_x = (g_display_boot_info->framebuffer_width > 96u)
         ? (g_display_boot_info->framebuffer_width - 96u)
@@ -2598,11 +2837,30 @@ static void display64_desktop_draw_taskbar(void)
         if ((g_display_windows[index].visible != 0u)
             && ((button_x + DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH + 8u) < clock_x))
         {
-            display64_desktop_draw_window_button(button_x, y + 4u, g_display_windows[index].title);
+            display64_desktop_draw_window_button(
+                button_x,
+                y + 4u,
+                g_display_windows[index].title,
+                g_display_windows[index].focused);
             button_x += DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH + DISPLAY64_DESKTOP_WINDOW_BUTTON_GAP;
         }
     }
-    display64_draw_label_value(clock_x, y + 8u, "T+", pit_get_uptime_seconds(), 0x00B8C7D8u);
+    uptime = pit_get_uptime_seconds();
+    display64_u32_to_dec_text(uptime, uptime_text, (u32)sizeof(uptime_text));
+    clock_text_w = display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL)
+        + display64_font_text_advance(uptime_text, DISPLAY64_FONT_NORMAL);
+    clock_text_x = (g_display_boot_info->framebuffer_width > (clock_text_w + 12u))
+        ? (g_display_boot_info->framebuffer_width - clock_text_w - 12u)
+        : clock_x;
+    clock_text_y = y + ((DISPLAY64_DESKTOP_TASKBAR_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u);
+    (void)display64_draw_font_text(clock_text_x, clock_text_y, "T+", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(
+        clock_text_x + display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL),
+        clock_text_y,
+        uptime_text,
+        DISPLAY64_FONT_NORMAL,
+        DISPLAY64_RGB_TEXT_SECONDARY,
+        DISPLAY64_FONT_TRANSPARENT);
     if (g_display_desktop_taskbar_count == 0u)
     {
         ++g_display_desktop_taskbar_count;
@@ -2618,23 +2876,46 @@ static u32 display64_desktop_launcher_panel_y(void)
         : 40u;
 }
 
+static void display64_desktop_draw_launcher_entry(
+    u32 row_x,
+    u32 row_y,
+    u32 row_w,
+    u32 row_h,
+    u32 icon_rgb,
+    const char *letter,
+    const char *name)
+{
+    u32 icon_x = row_x + 4u;
+    u32 icon_y = row_y + 4u;
+
+    if (display64_point_in_rect(
+            g_display_compositor_cursor_x,
+            g_display_compositor_cursor_y,
+            row_x,
+            row_y,
+            row_w,
+            row_h))
+    {
+        display64_compositor_fill_rect(row_x, row_y, row_w, row_h, DISPLAY64_RGB_POPOVER_HOVER);
+    }
+
+    display64_compositor_fill_rect(icon_x, icon_y, 24u, 24u, icon_rgb);
+    (void)display64_draw_font_text(icon_x + 8u, icon_y + 4u, letter, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(row_x + 36u, row_y + 8u, name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+}
+
 static void display64_desktop_draw_launcher_panel(void)
 {
     u32 panel_y = display64_desktop_launcher_panel_y();
 
-    display64_compositor_fill_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, 0x00101A24u);
-    display64_compositor_draw_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, 0x0046D9A6u);
-    (void)display64_draw_font_text(24u, panel_y + 12u, "Apps", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_fill_rect(28u, panel_y + 40u, 28u, 28u, 0x003C8FCEu);
-    display64_compositor_fill_rect(28u, panel_y + 76u, 28u, 28u, 0x002DAA75u);
-    display64_compositor_fill_rect(124u, panel_y + 40u, 28u, 28u, 0x00A9703Eu);
-    display64_compositor_fill_rect(124u, panel_y + 76u, 28u, 28u, 0x00D6A44Eu);
-    display64_compositor_fill_rect(28u, panel_y + 112u, 28u, 28u, 0x004B72D8u);
-    (void)display64_draw_font_text(64u, panel_y + 46u, "Terminal", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(64u, panel_y + 82u, "Files", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(160u, panel_y + 46u, "Settings", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(160u, panel_y + 82u, "Installer", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(64u, panel_y + 118u, "Assistant", DISPLAY64_FONT_NORMAL, 0x00EAF7D7u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, DISPLAY64_RGB_SURFACE);
+    display64_compositor_draw_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, DISPLAY64_RGB_SURFACE_BORDER);
+    (void)display64_draw_font_text(20u, panel_y + 10u, "Apps", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_desktop_draw_launcher_entry(24u, panel_y + 36u, 92u, 32u, DISPLAY64_RGB_APP_TERMINAL, "T", "Terminal");
+    display64_desktop_draw_launcher_entry(24u, panel_y + 72u, 92u, 32u, DISPLAY64_RGB_APP_FILES, "F", "Files");
+    display64_desktop_draw_launcher_entry(120u, panel_y + 36u, 96u, 32u, DISPLAY64_RGB_APP_SETTINGS, "S", "Settings");
+    display64_desktop_draw_launcher_entry(120u, panel_y + 72u, 96u, 32u, DISPLAY64_RGB_APP_INSTALLER, "I", "Installer");
+    display64_desktop_draw_launcher_entry(24u, panel_y + 108u, 192u, 32u, DISPLAY64_RGB_APP_ASSISTANT, "A", "Assistant");
     if (g_display_desktop_launcher_count == 0u)
     {
         ++g_display_desktop_launcher_count;
@@ -2659,14 +2940,14 @@ static void display64_desktop_draw_file_manager(u32 handle)
     body_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + 20u))
         ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - 20u)
         : 0u;
-    display64_compositor_draw_rect(body_x + 100u, body_y - 4u, 1u, body_h, 0x00426174u);
-    (void)display64_draw_font_text(body_x, body_y, "RAMFS /", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 20u, "NVME FAT32", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 40u, "Cloud", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y, "README.TXT", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "Cloud unavailable", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "No sync/upload", DISPLAY64_FONT_NORMAL, 0x00697A86u, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_rect(body_x + 100u, body_y - 4u, 1u, body_h, DISPLAY64_RGB_SURFACE_BORDER);
+    (void)display64_draw_font_text(body_x, body_y, "RAMFS /", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 20u, "NVME FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 40u, "Cloud", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y, "README.TXT", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "Cloud unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "No sync/upload", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     cloud_storage64_init();
     (void)cloud_storage64_fileman_status_readonly();
@@ -2695,51 +2976,50 @@ static void display64_desktop_draw_settings(u32 handle)
     display64_wm_present_window(handle);
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
-    (void)display64_draw_font_text(body_x, body_y, "Display", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    display64_draw_label_value(body_x, body_y + 18u, "W ", g_display_boot_info->framebuffer_width, 0x00B8C7D8u);
-    display64_draw_label_value(body_x + 88u, body_y + 18u, "H ", g_display_boot_info->framebuffer_height, 0x00B8C7D8u);
-    (void)display64_draw_font_text(body_x, body_y + 40u, "FB BGR", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 64u, "Storage RAMFS NVME", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 88u, "Network DHCP DNS HTTP", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 112u, "About LimitlessOS", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    display64_draw_label_value(body_x, body_y + 130u, "Sectors ", g_display_boot_info->kernel_sector_count, 0x00B8C7D8u);
+    (void)display64_draw_font_text(body_x, body_y, "Display", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_draw_label_value(body_x, body_y + 18u, "W ", g_display_boot_info->framebuffer_width, DISPLAY64_RGB_TEXT_SECONDARY);
+    display64_draw_label_value(body_x + 88u, body_y + 18u, "H ", g_display_boot_info->framebuffer_height, DISPLAY64_RGB_TEXT_SECONDARY);
+    (void)display64_draw_font_text(body_x, body_y + 40u, "FB BGR", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 64u, "Storage RAMFS NVME", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 88u, "Network DHCP DNS HTTP", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 112u, "About LimitlessOS", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_draw_label_value(body_x, body_y + 130u, "Sectors ", g_display_boot_info->kernel_sector_count, DISPLAY64_RGB_TEXT_SECONDARY);
     services64_product_status_query();
-    display64_draw_label_value(body_x, body_y + 148u, "Services ", services64_product_service_running(), 0x00B8C7D8u);
-    display64_draw_label_value(body_x + 128u, body_y + 148u, "Session ", services64_session_id(), 0x00B8C7D8u);
-    (void)display64_draw_font_text(body_x, body_y + 166u, "Installer UX dry-run; writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_fill_rect(body_x, body_y + 184u, 72u, 24u, 0x003C8FCEu);
-    display64_compositor_draw_rect(body_x, body_y + 184u, 72u, 24u, 0x00F8FBFFu);
-    (void)display64_draw_font_text(body_x + 18u, body_y + 188u, "Lock", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    display64_draw_label_value(body_x, body_y + 148u, "Services ", services64_product_service_running(), DISPLAY64_RGB_TEXT_SECONDARY);
+    display64_draw_label_value(body_x + 128u, body_y + 148u, "Session ", services64_session_id(), DISPLAY64_RGB_TEXT_SECONDARY);
+    (void)display64_draw_font_text(body_x, body_y + 166u, "Installer UX dry-run; writes disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x, body_y + 184u, 72u, 24u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(body_x + 18u, body_y + 188u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    (void)display64_draw_font_text(body_x, body_y + 216u, "Identity", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 234u, "Local active; vault metadata only", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 252u, "No ambient identity/secret", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 216u, "Identity", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 234u, "Local active; vault metadata only", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 252u, "No ambient identity/secret", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_identity_settings_panel_count == 0u)
     {
         ++g_display_identity_settings_panel_count;
     }
     (void)identity64_status_readonly();
     identity_transport64_init();
-    (void)display64_draw_font_text(body_x, body_y + 270u, "Identity transport", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 288u, "Descriptor verified; encrypted transport unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 270u, "Identity transport", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 288u, "Descriptor verified; encrypted transport unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_identity_transport_settings_panel_count == 0u)
     {
         ++g_display_identity_transport_settings_panel_count;
     }
     (void)identity_transport64_status_readonly();
     account_association64_init();
-    (void)display64_draw_font_text(body_x, body_y + 306u, "Account association", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 324u, "Local active; personal/enterprise unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 342u, "Cloud/key unavailable; tokens denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 306u, "Account association", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 324u, "Local active; personal/enterprise unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 342u, "Cloud/key unavailable; tokens denied", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_account_settings_panel_count == 0u)
     {
         ++g_display_account_settings_panel_count;
     }
     (void)account_association64_status_readonly();
     cloud_storage64_init();
-    (void)display64_draw_font_text(body_x, body_y + 360u, "Cloud storage", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 378u, "Broker foundation; descriptor verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 396u, "No sync/upload/download; AI denied", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 360u, "Cloud storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 378u, "Broker foundation; descriptor verified", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 396u, "No sync/upload/download; AI denied", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_cloud_settings_panel_count == 0u)
     {
         ++g_display_cloud_settings_panel_count;
@@ -2747,39 +3027,39 @@ static void display64_desktop_draw_settings(u32 handle)
     (void)cloud_storage64_settings_readonly();
     ai_policy64_init();
     ai_policy64_action_probe();
-    (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant Mode B; inference unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 456u, "Action templates require consent", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 474u, "No ambient fs/net/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant Mode B; inference unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 456u, "Action templates require consent", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 474u, "No ambient fs/net/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_ai_settings_panel_count == 0u)
     {
         ++g_display_ai_settings_panel_count;
     }
     (void)ai_policy64_settings_readonly();
-    (void)display64_draw_font_text(body_x, body_y + 492u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 492u, "Package Trust", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 510u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 510u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 510u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 510u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     }
 #else
-    (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 216u, "Package Trust", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     if (package_signing64_signed() != 0u)
     {
-        (void)display64_draw_font_text(body_x, body_y + 234u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        display64_draw_label_value(body_x, body_y + 252u, "Signed ", package_signing64_signed_package_count(), 0x00B8C7D8u);
+        (void)display64_draw_font_text(body_x, body_y + 234u, "UEFI Ed25519 verified", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+        display64_draw_label_value(body_x, body_y + 252u, "Signed ", package_signing64_signed_package_count(), DISPLAY64_RGB_TEXT_SECONDARY);
     }
     else
     {
-        (void)display64_draw_font_text(body_x, body_y + 234u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-        (void)display64_draw_font_text(body_x, body_y + 252u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 234u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x, body_y + 252u, "UEFI signing unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     }
-    (void)display64_draw_font_text(body_x, body_y + 270u, "Index verified local fixture", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 288u, "No auto-install/public fetch", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 306u, "Install/apply disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 270u, "Index verified local fixture", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 288u, "No auto-install/public fetch", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 306u, "Install/apply disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
 #endif
     if (g_display_desktop_settings_count == 0u)
     {
@@ -2807,17 +3087,17 @@ static void display64_desktop_draw_installer(u32 handle)
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     installer_ux64_init();
-    (void)display64_draw_font_text(body_x, body_y, "LimitlessOS Installer", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 18u, "Product UEFI dry-run safe", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 36u, "Internal writes disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y, "LimitlessOS Installer", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "Product UEFI dry-run safe", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 36u, "Internal writes disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_welcome_count == 0u)
     {
         ++g_display_installer_welcome_count;
     }
     (void)installer_ux64_welcome();
 
-    (void)display64_draw_font_text(body_x, body_y + 62u, "Beginner: recommended general use", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 80u, "Advanced: read-only planning controls", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 62u, "Beginner: recommended general use", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 80u, "Advanced: read-only planning controls", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_beginner_count == 0u)
     {
         ++g_display_installer_beginner_count;
@@ -2829,8 +3109,8 @@ static void display64_desktop_draw_installer(u32 handle)
     (void)installer_ux64_beginner_mode();
     (void)installer_ux64_advanced_mode();
 
-    (void)display64_draw_font_text(body_x, body_y + 106u, "Hardware: display/input/net/storage", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 124u, "Recommendation: General use", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 106u, "Hardware: display/input/net/storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 124u, "Recommendation: General use", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_hardware_count == 0u)
     {
         ++g_display_installer_hardware_count;
@@ -2842,8 +3122,8 @@ static void display64_desktop_draw_installer(u32 handle)
     (void)installer_ux64_hardware_summary();
     (void)installer_ux64_recommendation();
 
-    (void)display64_draw_font_text(body_x, body_y + 150u, "Components: Product set selected", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 168u, "Unavailable items labeled planned", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 150u, "Components: Product set selected", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 168u, "Unavailable items labeled planned", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_component_count == 0u)
     {
         ++g_display_installer_component_count;
@@ -2851,32 +3131,32 @@ static void display64_desktop_draw_installer(u32 handle)
     (void)installer_ux64_component_selection();
     (void)installer_ux64_unavailable_components_labeled();
 
-    (void)display64_draw_font_text(body_x, body_y + 194u, "Account: local available only", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 212u, "Personal/enterprise/key unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 194u, "Account: local available only", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 212u, "Personal/enterprise/key unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_account_count == 0u)
     {
         ++g_display_installer_account_count;
     }
     (void)installer_ux64_account_page();
 
-    (void)display64_draw_font_text(body_x, body_y + 238u, "Cloud: broker status only", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 256u, "No sync/upload/download/token storage", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 238u, "Cloud: broker status only", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 256u, "No sync/upload/download/token storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_cloud_count == 0u)
     {
         ++g_display_installer_cloud_count;
     }
     (void)installer_ux64_cloud_page();
 
-    (void)display64_draw_font_text(body_x, body_y + 282u, "AI setup: planned; requires consent broker", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 300u, "No AI-assisted setup in M15", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 282u, "AI setup: planned; requires consent broker", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 300u, "No AI-assisted setup in M15", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_ai_count == 0u)
     {
         ++g_display_installer_ai_count;
     }
     (void)installer_ux64_ai_page();
 
-    (void)display64_draw_font_text(body_x, body_y + 326u, "Plan: writes 0 formats 0 boot entries 0", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 344u, "Dry-run validates no forbidden targets", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 326u, "Plan: writes 0 formats 0 boot entries 0", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 344u, "Dry-run validates no forbidden targets", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_plan_count == 0u)
     {
         ++g_display_installer_plan_count;
@@ -2888,8 +3168,8 @@ static void display64_desktop_draw_installer(u32 handle)
     (void)installer_ux64_plan_generated();
     (void)installer_ux64_dryrun_no_writes();
 #else
-    (void)display64_draw_font_text(body_x, body_y, "Installer UX unavailable", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS fallback keeps dry-run/write disabled", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y, "Installer UX unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS fallback keeps dry-run/write disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
 #endif
 }
 
@@ -2910,18 +3190,18 @@ static void display64_desktop_draw_assistant(u32 handle)
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     ai_policy64_init();
     ai_policy64_action_probe();
-    (void)display64_draw_font_text(body_x, body_y, "Limitless Assistant", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 20u, "Mode B: predefined action templates", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 44u, "Inference backend unavailable", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 68u, "Actions require explicit consent", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 92u, "Templates: note, dry-run, settings, pkg", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 116u, "Denied: package, settings, cloud, secret", DISPLAY64_FONT_NORMAL, 0x00F0A060u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 140u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 164u, "Audit: request, consent, grant, result", DISPLAY64_FONT_NORMAL, 0x0046D9A6u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y, "Limitless Assistant", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 20u, "Mode B: predefined action templates", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 44u, "Inference backend unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 68u, "Actions require explicit consent", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 92u, "Templates: note, dry-run, settings, pkg", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 116u, "Denied: package, settings, cloud, secret", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 140u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 164u, "Audit: request, consent, grant, result", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)ai_policy64_audit_query();
 #else
-    (void)display64_draw_font_text(body_x, body_y, "Assistant unavailable", DISPLAY64_FONT_NORMAL, 0x00F8FBFFu, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, 0x00B8C7D8u, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y, "Assistant unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS checksum fallback", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
 #endif
     if (g_display_desktop_assistant_count == 0u)
     {
@@ -2951,12 +3231,15 @@ static void display64_desktop_draw_background(void)
         0u,
         g_display_boot_info->framebuffer_width,
         g_display_boot_info->framebuffer_height,
-        0x00070E16u);
+        DISPLAY64_RGB_DESKTOP_BG);
     display64_font_draw_status_bar();
 }
 
 static void display64_desktop_present_window_content(u32 handle)
 {
+    struct display64_window *window;
+    u32 token = 2166136261u;
+
     if (handle == g_display_desktop_fileman_handle)
     {
         display64_desktop_draw_file_manager(handle);
@@ -2979,6 +3262,12 @@ static void display64_desktop_present_window_content(u32 handle)
     }
 
     display64_wm_present_window(handle);
+    window = display64_wm_find_window(handle);
+    if ((handle == g_display_wm_shell_handle) && display64_wm_window_is_terminal(window))
+    {
+        display64_wm_configure_console(window);
+        (void)display64_console_replay_render(&token);
+    }
 }
 
 static void display64_desktop_draw_windows_by_z(void)
@@ -3613,6 +3902,9 @@ void display64_init(const struct boot_info *boot_info)
     g_display_console_wrap_count = 0u;
     g_display_console_scroll_count = 0u;
     g_display_console_line_dirty = 0u;
+    g_display_console_replay_head = 0u;
+    g_display_console_replay_count = 0u;
+    g_display_console_replay_overflow = 0u;
     g_display_text_x = DISPLAY64_TEXT_START_X;
     g_display_text_y = DISPLAY64_TEXT_START_Y;
     g_display_console_x = DISPLAY64_TEXT_START_X;
@@ -4161,6 +4453,7 @@ u32 display64_write_console_stream(u64 input_address, u32 byte_count)
     }
 
     bytes = (const u8 *)input_address;
+    display64_console_replay_append(bytes, byte_count);
     drawn = display64_render_text_bytes(bytes, byte_count, &token, 1u);
 
     ++g_display_draw_count;
@@ -4196,6 +4489,7 @@ u32 display64_write_console_stream_kernel(const u8 *input, u32 byte_count)
         return 0u;
     }
 
+    display64_console_replay_append(input, byte_count);
     drawn = display64_render_text_bytes(input, byte_count, &token, 1u);
 
     ++g_display_draw_count;

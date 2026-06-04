@@ -58,9 +58,10 @@ u32 i2c_hid64_pointer_error(void)
 #else
 
 #define I2C_HID64_MAP_VIRTUAL_BASE 0xFFFFFFFF901E0000ull
-#define I2C_HID64_SECOND_MAP_VIRTUAL_BASE (I2C_HID64_MAP_VIRTUAL_BASE + I2C_HID64_PAGE_BYTES)
-#define I2C_HID64_MAP_PAGES 1u
+#define I2C_HID64_MAP_PAGES 2u
 #define I2C_HID64_PAGE_BYTES 4096u
+#define I2C_HID64_SECOND_MAP_VIRTUAL_BASE \
+    (I2C_HID64_MAP_VIRTUAL_BASE + (I2C_HID64_PAGE_BYTES * I2C_HID64_MAP_PAGES))
 #define I2C_HID64_POLL_LIMIT 250000u
 #define I2C_HID64_TIMEOUT_TICKS 1u
 #define I2C_HID64_TRANSFER_TIMEOUT_BYTES_PER_TICK 64u
@@ -169,15 +170,17 @@ static u32 i2c_hid64_program_controller(void);
 static u32 i2c_hid64_mmio_flags_valid(u32 flags)
 {
     return ((flags & (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
-            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
-            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED))
+            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO))
         == (PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR
-            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO
-            | PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED)) ? 1u : 0u;
+            | PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO)) ? 1u : 0u;
 }
 
 static u32 i2c_hid64_map_physical(u64 virtual_base, u64 physical_base)
 {
+    u64 physical_page_base = physical_base & ~0xFFFull;
+    u64 page_offset = physical_base & 0xFFFull;
+    u64 active_virtual_base = virtual_base + page_offset;
+
     if (physical_base == 0ull)
     {
         g_i2c_hid64_error = (g_i2c_hid64_error == 0u) ? 1u : g_i2c_hid64_error;
@@ -185,15 +188,15 @@ static u32 i2c_hid64_map_physical(u64 virtual_base, u64 physical_base)
     }
 
     if ((g_i2c_hid64_mapped != 0u)
-        && (g_i2c_hid64_mapped_physical_base == physical_base)
-        && (g_i2c_hid64_active_virtual_base == virtual_base))
+        && (g_i2c_hid64_mapped_physical_base == physical_page_base)
+        && (g_i2c_hid64_active_virtual_base == active_virtual_base))
     {
         return 1u;
     }
 
     if (paging64_install_kernel_mmio_mapping(
             virtual_base,
-            physical_base,
+            physical_page_base,
             I2C_HID64_MAP_PAGES) == 0u)
     {
         g_i2c_hid64_error = (g_i2c_hid64_error == 0u) ? 2u : g_i2c_hid64_error;
@@ -201,8 +204,8 @@ static u32 i2c_hid64_map_physical(u64 virtual_base, u64 physical_base)
     }
 
     g_i2c_hid64_mapped = 1u;
-    g_i2c_hid64_mapped_physical_base = physical_base;
-    g_i2c_hid64_active_virtual_base = virtual_base;
+    g_i2c_hid64_mapped_physical_base = physical_page_base;
+    g_i2c_hid64_active_virtual_base = active_virtual_base;
     return 1u;
 }
 
@@ -972,7 +975,7 @@ void i2c_hid64_init(void)
                         keyboard_data_register = g_i2c_hid64_data_register;
                         keyboard_max_input_length = g_i2c_hid64_max_input_length;
                         keyboard_physical_base = physical_base;
-                        g_i2c_hid64_keyboard_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+                        g_i2c_hid64_keyboard_virtual_base = g_i2c_hid64_active_virtual_base;
                         keyboard_ready = 1u;
                         i2c_hid64_log_status("keyboard ready");
                     }
@@ -995,7 +998,7 @@ void i2c_hid64_init(void)
                         g_i2c_hid64_pointer_max_input_length = g_i2c_hid64_max_input_length;
                         g_i2c_hid64_pointer_report_has_id = has_report_id;
                         g_i2c_hid64_pointer_physical_base = physical_base;
-                        g_i2c_hid64_pointer_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+                        g_i2c_hid64_pointer_virtual_base = g_i2c_hid64_active_virtual_base;
                         i2c_hid64_log_status(
                             (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
                                 ? "pointer mouse ready"
@@ -1034,11 +1037,21 @@ void i2c_hid64_init(void)
             | (u64)pci64_lpss_i2c_pointer_candidate_base_low(pointer_candidate_index);
 
         if ((i2c_hid64_mmio_flags_valid(pointer_flags) == 0u)
-            || (pointer_physical_base == 0ull)
-            || (i2c_hid64_prepare_controller(
-                    I2C_HID64_SECOND_MAP_VIRTUAL_BASE,
-                    pointer_physical_base) == 0u))
+            || (pointer_physical_base == 0ull))
         {
+            g_i2c_hid64_pointer_error = (g_i2c_hid64_pointer_error == 0u)
+                ? 1u
+                : g_i2c_hid64_pointer_error;
+            continue;
+        }
+
+        if (i2c_hid64_prepare_controller(
+                I2C_HID64_SECOND_MAP_VIRTUAL_BASE,
+                pointer_physical_base) == 0u)
+        {
+            g_i2c_hid64_pointer_error = (g_i2c_hid64_pointer_error == 0u)
+                ? ((g_i2c_hid64_error != 0u) ? g_i2c_hid64_error : 2u)
+                : g_i2c_hid64_pointer_error;
             continue;
         }
 
@@ -1119,7 +1132,8 @@ void i2c_hid64_init(void)
                     g_i2c_hid64_pointer_max_input_length = g_i2c_hid64_max_input_length;
                     g_i2c_hid64_pointer_report_has_id = has_report_id;
                     g_i2c_hid64_pointer_physical_base = pointer_physical_base;
-                    g_i2c_hid64_pointer_virtual_base = I2C_HID64_SECOND_MAP_VIRTUAL_BASE;
+                    g_i2c_hid64_pointer_virtual_base = g_i2c_hid64_active_virtual_base;
+                    g_i2c_hid64_pointer_error = 0u;
                     i2c_hid64_log_status(
                         (tentative_touchpad != 0u)
                             ? "second controller tentative touchpad ready"
@@ -1171,7 +1185,7 @@ void i2c_hid64_init(void)
         g_i2c_hid64_keyboard_physical_base = keyboard_physical_base;
         if (g_i2c_hid64_keyboard_virtual_base == 0ull)
         {
-            g_i2c_hid64_keyboard_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
+            g_i2c_hid64_keyboard_virtual_base = g_i2c_hid64_active_virtual_base;
         }
         g_i2c_hid64_device_found = 1u;
         return;
@@ -1324,6 +1338,43 @@ static u32 i2c_hid64_touchpad_try_contact_sample(
     return 1u;
 }
 
+static u32 i2c_hid64_touchpad_try_coordinate_scan(const u8 *payload, u32 payload_length)
+{
+    static const u8 candidate_offsets[] = { 3u, 4u, 5u, 6u, 2u, 1u, 0u, 7u, 8u };
+    u32 index;
+
+    if ((payload == 0) || (payload_length < 5u))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < (u32)sizeof(candidate_offsets); ++index)
+    {
+        u32 offset = (u32)candidate_offsets[index];
+        u32 x;
+        u32 y;
+        u32 buttons;
+
+        if ((offset + 3u) >= payload_length)
+        {
+            continue;
+        }
+
+        x = i2c_hid64_payload_u16(payload, payload_length, offset);
+        y = i2c_hid64_payload_u16(payload, payload_length, offset + 2u);
+        if (((x == 0u) && (y == 0u)) || (x > 32767u) || (y > 32767u))
+        {
+            continue;
+        }
+
+        buttons = (payload[0] & 0x07u);
+        input64_accept_i2c_hid_touchpad_sample(x, y, 1u, buttons);
+        return 1u;
+    }
+
+    return 0u;
+}
+
 static u32 i2c_hid64_accept_touchpad_report(const u8 *payload, u32 payload_length)
 {
     u32 base = 0u;
@@ -1344,7 +1395,12 @@ static u32 i2c_hid64_accept_touchpad_report(const u8 *payload, u32 payload_lengt
         return 1u;
     }
 
-    return i2c_hid64_touchpad_try_contact_sample(payload, payload_length, base, 0u);
+    if (i2c_hid64_touchpad_try_contact_sample(payload, payload_length, base, 0u) != 0u)
+    {
+        return 1u;
+    }
+
+    return i2c_hid64_touchpad_try_coordinate_scan(payload, payload_length);
 }
 
 void i2c_hid64_poll_pointer(void)

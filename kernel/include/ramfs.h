@@ -51,6 +51,5 @@ int ramfs_delete(
     u32 base_node_id,
     const u8 *path_bytes,
     u32 path_length);
-const u8 *ramfs_startup_script_bytes(u32 *byte_length_out);
 
 #endif

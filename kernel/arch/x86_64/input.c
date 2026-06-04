@@ -56,38 +56,12 @@ struct input64_mouse_event
     u32 y;
 };
 
-static const u8 g_seeded_command[INPUT64_SEEDED_COMMAND_BYTES] = {
-    'c', 'a', 't', ' ', 'R', 'E', 'A', 'D', 'M', 'E', '.', 'T', 'X', 'T',
-    'h', 'e', 'l', 'p', 'X', '\b', '\n',
-    'h', 'e', 'l', 'p', ' ', 'l', 's', '\n',
-    'h', 'e', 'l', 'p', ' ', 'c', 'a', 't', '\n',
-    'h', 'e', 'l', 'p', ' ', 's', 't', 'a', 't', '\n',
-    'h', 'e', 'l', 'p', ' ', 'm', 'k', 'd', 'i', 'r', '\n',
-    'h', 'e', 'l', 'p', ' ', 'w', 'r', 'i', 't', 'e', '\n',
-    'w', 'r', 'i', 't', 'e', ' ', 'S', 'H', 'E', 'L', 'L', '.', 'T', 'X', 'T', '\n',
-    'c', 'a', 't', ' ', 'S', 'H', 'E', 'L', 'L', '.', 'T', 'X', 'T', '\n',
-    'a', 'p', 'p', 's', '\n',
-    'p', 'w', 'd', '\n',
-    'l', 's', ' ', '/', '\n',
-    'l', 's', ' ', 'A', 'P', 'P', 'S', '\n',
-    'i', 'n', 'f', 'o', ' ', 'l', 's', '\n',
-    'i', 'n', 'f', 'o', ' ', 'c', 'a', 't', '\n',
-    'i', 'n', 'f', 'o', ' ', 's', 't', 'a', 't', '\n',
-    'i', 'n', 'f', 'o', ' ', 'm', 'k', 'd', 'i', 'r', '\n',
-    'i', 'n', 'f', 'o', ' ', 'w', 'r', 'i', 't', 'e', '\n',
-    'c', 'a', 't', ' ', 'R', 'E', 'A', 'D', 'M', 'E', '.', 'T', 'X', 'T', '\n',
-    's', 't', 'a', 't', ' ', 'R', 'E', 'A', 'D', 'M', 'E', '.', 'T', 'X', 'T', '\n',
-    'h', 'e', 'l', 'p', 'X', '\n',
-    'n', 'o', 'o', 'p', '\n'
-};
-
 static u32 g_read_count = 0u;
 static u32 g_byte_count = 0u;
 static u32 g_denial_count = 0u;
 static u32 g_eof_count = 0u;
 static u32 g_line_count = 0u;
 static u32 g_edit_count = 0u;
-static u32 g_cursor = 0u;
 static u8 g_keyboard_queue[INPUT64_KEYBOARD_QUEUE_CAPACITY];
 static u32 g_keyboard_head = 0u;
 static u32 g_keyboard_tail = 0u;
@@ -555,14 +529,14 @@ static void input64_mouse_publish_diagnostics(void)
         i2c_pointer_error);
 }
 
-static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
+static u32 input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 {
     struct input64_mouse_event event;
     u32 next_buttons = buttons & 0x7u;
 
     if ((dx == 0) && (dy == 0) && (next_buttons == g_mouse_buttons))
     {
-        return;
+        return 0u;
     }
 
     g_mouse_found = 1u;
@@ -589,7 +563,8 @@ static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
     if (g_mouse_pending >= INPUT64_MOUSE_QUEUE_CAPACITY)
     {
         ++g_mouse_drop_count;
-        return;
+        input64_mouse_publish_diagnostics();
+        return 1u;
     }
 
     event.dx = dx;
@@ -601,6 +576,7 @@ static void input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
     g_mouse_tail = (g_mouse_tail + 1u) % INPUT64_MOUSE_QUEUE_CAPACITY;
     ++g_mouse_pending;
     input64_mouse_publish_diagnostics();
+    return 1u;
 }
 
 static void input64_mouse_accept_ps2_byte(u8 value)
@@ -1479,7 +1455,6 @@ void input64_init(void)
     g_eof_count = 0u;
     g_line_count = 0u;
     g_edit_count = 0u;
-    g_cursor = 0u;
     g_keyboard_scancode_set = INPUT64_KEYBOARD_SCANCODE_SET1;
     input64_keyboard_reset();
     input64_mouse_reset();
@@ -1589,15 +1564,36 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
 
 void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count)
 {
+    u32 offset;
+
     if ((report == 0) || (byte_count < 3u))
     {
         return;
     }
 
-    input64_mouse_enqueue_delta(
+    if (input64_mouse_enqueue_delta(
         input64_sign_extend_byte(report[1]),
         input64_sign_extend_byte(report[2]),
-        (u32)(report[0] & 0x07u));
+        (u32)(report[0] & 0x07u)) != 0u)
+    {
+        return;
+    }
+
+    for (offset = 1u; (offset + 2u) < byte_count && offset < 4u; ++offset)
+    {
+        u32 buttons = (u32)(report[offset] & 0x07u);
+        s32 dx = input64_sign_extend_byte(report[offset + 1u]);
+        s32 dy = input64_sign_extend_byte(report[offset + 2u]);
+
+        if (((report[offset] & 0xF8u) == 0u)
+            && ((dx != 0) || (dy != 0) || (buttons != g_mouse_buttons)))
+        {
+            if (input64_mouse_enqueue_delta(dx, dy, buttons) != 0u)
+            {
+                return;
+            }
+        }
+    }
 }
 
 void input64_accept_i2c_hid_touchpad_sample(u32 x, u32 y, u32 contact_active, u32 buttons)
@@ -1649,38 +1645,18 @@ void input64_set_mouse_bounds(u32 width, u32 height)
 
 u32 input64_read(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id)
 {
-    u32 endpoint;
-    u32 remaining;
-    u32 actual_count;
-
-    if ((byte_capacity == 0u)
-        || (byte_capacity > INPUT64_MAX_READ_BYTES)
-        || !input64_address_writable(output_address, byte_capacity))
-    {
-        return input64_deny();
-    }
-
-    endpoint = capability64_route(
+    u32 actual_count = input64_read_keyboard(
         input_capability_handle,
-        CAPABILITY64_RIGHT_SEND,
+        output_address,
+        byte_capacity,
         owner_id);
-    if (endpoint != services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INPUT))
+
+    if ((actual_count != INPUT64_INVALID_RESULT) && (actual_count > 0u))
     {
-        return input64_deny();
+        ++g_read_count;
+        g_byte_count += actual_count;
     }
 
-    if (g_cursor >= (u32)sizeof(g_seeded_command))
-    {
-        ++g_eof_count;
-        return 0u;
-    }
-
-    remaining = ((u32)sizeof(g_seeded_command)) - g_cursor;
-    actual_count = (byte_capacity < remaining) ? byte_capacity : remaining;
-    input64_copy((void *)output_address, &g_seeded_command[g_cursor], actual_count);
-    g_cursor += actual_count;
-    ++g_read_count;
-    g_byte_count += actual_count;
     return actual_count;
 }
 
@@ -1692,8 +1668,7 @@ u32 input64_read_kernel(
     u32 owner_id)
 {
     u32 endpoint;
-    u32 remaining;
-    u32 actual_count;
+    u32 actual_count = 0u;
 
     if ((output == 0) || (byte_capacity == 0u) || (byte_capacity > INPUT64_MAX_READ_BYTES))
     {
@@ -1709,89 +1684,43 @@ u32 input64_read_kernel(
         return input64_deny();
     }
 
-    if (g_cursor >= (u32)sizeof(g_seeded_command))
+    input64_poll_keyboard();
+
+    while ((actual_count < byte_capacity) && (g_keyboard_pending > 0u))
     {
-        ++g_eof_count;
-        return 0u;
+        output[actual_count] = g_keyboard_queue[g_keyboard_head];
+        g_keyboard_head = (g_keyboard_head + 1u) % INPUT64_KEYBOARD_QUEUE_CAPACITY;
+        --g_keyboard_pending;
+        ++actual_count;
     }
 
-    remaining = ((u32)sizeof(g_seeded_command)) - g_cursor;
-    actual_count = (byte_capacity < remaining) ? byte_capacity : remaining;
-    input64_copy(output, &g_seeded_command[g_cursor], actual_count);
-    g_cursor += actual_count;
-    ++g_read_count;
-    g_byte_count += actual_count;
+    if (actual_count > 0u)
+    {
+        ++g_read_count;
+        g_byte_count += actual_count;
+        ++g_keyboard_read_count;
+        g_keyboard_read_byte_count += actual_count;
+    }
+
     return actual_count;
 }
 #endif
 
 u32 input64_read_line(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id)
 {
-    u32 endpoint;
-    u32 scan;
-    u32 actual_count;
-    u8 *output;
-
-    if ((byte_capacity == 0u)
-        || (byte_capacity > INPUT64_MAX_READ_BYTES)
-        || !input64_address_writable(output_address, byte_capacity))
-    {
-        return input64_deny();
-    }
-
-    endpoint = capability64_route(
+    u32 actual_count = input64_read_keyboard_line(
         input_capability_handle,
-        CAPABILITY64_RIGHT_SEND,
+        output_address,
+        byte_capacity,
         owner_id);
-    if (endpoint != services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_INPUT))
+
+    if ((actual_count != INPUT64_INVALID_RESULT) && (actual_count > 0u))
     {
-        return input64_deny();
+        ++g_read_count;
+        ++g_line_count;
+        g_byte_count += actual_count;
     }
 
-    if (g_cursor >= (u32)sizeof(g_seeded_command))
-    {
-        ++g_eof_count;
-        return 0u;
-    }
-
-    scan = g_cursor;
-    actual_count = 0u;
-    output = (u8 *)output_address;
-    while (scan < (u32)sizeof(g_seeded_command))
-    {
-        u8 input_byte = g_seeded_command[scan];
-
-        if (input_byte == (u8)'\n')
-        {
-            ++scan;
-            break;
-        }
-
-        if ((input_byte == (u8)'\b') || (input_byte == 0x7Fu))
-        {
-            if (actual_count > 0u)
-            {
-                --actual_count;
-            }
-            ++g_edit_count;
-            ++scan;
-            continue;
-        }
-
-        if (actual_count >= byte_capacity)
-        {
-            return input64_deny();
-        }
-
-        output[actual_count] = input_byte;
-        ++actual_count;
-        ++scan;
-    }
-
-    g_cursor = scan;
-    ++g_read_count;
-    ++g_line_count;
-    g_byte_count += actual_count;
     return actual_count;
 }
 

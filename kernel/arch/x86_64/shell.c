@@ -27,6 +27,7 @@
 #define SHELL64_MAX_LINE_BYTES 128u
 #define SHELL64_MAX_PATH_BYTES 128u
 #define SHELL64_IO_BYTES 4096u
+#define SHELL64_CONSOLE_CHUNK_BYTES 512u
 #define SHELL64_KERNEL_HIGH_BASE_HIGH32 0xFFFFFFFFu
 #define SHELL64_KERNEL_HIGH_BASE_LOW32 0x80000000u
 
@@ -451,6 +452,7 @@ static u32 shell64_net_curl(
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     u32 byte_count = 0u;
+    u32 offset;
     u32 result;
 
     result = network_socket64_curl_http(
@@ -474,7 +476,20 @@ static u32 shell64_net_curl(
 
     if (byte_count != 0u)
     {
-        (void)shell64_write(console_capability_handle, owner_id, g_shell64_io, byte_count);
+        offset = 0u;
+        while (offset < byte_count)
+        {
+            u32 remaining = byte_count - offset;
+            u32 chunk = (remaining < SHELL64_CONSOLE_CHUNK_BYTES)
+                ? remaining
+                : SHELL64_CONSOLE_CHUNK_BYTES;
+            (void)shell64_write(
+                console_capability_handle,
+                owner_id,
+                &g_shell64_io[offset],
+                chunk);
+            offset += chunk;
+        }
         if (g_shell64_io[byte_count - 1u] != (u8)'\n')
         {
             (void)shell64_write_text(console_capability_handle, owner_id, "\n");
@@ -707,6 +722,40 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci found: ", xhci64_found());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci handoff: ", xhci64_legacy_handoff());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci hid keyboard: ", xhci64_hid_device());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci mouse endpoint: ", xhci64_mouse_endpoint_present());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse reports: ", xhci64_mouse_reports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse bytes: ", xhci64_mouse_report_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci error: ", xhci64_error());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer reports: ", i2c_hid64_pointer_report_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer error: ", i2c_hid64_pointer_error());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c controllers: ", pci64_lpss_i2c_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer candidates: ", pci64_lpss_i2c_pointer_candidate_count());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary pci: ", pci64_lpss_i2c_address());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary bar0: ", pci64_lpss_i2c_bar0());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary base low: ", pci64_lpss_i2c_base_low());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary flags: ", pci64_lpss_i2c_mmio_flags());
+    if (pci64_lpss_i2c_pointer_candidate_count() != 0u)
+    {
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 pci: ",
+            pci64_lpss_i2c_pointer_candidate_address(0u));
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 base low: ",
+            pci64_lpss_i2c_pointer_candidate_base_low(0u));
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 flags: ",
+            pci64_lpss_i2c_pointer_candidate_mmio_flags(0u));
+    }
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse packets: ", input64_mouse_packet_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse x: ", input64_mouse_x());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse y: ", input64_mouse_y());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback present: ", input64_ps2_present());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback enabled: ", input64_ps2_enabled());
     (void)shell64_write_status_line(
