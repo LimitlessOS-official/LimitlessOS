@@ -493,9 +493,11 @@ u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
     u64 root_physical;
     u64 pdpt_physical;
     u64 runtime_pd_physical;
+    u64 previous_root;
     u32 slot;
     u32 framebuffer_pdpt_index;
     u32 framebuffer_shared = 0u;
+    u32 restore_previous_root = 0u;
 
     if ((pid == 0u)
         || (pid == PAGING64_INVALID_PID)
@@ -525,13 +527,15 @@ u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
     }
 
     kernel_root = paging64_ensure_kernel_root_physical();
-    if (paging64_current_root_physical() != (kernel_root & PAGING64_PAGE_MASK))
+    previous_root = paging64_current_root_physical();
+    if (previous_root != (kernel_root & PAGING64_PAGE_MASK))
     {
         if (paging64_switch_to_kernel_root(0x504D4C34u) == 0u)
         {
             ++g_paging64_process_root_alloc_denial_count;
             return 0u;
         }
+        restore_previous_root = 1u;
     }
     kernel_pml4 = (volatile u64 *)(u64)kernel_root;
     kernel_pdpt = (volatile u64 *)(u64)(kernel_pml4[0u] & PAGING64_PHYSICAL_ADDRESS_MASK);
@@ -625,6 +629,10 @@ u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
     g_paging64_process_root_last_slot = slot;
     g_paging64_process_root_last_pid = pid;
     g_paging64_process_root_last_physical = root_physical;
+    if (restore_previous_root != 0u)
+    {
+        write_cr3_64(previous_root & PAGING64_PAGE_MASK);
+    }
     return 1u;
 }
 
