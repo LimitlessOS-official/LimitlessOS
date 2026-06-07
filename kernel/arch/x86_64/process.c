@@ -45,6 +45,12 @@ struct process64_record
     u64 page_root_physical;
     u32 page_root_index;
     u32 page_root_token;
+    u32 parent_pid;
+    u32 child_kind;
+    u32 child_count;
+    u32 waitable;
+    u32 exited;
+    u32 exit_code;
 #endif
 };
 
@@ -187,6 +193,12 @@ static void process64_clear_record(struct process64_record *record)
     record->page_root_physical = 0ull;
     record->page_root_index = 0xFFFFFFFFu;
     record->page_root_token = 0u;
+    record->parent_pid = PROCESS64_INVALID_PID;
+    record->child_kind = PROCESS64_CHILD_KIND_NONE;
+    record->child_count = 0u;
+    record->waitable = 0u;
+    record->exited = 0u;
+    record->exit_code = 0u;
 }
 
 static u32 process64_clone_record_active(const struct process64_record *record)
@@ -247,6 +259,12 @@ static void process64_seed_record(u32 index, u32 preserve_extensions)
     g_processes[index].page_root_physical = page_root_physical;
     g_processes[index].page_root_index = page_root_index;
     g_processes[index].page_root_token = page_root_token;
+    g_processes[index].parent_pid = PROCESS64_INVALID_PID;
+    g_processes[index].child_kind = PROCESS64_CHILD_KIND_NONE;
+    g_processes[index].child_count = 0u;
+    g_processes[index].waitable = 0u;
+    g_processes[index].exited = 0u;
+    g_processes[index].exit_code = 0u;
 #endif
 }
 
@@ -1201,13 +1219,16 @@ u32 process64_page_root_denial_count(void)
     return g_process64_page_root_denial_count;
 }
 
-u32 process64_spawn_clone(u32 parent_pid)
+static u32 process64_spawn_child(u32 parent_pid, u32 child_kind, const char *child_name)
 {
-    const struct process64_record *parent = process64_find(parent_pid);
+    struct process64_record *parent = process64_find_mutable(parent_pid);
     struct process64_record *child = 0;
     u32 index;
 
-    if ((parent == 0) || (parent->principal_id == 0u))
+    if ((parent == 0)
+        || (parent->principal_id == 0u)
+        || ((child_kind != PROCESS64_CHILD_KIND_CLONE)
+            && (child_kind != PROCESS64_CHILD_KIND_FORK)))
     {
         return PROCESS64_INVALID_PID;
     }
@@ -1234,7 +1255,7 @@ u32 process64_spawn_clone(u32 parent_pid)
         g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
     }
 
-    process64_copy_name(child->name, "linux-thread");
+    process64_copy_name(child->name, child_name);
     child->principal_id = parent->principal_id;
     child->endpoint_class = SERVICE_ENDPOINT_CLASS_NONE;
     child->state = PROCESS64_STATE_BOOTSTRAPPED | PROCESS64_STATE_READY;
@@ -1245,8 +1266,79 @@ u32 process64_spawn_clone(u32 parent_pid)
     child->manifest_executable_id = parent->manifest_executable_id;
     child->manifest_signer_id = parent->manifest_signer_id;
     child->manifest_token = parent->manifest_token;
+    child->parent_pid = parent_pid;
+    child->child_kind = child_kind;
+    child->waitable = 1u;
+    child->exited = 0u;
+    child->exit_code = 0u;
+    ++parent->child_count;
     ++g_process64_clone_count;
     return child->pid;
+}
+
+u32 process64_spawn_clone(u32 parent_pid)
+{
+    return process64_spawn_child(
+        parent_pid,
+        PROCESS64_CHILD_KIND_CLONE,
+        "linux-thread");
+}
+
+u32 process64_spawn_fork(u32 parent_pid)
+{
+    return process64_spawn_child(
+        parent_pid,
+        PROCESS64_CHILD_KIND_FORK,
+        "linux-fork");
+}
+
+u32 process64_parent_pid(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->parent_pid : PROCESS64_INVALID_PID;
+}
+
+u32 process64_child_kind(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->child_kind : PROCESS64_CHILD_KIND_NONE;
+}
+
+u32 process64_child_count(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->child_count : 0u;
+}
+
+u32 process64_mark_child_exited(u32 pid, u32 exit_code)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    if ((record == 0) || (record->waitable == 0u))
+    {
+        return 0u;
+    }
+
+    record->exited = 1u;
+    record->exit_code = exit_code;
+    return 1u;
+}
+
+u32 process64_child_exited(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->exited : 0u;
+}
+
+u32 process64_child_exit_code(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->exit_code : 0u;
 }
 
 u32 process64_release_clone(u32 pid)
@@ -1260,6 +1352,12 @@ u32 process64_release_clone(u32 pid)
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))
         {
+            struct process64_record *parent =
+                process64_find_mutable(g_process64_clone_records[index].parent_pid);
+            if ((parent != 0) && (parent->child_count != 0u))
+            {
+                --parent->child_count;
+            }
             process64_clear_record(&g_process64_clone_records[index]);
             if (g_process64_clone_count != 0u)
             {
@@ -1283,11 +1381,18 @@ u32 process64_is_clone(u32 pid)
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))
         {
-            return 1u;
+            return (g_process64_clone_records[index].child_kind == PROCESS64_CHILD_KIND_CLONE)
+                ? 1u
+                : 0u;
         }
     }
 
     return 0u;
+}
+
+u32 process64_is_fork_child(u32 pid)
+{
+    return (process64_child_kind(pid) == PROCESS64_CHILD_KIND_FORK) ? 1u : 0u;
 }
 
 u32 process64_clone_count(void)
@@ -1324,4 +1429,21 @@ u32 process64_page_root_token(u32 pid) { (void)pid; return 0u; }
 u32 process64_page_root_attach_count(void) { return 0u; }
 u32 process64_page_root_clear_count(void) { return 0u; }
 u32 process64_page_root_denial_count(void) { return 0u; }
+u32 process64_spawn_fork(u32 parent_pid)
+{
+    (void)parent_pid;
+    return PROCESS64_INVALID_PID;
+}
+u32 process64_parent_pid(u32 pid) { (void)pid; return PROCESS64_INVALID_PID; }
+u32 process64_child_kind(u32 pid) { (void)pid; return PROCESS64_CHILD_KIND_NONE; }
+u32 process64_child_count(u32 pid) { (void)pid; return 0u; }
+u32 process64_mark_child_exited(u32 pid, u32 exit_code)
+{
+    (void)pid;
+    (void)exit_code;
+    return 0u;
+}
+u32 process64_child_exited(u32 pid) { (void)pid; return 0u; }
+u32 process64_child_exit_code(u32 pid) { (void)pid; return 0u; }
+u32 process64_is_fork_child(u32 pid) { (void)pid; return 0u; }
 #endif

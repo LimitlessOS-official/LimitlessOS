@@ -158,6 +158,7 @@ void persona64_init(void);
 persona_context_t *persona64_context_for_process(u32 pid);
 u32 persona64_init_native(u32 pid);
 u32 persona64_init_linux_elf(u32 pid, void *syscall_dispatch_table);
+u32 persona64_fork_linux_elf(u32 parent_pid, u32 child_pid, void *syscall_dispatch_table);
 u32 persona64_init_windows_pe(u32 pid, void *syscall_dispatch_table);
 u32 persona64_init_macos_macho(u32 pid, void *syscall_dispatch_table);
 u32 persona64_release(u32 pid);

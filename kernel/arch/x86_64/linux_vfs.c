@@ -163,6 +163,12 @@ static u32 g_linux_vfs64_nvme_readdir_count = 0u;
 static u32 g_linux_vfs64_nvme_dirent_count = 0u;
 static u32 g_linux_vfs64_nvme_denial_count = 0u;
 static u32 g_linux_vfs64_nvme_last_bytes = 0u;
+static u32 g_linux_vfs64_fork_copy_count = 0u;
+static u32 g_linux_vfs64_fork_copy_denial_count = 0u;
+static u32 g_linux_vfs64_fork_copy_last_parent_pid = PROCESS64_INVALID_PID;
+static u32 g_linux_vfs64_fork_copy_last_child_pid = PROCESS64_INVALID_PID;
+static u32 g_linux_vfs64_fork_copy_last_fd_paths = 0u;
+static u32 g_linux_vfs64_fork_copy_last_nvme = 0u;
 static u32 g_linux_vfs64_random_counter = 0x5A17A001u;
 static linux_vfs64_fd_path_record_t g_linux_vfs64_fd_paths[LINUX_VFS64_MAX_FD_PATH_RECORDS];
 static linux_vfs64_proc_record_t g_linux_vfs64_proc_records[LINUX_VFS64_MAX_PROC_RECORDS];
@@ -170,6 +176,9 @@ static linux_vfs64_tmp_record_t g_linux_vfs64_tmp_records[LINUX_VFS64_MAX_TMP_RE
 static linux_vfs64_nvme_binding_t g_linux_vfs64_nvme_bindings[LINUX_VFS64_MAX_NVME_BINDINGS];
 
 static u32 linux_vfs64_bytes_equal(const u8 *left, const u8 *right, u32 byte_count);
+static void linux_vfs64_clear_fd_path_record(linux_vfs64_fd_path_record_t *record);
+static void linux_vfs64_clear_proc_record(linux_vfs64_proc_record_t *record);
+static void linux_vfs64_clear_tmp_record(linux_vfs64_tmp_record_t *record);
 
 static void linux_vfs64_zero_result(linux_vfs64_result_t *result)
 {
@@ -231,6 +240,44 @@ static linux_vfs64_nvme_binding_t *linux_vfs64_find_nvme_binding(u32 pid)
     }
 
     return 0;
+}
+
+static void linux_vfs64_clear_process_records(u32 pid)
+{
+    u32 index;
+
+    for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
+    {
+        if ((g_linux_vfs64_fd_paths[index].active != 0u)
+            && (g_linux_vfs64_fd_paths[index].pid == pid))
+        {
+            linux_vfs64_clear_fd_path_record(&g_linux_vfs64_fd_paths[index]);
+        }
+    }
+    for (index = 0u; index < LINUX_VFS64_MAX_PROC_RECORDS; ++index)
+    {
+        if ((g_linux_vfs64_proc_records[index].active != 0u)
+            && (g_linux_vfs64_proc_records[index].pid == pid))
+        {
+            linux_vfs64_clear_proc_record(&g_linux_vfs64_proc_records[index]);
+        }
+    }
+    for (index = 0u; index < LINUX_VFS64_MAX_TMP_RECORDS; ++index)
+    {
+        if ((g_linux_vfs64_tmp_records[index].active != 0u)
+            && (g_linux_vfs64_tmp_records[index].pid == pid))
+        {
+            linux_vfs64_clear_tmp_record(&g_linux_vfs64_tmp_records[index]);
+        }
+    }
+    for (index = 0u; index < LINUX_VFS64_MAX_NVME_BINDINGS; ++index)
+    {
+        if ((g_linux_vfs64_nvme_bindings[index].active != 0u)
+            && (g_linux_vfs64_nvme_bindings[index].pid == pid))
+        {
+            linux_vfs64_clear_nvme_binding(&g_linux_vfs64_nvme_bindings[index]);
+        }
+    }
 }
 
 static u32 linux_vfs64_nvme_path_to_fat(
@@ -2326,6 +2373,12 @@ void linux_vfs64_init(void)
     {
         linux_vfs64_clear_nvme_binding(&g_linux_vfs64_nvme_bindings[index]);
     }
+    g_linux_vfs64_fork_copy_count = 0u;
+    g_linux_vfs64_fork_copy_denial_count = 0u;
+    g_linux_vfs64_fork_copy_last_parent_pid = PROCESS64_INVALID_PID;
+    g_linux_vfs64_fork_copy_last_child_pid = PROCESS64_INVALID_PID;
+    g_linux_vfs64_fork_copy_last_fd_paths = 0u;
+    g_linux_vfs64_fork_copy_last_nvme = 0u;
     g_linux_vfs64_initialized = 1u;
 }
 
@@ -2394,6 +2447,172 @@ u32 linux_vfs64_bind_nvme_read(u32 pid, u32 owner_id, u32 nvme_capability)
     return 1u;
 }
 
+static u32 linux_vfs64_fork_copy_fd_paths(u32 parent_pid, u32 child_pid, u32 *copied_out)
+{
+    u32 index;
+    u32 child_index;
+    u32 copied = 0u;
+
+    if (copied_out != 0)
+    {
+        *copied_out = 0u;
+    }
+
+    for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
+    {
+        linux_vfs64_fd_path_record_t *source = &g_linux_vfs64_fd_paths[index];
+        linux_vfs64_fd_path_record_t *target = 0;
+
+        if ((source->active == 0u) || (source->pid != parent_pid))
+        {
+            continue;
+        }
+
+        for (child_index = 0u; child_index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++child_index)
+        {
+            if (g_linux_vfs64_fd_paths[child_index].active == 0u)
+            {
+                target = &g_linux_vfs64_fd_paths[child_index];
+                break;
+            }
+        }
+        if (target == 0)
+        {
+            return 0u;
+        }
+
+        *target = *source;
+        target->pid = child_pid;
+        ++copied;
+    }
+
+    if (copied_out != 0)
+    {
+        *copied_out = copied;
+    }
+    return 1u;
+}
+
+static u32 linux_vfs64_fork_copy_proc_identity(u32 parent_pid, u32 child_pid)
+{
+    linux_vfs64_proc_record_t *source = linux_vfs64_find_proc_record(parent_pid);
+    linux_vfs64_proc_record_t *target;
+
+    if (source == 0)
+    {
+        return 1u;
+    }
+
+    target = linux_vfs64_acquire_proc_record(child_pid);
+    if (target == 0)
+    {
+        return 0u;
+    }
+
+    *target = *source;
+    target->pid = child_pid;
+    target->active = 1u;
+    return 1u;
+}
+
+static u32 linux_vfs64_fork_copy_tmp_namespace(u32 parent_pid, u32 child_pid)
+{
+    u32 index;
+    u32 child_index;
+
+    for (index = 0u; index < LINUX_VFS64_MAX_TMP_RECORDS; ++index)
+    {
+        linux_vfs64_tmp_record_t *source = &g_linux_vfs64_tmp_records[index];
+        linux_vfs64_tmp_record_t *target = 0;
+
+        if ((source->active == 0u) || (source->pid != parent_pid))
+        {
+            continue;
+        }
+
+        for (child_index = 0u; child_index < LINUX_VFS64_MAX_TMP_RECORDS; ++child_index)
+        {
+            if (g_linux_vfs64_tmp_records[child_index].active == 0u)
+            {
+                target = &g_linux_vfs64_tmp_records[child_index];
+                break;
+            }
+        }
+        if (target == 0)
+        {
+            return 0u;
+        }
+
+        *target = *source;
+        target->pid = child_pid;
+        target->active = 1u;
+    }
+
+    return 1u;
+}
+
+static u32 linux_vfs64_fork_copy_nvme_binding(u32 parent_pid, u32 child_pid, u32 *copied_out)
+{
+    linux_vfs64_nvme_binding_t *source = linux_vfs64_find_nvme_binding(parent_pid);
+
+    if (copied_out != 0)
+    {
+        *copied_out = 0u;
+    }
+    if (source == 0)
+    {
+        return 1u;
+    }
+    if (linux_vfs64_bind_nvme_read(child_pid, source->owner_id, source->capability) == 0u)
+    {
+        return 0u;
+    }
+    if (copied_out != 0)
+    {
+        *copied_out = 1u;
+    }
+    return 1u;
+}
+
+u32 linux_vfs64_fork_process(u32 parent_pid, u32 child_pid)
+{
+    u32 fd_paths = 0u;
+    u32 nvme = 0u;
+
+    if (g_linux_vfs64_initialized == 0u)
+    {
+        linux_vfs64_init();
+    }
+
+    g_linux_vfs64_fork_copy_last_parent_pid = parent_pid;
+    g_linux_vfs64_fork_copy_last_child_pid = child_pid;
+    g_linux_vfs64_fork_copy_last_fd_paths = 0u;
+    g_linux_vfs64_fork_copy_last_nvme = 0u;
+
+    if ((linux_vfs64_process_is_valid(parent_pid) == 0u)
+        || (linux_vfs64_process_is_valid(child_pid) == 0u)
+        || (parent_pid == child_pid))
+    {
+        ++g_linux_vfs64_fork_copy_denial_count;
+        return 0u;
+    }
+
+    if ((linux_vfs64_fork_copy_fd_paths(parent_pid, child_pid, &fd_paths) == 0u)
+        || (linux_vfs64_fork_copy_proc_identity(parent_pid, child_pid) == 0u)
+        || (linux_vfs64_fork_copy_tmp_namespace(parent_pid, child_pid) == 0u)
+        || (linux_vfs64_fork_copy_nvme_binding(parent_pid, child_pid, &nvme) == 0u))
+    {
+        ++g_linux_vfs64_fork_copy_denial_count;
+        linux_vfs64_clear_process_records(child_pid);
+        return 0u;
+    }
+
+    g_linux_vfs64_fork_copy_last_fd_paths = fd_paths;
+    g_linux_vfs64_fork_copy_last_nvme = nvme;
+    ++g_linux_vfs64_fork_copy_count;
+    return 1u;
+}
+
 u32 linux_vfs64_release_nvme_read(u32 pid)
 {
     linux_vfs64_nvme_binding_t *binding;
@@ -2412,6 +2631,23 @@ u32 linux_vfs64_release_nvme_read(u32 pid)
 
     linux_vfs64_clear_nvme_binding(binding);
     ++g_linux_vfs64_nvme_release_count;
+    return 1u;
+}
+
+u32 linux_vfs64_release_process(u32 pid)
+{
+    if (g_linux_vfs64_initialized == 0u)
+    {
+        linux_vfs64_init();
+    }
+
+    if (linux_vfs64_process_is_valid(pid) == 0u)
+    {
+        ++g_linux_vfs64_denial_count;
+        return 0u;
+    }
+
+    linux_vfs64_clear_process_records(pid);
     return 1u;
 }
 
@@ -4159,4 +4395,34 @@ u32 linux_vfs64_nvme_denial_count(void)
 u32 linux_vfs64_nvme_last_bytes(void)
 {
     return g_linux_vfs64_nvme_last_bytes;
+}
+
+u32 linux_vfs64_fork_copy_count(void)
+{
+    return g_linux_vfs64_fork_copy_count;
+}
+
+u32 linux_vfs64_fork_copy_denial_count(void)
+{
+    return g_linux_vfs64_fork_copy_denial_count;
+}
+
+u32 linux_vfs64_fork_copy_last_parent_pid(void)
+{
+    return g_linux_vfs64_fork_copy_last_parent_pid;
+}
+
+u32 linux_vfs64_fork_copy_last_child_pid(void)
+{
+    return g_linux_vfs64_fork_copy_last_child_pid;
+}
+
+u32 linux_vfs64_fork_copy_last_fd_paths(void)
+{
+    return g_linux_vfs64_fork_copy_last_fd_paths;
+}
+
+u32 linux_vfs64_fork_copy_last_nvme(void)
+{
+    return g_linux_vfs64_fork_copy_last_nvme;
 }

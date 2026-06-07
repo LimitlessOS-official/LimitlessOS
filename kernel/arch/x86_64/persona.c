@@ -504,6 +504,88 @@ u32 persona64_init_linux_elf(u32 pid, void *syscall_dispatch_table)
     return PERSONA64_ATTACH_OK;
 }
 
+u32 persona64_fork_linux_elf(u32 parent_pid, u32 child_pid, void *syscall_dispatch_table)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    persona_context_t *parent;
+    persona_context_t *child;
+    u32 index;
+
+    persona64_init();
+
+    parent = persona64_context_for_process(parent_pid);
+    if ((parent_pid == PROCESS64_INVALID_PID)
+        || (child_pid == PROCESS64_INVALID_PID)
+        || (parent_pid == child_pid)
+        || (process64_principal(parent_pid) == 0u)
+        || (process64_principal(child_pid) == 0u)
+        || (parent == 0)
+        || (parent->persona_type != PERSONA64_TYPE_LINUX_ELF)
+        || (syscall_dispatch_table == 0)
+        || (process64_persona_ctx(child_pid) != 0))
+    {
+        ++g_persona64_denial_count;
+        return PERSONA64_ATTACH_DENIED;
+    }
+
+    child = persona64_acquire_context(child_pid);
+    if (child == 0)
+    {
+        ++g_persona64_denial_count;
+        return PERSONA64_ATTACH_DENIED;
+    }
+
+    child->persona_type = PERSONA64_TYPE_LINUX_ELF;
+    child->syscall_dispatch_table = syscall_dispatch_table;
+    child->vma_root = process64_vma_root(child_pid);
+    child->fd_table = process64_fd_table(child_pid);
+    child->tls_base = parent->tls_base;
+    child->tls_size = parent->tls_size;
+    child->clear_child_tid = 0ull;
+    child->brk_base = parent->brk_base;
+    child->brk_current = parent->brk_current;
+    child->heap_cap = parent->heap_cap;
+    child->persona_module_handle = parent->persona_module_handle;
+    child->audit_context = process64_audit_ctx(child_pid);
+    child->capability_attenuation_mask = parent->capability_attenuation_mask;
+    child->load_bias_low = parent->load_bias_low;
+    child->vma_page_budget = parent->vma_page_budget;
+    child->fd_budget = parent->fd_budget;
+    child->pipe_budget = parent->pipe_budget;
+    child->pipe_count = 0u;
+    child->process_group_id = parent->process_group_id;
+    child->linux_cwd_length = parent->linux_cwd_length;
+    for (index = 0u; index < PERSONA64_LINUX_CWD_MAX_BYTES; ++index)
+    {
+        child->linux_cwd[index] = parent->linux_cwd[index];
+    }
+    for (index = 0u; index < PERSONA64_LINUX_COMM_BYTES; ++index)
+    {
+        child->linux_comm[index] = parent->linux_comm[index];
+    }
+    child->linux_signal_pending = LINUX_SIGNAL64_PENDING_NONE;
+    child->linux_signal_mask = parent->linux_signal_mask;
+    for (index = 0u; index < LINUX_SIGNAL64_MAX_SIGNALS; ++index)
+    {
+        child->linux_sigactions[index] = parent->linux_sigactions[index];
+    }
+
+    if (process64_attach_persona(child_pid, child) == 0u)
+    {
+        persona64_release_context(child);
+        ++g_persona64_denial_count;
+        return PERSONA64_ATTACH_DENIED;
+    }
+
+    return PERSONA64_ATTACH_OK;
+#else
+    (void)parent_pid;
+    (void)child_pid;
+    (void)syscall_dispatch_table;
+    return PERSONA64_ATTACH_DENIED;
+#endif
+}
+
 u32 persona64_init_windows_pe(u32 pid, void *syscall_dispatch_table)
 {
     persona_context_t *context;

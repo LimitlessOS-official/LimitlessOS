@@ -8585,6 +8585,32 @@ u64 syscall64_native_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
     return syscall64_dispatch(number, arg0, arg1, arg2);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void syscall64_native_load_switch_frame(const struct interrupt_frame64 *frame)
+{
+    syscall64_native_switch_r15 = frame->r15;
+    syscall64_native_switch_r14 = frame->r14;
+    syscall64_native_switch_r13 = frame->r13;
+    syscall64_native_switch_r12 = frame->r12;
+    syscall64_native_switch_r11 = frame->r11;
+    syscall64_native_switch_r10 = frame->r10;
+    syscall64_native_switch_r9 = frame->r9;
+    syscall64_native_switch_r8 = frame->r8;
+    syscall64_native_switch_rdi = frame->rdi;
+    syscall64_native_switch_rsi = frame->rsi;
+    syscall64_native_switch_rbp = frame->rbp;
+    syscall64_native_switch_rbx = frame->rbx;
+    syscall64_native_switch_rdx = frame->rdx;
+    syscall64_native_switch_rcx = frame->rcx;
+    syscall64_native_switch_rax = frame->rax;
+    syscall64_native_switch_rip = frame->rip;
+    syscall64_native_switch_cs = frame->cs;
+    syscall64_native_switch_rflags = frame->rflags;
+    syscall64_native_switch_rsp = frame->rsp;
+    syscall64_native_switch_ss = frame->ss;
+}
+#endif
+
 u32 syscall64_native_complete_persona_return(
     u64 result,
     u64 user_rip,
@@ -8595,6 +8621,8 @@ u32 syscall64_native_complete_persona_return(
     struct interrupt_frame64 frame;
     u32 task_id;
     u32 pid;
+    u32 linux_exited;
+    u32 linux_exit_code;
     u64 selectors;
 
     if (syscall64_native_return_to_user == 0u)
@@ -8604,14 +8632,23 @@ u32 syscall64_native_complete_persona_return(
 
     task_id = scheduler64_runqueue_current_task_id();
     pid = scheduler64_runqueue_current_pid();
+    linux_exited =
+        ((linux_abi64_process_exited(pid) != 0u)
+            || (linux_abi64_last_exit_pid() == pid))
+            ? 1u
+            : 0u;
+    linux_exit_code =
+        (linux_abi64_process_exited(pid) != 0u)
+            ? linux_abi64_exit_code(pid)
+            : linux_abi64_last_exit_code();
     if ((task_id != SCHEDULER64_INVALID_TASK)
         && (g_native_persona_last_pid == pid)
         && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF)
         && (g_native_linux_exit_probe_pid == pid)
-        && (linux_abi64_process_exited(pid) != 0u)
+        && (linux_exited != 0u)
         && (interrupts64_complete_user_entry_probe(
             g_native_linux_exit_probe_result,
-            linux_abi64_exit_code(pid)) != 0u))
+            linux_exit_code) != 0u))
     {
         /*
          * Fast Linux exit completion returns directly to kernel cleanup. M22
@@ -8621,6 +8658,50 @@ u32 syscall64_native_complete_persona_return(
          */
         (void)paging64_switch_to_kernel_root(0x4E455852u);
         return 1u;
+    }
+
+    if ((task_id != SCHEDULER64_INVALID_TASK)
+        && (g_native_persona_last_pid == pid)
+        && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF)
+        && (linux_exited != 0u))
+    {
+        frame.r15 = syscall64_native_user_r15;
+        frame.r14 = syscall64_native_user_r14;
+        frame.r13 = syscall64_native_user_r13;
+        frame.r12 = syscall64_native_user_r12;
+        frame.r11 = 0ull;
+        frame.r10 = syscall64_native_linux_r10;
+        frame.r9 = syscall64_native_linux_r9;
+        frame.r8 = syscall64_native_linux_r8;
+        frame.rdi = syscall64_native_linux_rdi;
+        frame.rsi = syscall64_native_linux_rsi;
+        frame.rbp = syscall64_native_user_rbp;
+        frame.rbx = syscall64_native_user_rbx;
+        frame.rdx = syscall64_native_linux_rdx;
+        frame.rcx = user_rip;
+        frame.rax = result;
+        frame.vector = 0ull;
+        frame.error_code = 0ull;
+        frame.rip = user_rip;
+        frame.rflags = user_rflags;
+        frame.rsp = user_rsp;
+        frame.cs = scheduler64_runqueue_cs();
+        frame.ss = scheduler64_runqueue_ss();
+        if (((frame.cs & 0x3ull) != 0x3ull) || ((frame.ss & 0x3ull) != 0x3ull))
+        {
+            selectors = process64_runtime_user_entry_selectors(pid);
+            frame.cs = selectors & 0xFFFFull;
+            frame.ss = (selectors >> 16) & 0xFFFFull;
+        }
+        if (scheduler64_runqueue_on_exit(
+                &frame,
+                linux_exit_code) == SCHEDULER64_RUNQUEUE_EXIT_RESUMED)
+        {
+            syscall64_native_load_switch_frame(&frame);
+            return 1u;
+        }
+        (void)paging64_switch_to_kernel_root(0x4E45584Bu);
+        return 0u;
     }
 
     if ((task_id == SCHEDULER64_INVALID_TASK)
@@ -8663,26 +8744,7 @@ u32 syscall64_native_complete_persona_return(
         return 0u;
     }
 
-    syscall64_native_switch_r15 = frame.r15;
-    syscall64_native_switch_r14 = frame.r14;
-    syscall64_native_switch_r13 = frame.r13;
-    syscall64_native_switch_r12 = frame.r12;
-    syscall64_native_switch_r11 = frame.r11;
-    syscall64_native_switch_r10 = frame.r10;
-    syscall64_native_switch_r9 = frame.r9;
-    syscall64_native_switch_r8 = frame.r8;
-    syscall64_native_switch_rdi = frame.rdi;
-    syscall64_native_switch_rsi = frame.rsi;
-    syscall64_native_switch_rbp = frame.rbp;
-    syscall64_native_switch_rbx = frame.rbx;
-    syscall64_native_switch_rdx = frame.rdx;
-    syscall64_native_switch_rcx = frame.rcx;
-    syscall64_native_switch_rax = frame.rax;
-    syscall64_native_switch_rip = frame.rip;
-    syscall64_native_switch_cs = frame.cs;
-    syscall64_native_switch_rflags = frame.rflags;
-    syscall64_native_switch_rsp = frame.rsp;
-    syscall64_native_switch_ss = frame.ss;
+    syscall64_native_load_switch_frame(&frame);
     return 1u;
 #else
     (void)result;

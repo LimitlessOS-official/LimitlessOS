@@ -144,7 +144,9 @@ u32 linux_vfs64_read_dirent(u32 pid, u32 fd_number, u32 cursor, linux_vfs64_dire
 u32 linux_vfs64_device_handle(u32 device_type);
 u32 linux_vfs64_device_type_from_handle(u32 handle);
 u32 linux_vfs64_bind_nvme_read(u32 pid, u32 owner_id, u32 nvme_capability);
+u32 linux_vfs64_fork_process(u32 parent_pid, u32 child_pid);
 u32 linux_vfs64_release_nvme_read(u32 pid);
+u32 linux_vfs64_release_process(u32 pid);
 u32 linux_vfs64_proc_set_identity(
     u32 pid,
     const u8 *exe_path,
@@ -192,5 +194,11 @@ u32 linux_vfs64_nvme_readdir_count(void);
 u32 linux_vfs64_nvme_dirent_count(void);
 u32 linux_vfs64_nvme_denial_count(void);
 u32 linux_vfs64_nvme_last_bytes(void);
+u32 linux_vfs64_fork_copy_count(void);
+u32 linux_vfs64_fork_copy_denial_count(void);
+u32 linux_vfs64_fork_copy_last_parent_pid(void);
+u32 linux_vfs64_fork_copy_last_child_pid(void);
+u32 linux_vfs64_fork_copy_last_fd_paths(void);
+u32 linux_vfs64_fork_copy_last_nvme(void);
 
 #endif

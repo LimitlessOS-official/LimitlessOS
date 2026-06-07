@@ -92,6 +92,7 @@ vma_region_t *vma64_find(u32 pid, u64 address);
 u64 vma64_find_gap(u32 pid, u64 min_addr, u64 max_addr, u64 length, u64 alignment);
 u64 vma64_map_anon(u32 pid, u64 hint_addr, u64 length, u32 prot_flags, u32 map_flags);
 u32 vma64_clone_cow_page(u32 source_pid, u64 source_address, u32 target_pid, u64 target_address);
+u32 vma64_fork_copy_process(u32 parent_pid, u32 child_pid);
 u32 vma64_handle_cow_fault(u32 pid, u64 fault_address, u64 fault_error_code);
 u64 vma64_brk_query(u32 pid);
 u64 vma64_brk_extend(u32 pid, u64 new_brk);
@@ -115,5 +116,13 @@ u32 vma64_last_lookup_steps(void);
 u32 vma64_peak_lookup_steps(void);
 u32 vma64_last_map_stage(void);
 u32 vma64_last_unmap_stage(void);
+u32 vma64_fork_copy_count(void);
+u32 vma64_fork_copy_denial_count(void);
+u32 vma64_fork_copy_last_parent_pid(void);
+u32 vma64_fork_copy_last_child_pid(void);
+u32 vma64_fork_copy_last_regions(void);
+u32 vma64_fork_copy_last_pages(void);
+u32 vma64_fork_copy_last_stage(void);
+u32 vma64_fork_copy_last_unsupported_backing(void);
 
 #endif

@@ -137,8 +137,12 @@ typedef struct linux_abi64_clone_record
     u32 shared_vma;
     u32 shared_fd;
     u32 shared_audit;
+    u32 wait_blocked;
+    u32 wait_task_id;
     u64 child_stack;
     u64 tls_base;
+    u64 wait_status_user;
+    u64 wait_rip;
 } linux_abi64_clone_record_t;
 
 typedef struct linux_abi64_exec_validation
@@ -163,6 +167,9 @@ static const char *g_linux_abi64_exec_argv[LINUX_ABI64_EXEC_ARG_MAX];
 static const char *g_linux_abi64_exec_envp[LINUX_ABI64_EXEC_ENV_MAX];
 static elf64_launch_result_t g_linux_abi64_exec_launch;
 static u32 g_linux_abi64_dispatch_count = 0u;
+static u32 g_linux_abi64_dispatch_root_repair_count = 0u;
+static u32 g_linux_abi64_dispatch_root_reload_count = 0u;
+static u32 g_linux_abi64_dispatch_root_denial_count = 0u;
 static u32 g_linux_abi64_unimplemented_count = 0u;
 static u32 g_linux_abi64_unimplemented_last_syscall = 0u;
 static u64 g_linux_abi64_unimplemented_last_rip = 0ull;
@@ -314,9 +321,15 @@ static u32 g_linux_abi64_clone_denial_count = 0u;
 static u32 g_linux_abi64_clone_fork_denial_count = 0u;
 static u32 g_linux_abi64_clone_scheduler_count = 0u;
 static u32 g_linux_abi64_fork_count = 0u;
+static u32 g_linux_abi64_fork_success_count = 0u;
 static u32 g_linux_abi64_fork_enosys_count = 0u;
 static u32 g_linux_abi64_fork_denial_count = 0u;
 static u64 g_linux_abi64_fork_last_rip = 0ull;
+static u32 g_linux_abi64_fork_last_child_pid = PROCESS64_INVALID_PID;
+static u32 g_linux_abi64_fork_last_child_slot = 0xFFFFFFFFu;
+static u32 g_linux_abi64_fork_last_child_root_distinct = 0u;
+static u32 g_linux_abi64_fork_last_task_id = SCHEDULER64_INVALID_TASK;
+static u32 g_linux_abi64_child_root_cleanup_count = 0u;
 static u32 g_linux_abi64_clone_last_parent_pid = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_clone_last_child_pid = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_clone_last_flags = 0u;
@@ -443,6 +456,20 @@ static u32 g_linux_abi64_last_exit_fd_entries = 0u;
 static u32 g_linux_abi64_last_exit_persona_released = 0u;
 static u32 g_linux_abi64_last_exit_audit_released = 0u;
 static u32 g_linux_abi64_last_exit_audit_recorded = 0u;
+
+extern volatile u64 syscall64_native_linux_rdi;
+extern volatile u64 syscall64_native_linux_rsi;
+extern volatile u64 syscall64_native_linux_rdx;
+extern volatile u64 syscall64_native_linux_r10;
+extern volatile u64 syscall64_native_linux_r8;
+extern volatile u64 syscall64_native_linux_r9;
+extern volatile u64 syscall64_native_user_rsp;
+extern volatile u64 syscall64_native_user_rbx;
+extern volatile u64 syscall64_native_user_rbp;
+extern volatile u64 syscall64_native_user_r12;
+extern volatile u64 syscall64_native_user_r13;
+extern volatile u64 syscall64_native_user_r14;
+extern volatile u64 syscall64_native_user_r15;
 
 static u64 linux_abi64_unimplemented_stub(
     u32 pid,
@@ -1661,8 +1688,12 @@ static void linux_abi64_clear_clone_record(linux_abi64_clone_record_t *record)
     record->shared_vma = 0u;
     record->shared_fd = 0u;
     record->shared_audit = 0u;
+    record->wait_blocked = 0u;
+    record->wait_task_id = SCHEDULER64_INVALID_TASK;
     record->child_stack = 0ull;
     record->tls_base = 0ull;
+    record->wait_status_user = 0ull;
+    record->wait_rip = 0ull;
 }
 
 static linux_abi64_clone_record_t *linux_abi64_clone_free_record(void)
@@ -1735,6 +1766,31 @@ static linux_abi64_clone_record_t *linux_abi64_clone_record_for_parent_wait(
     return 0;
 }
 
+static linux_abi64_clone_record_t *linux_abi64_clone_record_for_parent_any(
+    u32 parent_pid,
+    u64 requested_pid)
+{
+    u32 index;
+
+    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    {
+        linux_abi64_clone_record_t *record = &g_linux_abi64_clone_records[index];
+
+        if ((record->active == 0u) || (record->parent_pid != parent_pid))
+        {
+            continue;
+        }
+        if ((requested_pid != LINUX_ABI64_WAIT_ANY)
+            && (requested_pid != (u64)record->child_pid))
+        {
+            continue;
+        }
+        return record;
+    }
+
+    return 0;
+}
+
 static void linux_abi64_clone_detach_shared_state(u32 child_pid)
 {
     if (child_pid == PROCESS64_INVALID_PID)
@@ -1745,6 +1801,41 @@ static void linux_abi64_clone_detach_shared_state(u32 child_pid)
     (void)process64_detach_vma(child_pid);
     (void)process64_detach_fd(child_pid);
     (void)process64_detach_audit(child_pid);
+}
+
+static void linux_abi64_fork_release_setup(u32 child_pid)
+{
+    u32 root_token;
+
+    if (child_pid == PROCESS64_INVALID_PID)
+    {
+        return;
+    }
+
+    (void)linux_vfs64_release_process(child_pid);
+    if (process64_fd_table(child_pid) != 0)
+    {
+        (void)fd64_release_process(child_pid);
+    }
+    if (process64_vma_root(child_pid) != 0)
+    {
+        (void)vma64_release_process(child_pid);
+    }
+    if (process64_persona_ctx(child_pid) != 0)
+    {
+        (void)persona64_release(child_pid);
+    }
+    if (process64_audit_ctx(child_pid) != 0)
+    {
+        (void)persona_audit64_release(child_pid);
+    }
+    root_token = process64_page_root_token(child_pid);
+    if (root_token != 0u)
+    {
+        (void)paging64_process_root_release(child_pid, root_token);
+        (void)process64_clear_page_root(child_pid, root_token);
+    }
+    (void)process64_release_clone(child_pid);
 }
 
 static void linux_abi64_init_rlimit_record(linux_abi64_rlimit_record_t *record, u32 pid)
@@ -1921,6 +2012,9 @@ void linux_abi64_init(void)
     }
 
     g_linux_abi64_dispatch_count = 0u;
+    g_linux_abi64_dispatch_root_repair_count = 0u;
+    g_linux_abi64_dispatch_root_reload_count = 0u;
+    g_linux_abi64_dispatch_root_denial_count = 0u;
     g_linux_abi64_unimplemented_count = 0u;
     g_linux_abi64_unimplemented_last_syscall = 0u;
     g_linux_abi64_unimplemented_last_rip = 0ull;
@@ -2072,9 +2166,15 @@ void linux_abi64_init(void)
     g_linux_abi64_clone_fork_denial_count = 0u;
     g_linux_abi64_clone_scheduler_count = 0u;
     g_linux_abi64_fork_count = 0u;
+    g_linux_abi64_fork_success_count = 0u;
     g_linux_abi64_fork_enosys_count = 0u;
     g_linux_abi64_fork_denial_count = 0u;
     g_linux_abi64_fork_last_rip = 0ull;
+    g_linux_abi64_fork_last_child_pid = PROCESS64_INVALID_PID;
+    g_linux_abi64_fork_last_child_slot = 0xFFFFFFFFu;
+    g_linux_abi64_fork_last_child_root_distinct = 0u;
+    g_linux_abi64_fork_last_task_id = SCHEDULER64_INVALID_TASK;
+    g_linux_abi64_child_root_cleanup_count = 0u;
     g_linux_abi64_clone_last_parent_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_clone_last_child_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_clone_last_flags = 0u;
@@ -2212,6 +2312,49 @@ linux_abi64_handler_t *linux_abi64_dispatch_table(void)
     return g_linux_abi64_dispatch_table;
 }
 
+static u32 linux_abi64_repair_dispatch_root(u32 pid)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 root = paging64_process_root_physical(pid);
+
+    if (root == 0ull)
+    {
+        return 1u;
+    }
+    if (paging64_current_root_physical() == (root & 0xFFFFFFFFFFFFF000ull))
+    {
+        if (paging64_reload_current_root() == 0u)
+        {
+            ++g_linux_abi64_dispatch_root_denial_count;
+            return 0u;
+        }
+        ++g_linux_abi64_dispatch_root_reload_count;
+        return 1u;
+    }
+    if (paging64_switch_to_process_root(pid, 0x4C585352u) == 0u)
+    {
+        ++g_linux_abi64_dispatch_root_denial_count;
+        return 0u;
+    }
+
+    ++g_linux_abi64_dispatch_root_repair_count;
+    return 1u;
+#else
+    (void)pid;
+    return 1u;
+#endif
+}
+
+static u32 linux_abi64_restore_return_root(u32 pid)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return linux_abi64_repair_dispatch_root(pid);
+#else
+    (void)pid;
+    return 1u;
+#endif
+}
+
 u64 linux_abi64_dispatch(
     u32 pid,
     u32 syscall_number,
@@ -2233,6 +2376,11 @@ u64 linux_abi64_dispatch(
     }
 
     ++g_linux_abi64_dispatch_count;
+    if (linux_abi64_repair_dispatch_root(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+
     if (syscall_number >= LINUX_ABI64_SYSCALL_LIMIT)
     {
         ++g_linux_abi64_unimplemented_count;
@@ -8476,6 +8624,17 @@ u64 linux_abi64_sys_clone(
 u64 linux_abi64_sys_fork(u32 pid, u64 rip)
 {
     persona_context_t *context;
+    linux_abi64_clone_record_t *record;
+    u32 child_pid = PROCESS64_INVALID_PID;
+    u32 child_owner;
+    u32 root_authority;
+    u32 child_root_token;
+    u32 runtime_token;
+    u32 entry_token;
+    u64 selectors;
+    u64 rflags;
+    struct interrupt_frame64 child_frame;
+    u32 task_id;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -8483,6 +8642,10 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     }
 
     g_linux_abi64_fork_last_rip = rip;
+    g_linux_abi64_fork_last_child_pid = PROCESS64_INVALID_PID;
+    g_linux_abi64_fork_last_child_slot = 0xFFFFFFFFu;
+    g_linux_abi64_fork_last_child_root_distinct = 0u;
+    g_linux_abi64_fork_last_task_id = SCHEDULER64_INVALID_TASK;
     context = persona64_context_for_process(pid);
     if ((pid == PROCESS64_INVALID_PID)
         || (process64_principal(pid) == 0u)
@@ -8499,15 +8662,170 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
     }
 
+    runtime_token = process64_runtime_token(pid);
+    entry_token = process64_runtime_user_entry_token(pid);
+    selectors = (u64)process64_runtime_user_entry_selectors(pid);
+    rflags = (u64)process64_runtime_user_entry_rflags(pid);
+    root_authority = process64_page_root_token(pid);
+    if ((runtime_token == 0u)
+        || (entry_token == 0u)
+        || (selectors == 0ull)
+        || (rflags == 0ull)
+        || (root_authority == 0u)
+        || (rip == 0ull)
+        || (syscall64_native_user_rsp == 0ull))
+    {
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_EINVAL,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+    }
+
+    record = linux_abi64_clone_free_record();
+    if (record == 0)
+    {
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_ENOMEM,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    }
+
     ++g_linux_abi64_fork_count;
-    ++g_linux_abi64_fork_enosys_count;
+    child_pid = process64_spawn_fork(pid);
+    child_owner = process64_principal(child_pid);
+    if ((child_pid == PROCESS64_INVALID_PID) || (child_owner == 0u))
+    {
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_ENOMEM,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    }
+
+    if ((paging64_process_root_fork_alloc(pid, child_pid, child_owner, root_authority) == 0u)
+        || ((child_root_token = paging64_process_root_token(child_pid)) == 0u)
+        || (process64_attach_page_root(
+                child_pid,
+                paging64_process_root_physical(child_pid),
+                paging64_process_root_slot(child_pid),
+                child_root_token,
+                root_authority) == 0u)
+        || (vma64_fork_copy_process(pid, child_pid) == 0u)
+        || (persona_audit64_attach(child_pid) == 0u)
+        || (fd64_fork_process(pid, child_pid) == 0u)
+        || (persona64_fork_linux_elf(pid, child_pid, linux_abi64_dispatch_table())
+            != PERSONA64_ATTACH_OK)
+        || (linux_vfs64_fork_process(pid, child_pid) == 0u))
+    {
+        linux_abi64_fork_release_setup(child_pid);
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_ENOMEM,
+            rip);
+        if (linux_abi64_restore_return_root(pid) == 0u)
+        {
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+        }
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    }
+
+    child_frame.r15 = syscall64_native_user_r15;
+    child_frame.r14 = syscall64_native_user_r14;
+    child_frame.r13 = syscall64_native_user_r13;
+    child_frame.r12 = syscall64_native_user_r12;
+    child_frame.r11 = 0ull;
+    child_frame.r10 = syscall64_native_linux_r10;
+    child_frame.r9 = syscall64_native_linux_r9;
+    child_frame.r8 = syscall64_native_linux_r8;
+    child_frame.rdi = syscall64_native_linux_rdi;
+    child_frame.rsi = syscall64_native_linux_rsi;
+    child_frame.rbp = syscall64_native_user_rbp;
+    child_frame.rbx = syscall64_native_user_rbx;
+    child_frame.rdx = syscall64_native_linux_rdx;
+    child_frame.rcx = rip;
+    child_frame.rax = 0ull;
+    child_frame.vector = 0ull;
+    child_frame.error_code = 0ull;
+    child_frame.rip = rip;
+    child_frame.cs = selectors & 0xFFFFull;
+    child_frame.rflags = rflags;
+    child_frame.rsp = syscall64_native_user_rsp;
+    child_frame.ss = (selectors >> 16) & 0xFFFFull;
+
+    task_id = scheduler64_runqueue_register_process_frame(
+        child_pid,
+        runtime_token,
+        entry_token,
+        &child_frame);
+    if (task_id == SCHEDULER64_INVALID_TASK)
+    {
+        linux_abi64_fork_release_setup(child_pid);
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_EAGAIN,
+            rip);
+        if (linux_abi64_restore_return_root(pid) == 0u)
+        {
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+        }
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+    }
+
+    record->active = 1u;
+    record->parent_pid = pid;
+    record->child_pid = child_pid;
+    record->flags = 0u;
+    record->task_id = task_id;
+    record->shared_vma = 0u;
+    record->shared_fd = 0u;
+    record->shared_audit = 0u;
+    record->child_stack = syscall64_native_user_rsp;
+    record->tls_base = context->tls_base;
+
+    ++g_linux_abi64_fork_success_count;
+    ++g_linux_abi64_clone_scheduler_count;
+    g_linux_abi64_fork_last_child_pid = child_pid;
+    g_linux_abi64_fork_last_child_slot = paging64_process_root_fork_last_child_slot();
+    g_linux_abi64_fork_last_child_root_distinct =
+        paging64_process_root_fork_last_child_root_distinct();
+    g_linux_abi64_fork_last_task_id = task_id;
+    g_linux_abi64_clone_last_parent_pid = pid;
+    g_linux_abi64_clone_last_child_pid = child_pid;
+    g_linux_abi64_clone_last_flags = 0u;
+    g_linux_abi64_clone_last_task_id = task_id;
+    g_linux_abi64_clone_last_shared_vma = 0u;
+    g_linux_abi64_clone_last_shared_fd = 0u;
+    g_linux_abi64_clone_last_shared_audit = 0u;
+    g_linux_abi64_clone_last_child_stack = syscall64_native_user_rsp;
+    g_linux_abi64_clone_last_tls_base = context->tls_base;
     (void)persona_audit64_record(
         pid,
-        PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
         LINUX_ABI64_SYSCALL_FORK,
-        PERSONA_AUDIT64_RESULT_ENOSYS,
+        PERSONA_AUDIT64_RESULT_OK,
         rip);
-    return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOSYS);
+    if (linux_abi64_restore_return_root(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+    return (u64)child_pid;
 }
 
 static u64 linux_abi64_sys_exec_common(
@@ -8825,10 +9143,63 @@ static u32 linux_abi64_wait4_status_for_exit(u32 exit_code)
     return (exit_code & 0x000000FFu) << 8;
 }
 
+static void linux_abi64_wait4_complete_blocked_child(
+    u32 child_pid,
+    linux_abi64_exit_record_t *exit_record)
+{
+    linux_abi64_clone_record_t *clone_record;
+    u32 status_word;
+
+    clone_record = linux_abi64_clone_record_for_child(child_pid);
+    if ((clone_record == 0)
+        || (exit_record == 0)
+        || (exit_record->exited == 0u)
+        || (clone_record->wait_blocked == 0u)
+        || (clone_record->wait_task_id == SCHEDULER64_INVALID_TASK))
+    {
+        return;
+    }
+
+    status_word = linux_abi64_wait4_status_for_exit(exit_record->exit_code);
+    if (clone_record->wait_status_user != 0ull)
+    {
+        if (paging64_switch_to_process_root(
+                clone_record->parent_pid,
+                0x57545354u) != 0u)
+        {
+            *((volatile u32 *)(u64)clone_record->wait_status_user) = status_word;
+            g_linux_abi64_wait4_last_status_written = 1u;
+        }
+        else
+        {
+            ++g_linux_abi64_wait4_fault_count;
+        }
+    }
+
+    g_linux_abi64_wait4_last_parent_pid = clone_record->parent_pid;
+    g_linux_abi64_wait4_last_child_pid = clone_record->child_pid;
+    g_linux_abi64_wait4_last_exit_code = exit_record->exit_code;
+    g_linux_abi64_wait4_last_status = status_word;
+    g_linux_abi64_wait4_last_process_release = process64_release_clone(clone_record->child_pid);
+    g_linux_abi64_wait4_last_clone_release =
+        (g_linux_abi64_wait4_last_process_release != 0u) ? 1u : 0u;
+    if (scheduler64_runqueue_wake_task_with_result(
+            clone_record->wait_task_id,
+            (u64)clone_record->child_pid) == 0u)
+    {
+        ++g_linux_abi64_wait4_denial_count;
+    }
+    linux_abi64_clear_clone_record(clone_record);
+    linux_abi64_clear_exit_record(exit_record);
+    ++g_linux_abi64_wait4_reap_count;
+}
+
 static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 syscall_number)
 {
     linux_abi64_exit_record_t *record;
     u32 code32 = (u32)(exit_code & 0xFFFFFFFFull);
+    u32 fork_child;
+    u32 root_token;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -8877,6 +9248,7 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
         (u16)syscall_number,
         PERSONA_AUDIT64_RESULT_OK,
         rip);
+    fork_child = process64_is_fork_child(pid);
     (void)linux_abi64_release_futex_waiters(pid);
     linux_abi64_release_rlimit_record(pid);
     if (process64_is_clone(pid) != 0u)
@@ -8894,6 +9266,17 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
         g_linux_abi64_last_exit_persona_released = persona64_release(pid);
         g_linux_abi64_last_exit_audit_released = persona_audit64_release(pid);
     }
+    if (fork_child != 0u)
+    {
+        (void)linux_vfs64_release_process(pid);
+        root_token = process64_page_root_token(pid);
+        if ((root_token != 0u)
+            && (paging64_process_root_release(pid, root_token) != 0u)
+            && (process64_clear_page_root(pid, root_token) != 0u))
+        {
+            ++g_linux_abi64_child_root_cleanup_count;
+        }
+    }
     g_linux_abi64_last_exit_pid = pid;
     g_linux_abi64_last_exit_code = code32;
 
@@ -8901,6 +9284,11 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
     record->exit_code = code32;
     record->exited = 1u;
     record->reserved = 0u;
+    if (fork_child != 0u)
+    {
+        (void)process64_mark_child_exited(pid, code32);
+        linux_abi64_wait4_complete_blocked_child(pid, record);
+    }
 
     return 0ull;
 }
@@ -8924,10 +9312,12 @@ u64 linux_abi64_sys_wait4(
     u64 rip)
 {
     linux_abi64_clone_record_t *clone_record;
+    linux_abi64_clone_record_t *pending_record;
     linux_abi64_exit_record_t *exit_record;
     u32 matched_children = 0u;
     u32 options32 = (u32)(options & 0xFFFFFFFFull);
     u32 status_word;
+    u32 task_id;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -9004,6 +9394,40 @@ u64 linux_abi64_sys_wait4(
         {
             ++g_linux_abi64_wait4_count;
             ++g_linux_abi64_wait4_nohang_count;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_WAIT4,
+                PERSONA_AUDIT64_RESULT_OK,
+                rip);
+            return 0ull;
+        }
+
+        pending_record = linux_abi64_clone_record_for_parent_any(pid, wait_pid);
+        if (pending_record != 0)
+        {
+            task_id = scheduler64_runqueue_current_task_id();
+            if ((task_id == SCHEDULER64_INVALID_TASK)
+                || (scheduler64_runqueue_task_pid(task_id) != pid)
+                || (scheduler64_runqueue_task_state(task_id) != SCHEDULER64_TASK_RUNNING)
+                || (pending_record->wait_blocked != 0u)
+                || (scheduler64_runqueue_block_task(task_id) == 0u))
+            {
+                ++g_linux_abi64_wait4_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                    LINUX_ABI64_SYSCALL_WAIT4,
+                    LINUX_ABI64_EAGAIN,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+            }
+
+            pending_record->wait_blocked = 1u;
+            pending_record->wait_task_id = task_id;
+            pending_record->wait_status_user = user_status;
+            pending_record->wait_rip = rip;
+            ++g_linux_abi64_wait4_count;
             (void)persona_audit64_record(
                 pid,
                 PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
@@ -10421,6 +10845,21 @@ u32 linux_abi64_dispatch_count(void)
     return g_linux_abi64_dispatch_count;
 }
 
+u32 linux_abi64_dispatch_root_repair_count(void)
+{
+    return g_linux_abi64_dispatch_root_repair_count;
+}
+
+u32 linux_abi64_dispatch_root_reload_count(void)
+{
+    return g_linux_abi64_dispatch_root_reload_count;
+}
+
+u32 linux_abi64_dispatch_root_denial_count(void)
+{
+    return g_linux_abi64_dispatch_root_denial_count;
+}
+
 u32 linux_abi64_unimplemented_count(void)
 {
     return g_linux_abi64_unimplemented_count;
@@ -11181,6 +11620,11 @@ u32 linux_abi64_fork_count(void)
     return g_linux_abi64_fork_count;
 }
 
+u32 linux_abi64_fork_success_count(void)
+{
+    return g_linux_abi64_fork_success_count;
+}
+
 u32 linux_abi64_fork_enosys_count(void)
 {
     return g_linux_abi64_fork_enosys_count;
@@ -11194,6 +11638,31 @@ u32 linux_abi64_fork_denial_count(void)
 u64 linux_abi64_fork_last_rip(void)
 {
     return g_linux_abi64_fork_last_rip;
+}
+
+u32 linux_abi64_fork_last_child_pid(void)
+{
+    return g_linux_abi64_fork_last_child_pid;
+}
+
+u32 linux_abi64_fork_last_child_slot(void)
+{
+    return g_linux_abi64_fork_last_child_slot;
+}
+
+u32 linux_abi64_fork_last_child_root_distinct(void)
+{
+    return g_linux_abi64_fork_last_child_root_distinct;
+}
+
+u32 linux_abi64_fork_last_task_id(void)
+{
+    return g_linux_abi64_fork_last_task_id;
+}
+
+u32 linux_abi64_child_root_cleanup_count(void)
+{
+    return g_linux_abi64_child_root_cleanup_count;
 }
 
 u32 linux_abi64_clone_last_parent_pid(void)

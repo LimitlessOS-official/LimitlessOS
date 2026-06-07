@@ -35,6 +35,13 @@ u32 scheduler64_runqueue_register_process_task(
     u64 rsp,
     u64 selectors,
     u64 rflags);
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_register_process_frame(
+    u32 pid,
+    u32 runtime_token,
+    u32 entry_token,
+    const struct interrupt_frame64 *frame);
+#endif
 u32 scheduler64_runqueue_register_launched_process_task(
     u32 pid,
     u64 rip,

@@ -39,6 +39,16 @@ static u32 g_vma64_peak_lookup_steps = 0u;
 static u32 g_vma64_last_map_stage = 0u;
 static u32 g_vma64_last_unmap_stage = 0u;
 static u32 g_vma64_initialized = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_vma64_fork_copy_count = 0u;
+static u32 g_vma64_fork_copy_denial_count = 0u;
+static u32 g_vma64_fork_copy_last_parent_pid = PROCESS64_INVALID_PID;
+static u32 g_vma64_fork_copy_last_child_pid = PROCESS64_INVALID_PID;
+static u32 g_vma64_fork_copy_last_regions = 0u;
+static u32 g_vma64_fork_copy_last_pages = 0u;
+static u32 g_vma64_fork_copy_last_stage = 0u;
+static u32 g_vma64_fork_copy_last_unsupported_backing = 0u;
+#endif
 
 static u64 vma64_align_up(u64 value, u64 alignment)
 {
@@ -1300,6 +1310,173 @@ u32 vma64_clone_cow_page(u32 source_pid, u64 source_address, u32 target_pid, u64
     return 1u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 vma64_fork_copy_process(u32 parent_pid, u32 child_pid)
+{
+    vma_tree_t *parent_tree;
+    vma_tree_t *child_tree;
+    const vma_region_t *source;
+    vma_region_t *target;
+    u32 copied_regions = 0u;
+    u32 copied_pages = 0u;
+
+    g_vma64_fork_copy_last_parent_pid = parent_pid;
+    g_vma64_fork_copy_last_child_pid = child_pid;
+    g_vma64_fork_copy_last_regions = 0u;
+    g_vma64_fork_copy_last_pages = 0u;
+    g_vma64_fork_copy_last_stage = 1u;
+    g_vma64_fork_copy_last_unsupported_backing = 0u;
+
+    if ((parent_pid == PROCESS64_INVALID_PID)
+        || (child_pid == PROCESS64_INVALID_PID)
+        || (parent_pid == child_pid)
+        || (vma64_init_process(parent_pid) == 0u)
+        || (vma64_init_process(child_pid) == 0u))
+    {
+        ++g_vma64_fork_copy_denial_count;
+        return 0u;
+    }
+
+    parent_tree = vma64_tree_for_process(parent_pid);
+    child_tree = vma64_tree_for_process(child_pid);
+    if ((parent_tree == 0)
+        || (child_tree == 0)
+        || (child_tree->region_count != 0u))
+    {
+        ++g_vma64_fork_copy_denial_count;
+        return 0u;
+    }
+
+    child_tree->brk_base = parent_tree->brk_base;
+    child_tree->brk_current = parent_tree->brk_current;
+    child_tree->brk_peak = parent_tree->brk_peak;
+
+    source = parent_tree->head;
+    while (source != 0)
+    {
+        u64 length = source->virt_end - source->virt_base;
+        u32 page_count = vma64_page_count_from_length(length);
+        u32 page_index;
+        u64 target_physical;
+        u32 paging_prot;
+
+        g_vma64_fork_copy_last_stage = 2u;
+        if ((page_count == 0u)
+            || (source->backing_type != VMA64_BACKING_ANON)
+            || (source->phys_base == 0ull)
+            || (source->phys_base == VMA64_PHYS_ANON)
+            || (vma64_user_pages_match_region(
+                    parent_pid,
+                    source,
+                    source->virt_base,
+                    page_count) == 0u))
+        {
+            g_vma64_fork_copy_last_unsupported_backing = source->backing_type;
+            (void)vma64_release_process(child_pid);
+            ++g_vma64_fork_copy_denial_count;
+            return 0u;
+        }
+
+        g_vma64_fork_copy_last_stage = 3u;
+        target = vma64_region_acquire();
+        if (target == 0)
+        {
+            (void)vma64_release_process(child_pid);
+            ++g_vma64_fork_copy_denial_count;
+            return 0u;
+        }
+
+        target_physical = vma64_claim_anon_pages(page_count);
+        if (target_physical == 0ull)
+        {
+            vma64_region_release(target);
+            (void)vma64_release_process(child_pid);
+            ++g_vma64_fork_copy_denial_count;
+            return 0u;
+        }
+
+        g_vma64_fork_copy_last_stage = 4u;
+        for (page_index = 0u; page_index < page_count; ++page_index)
+        {
+            void *source_page = vma64_anon_page_ptr(
+                source->phys_base + ((u64)page_index * VMA64_PAGE_BYTES));
+            void *target_page = vma64_anon_page_ptr(
+                target_physical + ((u64)page_index * VMA64_PAGE_BYTES));
+
+            if ((source_page == 0) || (target_page == 0))
+            {
+                vma64_release_anon_pages(target_physical, page_count);
+                vma64_region_release(target);
+                (void)vma64_release_process(child_pid);
+                ++g_vma64_fork_copy_denial_count;
+                return 0u;
+            }
+            vma64_copy_page(target_page, source_page);
+        }
+
+        g_vma64_fork_copy_last_stage = 5u;
+        if ((vma64_region_prepare(
+                target,
+                source->virt_base,
+                source->virt_end,
+                target_physical,
+                source->prot_flags,
+                source->map_flags & ~VMA64_MAP_COPY_ON_WRITE,
+                VMA64_BACKING_ANON,
+                VMA64_BACKING_HANDLE_NONE,
+                vma64_split_token(source->vma_token, 0xF0230000u + copied_regions)) == 0u)
+            || (vma64_insert(child_pid, target) == 0u))
+        {
+            vma64_release_anon_pages(target_physical, page_count);
+            vma64_region_release(target);
+            (void)vma64_release_process(child_pid);
+            ++g_vma64_fork_copy_denial_count;
+            return 0u;
+        }
+
+        paging_prot = vma64_paging_prot(target->prot_flags);
+        if (paging_prot == 0u)
+        {
+            (void)vma64_release_process(child_pid);
+            ++g_vma64_fork_copy_denial_count;
+            return 0u;
+        }
+
+        g_vma64_fork_copy_last_stage = 6u;
+        for (page_index = 0u; page_index < page_count; ++page_index)
+        {
+            if (vma64_paging_install_user_page_mapping(
+                    child_pid,
+                    target->virt_base + ((u64)page_index * VMA64_PAGE_BYTES),
+                    target_physical + ((u64)page_index * VMA64_PAGE_BYTES),
+                    paging_prot) == 0u)
+            {
+                (void)vma64_release_process(child_pid);
+                ++g_vma64_fork_copy_denial_count;
+                return 0u;
+            }
+        }
+
+        ++copied_regions;
+        copied_pages += page_count;
+        g_vma64_fork_copy_last_regions = copied_regions;
+        g_vma64_fork_copy_last_pages = copied_pages;
+        source = source->next;
+    }
+
+    g_vma64_fork_copy_last_stage = 7u;
+    ++g_vma64_fork_copy_count;
+    return 1u;
+}
+#else
+u32 vma64_fork_copy_process(u32 parent_pid, u32 child_pid)
+{
+    (void)parent_pid;
+    (void)child_pid;
+    return 0u;
+}
+#endif
+
 u32 vma64_handle_cow_fault(u32 pid, u64 fault_address, u64 fault_error_code)
 {
     vma_region_t *region;
@@ -1875,4 +2052,76 @@ u32 vma64_last_map_stage(void)
 u32 vma64_last_unmap_stage(void)
 {
     return g_vma64_last_unmap_stage;
+}
+
+u32 vma64_fork_copy_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 vma64_fork_copy_denial_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_denial_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 vma64_fork_copy_last_parent_pid(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_parent_pid;
+#else
+    return PROCESS64_INVALID_PID;
+#endif
+}
+
+u32 vma64_fork_copy_last_child_pid(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_child_pid;
+#else
+    return PROCESS64_INVALID_PID;
+#endif
+}
+
+u32 vma64_fork_copy_last_regions(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_regions;
+#else
+    return 0u;
+#endif
+}
+
+u32 vma64_fork_copy_last_pages(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_pages;
+#else
+    return 0u;
+#endif
+}
+
+u32 vma64_fork_copy_last_stage(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_stage;
+#else
+    return 0u;
+#endif
+}
+
+u32 vma64_fork_copy_last_unsupported_backing(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_vma64_fork_copy_last_unsupported_backing;
+#else
+    return 0u;
+#endif
 }

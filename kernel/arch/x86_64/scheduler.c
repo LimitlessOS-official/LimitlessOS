@@ -396,6 +396,46 @@ u32 scheduler64_runqueue_register_process_task(
     return task_id;
 }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_register_process_frame(
+    u32 pid,
+    u32 runtime_token,
+    u32 entry_token,
+    const struct interrupt_frame64 *frame)
+{
+    u32 task_id = g_runqueue.task_count;
+    struct scheduler64_task *task;
+
+    if ((pid == 0u)
+        || (runtime_token == 0u)
+        || (entry_token == 0u)
+        || (frame == 0)
+        || (frame->rip == 0ull)
+        || (frame->rsp == 0ull)
+        || ((frame->cs & 0x3ull) != 0x3ull)
+        || ((frame->ss & 0x3ull) != 0x3ull)
+        || (task_id >= SCHEDULER64_RUNQUEUE_TASKS))
+    {
+        return SCHEDULER64_INVALID_TASK;
+    }
+
+    task = &g_runqueue.tasks[task_id];
+    scheduler64_clear_task(task);
+    task->state = SCHEDULER64_TASK_READY;
+    task->frame_valid = 1u;
+    task->pid = pid;
+    task->runtime_token = runtime_token;
+    task->entry_token = entry_token;
+    task->initial_rip = frame->rip;
+    task->initial_rsp = frame->rsp;
+    task->saved_rip = frame->rip;
+    task->saved_rsp = frame->rsp;
+    task->frame = *frame;
+    ++g_runqueue.task_count;
+    return task_id;
+}
+#endif
+
 u32 scheduler64_runqueue_register_launched_process_task(
     u32 pid,
     u64 rip,

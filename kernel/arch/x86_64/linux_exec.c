@@ -53,7 +53,12 @@ typedef struct linux_exec64_telemetry
     u32 root_distinct;
     u32 high_copy;
     u32 mmio_shared;
+    u32 pool_mapped;
     u32 low_compat;
+    u32 kernel_cr3_entry;
+    u32 syscall_root_repair;
+    u32 syscall_root_reload;
+    u32 syscall_root_denial;
     u32 user_pdpt_private;
     u32 vma_pt_private;
     u32 cr3_start;
@@ -128,9 +133,17 @@ typedef struct linux_exec64_telemetry
     u32 prctl_last_option;
     u32 prctl_last_result;
     u32 fork_calls;
+    u32 fork_success;
     u32 fork_enosys;
     u32 fork_denial;
+    u32 fork_child_slot;
+    u32 fork_child_root_distinct;
     u64 fork_last_rip;
+    u32 wait4_calls;
+    u32 wait4_reap;
+    u32 wait4_last_exit_code;
+    u32 child_root_cleanup;
+    u32 pml4_pool_used_final;
     u32 nvme_read_error;
     u32 nvme_read_bytes;
     u32 nvme_read_capacity;
@@ -362,8 +375,18 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.high_copy);
     (void)linux_exec64_write_text(console_capability, owner_id, " mmio-shared ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmio_shared);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pool-mapped ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pool_mapped);
     (void)linux_exec64_write_text(console_capability, owner_id, " low-compat ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.low_compat);
+    (void)linux_exec64_write_text(console_capability, owner_id, " kernel-cr3-entry ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.kernel_cr3_entry);
+    (void)linux_exec64_write_text(console_capability, owner_id, " syscall-root-repair ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.syscall_root_repair);
+    (void)linux_exec64_write_text(console_capability, owner_id, " syscall-root-reload ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.syscall_root_reload);
+    (void)linux_exec64_write_text(console_capability, owner_id, " syscall-root-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.syscall_root_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " user-pdpt-private ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.user_pdpt_private);
     (void)linux_exec64_write_text(console_capability, owner_id, " vma-pt-private ");
@@ -500,12 +523,40 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.prctl_last_result);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fork-success ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_success);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork-enosys ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_enosys);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fork-child-slot ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_child_slot);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fork-child-root-distinct ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.fork_child_root_distinct);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork-last-rip ");
     linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.fork_last_rip);
+    (void)linux_exec64_write_text(console_capability, owner_id, " wait4 ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.wait4_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " wait4-reap ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.wait4_reap);
+    (void)linux_exec64_write_text(console_capability, owner_id, " wait4-last-exit-code ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.wait4_last_exit_code);
+    (void)linux_exec64_write_text(console_capability, owner_id, " child-root-cleanup ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.child_root_cleanup);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.pml4_pool_used_final);
     (void)linux_exec64_write_text(console_capability, owner_id, " vfs-nvme-bind ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.nvme_vfs_bind);
     (void)linux_exec64_write_text(console_capability, owner_id, " vfs-nvme-release ");
@@ -801,12 +852,26 @@ u32 linux_exec64_run_nvme(
     u32 prctl_get_name_after;
     u32 prctl_enosys_before;
     u32 prctl_enosys_after;
+    u32 syscall_root_repair_before;
+    u32 syscall_root_repair_after;
+    u32 syscall_root_reload_before;
+    u32 syscall_root_reload_after;
+    u32 syscall_root_denial_before;
+    u32 syscall_root_denial_after;
     u32 fork_before;
     u32 fork_after;
+    u32 fork_success_before;
+    u32 fork_success_after;
     u32 fork_enosys_before;
     u32 fork_enosys_after;
     u32 fork_denial_before;
     u32 fork_denial_after;
+    u32 wait4_before;
+    u32 wait4_after;
+    u32 wait4_reap_before;
+    u32 wait4_reap_after;
+    u32 child_root_cleanup_before;
+    u32 child_root_cleanup_after;
     u32 nvme_vfs_reads_before;
     u32 nvme_vfs_reads_after;
     u32 nvme_vfs_readdirs_before;
@@ -833,16 +898,26 @@ u32 linux_exec64_run_nvme(
     u32 cr3_process_switch_after = 0u;
     u32 cr3_kernel_switch_before = 0u;
     u32 cr3_kernel_switch_after = 0u;
+    u32 entry_cr3_restore;
+    u64 entry_kernel_root;
 
+    entry_kernel_root = paging64_kernel_root_physical();
+    entry_cr3_restore = paging64_switch_to_kernel_root(0x4C58454Eu);
     linux_exec64_zero(&g_linux_exec64_telemetry, sizeof(g_linux_exec64_telemetry));
     linux_exec64_zero(&g_linux_exec64_launch, sizeof(g_linux_exec64_launch));
     linux_exec64_zero(g_linux_exec64_binary, sizeof(g_linux_exec64_binary));
     g_linux_exec64_telemetry.task = SCHEDULER64_INVALID_TASK;
     g_linux_exec64_telemetry.pml4_slot = 0xFFFFFFFFu;
+    g_linux_exec64_telemetry.fork_child_slot = 0xFFFFFFFFu;
     g_linux_exec64_telemetry.pid = PROCESS64_INVALID_PID;
     g_linux_exec64_telemetry.syscall_last = 0xFFFFFFFFu;
     g_linux_exec64_telemetry.syscall_last_result = 0u;
     g_linux_exec64_telemetry.low_kernel_vma_limit = LINUX_EXEC64_LOW_KERNEL_VMA_LIMIT;
+    g_linux_exec64_telemetry.kernel_cr3_entry =
+        ((entry_cr3_restore != 0u)
+            && (paging64_current_root_physical() == (entry_kernel_root & 0xFFFFFFFFFFFFF000ull)))
+            ? 1u
+            : 0u;
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_ARGUMENT;
     if ((path == 0)
@@ -1001,6 +1076,7 @@ u32 linux_exec64_run_nvme(
             : 0u;
     g_linux_exec64_telemetry.high_copy = paging64_process_root_last_high_copy();
     g_linux_exec64_telemetry.mmio_shared = paging64_process_root_last_mmio_shared();
+    g_linux_exec64_telemetry.pool_mapped = paging64_process_root_last_pool_mapped();
     g_linux_exec64_telemetry.low_compat = paging64_process_root_last_low_compat();
     g_linux_exec64_telemetry.user_pdpt_private =
         paging64_process_root_last_user_pdpt_private();
@@ -1157,9 +1233,16 @@ u32 linux_exec64_run_nvme(
     prctl_set_name_before = linux_abi64_prctl_set_name_count();
     prctl_get_name_before = linux_abi64_prctl_get_name_count();
     prctl_enosys_before = linux_abi64_prctl_enosys_count();
+    syscall_root_repair_before = linux_abi64_dispatch_root_repair_count();
+    syscall_root_reload_before = linux_abi64_dispatch_root_reload_count();
+    syscall_root_denial_before = linux_abi64_dispatch_root_denial_count();
     fork_before = linux_abi64_fork_count();
+    fork_success_before = linux_abi64_fork_success_count();
     fork_enosys_before = linux_abi64_fork_enosys_count();
     fork_denial_before = linux_abi64_fork_denial_count();
+    wait4_before = linux_abi64_wait4_count();
+    wait4_reap_before = linux_abi64_wait4_reap_count();
+    child_root_cleanup_before = linux_abi64_child_root_cleanup_count();
     nvme_vfs_reads_before = linux_vfs64_nvme_read_count();
     nvme_vfs_readdirs_before = linux_vfs64_nvme_readdir_count();
     nvme_vfs_dirents_before = linux_vfs64_nvme_dirent_count();
@@ -1244,9 +1327,16 @@ u32 linux_exec64_run_nvme(
     prctl_set_name_after = linux_abi64_prctl_set_name_count();
     prctl_get_name_after = linux_abi64_prctl_get_name_count();
     prctl_enosys_after = linux_abi64_prctl_enosys_count();
+    syscall_root_repair_after = linux_abi64_dispatch_root_repair_count();
+    syscall_root_reload_after = linux_abi64_dispatch_root_reload_count();
+    syscall_root_denial_after = linux_abi64_dispatch_root_denial_count();
     fork_after = linux_abi64_fork_count();
+    fork_success_after = linux_abi64_fork_success_count();
     fork_enosys_after = linux_abi64_fork_enosys_count();
     fork_denial_after = linux_abi64_fork_denial_count();
+    wait4_after = linux_abi64_wait4_count();
+    wait4_reap_after = linux_abi64_wait4_reap_count();
+    child_root_cleanup_after = linux_abi64_child_root_cleanup_count();
     nvme_vfs_reads_after = linux_vfs64_nvme_read_count();
     nvme_vfs_readdirs_after = linux_vfs64_nvme_readdir_count();
     nvme_vfs_dirents_after = linux_vfs64_nvme_dirent_count();
@@ -1464,9 +1554,25 @@ u32 linux_exec64_run_nvme(
             : 0u;
     g_linux_exec64_telemetry.prctl_last_option = linux_abi64_prctl_last_option();
     g_linux_exec64_telemetry.prctl_last_result = linux_abi64_prctl_last_result();
+    g_linux_exec64_telemetry.syscall_root_repair =
+        (syscall_root_repair_after >= syscall_root_repair_before)
+            ? (syscall_root_repair_after - syscall_root_repair_before)
+            : 0u;
+    g_linux_exec64_telemetry.syscall_root_reload =
+        (syscall_root_reload_after >= syscall_root_reload_before)
+            ? (syscall_root_reload_after - syscall_root_reload_before)
+            : 0u;
+    g_linux_exec64_telemetry.syscall_root_denial =
+        (syscall_root_denial_after >= syscall_root_denial_before)
+            ? (syscall_root_denial_after - syscall_root_denial_before)
+            : 0u;
     g_linux_exec64_telemetry.fork_calls =
         (fork_after >= fork_before)
             ? (fork_after - fork_before)
+            : 0u;
+    g_linux_exec64_telemetry.fork_success =
+        (fork_success_after >= fork_success_before)
+            ? (fork_success_after - fork_success_before)
             : 0u;
     g_linux_exec64_telemetry.fork_enosys =
         (fork_enosys_after >= fork_enosys_before)
@@ -1476,7 +1582,23 @@ u32 linux_exec64_run_nvme(
         (fork_denial_after >= fork_denial_before)
             ? (fork_denial_after - fork_denial_before)
             : 0u;
+    g_linux_exec64_telemetry.fork_child_slot = linux_abi64_fork_last_child_slot();
+    g_linux_exec64_telemetry.fork_child_root_distinct =
+        linux_abi64_fork_last_child_root_distinct();
     g_linux_exec64_telemetry.fork_last_rip = linux_abi64_fork_last_rip();
+    g_linux_exec64_telemetry.wait4_calls =
+        (wait4_after >= wait4_before)
+            ? (wait4_after - wait4_before)
+            : 0u;
+    g_linux_exec64_telemetry.wait4_reap =
+        (wait4_reap_after >= wait4_reap_before)
+            ? (wait4_reap_after - wait4_reap_before)
+            : 0u;
+    g_linux_exec64_telemetry.wait4_last_exit_code = linux_abi64_wait4_last_exit_code();
+    g_linux_exec64_telemetry.child_root_cleanup =
+        (child_root_cleanup_after >= child_root_cleanup_before)
+            ? (child_root_cleanup_after - child_root_cleanup_before)
+            : 0u;
     g_linux_exec64_telemetry.nvme_vfs_reads =
         (nvme_vfs_reads_after >= nvme_vfs_reads_before)
             ? (nvme_vfs_reads_after - nvme_vfs_reads_before)
@@ -1533,12 +1655,14 @@ u32 linux_exec64_run_nvme(
         root_clear = process64_clear_page_root(pid, process_root_token);
     }
     g_linux_exec64_telemetry.root_cleanup =
-        ((root_release != 0u)
+        (((root_release != 0u)
             && (root_clear != 0u)
             && (paging64_process_root_physical(pid) == 0ull)
             && (process64_page_root_token(pid) == 0u))
             ? 1u
-            : 0u;
+            : 0u)
+        + g_linux_exec64_telemetry.child_root_cleanup;
+    g_linux_exec64_telemetry.pml4_pool_used_final = paging64_process_root_pool_used();
     fd_release = ((reattach_fd != 0u) || (process64_fd_table(pid) != 0))
         ? fd64_release_process(pid)
         : 0u;

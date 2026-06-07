@@ -266,6 +266,8 @@ static void interrupt64_log_exception(const struct interrupt_frame64 *frame)
     {
         debug_write_string("[x64-fault] cr2 ");
         debug_write_hex_u64(read_cr2_64());
+        debug_write_string(" cr3 ");
+        debug_write_hex_u64(read_cr3_64());
         debug_write_char('\n');
     }
 }

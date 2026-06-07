@@ -612,6 +612,7 @@ function Send-QemuKeyboardProbe
                     '-' { "minus"; break }
                     '/' { "slash"; break }
                     "'" { "apostrophe"; break }
+                    ';' { "semicolon"; break }
                     default { ([string]$character).ToLowerInvariant(); break }
                 }
                 & $sendKey $key
