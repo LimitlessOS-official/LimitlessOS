@@ -90,13 +90,16 @@ function Build-ReadmeText
     $bootGuidance = if ($BootModeName -eq "uefi") {
         @(
             "- This ISO is intended for modern UEFI-first 64-bit systems.",
+            "- This ISO has only a UEFI El Torito boot entry; it is not legacy-BIOS bootable.",
+            "- BOOTIMG.IMG is staged for inspection as the UEFI FAT boot image copy and is not wired as a second BIOS El Torito boot entry.",
             "- The matching removable FAT image can still be written directly to USB for firmware-style boot testing."
         )
     }
     else {
         @(
             "- The current optical path is BIOS bootable today.",
-            "- A UEFI install-media lane is still planned for modern-only laptops and desktops."
+            "- A UEFI install-media lane is still planned for modern-only laptops and desktops.",
+            "- BOOTIMG.IMG is the BIOS El Torito boot image used by this ISO."
         )
     }
 
@@ -111,9 +114,10 @@ function Build-ReadmeText
         "- Burn this ISO to DVD or CD with a normal disc-writing tool.",
         "- Write the matching raw .img file directly to USB when you want disk-style media.",
         "",
-        "Compatibility notes:",
-        $bootGuidance[0],
-        $bootGuidance[1],
+        "Compatibility notes:"
+    )
+    $lines += $bootGuidance
+    $lines += @(
         "- The long-term product target remains a universal 32-bit and 64-bit installer."
     )
 

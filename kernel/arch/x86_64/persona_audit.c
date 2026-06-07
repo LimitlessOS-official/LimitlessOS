@@ -201,6 +201,7 @@ static const char *persona_audit64_linux_syscall_name(u32 syscall_number)
     case LINUX_ABI64_SYSCALL_NANOSLEEP: return "linux.nanosleep";
     case LINUX_ABI64_SYSCALL_GETPID: return "linux.getpid";
     case LINUX_ABI64_SYSCALL_CLONE: return "linux.clone";
+    case LINUX_ABI64_SYSCALL_FORK: return "linux.fork";
     case LINUX_ABI64_SYSCALL_EXECVE: return "linux.execve";
     case LINUX_ABI64_SYSCALL_EXIT: return "linux.exit";
     case LINUX_ABI64_SYSCALL_WAIT4: return "linux.wait4";
@@ -210,6 +211,7 @@ static const char *persona_audit64_linux_syscall_name(u32 syscall_number)
     case LINUX_ABI64_SYSCALL_CHDIR: return "linux.chdir";
     case LINUX_ABI64_SYSCALL_FCHDIR: return "linux.fchdir";
     case LINUX_ABI64_SYSCALL_GETRLIMIT: return "linux.getrlimit";
+    case LINUX_ABI64_SYSCALL_PRCTL: return "linux.prctl";
     case LINUX_ABI64_SYSCALL_ARCH_PRCTL: return "linux.arch_prctl";
     case LINUX_ABI64_SYSCALL_SETRLIMIT: return "linux.setrlimit";
     case LINUX_ABI64_SYSCALL_GETTID: return "linux.gettid";
@@ -322,9 +324,11 @@ static u32 persona_audit64_linux_operation(u32 syscall_number)
     case LINUX_ABI64_SYSCALL_GETPID:
     case LINUX_ABI64_SYSCALL_GETTID:
     case LINUX_ABI64_SYSCALL_CLONE:
+    case LINUX_ABI64_SYSCALL_FORK:
     case LINUX_ABI64_SYSCALL_EXECVE:
     case LINUX_ABI64_SYSCALL_EXIT:
     case LINUX_ABI64_SYSCALL_WAIT4:
+    case LINUX_ABI64_SYSCALL_PRCTL:
     case LINUX_ABI64_SYSCALL_ARCH_PRCTL:
     case LINUX_ABI64_SYSCALL_SET_TID_ADDRESS:
     case LINUX_ABI64_SYSCALL_EXIT_GROUP:

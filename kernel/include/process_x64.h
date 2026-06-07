@@ -89,6 +89,19 @@ void *process64_persona_ctx(u32 pid);
 u32 process64_attach_audit(u32 pid, void *audit_ctx);
 void *process64_detach_audit(u32 pid);
 void *process64_audit_ctx(u32 pid);
+u32 process64_attach_page_root(
+    u32 pid,
+    u64 root_physical,
+    u32 root_index,
+    u32 root_token,
+    u32 authority_token);
+u32 process64_clear_page_root(u32 pid, u32 root_token);
+u64 process64_page_root_physical(u32 pid);
+u32 process64_page_root_index(u32 pid);
+u32 process64_page_root_token(u32 pid);
+u32 process64_page_root_attach_count(void);
+u32 process64_page_root_clear_count(void);
+u32 process64_page_root_denial_count(void);
 u32 process64_spawn_clone(u32 parent_pid);
 u32 process64_release_clone(u32 pid);
 u32 process64_is_clone(u32 pid);

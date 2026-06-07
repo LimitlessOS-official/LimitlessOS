@@ -103,6 +103,20 @@ function Get-Fnv1aDataChecksum
     return $hash
 }
 
+function Get-Sha256Hex
+{
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash($Bytes)
+        return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Get-BinutilsSectionSizes
 {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -648,6 +662,7 @@ function Build-X64Scaffold
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "macho64.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "elf64.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_dynamic.c" })
+    $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_exec.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_libc.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_vfs.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_abi.c" })
@@ -900,6 +915,7 @@ function Build-X64Scaffold
     }
     $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
+    $kernelSha256Hex = Get-Sha256Hex -Bytes $uefiKernelBytes
     $profileStatusLines = if ($BuildProfile -eq "Product") {
         "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
     }
@@ -920,11 +936,13 @@ The fallback path is EFI\BOOT\BOOTX64.EFI.
 
 Current status:
 $profileStatusLines
-- build.ps1 packages UEFI media only; runtime boot proof requires tools\verify-qemu.ps1 on a host with QEMU/OVMF
+- build.ps1 packages x86_64 optical media with one UEFI El Torito boot entry only; BOOTIMG.IMG is a staged UEFI FAT image copy for inspection, not a legacy BIOS boot entry
+- runtime boot proof requires tools\verify-qemu.ps1 on a host with QEMU/OVMF
 - removable UEFI image is packaged for OVMF/QEMU verification with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, profile-labeled network availability/quarantine telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, firmware-map-aware kernel placement, dynamic linked-kernel placement, dynamic boot-handoff table, kernel-jump, and x64 userspace proofs
 - UEFI ISO is packaged for OVMF/QEMU verification with GOP framebuffer, boot-info framebuffer mapping, kernel framebuffer draw, brokered display marker/panel/text proof, line-cleared scrolling brokered console-to-framebuffer mirror proof, brokered PS/2 plus xHCI HID keyboard event telemetry, profile-labeled network availability/quarantine telemetry, explicit broker-side keyboard-read proof, compact sealed bootstrap proof, real-media storage proofs, disk-sourced descriptor/binary launch proofs, boot-media file-read, loader-buffer, firmware-map-aware kernel placement, dynamic linked-kernel placement, dynamic boot-handoff table, kernel-jump, and x64 userspace proofs
 - both UEFI media paths read and verify the staged root README.TXT from the boot volume
-- both UEFI media paths read BOOTMAN.TXT, load KERNEL64.BIN into a bounded handoff buffer, and report a checksum match
+- both UEFI media paths read BOOTMAN.TXT, load KERNEL64.BIN into a bounded handoff buffer, and report a runtime FNV-1a checksum match; BOOTMAN.TXT also records a standard kernel-sha256 value for external mirror/download verification
+- ASK and ECHO may still appear as legacy shared package-registry strings inside the kernel image, but Product UEFI does not stage ASK.APP, ASK.BIN, ECHO.APP, or ECHO.BIN; those names are non-product registry stubs until a later milestone promotes them with matching descriptors, binaries, docs, and verification
 - both UEFI media paths allocate exact firmware-owned loader pages from conventional memory, copy/check KERNEL64.BIN there, and prove the linked x64 scaffold image can be copied either at the legacy low address when firmware allows it or at a dynamically selected conventional-memory fallback
 - both UEFI media paths build boot-handoff page tables, framebuffer mapping, boot-info, and trampoline from allocated conventional memory instead of assuming fixed low pages are always available, take a final silent memory-map key, exit firmware boot services, jump into the x64 kernel, draw/log a kernel-owned framebuffer marker, and reach the compact sealed bootstrap, second-page userspace display/filesystem, real-media storage, and disk-sourced utility launch proofs
 - brokered keyboard proofs still read staged PS/2 bytes through scoped input authority, auto-fall back from set-2 to set-1 scancode decoding when the media path exposes set-1 release scancodes, and keep hardware input separate from command execution now sourced through disk-backed APPS descriptors and flat binaries
@@ -972,9 +990,12 @@ kernel=KERNEL64.BIN
 kernel-bytes=$($uefiKernelBytes.Length)
 kernel-byte-limit=$uefiKernelByteLimit
 kernel-byte-reserve=$($uefiKernelByteLimit - $uefiKernelBytes.Length)
+kernel-checksum-algorithm=fnv1a-32
 kernel-checksum=$kernelChecksumHex
+kernel-sha256=$kernelSha256Hex
 handoff=uefi-loader-proof
 boot-contract=uefi-kernel-file
+non-product-package-registry-stubs=ASK,ECHO
 "@
 
     Write-Host "Packaging x86_64 UEFI FAT image"

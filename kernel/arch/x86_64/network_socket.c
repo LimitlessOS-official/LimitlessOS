@@ -155,10 +155,13 @@ static u32 network_socket64_url_equals(const u8 *url, u32 url_bytes, const char 
 
 static u32 network_socket64_url_allowed(const u8 *url, u32 url_bytes)
 {
+    if (network_socket64_url_equals(url, url_bytes, "limitless://unset") != 0u)
+    {
+        return 0u;
+    }
+
     return (network_socket64_url_equals(url, url_bytes, "example.com") != 0u)
-        || (network_socket64_url_equals(url, url_bytes, "example.com/") != 0u)
-        || (network_socket64_url_equals(url, url_bytes, "http://example.com") != 0u)
-        || (network_socket64_url_equals(url, url_bytes, "http://example.com/") != 0u);
+        || (network_socket64_url_equals(url, url_bytes, "example.com/") != 0u);
 }
 
 static void network_socket64_reset_curl_state(void)

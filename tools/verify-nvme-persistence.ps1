@@ -173,6 +173,70 @@ function Send-AuthProbe
     }
 }
 
+function Send-QemuTextLine
+{
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$Text
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $client.Connect("127.0.0.1", $Port)
+    try {
+        $stream = $client.GetStream()
+        $writer = [System.IO.StreamWriter]::new($stream)
+        $writer.NewLine = "`n"
+        $writer.AutoFlush = $true
+        $writer.WriteLine('{"execute":"qmp_capabilities"}')
+
+        $sendKey = {
+            param([string]$Key)
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":true,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds 95
+            $writer.WriteLine(('{{"execute":"input-send-event","arguments":{{"events":[{{"type":"key","data":{{"down":false,"key":{{"type":"qcode","data":"{0}"}}}}}}]}}}}' -f $Key))
+            Start-Sleep -Milliseconds 160
+            if ($Key -eq "ret") {
+                Start-Sleep -Milliseconds 1300
+            }
+        }
+
+        foreach ($character in $Text.ToCharArray()) {
+            $key = switch ($character) {
+                ' ' { "spc"; break }
+                '.' { "dot"; break }
+                default { ([string]$character).ToLowerInvariant(); break }
+            }
+            & $sendKey $key
+        }
+        & $sendKey "ret"
+    }
+    finally {
+        $client.Dispose()
+    }
+}
+
+function Request-QemuQuit
+{
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $client.Connect("127.0.0.1", $Port)
+        $stream = $client.GetStream()
+        $writer = [System.IO.StreamWriter]::new($stream)
+        $writer.NewLine = "`n"
+        $writer.AutoFlush = $true
+        $writer.WriteLine('{"execute":"qmp_capabilities"}')
+        Start-Sleep -Milliseconds 100
+        $writer.WriteLine('{"execute":"quit"}')
+    }
+    catch {
+    }
+    finally {
+        $client.Dispose()
+    }
+}
+
 function Ensure-NvmeGptImage
 {
     param([Parameter(Mandatory = $true)][string]$Root)
@@ -269,9 +333,18 @@ function Start-NvmeTwoBoot
         Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] PIT at 100 Hz' -TimeoutMilliseconds 45000
         Send-AuthProbe -Port $qmpPort -DebugLogPath $logPath
         Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] drs-nvme-rw' -TimeoutMilliseconds 180000
+        if ($RunIndex -eq 1) {
+            Wait-ForLogPattern -Path $logPath -Pattern '\[x64:shell\] persistent ring3 shell online' -TimeoutMilliseconds 60000
+            Send-QemuTextLine -Port $qmpPort -Text "write shell.txt shell write ok"
+            Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] \$ write shell\.txt shell write ok' -TimeoutMilliseconds 30000
+        }
         Start-Sleep -Seconds 4
     }
     finally {
+        if (-not $process.HasExited) {
+            Request-QemuQuit -Port $qmpPort
+            $process.WaitForExit(5000)
+        }
         if (-not $process.HasExited) {
             Stop-Process -Id $process.Id -Force
             $process.WaitForExit()
@@ -287,7 +360,7 @@ function Start-NvmeTwoBoot
         Where-Object { $_.Trim().Length -gt 0 })
 
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-load-full 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} .* drs-load-full-source disk .* drs-load-full-unavailable 0' -Message "run $RunIndex did not preserve the AHCI-backed disk launch chain."
-    Assert-OutputContains -Lines $outputLines -Pattern ('\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{{8}} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes 15 write-checksum 0x46A2678A persisted {0} audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -f $ExpectedPersisted) -Message "run $RunIndex did not report the expected persisted=$ExpectedPersisted scoped NVMe write proof."
+    Assert-OutputContains -Lines $outputLines -Pattern ('\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{{8}} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes [1-9][0-9]* write-checksum 0x(?!00000000)[0-9A-F]{{8}} persisted {0} audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -f $ExpectedPersisted) -Message "run $RunIndex did not report the expected persisted=$ExpectedPersisted scoped NVMe write proof."
 
     return $outputLines
 }
@@ -305,7 +378,7 @@ function Assert-PersistenceSecurityEvidence
         [PSCustomObject]@{ Index = 2; Lines = $Run2Lines; Persisted = 1 }
     )) {
         Assert-OutputContains -Lines $run.Lines -Pattern '\[x64\] drs-nvme-fat .* drs-nvme-fat-write-gate 1 .* fs-delegation 0 block-endpoint 0 write-authority 0 commit-authority 0 unavailable 0 error 0' -Message "run $($run.Index) did not preserve the broker-private FAT read/write gate before scoped shell delegation."
-        Assert-OutputContains -Lines $run.Lines -Pattern ('\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{{8}} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes 15 write-checksum 0x46A2678A persisted {0} audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -f $run.Persisted) -Message "run $($run.Index) did not preserve scoped write authority, commit authority, and denial evidence."
+        Assert-OutputContains -Lines $run.Lines -Pattern ('\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{{8}} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes [1-9][0-9]* write-checksum 0x(?!00000000)[0-9A-F]{{8}} persisted {0} audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -f $run.Persisted) -Message "run $($run.Index) did not preserve scoped write authority, commit authority, and denial evidence."
     }
 
     Assert-OutputContains -Lines $Run1Lines -Pattern '\[x64\] drs-nvme-fat .* drs-nvme-fat-flushes [1-9][0-9]* .* unavailable 0 error 0' -Message "run 1 did not report a nonzero broker-private FAT flush counter."

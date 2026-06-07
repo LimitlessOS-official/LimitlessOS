@@ -164,6 +164,8 @@ static const char *g_linux_abi64_exec_envp[LINUX_ABI64_EXEC_ENV_MAX];
 static elf64_launch_result_t g_linux_abi64_exec_launch;
 static u32 g_linux_abi64_dispatch_count = 0u;
 static u32 g_linux_abi64_unimplemented_count = 0u;
+static u32 g_linux_abi64_unimplemented_last_syscall = 0u;
+static u64 g_linux_abi64_unimplemented_last_rip = 0ull;
 static u32 g_linux_abi64_read_count = 0u;
 static u32 g_linux_abi64_read_byte_count = 0u;
 static u32 g_linux_abi64_read_denial_count = 0u;
@@ -220,6 +222,11 @@ static u32 g_linux_abi64_fstat_fault_count = 0u;
 static u32 g_linux_abi64_newfstatat_count = 0u;
 static u32 g_linux_abi64_newfstatat_denial_count = 0u;
 static u32 g_linux_abi64_newfstatat_fault_count = 0u;
+static u32 g_linux_abi64_readlink_count = 0u;
+static u32 g_linux_abi64_readlink_byte_count = 0u;
+static u32 g_linux_abi64_readlink_denial_count = 0u;
+static u32 g_linux_abi64_readlink_fault_count = 0u;
+static u32 g_linux_abi64_readlink_last_result = 0u;
 static u32 g_linux_abi64_mmap_count = 0u;
 static u32 g_linux_abi64_mmap_byte_count = 0u;
 static u32 g_linux_abi64_mmap_denial_count = 0u;
@@ -272,6 +279,10 @@ static u32 g_linux_abi64_getcwd_count = 0u;
 static u32 g_linux_abi64_getcwd_byte_count = 0u;
 static u32 g_linux_abi64_getcwd_denial_count = 0u;
 static u32 g_linux_abi64_getcwd_fault_count = 0u;
+static u32 g_linux_abi64_path_relative_count = 0u;
+static u32 g_linux_abi64_path_dot_count = 0u;
+static u32 g_linux_abi64_path_dotdot_count = 0u;
+static u32 g_linux_abi64_path_fault_count = 0u;
 static u32 g_linux_abi64_chdir_count = 0u;
 static u32 g_linux_abi64_fchdir_count = 0u;
 static u32 g_linux_abi64_chdir_denial_count = 0u;
@@ -302,6 +313,10 @@ static u32 g_linux_abi64_clone_thread_count = 0u;
 static u32 g_linux_abi64_clone_denial_count = 0u;
 static u32 g_linux_abi64_clone_fork_denial_count = 0u;
 static u32 g_linux_abi64_clone_scheduler_count = 0u;
+static u32 g_linux_abi64_fork_count = 0u;
+static u32 g_linux_abi64_fork_enosys_count = 0u;
+static u32 g_linux_abi64_fork_denial_count = 0u;
+static u64 g_linux_abi64_fork_last_rip = 0ull;
 static u32 g_linux_abi64_clone_last_parent_pid = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_clone_last_child_pid = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_clone_last_flags = 0u;
@@ -384,8 +399,28 @@ static u32 g_linux_abi64_getrandom_last_flags = 0u;
 static u32 g_linux_abi64_getrandom_last_result = 0u;
 static u32 g_linux_abi64_getpid_count = 0u;
 static u32 g_linux_abi64_getpid_denial_count = 0u;
+static u32 g_linux_abi64_geteuid_count = 0u;
+static u32 g_linux_abi64_geteuid_denial_count = 0u;
+static u32 g_linux_abi64_getppid_count = 0u;
+static u32 g_linux_abi64_getppid_denial_count = 0u;
 static u32 g_linux_abi64_gettid_count = 0u;
 static u32 g_linux_abi64_gettid_denial_count = 0u;
+static u32 g_linux_abi64_ioctl_count = 0u;
+static u32 g_linux_abi64_ioctl_tty_count = 0u;
+static u32 g_linux_abi64_ioctl_enotty_count = 0u;
+static u32 g_linux_abi64_ioctl_enosys_count = 0u;
+static u32 g_linux_abi64_ioctl_denial_count = 0u;
+static u32 g_linux_abi64_ioctl_last_fd = 0u;
+static u32 g_linux_abi64_ioctl_last_request = 0u;
+static u32 g_linux_abi64_ioctl_last_result = 0u;
+static u32 g_linux_abi64_prctl_count = 0u;
+static u32 g_linux_abi64_prctl_set_name_count = 0u;
+static u32 g_linux_abi64_prctl_get_name_count = 0u;
+static u32 g_linux_abi64_prctl_enosys_count = 0u;
+static u32 g_linux_abi64_prctl_denial_count = 0u;
+static u32 g_linux_abi64_prctl_fault_count = 0u;
+static u32 g_linux_abi64_prctl_last_option = 0u;
+static u32 g_linux_abi64_prctl_last_result = 0u;
 static u32 g_linux_abi64_arch_prctl_count = 0u;
 static u32 g_linux_abi64_arch_prctl_set_count = 0u;
 static u32 g_linux_abi64_arch_prctl_get_count = 0u;
@@ -534,6 +569,46 @@ static u64 linux_abi64_getpid_dispatch(
     (void)r9;
 
     return linux_abi64_sys_getpid(pid, rip);
+}
+
+static u64 linux_abi64_geteuid_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)rdi;
+    (void)rsi;
+    (void)rdx;
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_geteuid(pid, rip);
+}
+
+static u64 linux_abi64_getppid_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)rdi;
+    (void)rsi;
+    (void)rdx;
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_getppid(pid, rip);
 }
 
 static u64 linux_abi64_gettid_dispatch(
@@ -800,6 +875,26 @@ static u64 linux_abi64_clone_dispatch(
     return linux_abi64_sys_clone(pid, rdi, rsi, rdx, r10, r8, rip);
 }
 
+static u64 linux_abi64_fork_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)rdi;
+    (void)rsi;
+    (void)rdx;
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_fork(pid, rip);
+}
+
 static u64 linux_abi64_execve_dispatch(
     u32 pid,
     u64 rdi,
@@ -917,6 +1012,21 @@ static u64 linux_abi64_arch_prctl_dispatch(
     (void)r9;
 
     return linux_abi64_sys_arch_prctl(pid, rdi, rsi, rip);
+}
+
+static u64 linux_abi64_prctl_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)r9;
+
+    return linux_abi64_sys_prctl(pid, rdi, rsi, rdx, r10, r8, rip);
 }
 
 static u64 linux_abi64_set_tid_address_dispatch(
@@ -1088,6 +1198,23 @@ static u64 linux_abi64_ppoll_dispatch(
     return linux_abi64_sys_ppoll(pid, rdi, rsi, rdx, r10, r8, rip);
 }
 
+static u64 linux_abi64_ioctl_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_ioctl(pid, rdi, rsi, rdx, rip);
+}
+
 static u64 linux_abi64_open_dispatch(
     u32 pid,
     u64 rdi,
@@ -1159,6 +1286,24 @@ static u64 linux_abi64_stat_dispatch(
     return linux_abi64_sys_stat(pid, rdi, rsi, rip);
 }
 
+static u64 linux_abi64_lstat_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)rdx;
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_lstat(pid, rdi, rsi, rip);
+}
+
 static u64 linux_abi64_fstat_dispatch(
     u32 pid,
     u64 rdi,
@@ -1175,6 +1320,23 @@ static u64 linux_abi64_fstat_dispatch(
     (void)r9;
 
     return linux_abi64_sys_fstat(pid, rdi, rsi, rip);
+}
+
+static u64 linux_abi64_readlink_dispatch(
+    u32 pid,
+    u64 rdi,
+    u64 rsi,
+    u64 rdx,
+    u64 r10,
+    u64 r8,
+    u64 r9,
+    u64 rip)
+{
+    (void)r10;
+    (void)r8;
+    (void)r9;
+
+    return linux_abi64_sys_readlink(pid, rdi, rsi, rdx, rip);
 }
 
 static u64 linux_abi64_newfstatat_dispatch(
@@ -1683,10 +1845,13 @@ void linux_abi64_init(void)
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_WRITEV] = linux_abi64_writev_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_POLL] = linux_abi64_poll_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_PPOLL] = linux_abi64_ppoll_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_IOCTL] = linux_abi64_ioctl_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_OPEN] = linux_abi64_open_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_CLOSE] = linux_abi64_close_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_STAT] = linux_abi64_stat_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_LSTAT] = linux_abi64_lstat_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_FSTAT] = linux_abi64_fstat_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_READLINK] = linux_abi64_readlink_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_LSEEK] = linux_abi64_lseek_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_MMAP] = linux_abi64_mmap_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_MPROTECT] = linux_abi64_mprotect_dispatch;
@@ -1711,7 +1876,10 @@ void linux_abi64_init(void)
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_CHDIR] = linux_abi64_chdir_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_FCHDIR] = linux_abi64_fchdir_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETPID] = linux_abi64_getpid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETEUID] = linux_abi64_geteuid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETPPID] = linux_abi64_getppid_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_CLONE] = linux_abi64_clone_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_FORK] = linux_abi64_fork_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_EXECVE] = linux_abi64_execve_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_WAIT4] = linux_abi64_wait4_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_KILL] = linux_abi64_kill_dispatch;
@@ -1720,6 +1888,7 @@ void linux_abi64_init(void)
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETDENTS64] =
         linux_abi64_getdents64_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_EXIT] = linux_abi64_exit_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_PRCTL] = linux_abi64_prctl_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_ARCH_PRCTL] = linux_abi64_arch_prctl_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETTID] = linux_abi64_gettid_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_SET_TID_ADDRESS] =
@@ -1753,6 +1922,8 @@ void linux_abi64_init(void)
 
     g_linux_abi64_dispatch_count = 0u;
     g_linux_abi64_unimplemented_count = 0u;
+    g_linux_abi64_unimplemented_last_syscall = 0u;
+    g_linux_abi64_unimplemented_last_rip = 0ull;
     g_linux_abi64_read_count = 0u;
     g_linux_abi64_read_byte_count = 0u;
     g_linux_abi64_read_denial_count = 0u;
@@ -1809,6 +1980,11 @@ void linux_abi64_init(void)
     g_linux_abi64_newfstatat_count = 0u;
     g_linux_abi64_newfstatat_denial_count = 0u;
     g_linux_abi64_newfstatat_fault_count = 0u;
+    g_linux_abi64_readlink_count = 0u;
+    g_linux_abi64_readlink_byte_count = 0u;
+    g_linux_abi64_readlink_denial_count = 0u;
+    g_linux_abi64_readlink_fault_count = 0u;
+    g_linux_abi64_readlink_last_result = 0u;
     g_linux_abi64_mmap_count = 0u;
     g_linux_abi64_mmap_byte_count = 0u;
     g_linux_abi64_mmap_denial_count = 0u;
@@ -1861,6 +2037,10 @@ void linux_abi64_init(void)
     g_linux_abi64_getcwd_byte_count = 0u;
     g_linux_abi64_getcwd_denial_count = 0u;
     g_linux_abi64_getcwd_fault_count = 0u;
+    g_linux_abi64_path_relative_count = 0u;
+    g_linux_abi64_path_dot_count = 0u;
+    g_linux_abi64_path_dotdot_count = 0u;
+    g_linux_abi64_path_fault_count = 0u;
     g_linux_abi64_chdir_count = 0u;
     g_linux_abi64_fchdir_count = 0u;
     g_linux_abi64_chdir_denial_count = 0u;
@@ -1891,6 +2071,10 @@ void linux_abi64_init(void)
     g_linux_abi64_clone_denial_count = 0u;
     g_linux_abi64_clone_fork_denial_count = 0u;
     g_linux_abi64_clone_scheduler_count = 0u;
+    g_linux_abi64_fork_count = 0u;
+    g_linux_abi64_fork_enosys_count = 0u;
+    g_linux_abi64_fork_denial_count = 0u;
+    g_linux_abi64_fork_last_rip = 0ull;
     g_linux_abi64_clone_last_parent_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_clone_last_child_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_clone_last_flags = 0u;
@@ -1973,8 +2157,28 @@ void linux_abi64_init(void)
     g_linux_abi64_getrandom_last_result = 0u;
     g_linux_abi64_getpid_count = 0u;
     g_linux_abi64_getpid_denial_count = 0u;
+    g_linux_abi64_geteuid_count = 0u;
+    g_linux_abi64_geteuid_denial_count = 0u;
+    g_linux_abi64_getppid_count = 0u;
+    g_linux_abi64_getppid_denial_count = 0u;
     g_linux_abi64_gettid_count = 0u;
     g_linux_abi64_gettid_denial_count = 0u;
+    g_linux_abi64_ioctl_count = 0u;
+    g_linux_abi64_ioctl_tty_count = 0u;
+    g_linux_abi64_ioctl_enotty_count = 0u;
+    g_linux_abi64_ioctl_enosys_count = 0u;
+    g_linux_abi64_ioctl_denial_count = 0u;
+    g_linux_abi64_ioctl_last_fd = 0u;
+    g_linux_abi64_ioctl_last_request = 0u;
+    g_linux_abi64_ioctl_last_result = 0u;
+    g_linux_abi64_prctl_count = 0u;
+    g_linux_abi64_prctl_set_name_count = 0u;
+    g_linux_abi64_prctl_get_name_count = 0u;
+    g_linux_abi64_prctl_enosys_count = 0u;
+    g_linux_abi64_prctl_denial_count = 0u;
+    g_linux_abi64_prctl_fault_count = 0u;
+    g_linux_abi64_prctl_last_option = 0u;
+    g_linux_abi64_prctl_last_result = 0u;
     g_linux_abi64_arch_prctl_count = 0u;
     g_linux_abi64_arch_prctl_set_count = 0u;
     g_linux_abi64_arch_prctl_get_count = 0u;
@@ -2032,6 +2236,8 @@ u64 linux_abi64_dispatch(
     if (syscall_number >= LINUX_ABI64_SYSCALL_LIMIT)
     {
         ++g_linux_abi64_unimplemented_count;
+        g_linux_abi64_unimplemented_last_syscall = syscall_number;
+        g_linux_abi64_unimplemented_last_rip = rip;
         (void)persona64_record_unavailable_syscall(
             pid,
             PERSONA64_TYPE_LINUX_ELF,
@@ -2047,6 +2253,8 @@ u64 linux_abi64_dispatch(
     if (handler == linux_abi64_unimplemented_stub)
     {
         ++g_linux_abi64_unimplemented_count;
+        g_linux_abi64_unimplemented_last_syscall = syscall_number;
+        g_linux_abi64_unimplemented_last_rip = rip;
         (void)persona64_record_unavailable_syscall(
             pid,
             PERSONA64_TYPE_LINUX_ELF,
@@ -2064,6 +2272,32 @@ u64 linux_abi64_dispatch(
 static u32 linux_abi64_range_overflows(u64 address, u64 byte_count)
 {
     return ((byte_count != 0ull) && ((address + byte_count) < address)) ? 1u : 0u;
+}
+
+static u32 linux_abi64_user_page_present(u32 pid, u64 page)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (paging64_process_root_physical(pid) != 0ull)
+    {
+        return paging64_user_page_present_for_process(pid, page);
+    }
+#else
+    (void)pid;
+#endif
+    return paging64_user_page_present(page);
+}
+
+static u32 linux_abi64_user_page_protection(u32 pid, u64 page)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (paging64_process_root_physical(pid) != 0ull)
+    {
+        return paging64_user_page_protection_for_process(pid, page);
+    }
+#else
+    (void)pid;
+#endif
+    return paging64_user_page_protection(page);
 }
 
 static u32 linux_abi64_user_buffer_readable(u32 pid, u64 address, u32 byte_count)
@@ -2095,8 +2329,8 @@ static u32 linux_abi64_user_buffer_readable(u32 pid, u64 address, u32 byte_count
             || (cursor < region->virt_base)
             || (cursor >= region->virt_end)
             || ((region->prot_flags & VMA64_PROT_READ) == 0u)
-            || (paging64_user_page_present(page) == 0u)
-            || ((paging64_user_page_protection(page) & PAGING64_USER_PROT_READ) == 0u))
+            || (linux_abi64_user_page_present(pid, page) == 0u)
+            || ((linux_abi64_user_page_protection(pid, page) & PAGING64_USER_PROT_READ) == 0u))
         {
             return 0u;
         }
@@ -2144,8 +2378,8 @@ static u32 linux_abi64_user_buffer_writable(u32 pid, u64 address, u32 byte_count
             || (cursor < region->virt_base)
             || (cursor >= region->virt_end)
             || ((region->prot_flags & VMA64_PROT_WRITE) == 0u)
-            || (paging64_user_page_present(page) == 0u)
-            || ((paging64_user_page_protection(page) & PAGING64_USER_PROT_WRITE) == 0u))
+            || (linux_abi64_user_page_present(pid, page) == 0u)
+            || ((linux_abi64_user_page_protection(pid, page) & PAGING64_USER_PROT_WRITE) == 0u))
         {
             return 0u;
         }
@@ -2211,6 +2445,276 @@ static u32 linux_abi64_copy_user_path(
     }
 
     return 0u;
+}
+
+static u32 linux_abi64_append_path_byte(
+    u8 *output,
+    u32 output_capacity,
+    u32 *output_bytes,
+    u8 byte)
+{
+    if ((output == 0) || (output_bytes == 0) || (*output_bytes >= output_capacity))
+    {
+        return 0u;
+    }
+
+    output[*output_bytes] = byte;
+    ++(*output_bytes);
+    return 1u;
+}
+
+static u32 linux_abi64_append_path_bytes(
+    u8 *output,
+    u32 output_capacity,
+    u32 *output_bytes,
+    const u8 *input,
+    u32 input_bytes)
+{
+    u32 index;
+
+    if ((output == 0) || (output_bytes == 0) || (input == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < input_bytes; ++index)
+    {
+        if (linux_abi64_append_path_byte(
+                output,
+                output_capacity,
+                output_bytes,
+                input[index]) == 0u)
+        {
+            return 0u;
+        }
+    }
+    return 1u;
+}
+
+static u32 linux_abi64_path_segment_is_dot(const u8 *segment, u32 segment_bytes)
+{
+    return ((segment != 0) && (segment_bytes == 1u) && (segment[0] == (u8)'.')) ? 1u : 0u;
+}
+
+static u32 linux_abi64_path_segment_is_dotdot(const u8 *segment, u32 segment_bytes)
+{
+    return ((segment != 0)
+        && (segment_bytes == 2u)
+        && (segment[0] == (u8)'.')
+        && (segment[1] == (u8)'.')) ? 1u : 0u;
+}
+
+static u32 linux_abi64_normalize_absolute_path(
+    const u8 *input,
+    u32 input_bytes,
+    u8 *output,
+    u32 output_capacity,
+    u32 *output_bytes)
+{
+    u32 input_index = 0u;
+    u32 out_bytes = 0u;
+
+    if (output_bytes != 0)
+    {
+        *output_bytes = 0u;
+    }
+
+    if ((input == 0)
+        || (output == 0)
+        || (output_bytes == 0)
+        || (input_bytes == 0u)
+        || (output_capacity == 0u)
+        || (input[0] != (u8)'/'))
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+
+    if (linux_abi64_append_path_byte(output, output_capacity, &out_bytes, (u8)'/') == 0u)
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+
+    while (input_index < input_bytes)
+    {
+        const u8 *segment;
+        u32 segment_bytes = 0u;
+
+        while ((input_index < input_bytes) && (input[input_index] == (u8)'/'))
+        {
+            ++input_index;
+        }
+        if (input_index >= input_bytes)
+        {
+            break;
+        }
+
+        segment = &input[input_index];
+        while ((input_index < input_bytes) && (input[input_index] != (u8)'/'))
+        {
+            ++input_index;
+            ++segment_bytes;
+        }
+
+        if (linux_abi64_path_segment_is_dot(segment, segment_bytes) != 0u)
+        {
+            ++g_linux_abi64_path_dot_count;
+            continue;
+        }
+
+        if (linux_abi64_path_segment_is_dotdot(segment, segment_bytes) != 0u)
+        {
+            ++g_linux_abi64_path_dotdot_count;
+            if (out_bytes > 1u)
+            {
+                u32 cursor = out_bytes;
+                while ((cursor > 1u) && (output[cursor - 1u] != (u8)'/'))
+                {
+                    --cursor;
+                }
+                out_bytes = (cursor > 1u) ? (cursor - 1u) : 1u;
+            }
+            continue;
+        }
+
+        if ((out_bytes > 1u)
+            && (linux_abi64_append_path_byte(output, output_capacity, &out_bytes, (u8)'/') == 0u))
+        {
+            ++g_linux_abi64_path_fault_count;
+            return 0u;
+        }
+
+        if (linux_abi64_append_path_bytes(
+                output,
+                output_capacity,
+                &out_bytes,
+                segment,
+                segment_bytes) == 0u)
+        {
+            ++g_linux_abi64_path_fault_count;
+            return 0u;
+        }
+    }
+
+    *output_bytes = out_bytes;
+    return 1u;
+}
+
+static u32 linux_abi64_canonicalize_path(
+    u32 pid,
+    u64 dirfd,
+    const u8 *input,
+    u32 input_bytes,
+    u8 *output,
+    u32 output_capacity,
+    u32 *output_bytes)
+{
+    persona_context_t *context;
+    u8 combined[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 combined_bytes = 0u;
+    u8 fd_base[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 fd_base_bytes = 0u;
+    const u8 *base_path = 0;
+    u32 base_bytes = 0u;
+
+    if (output_bytes != 0)
+    {
+        *output_bytes = 0u;
+    }
+
+    if ((input == 0)
+        || (input_bytes == 0u)
+        || (output == 0)
+        || (output_bytes == 0)
+        || (output_capacity == 0u)
+        || (input_bytes > LINUX_VFS64_MAX_PATH_BYTES))
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+
+    if (input[0] == (u8)'/')
+    {
+        return linux_abi64_normalize_absolute_path(
+            input,
+            input_bytes,
+            output,
+            output_capacity,
+            output_bytes);
+    }
+
+    ++g_linux_abi64_path_relative_count;
+    if (dirfd == LINUX_ABI64_AT_FDCWD)
+    {
+        context = persona64_context_for_process(pid);
+        if ((context == 0)
+            || (context->persona_type != PERSONA64_TYPE_LINUX_ELF)
+            || (context->linux_cwd_length == 0u)
+            || (context->linux_cwd_length >= PERSONA64_LINUX_CWD_MAX_BYTES)
+            || (context->linux_cwd[0] != (u8)'/'))
+        {
+            ++g_linux_abi64_path_fault_count;
+            return 0u;
+        }
+        base_path = &context->linux_cwd[0];
+        base_bytes = context->linux_cwd_length;
+    }
+    else
+    {
+        if ((dirfd >= (u64)FD64_TABLE_LIMIT)
+            || (linux_vfs64_fd_path(
+                    pid,
+                    (u32)dirfd,
+                    fd_base,
+                    (u32)sizeof(fd_base),
+                    &fd_base_bytes) == 0u)
+            || (linux_vfs64_path_is_directory(pid, fd_base, fd_base_bytes) == 0u))
+        {
+            ++g_linux_abi64_path_fault_count;
+            return 0u;
+        }
+        base_path = fd_base;
+        base_bytes = fd_base_bytes;
+    }
+
+    if (linux_abi64_append_path_bytes(
+            combined,
+            (u32)sizeof(combined),
+            &combined_bytes,
+            base_path,
+            base_bytes) == 0u)
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+    if ((combined_bytes > 1u)
+        && (linux_abi64_append_path_byte(
+                combined,
+                (u32)sizeof(combined),
+                &combined_bytes,
+                (u8)'/') == 0u))
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+    if (linux_abi64_append_path_bytes(
+            combined,
+            (u32)sizeof(combined),
+            &combined_bytes,
+            input,
+            input_bytes) == 0u)
+    {
+        ++g_linux_abi64_path_fault_count;
+        return 0u;
+    }
+
+    return linux_abi64_normalize_absolute_path(
+        combined,
+        combined_bytes,
+        output,
+        output_capacity,
+        output_bytes);
 }
 
 static u32 linux_abi64_checksum_bytes(const u8 *bytes, u32 byte_count)
@@ -2614,6 +3118,8 @@ static u32 linux_abi64_open_flags_to_fd(u64 linux_flags, u32 *fd_flags_out)
                 | (u64)LINUX_ABI64_O_CREAT
                 | (u64)LINUX_ABI64_O_NOFOLLOW
                 | (u64)LINUX_ABI64_O_NONBLOCK
+                | (u64)LINUX_ABI64_O_LARGEFILE
+                | (u64)LINUX_ABI64_O_DIRECTORY
                 | (u64)LINUX_ABI64_O_CLOEXEC)) != 0ull)
         || (access_mode == LINUX_ABI64_O_ACCMODE))
     {
@@ -2871,15 +3377,166 @@ static u32 linux_abi64_write_stat_to_user(u32 pid, u64 user_stat, const fd64_sta
     return 1u;
 }
 
+static u32 linux_abi64_ioctl_is_terminal_query(u32 request)
+{
+    return ((request == LINUX_ABI64_TCGETS)
+        || (request == LINUX_ABI64_TIOCGETD)
+        || (request == LINUX_ABI64_TIOCGETP)
+        || (request == LINUX_ABI64_TIOCGETC)
+        || (request == LINUX_ABI64_TIOCGWINSZ)
+        || (request == LINUX_ABI64_TIOCGPGRP)
+        || (request == LINUX_ABI64_TIOCOUTQ)
+        || (request == LINUX_ABI64_TIOCINQ)
+        || (request == LINUX_ABI64_TIOCGSID))
+        ? 1u
+        : 0u;
+}
+
+static void linux_abi64_cpu_pause(void)
+{
+    __asm__ __volatile__("pause");
+}
+
+static u32 linux_abi64_ioctl_fd_is_terminal(u32 pid, u32 fd_number)
+{
+    u32 fd_type;
+    u32 capability;
+
+    fd_type = fd64_entry_type(pid, fd_number);
+    if (fd_type != FD64_TYPE_DEVICE)
+    {
+        return 0u;
+    }
+
+    capability = fd64_entry_capability(pid, fd_number);
+    return (linux_vfs64_device_type_from_handle(capability) == LINUX_VFS64_DEVICE_UNKNOWN)
+        ? 1u
+        : 0u;
+}
+
+static u64 linux_abi64_ioctl_winsize(
+    u32 pid,
+    u32 fd_number,
+    u64 argument,
+    u64 rip)
+{
+    u8 winsize[LINUX_ABI64_WINSIZE_BYTES];
+
+    if ((fd64_entry_type(pid, fd_number) == FD64_TYPE_EMPTY)
+        || (linux_abi64_ioctl_fd_is_terminal(pid, fd_number) == 0u))
+    {
+        ++g_linux_abi64_ioctl_enotty_count;
+        g_linux_abi64_ioctl_last_result = LINUX_ABI64_ENOTTY;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_IOCTL,
+            LINUX_ABI64_ENOTTY,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOTTY);
+    }
+
+    if (linux_abi64_user_buffer_writable(pid, argument, LINUX_ABI64_WINSIZE_BYTES) == 0u)
+    {
+        ++g_linux_abi64_ioctl_denial_count;
+        g_linux_abi64_ioctl_last_result = LINUX_ABI64_EFAULT;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_IOCTL,
+            LINUX_ABI64_EFAULT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+
+    winsize[0] = (u8)(LINUX_ABI64_TERMINAL_ROWS & 0xFFu);
+    winsize[1] = (u8)((LINUX_ABI64_TERMINAL_ROWS >> 8) & 0xFFu);
+    winsize[2] = (u8)(LINUX_ABI64_TERMINAL_COLUMNS & 0xFFu);
+    winsize[3] = (u8)((LINUX_ABI64_TERMINAL_COLUMNS >> 8) & 0xFFu);
+    winsize[4] = 0u;
+    winsize[5] = 0u;
+    winsize[6] = 0u;
+    winsize[7] = 0u;
+    linux_abi64_copy_to_user(argument, winsize, LINUX_ABI64_WINSIZE_BYTES);
+
+    ++g_linux_abi64_ioctl_tty_count;
+    g_linux_abi64_ioctl_last_result = PERSONA_AUDIT64_RESULT_OK;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_IOCTL,
+        PERSONA_AUDIT64_RESULT_OK,
+        rip);
+    return 0ull;
+}
+
+u64 linux_abi64_sys_ioctl(u32 pid, u64 fd_number, u64 request, u64 argument, u64 rip)
+{
+    u32 request32 = (u32)(request & 0xFFFFFFFFull);
+    u32 result;
+
+    if (g_linux_abi64_initialized == 0u)
+    {
+        linux_abi64_init();
+    }
+
+    g_linux_abi64_ioctl_last_fd = (u32)(fd_number & 0xFFFFFFFFull);
+    g_linux_abi64_ioctl_last_request = request32;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_LINUX_ELF))
+    {
+        ++g_linux_abi64_ioctl_denial_count;
+        g_linux_abi64_ioctl_last_result = LINUX_ABI64_ESRCH;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_IOCTL,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    ++g_linux_abi64_ioctl_count;
+    if ((request32 == LINUX_ABI64_TIOCGWINSZ) && (fd_number <= 0xFFFFFFFFull))
+    {
+        return linux_abi64_ioctl_winsize(pid, (u32)fd_number, argument, rip);
+    }
+
+    if (linux_abi64_ioctl_is_terminal_query(request32) != 0u)
+    {
+        result = LINUX_ABI64_ENOTTY;
+        ++g_linux_abi64_ioctl_enotty_count;
+    }
+    else
+    {
+        result = LINUX_ABI64_ENOSYS;
+        ++g_linux_abi64_ioctl_enosys_count;
+    }
+
+    g_linux_abi64_ioctl_last_result = result;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_IOCTL,
+        result,
+        rip);
+    return LINUX_ABI64_ERROR_RETURN(result);
+}
+
 static u64 linux_abi64_open_common(
     u32 pid,
+    u64 dirfd,
     u64 user_path,
     u64 linux_flags,
     u64 mode,
     u64 rip,
     u32 syscall_number)
 {
-    u8 path[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 user_path_bytes[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 user_path_byte_count;
     u32 path_byte_count;
     u32 fd_flags;
     u32 fd_number;
@@ -2918,9 +3575,9 @@ static u64 linux_abi64_open_common(
     if (linux_abi64_copy_user_path(
             pid,
             user_path,
-            path,
+            user_path_bytes,
             LINUX_VFS64_MAX_PATH_BYTES,
-            &path_byte_count) == 0u)
+            &user_path_byte_count) == 0u)
     {
         ++g_linux_abi64_open_denial_count;
         (void)persona_audit64_record(
@@ -2930,6 +3587,24 @@ static u64 linux_abi64_open_common(
             LINUX_ABI64_EFAULT,
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+    if (linux_abi64_canonicalize_path(
+            pid,
+            dirfd,
+            user_path_bytes,
+            user_path_byte_count,
+            path,
+            (u32)sizeof(path),
+            &path_byte_count) == 0u)
+    {
+        ++g_linux_abi64_open_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            syscall_number,
+            LINUX_ABI64_ENOENT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOENT);
     }
 
     fd_number = linux_vfs64_open(pid, path, path_byte_count, fd_flags, (u32)mode);
@@ -2966,6 +3641,7 @@ u64 linux_abi64_sys_open(u32 pid, u64 user_path, u64 flags, u64 mode, u64 rip)
 {
     return linux_abi64_open_common(
         pid,
+        LINUX_ABI64_AT_FDCWD,
         user_path,
         flags,
         mode,
@@ -2981,10 +3657,9 @@ u64 linux_abi64_sys_openat(
     u64 mode,
     u64 rip)
 {
-    (void)dirfd;
-
     return linux_abi64_open_common(
         pid,
+        dirfd,
         user_path,
         flags,
         mode,
@@ -3191,6 +3866,7 @@ static u64 linux_abi64_fstat_common(
 
 static u64 linux_abi64_stat_path_common(
     u32 pid,
+    u64 dirfd,
     u64 user_path,
     u64 user_stat,
     u64 rip,
@@ -3198,7 +3874,9 @@ static u64 linux_abi64_stat_path_common(
     u32 nofollow)
 {
     fd64_stat_t fd_stat;
-    u8 path[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 user_path_bytes[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 user_path_byte_count;
     u32 path_byte_count;
     u32 stat_ok;
 
@@ -3236,9 +3914,9 @@ static u64 linux_abi64_stat_path_common(
     if (linux_abi64_copy_user_path(
             pid,
             user_path,
-            path,
+            user_path_bytes,
             LINUX_VFS64_MAX_PATH_BYTES,
-            &path_byte_count) == 0u)
+            &user_path_byte_count) == 0u)
     {
         linux_abi64_note_stat_fault(syscall_number);
         (void)persona_audit64_record(
@@ -3248,6 +3926,24 @@ static u64 linux_abi64_stat_path_common(
             LINUX_ABI64_EFAULT,
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+    if (linux_abi64_canonicalize_path(
+            pid,
+            dirfd,
+            user_path_bytes,
+            user_path_byte_count,
+            path,
+            (u32)sizeof(path),
+            &path_byte_count) == 0u)
+    {
+        linux_abi64_note_stat_denial(syscall_number);
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            (u16)syscall_number,
+            LINUX_ABI64_ENOENT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOENT);
     }
 
     stat_ok = (nofollow != 0u)
@@ -3291,11 +3987,24 @@ u64 linux_abi64_sys_stat(u32 pid, u64 user_path, u64 user_stat, u64 rip)
 {
     return linux_abi64_stat_path_common(
         pid,
+        LINUX_ABI64_AT_FDCWD,
         user_path,
         user_stat,
         rip,
         LINUX_ABI64_SYSCALL_STAT,
         0u);
+}
+
+u64 linux_abi64_sys_lstat(u32 pid, u64 user_path, u64 user_stat, u64 rip)
+{
+    return linux_abi64_stat_path_common(
+        pid,
+        LINUX_ABI64_AT_FDCWD,
+        user_path,
+        user_stat,
+        rip,
+        LINUX_ABI64_SYSCALL_LSTAT,
+        1u);
 }
 
 u64 linux_abi64_sys_fstat(u32 pid, u64 fd_number, u64 user_stat, u64 rip)
@@ -3308,6 +4017,108 @@ u64 linux_abi64_sys_fstat(u32 pid, u64 fd_number, u64 user_stat, u64 rip)
         LINUX_ABI64_SYSCALL_FSTAT);
 }
 
+u64 linux_abi64_sys_readlink(
+    u32 pid,
+    u64 user_path,
+    u64 user_buffer,
+    u64 byte_count,
+    u64 rip)
+{
+    u8 user_path_bytes[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+    u8 target[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 user_path_byte_count = 0u;
+    u32 path_byte_count = 0u;
+    u32 copy_capacity;
+    u32 copied;
+    u32 index;
+
+    g_linux_abi64_readlink_last_result = 0u;
+
+    if ((byte_count == 0ull) || (byte_count > (u64)LINUX_VFS64_MAX_PATH_BYTES))
+    {
+        ++g_linux_abi64_readlink_denial_count;
+        g_linux_abi64_readlink_last_result = LINUX_ABI64_EINVAL;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_READLINK,
+            LINUX_ABI64_EINVAL,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+    }
+
+    copy_capacity = (u32)byte_count;
+    if ((linux_abi64_copy_user_path(
+            pid,
+            user_path,
+            user_path_bytes,
+            LINUX_VFS64_MAX_PATH_BYTES,
+            &user_path_byte_count) == 0u)
+        || (linux_abi64_user_buffer_writable(pid, user_buffer, copy_capacity) == 0u))
+    {
+        ++g_linux_abi64_readlink_fault_count;
+        g_linux_abi64_readlink_last_result = LINUX_ABI64_EFAULT;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_READLINK,
+            LINUX_ABI64_EFAULT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+
+    if (linux_abi64_canonicalize_path(
+            pid,
+            LINUX_ABI64_AT_FDCWD,
+            user_path_bytes,
+            user_path_byte_count,
+            path,
+            (u32)sizeof(path),
+            &path_byte_count) == 0u)
+    {
+        ++g_linux_abi64_readlink_denial_count;
+        g_linux_abi64_readlink_last_result = LINUX_ABI64_ENOENT;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_READLINK,
+            LINUX_ABI64_ENOENT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOENT);
+    }
+
+    copied = linux_vfs64_readlink(pid, path, path_byte_count, target, copy_capacity);
+    if (copied == LINUX_VFS64_INVALID_RESULT)
+    {
+        ++g_linux_abi64_readlink_denial_count;
+        g_linux_abi64_readlink_last_result = LINUX_ABI64_ENOENT;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_READLINK,
+            LINUX_ABI64_ENOENT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOENT);
+    }
+
+    for (index = 0u; index < copied; ++index)
+    {
+        *((volatile u8 *)(u64)(user_buffer + (u64)index)) = target[index];
+    }
+
+    ++g_linux_abi64_readlink_count;
+    g_linux_abi64_readlink_byte_count += copied;
+    g_linux_abi64_readlink_last_result = copied;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_READLINK,
+        PERSONA_AUDIT64_RESULT_OK,
+        rip);
+    return (u64)copied;
+}
+
 u64 linux_abi64_sys_newfstatat(
     u32 pid,
     u64 dirfd,
@@ -3316,8 +4127,10 @@ u64 linux_abi64_sys_newfstatat(
     u64 flags,
     u64 rip)
 {
-    if ((dirfd != LINUX_ABI64_AT_FDCWD)
-        || ((flags & ~(u64)LINUX_ABI64_AT_SYMLINK_NOFOLLOW) != 0ull))
+    if ((flags
+            & ~((u64)LINUX_ABI64_AT_SYMLINK_NOFOLLOW
+                | (u64)LINUX_ABI64_AT_EMPTY_PATH))
+        != 0ull)
     {
         linux_abi64_note_stat_denial(LINUX_ABI64_SYSCALL_NEWFSTATAT);
         (void)persona_audit64_record(
@@ -3329,8 +4142,52 @@ u64 linux_abi64_sys_newfstatat(
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
     }
 
+    if ((flags & (u64)LINUX_ABI64_AT_EMPTY_PATH) != 0ull)
+    {
+        u8 path_byte;
+
+        if ((dirfd == LINUX_ABI64_AT_FDCWD)
+            || (linux_abi64_user_buffer_readable(pid, user_path, 1u) == 0u))
+        {
+            linux_abi64_note_stat_fault(LINUX_ABI64_SYSCALL_NEWFSTATAT);
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_NEWFSTATAT,
+                LINUX_ABI64_EFAULT,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+        }
+
+        path_byte = *((volatile const u8 *)(u64)user_path);
+        if (path_byte == 0u)
+        {
+            return linux_abi64_fstat_common(
+                pid,
+                dirfd,
+                user_stat,
+                rip,
+                LINUX_ABI64_SYSCALL_NEWFSTATAT);
+        }
+    }
+
+    if ((dirfd != LINUX_ABI64_AT_FDCWD)
+        && (linux_abi64_user_buffer_readable(pid, user_path, 1u) != 0u)
+        && (*((volatile const u8 *)(u64)user_path) != (u8)'/'))
+    {
+        return linux_abi64_stat_path_common(
+            pid,
+            dirfd,
+            user_path,
+            user_stat,
+            rip,
+            LINUX_ABI64_SYSCALL_NEWFSTATAT,
+            ((flags & (u64)LINUX_ABI64_AT_SYMLINK_NOFOLLOW) != 0ull) ? 1u : 0u);
+    }
+
     return linux_abi64_stat_path_common(
         pid,
+        LINUX_ABI64_AT_FDCWD,
         user_path,
         user_stat,
         rip,
@@ -3523,6 +4380,48 @@ u64 linux_abi64_sys_munmap(u32 pid, u64 address, u64 length, u64 rip)
     return 0ull;
 }
 
+static u32 linux_abi64_terminal_read_kernel(
+    u32 pid,
+    u32 fd_number,
+    u32 fd_capability,
+    u8 *output,
+    u32 byte_count)
+{
+    u32 bytes_read;
+    u32 start_ticks;
+    u32 guard = 0u;
+
+    bytes_read = input64_read_kernel(
+        fd_capability,
+        output,
+        byte_count,
+        process64_principal(pid));
+    if ((bytes_read != 0u)
+        || (bytes_read == INPUT64_INVALID_RESULT)
+        || (fd_number != FD64_STDIN)
+        || ((fd64_entry_flags(pid, fd_number) & FD64_FLAG_O_NONBLOCK) != 0u))
+    {
+        return bytes_read;
+    }
+
+    start_ticks = pit_get_ticks();
+    while ((bytes_read == 0u)
+        && (((u32)(pit_get_ticks() - start_ticks)) < LINUX_ABI64_TERMINAL_READ_WAIT_TICKS)
+        && (guard < LINUX_ABI64_TERMINAL_READ_SPIN_BUDGET))
+    {
+        input64_poll_keyboard();
+        linux_abi64_cpu_pause();
+        bytes_read = input64_read_kernel(
+            fd_capability,
+            output,
+            byte_count,
+            process64_principal(pid));
+        ++guard;
+    }
+
+    return bytes_read;
+}
+
 u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count, u64 rip)
 {
     static u8 read_scratch[LINUX_ABI64_READ_CHUNK_BYTES];
@@ -3531,6 +4430,7 @@ u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count
     u32 fd_index;
     u32 fd_type;
     u32 fd_capability;
+    u32 linux_device_type;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -3584,21 +4484,41 @@ u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count
     if (fd_type == FD64_TYPE_DEVICE)
     {
         fd_capability = fd64_entry_capability(pid, fd_index);
-        bytes_read = input64_read_kernel(
-            fd_capability,
-            read_scratch,
-            read_count,
-            process64_principal(pid));
-        if (bytes_read == INPUT64_INVALID_RESULT)
+        linux_device_type = linux_vfs64_device_type_from_handle(fd_capability);
+        if (linux_device_type != LINUX_VFS64_DEVICE_UNKNOWN)
         {
-            ++g_linux_abi64_read_denial_count;
-            (void)persona_audit64_record(
+            bytes_read = linux_vfs64_read_fd(pid, fd_index, read_scratch, read_count);
+            if (bytes_read == LINUX_VFS64_INVALID_RESULT)
+            {
+                ++g_linux_abi64_read_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+                    LINUX_ABI64_SYSCALL_READ,
+                    LINUX_ABI64_EBADF,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EBADF);
+            }
+        }
+        else
+        {
+            bytes_read = linux_abi64_terminal_read_kernel(
                 pid,
-                PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
-                LINUX_ABI64_SYSCALL_READ,
-                LINUX_ABI64_EBADF,
-                rip);
-            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EBADF);
+                fd_index,
+                fd_capability,
+                read_scratch,
+                read_count);
+            if (bytes_read == INPUT64_INVALID_RESULT)
+            {
+                ++g_linux_abi64_read_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+                    LINUX_ABI64_SYSCALL_READ,
+                    LINUX_ABI64_EBADF,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EBADF);
+            }
         }
     }
     else
@@ -3644,6 +4564,9 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
     u32 write_count;
     u32 bytes_written;
     u32 fd_index;
+    u32 fd_type;
+    u32 fd_capability;
+    u32 linux_device_type;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -3693,7 +4616,19 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
     }
 
-    bytes_written = fd64_write(pid, fd_index, (const u8 *)(u64)user_buffer, write_count);
+    fd_type = fd64_entry_type(pid, fd_index);
+    if (fd_type == FD64_TYPE_DEVICE)
+    {
+        fd_capability = fd64_entry_capability(pid, fd_index);
+        linux_device_type = linux_vfs64_device_type_from_handle(fd_capability);
+        bytes_written = (linux_device_type != LINUX_VFS64_DEVICE_UNKNOWN)
+            ? linux_vfs64_write_fd(pid, fd_index, (const u8 *)(u64)user_buffer, write_count)
+            : fd64_write(pid, fd_index, (const u8 *)(u64)user_buffer, write_count);
+    }
+    else
+    {
+        bytes_written = fd64_write(pid, fd_index, (const u8 *)(u64)user_buffer, write_count);
+    }
     if (bytes_written == FD64_IO_BLOCKED)
     {
         (void)persona_audit64_record(
@@ -3704,7 +4639,7 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
-    if (bytes_written == FD64_IO_ERROR)
+    if ((bytes_written == FD64_IO_ERROR) || (bytes_written == LINUX_VFS64_INVALID_RESULT))
     {
         ++g_linux_abi64_write_denial_count;
         (void)persona_audit64_record(
@@ -3985,6 +4920,9 @@ u64 linux_abi64_sys_readv(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, u
     u32 requested_bytes;
     u32 bytes_read;
     u32 copied_bytes;
+    u32 fd_type;
+    u32 fd_capability;
+    u32 linux_device_type;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -4131,7 +5069,29 @@ u64 linux_abi64_sys_readv(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, u
         return 0ull;
     }
 
-    bytes_read = fd64_read(pid, fd_index, read_scratch, requested_bytes);
+    fd_type = fd64_entry_type(pid, fd_index);
+    if (fd_type == FD64_TYPE_DEVICE)
+    {
+        fd_capability = fd64_entry_capability(pid, fd_index);
+        linux_device_type = linux_vfs64_device_type_from_handle(fd_capability);
+        if (linux_device_type != LINUX_VFS64_DEVICE_UNKNOWN)
+        {
+            bytes_read = linux_vfs64_read_fd(pid, fd_index, read_scratch, requested_bytes);
+        }
+        else
+        {
+            bytes_read = linux_abi64_terminal_read_kernel(
+                pid,
+                fd_index,
+                fd_capability,
+                read_scratch,
+                requested_bytes);
+        }
+    }
+    else
+    {
+        bytes_read = fd64_read(pid, fd_index, read_scratch, requested_bytes);
+    }
     if (bytes_read == FD64_IO_BLOCKED)
     {
         g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
@@ -4143,7 +5103,9 @@ u64 linux_abi64_sys_readv(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, u
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
-    if (bytes_read == FD64_IO_ERROR)
+    if ((bytes_read == FD64_IO_ERROR)
+        || (bytes_read == INPUT64_INVALID_RESULT)
+        || (bytes_read == LINUX_VFS64_INVALID_RESULT))
     {
         ++g_linux_abi64_vector_denial_count;
         g_linux_abi64_vector_last_result = LINUX_ABI64_EBADF;
@@ -4194,6 +5156,9 @@ u64 linux_abi64_sys_writev(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, 
     u32 index;
     u32 requested_bytes;
     u32 bytes_written;
+    u32 fd_type;
+    u32 fd_capability;
+    u32 linux_device_type;
 
     if (g_linux_abi64_initialized == 0u)
     {
@@ -4337,7 +5302,19 @@ u64 linux_abi64_sys_writev(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, 
         return 0ull;
     }
 
-    bytes_written = fd64_write(pid, fd_index, write_scratch, requested_bytes);
+    fd_type = fd64_entry_type(pid, fd_index);
+    if (fd_type == FD64_TYPE_DEVICE)
+    {
+        fd_capability = fd64_entry_capability(pid, fd_index);
+        linux_device_type = linux_vfs64_device_type_from_handle(fd_capability);
+        bytes_written = (linux_device_type != LINUX_VFS64_DEVICE_UNKNOWN)
+            ? linux_vfs64_write_fd(pid, fd_index, write_scratch, requested_bytes)
+            : fd64_write(pid, fd_index, write_scratch, requested_bytes);
+    }
+    else
+    {
+        bytes_written = fd64_write(pid, fd_index, write_scratch, requested_bytes);
+    }
     if (bytes_written == FD64_IO_BLOCKED)
     {
         g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
@@ -4349,7 +5326,7 @@ u64 linux_abi64_sys_writev(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, 
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
-    if (bytes_written == FD64_IO_ERROR)
+    if ((bytes_written == FD64_IO_ERROR) || (bytes_written == LINUX_VFS64_INVALID_RESULT))
     {
         ++g_linux_abi64_vector_denial_count;
         g_linux_abi64_vector_last_result = LINUX_ABI64_EBADF;
@@ -5085,9 +6062,210 @@ u64 linux_abi64_sys_getpid(u32 pid, u64 rip)
     return linux_abi64_pid_common(pid, rip, LINUX_ABI64_SYSCALL_GETPID);
 }
 
+static u64 linux_abi64_fixed_identity_common(
+    u32 pid,
+    u64 rip,
+    u32 syscall_number,
+    u32 fixed_value)
+{
+    if (g_linux_abi64_initialized == 0u)
+    {
+        linux_abi64_init();
+    }
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (persona64_type(pid) != PERSONA64_TYPE_LINUX_ELF))
+    {
+        if (syscall_number == LINUX_ABI64_SYSCALL_GETEUID)
+        {
+            ++g_linux_abi64_geteuid_denial_count;
+        }
+        else
+        {
+            ++g_linux_abi64_getppid_denial_count;
+        }
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            (u16)syscall_number,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    if (syscall_number == LINUX_ABI64_SYSCALL_GETEUID)
+    {
+        ++g_linux_abi64_geteuid_count;
+    }
+    else
+    {
+        ++g_linux_abi64_getppid_count;
+    }
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        (u16)syscall_number,
+        PERSONA_AUDIT64_RESULT_OK,
+        rip);
+    return (u64)fixed_value;
+}
+
+u64 linux_abi64_sys_geteuid(u32 pid, u64 rip)
+{
+    return linux_abi64_fixed_identity_common(
+        pid,
+        rip,
+        LINUX_ABI64_SYSCALL_GETEUID,
+        LINUX_ABI64_FIXED_UID);
+}
+
+u64 linux_abi64_sys_getppid(u32 pid, u64 rip)
+{
+    return linux_abi64_fixed_identity_common(
+        pid,
+        rip,
+        LINUX_ABI64_SYSCALL_GETPPID,
+        LINUX_ABI64_FIXED_PPID);
+}
+
 u64 linux_abi64_sys_gettid(u32 pid, u64 rip)
 {
     return linux_abi64_pid_common(pid, rip, LINUX_ABI64_SYSCALL_GETTID);
+}
+
+u64 linux_abi64_sys_prctl(
+    u32 pid,
+    u64 option,
+    u64 arg2,
+    u64 arg3,
+    u64 arg4,
+    u64 arg5,
+    u64 rip)
+{
+    persona_context_t *context;
+    u8 comm[LINUX_ABI64_PR_NAME_BYTES];
+    u32 option32 = (u32)(option & 0xFFFFFFFFull);
+    u32 index;
+    u32 done = 0u;
+
+    (void)arg3;
+    (void)arg4;
+    (void)arg5;
+
+    if (g_linux_abi64_initialized == 0u)
+    {
+        linux_abi64_init();
+    }
+
+    g_linux_abi64_prctl_last_option = option32;
+
+    context = persona64_context_for_process(pid);
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (context == 0)
+        || (context->persona_type != PERSONA64_TYPE_LINUX_ELF))
+    {
+        ++g_linux_abi64_prctl_denial_count;
+        g_linux_abi64_prctl_last_result = LINUX_ABI64_ESRCH;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_PRCTL,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    ++g_linux_abi64_prctl_count;
+
+    if (option32 == LINUX_ABI64_PR_GET_NAME)
+    {
+        if (linux_abi64_user_buffer_writable(pid, arg2, LINUX_ABI64_PR_NAME_BYTES) == 0u)
+        {
+            ++g_linux_abi64_prctl_fault_count;
+            g_linux_abi64_prctl_last_result = LINUX_ABI64_EFAULT;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_PRCTL,
+                LINUX_ABI64_EFAULT,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+        }
+
+        linux_abi64_copy_to_user(arg2, &context->linux_comm[0], LINUX_ABI64_PR_NAME_BYTES);
+        ++g_linux_abi64_prctl_get_name_count;
+        g_linux_abi64_prctl_last_result = PERSONA_AUDIT64_RESULT_OK;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_PRCTL,
+            PERSONA_AUDIT64_RESULT_OK,
+            rip);
+        return 0ull;
+    }
+
+    if (option32 == LINUX_ABI64_PR_SET_NAME)
+    {
+        for (index = 0u; index < LINUX_ABI64_PR_NAME_BYTES; ++index)
+        {
+            comm[index] = 0u;
+        }
+
+        for (index = 0u; index < LINUX_ABI64_PR_NAME_BYTES; ++index)
+        {
+            if (linux_abi64_user_buffer_readable(pid, arg2 + (u64)index, 1u) == 0u)
+            {
+                ++g_linux_abi64_prctl_fault_count;
+                g_linux_abi64_prctl_last_result = LINUX_ABI64_EFAULT;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                    LINUX_ABI64_SYSCALL_PRCTL,
+                    LINUX_ABI64_EFAULT,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+            }
+
+            linux_abi64_copy_from_user(&comm[index], arg2 + (u64)index, 1u);
+            if (comm[index] == 0u)
+            {
+                done = 1u;
+                break;
+            }
+        }
+
+        if (done == 0u)
+        {
+            comm[LINUX_ABI64_PR_NAME_BYTES - 1u] = 0u;
+        }
+
+        for (index = 0u; index < LINUX_ABI64_PR_NAME_BYTES; ++index)
+        {
+            context->linux_comm[index] = comm[index];
+        }
+
+        ++g_linux_abi64_prctl_set_name_count;
+        g_linux_abi64_prctl_last_result = PERSONA_AUDIT64_RESULT_OK;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_PRCTL,
+            PERSONA_AUDIT64_RESULT_OK,
+            rip);
+        return 0ull;
+    }
+
+    ++g_linux_abi64_prctl_enosys_count;
+    g_linux_abi64_prctl_last_result = LINUX_ABI64_ENOSYS;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_PRCTL,
+        LINUX_ABI64_ENOSYS,
+        rip);
+    return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOSYS);
 }
 
 u64 linux_abi64_sys_arch_prctl(u32 pid, u64 code, u64 address, u64 rip)
@@ -6262,7 +7440,9 @@ u64 linux_abi64_sys_getcwd(u32 pid, u64 user_buffer, u64 byte_count, u64 rip)
 u64 linux_abi64_sys_chdir(u32 pid, u64 user_path, u64 rip)
 {
     persona_context_t *context;
-    u8 path[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 user_path_bytes[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 user_path_byte_count;
     u32 path_byte_count;
 
     if (g_linux_abi64_initialized == 0u)
@@ -6289,9 +7469,9 @@ u64 linux_abi64_sys_chdir(u32 pid, u64 user_path, u64 rip)
     if (linux_abi64_copy_user_path(
             pid,
             user_path,
-            path,
+            user_path_bytes,
             LINUX_VFS64_MAX_PATH_BYTES,
-            &path_byte_count) == 0u)
+            &user_path_byte_count) == 0u)
     {
         ++g_linux_abi64_chdir_fault_count;
         (void)persona_audit64_record(
@@ -6301,6 +7481,24 @@ u64 linux_abi64_sys_chdir(u32 pid, u64 user_path, u64 rip)
             LINUX_ABI64_EFAULT,
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
+    }
+    if (linux_abi64_canonicalize_path(
+            pid,
+            LINUX_ABI64_AT_FDCWD,
+            user_path_bytes,
+            user_path_byte_count,
+            path,
+            (u32)sizeof(path),
+            &path_byte_count) == 0u)
+    {
+        ++g_linux_abi64_chdir_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_CHDIR,
+            LINUX_ABI64_ENOENT,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOENT);
     }
 
     if (linux_vfs64_path_is_directory(pid, path, path_byte_count) == 0u)
@@ -7273,6 +8471,43 @@ u64 linux_abi64_sys_clone(
         PERSONA_AUDIT64_RESULT_OK,
         rip);
     return (u64)child_pid;
+}
+
+u64 linux_abi64_sys_fork(u32 pid, u64 rip)
+{
+    persona_context_t *context;
+
+    if (g_linux_abi64_initialized == 0u)
+    {
+        linux_abi64_init();
+    }
+
+    g_linux_abi64_fork_last_rip = rip;
+    context = persona64_context_for_process(pid);
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (context == 0)
+        || (context->persona_type != PERSONA64_TYPE_LINUX_ELF))
+    {
+        ++g_linux_abi64_fork_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_FORK,
+            LINUX_ABI64_ESRCH,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+
+    ++g_linux_abi64_fork_count;
+    ++g_linux_abi64_fork_enosys_count;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_UNIMPLEMENTED,
+        LINUX_ABI64_SYSCALL_FORK,
+        PERSONA_AUDIT64_RESULT_ENOSYS,
+        rip);
+    return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOSYS);
 }
 
 static u64 linux_abi64_sys_exec_common(
@@ -9191,6 +10426,16 @@ u32 linux_abi64_unimplemented_count(void)
     return g_linux_abi64_unimplemented_count;
 }
 
+u32 linux_abi64_unimplemented_last_syscall(void)
+{
+    return g_linux_abi64_unimplemented_last_syscall;
+}
+
+u64 linux_abi64_unimplemented_last_rip(void)
+{
+    return g_linux_abi64_unimplemented_last_rip;
+}
+
 u32 linux_abi64_read_count(void)
 {
     return g_linux_abi64_read_count;
@@ -9471,6 +10716,31 @@ u32 linux_abi64_newfstatat_fault_count(void)
     return g_linux_abi64_newfstatat_fault_count;
 }
 
+u32 linux_abi64_readlink_count(void)
+{
+    return g_linux_abi64_readlink_count;
+}
+
+u32 linux_abi64_readlink_byte_count(void)
+{
+    return g_linux_abi64_readlink_byte_count;
+}
+
+u32 linux_abi64_readlink_denial_count(void)
+{
+    return g_linux_abi64_readlink_denial_count;
+}
+
+u32 linux_abi64_readlink_fault_count(void)
+{
+    return g_linux_abi64_readlink_fault_count;
+}
+
+u32 linux_abi64_readlink_last_result(void)
+{
+    return g_linux_abi64_readlink_last_result;
+}
+
 u32 linux_abi64_mmap_count(void)
 {
     return g_linux_abi64_mmap_count;
@@ -9731,6 +11001,26 @@ u32 linux_abi64_getcwd_fault_count(void)
     return g_linux_abi64_getcwd_fault_count;
 }
 
+u32 linux_abi64_path_relative_count(void)
+{
+    return g_linux_abi64_path_relative_count;
+}
+
+u32 linux_abi64_path_dot_count(void)
+{
+    return g_linux_abi64_path_dot_count;
+}
+
+u32 linux_abi64_path_dotdot_count(void)
+{
+    return g_linux_abi64_path_dotdot_count;
+}
+
+u32 linux_abi64_path_fault_count(void)
+{
+    return g_linux_abi64_path_fault_count;
+}
+
 u32 linux_abi64_chdir_count(void)
 {
     return g_linux_abi64_chdir_count;
@@ -9884,6 +11174,26 @@ u32 linux_abi64_clone_fork_denial_count(void)
 u32 linux_abi64_clone_scheduler_count(void)
 {
     return g_linux_abi64_clone_scheduler_count;
+}
+
+u32 linux_abi64_fork_count(void)
+{
+    return g_linux_abi64_fork_count;
+}
+
+u32 linux_abi64_fork_enosys_count(void)
+{
+    return g_linux_abi64_fork_enosys_count;
+}
+
+u32 linux_abi64_fork_denial_count(void)
+{
+    return g_linux_abi64_fork_denial_count;
+}
+
+u64 linux_abi64_fork_last_rip(void)
+{
+    return g_linux_abi64_fork_last_rip;
 }
 
 u32 linux_abi64_clone_last_parent_pid(void)
@@ -10312,6 +11622,26 @@ u32 linux_abi64_getpid_denial_count(void)
     return g_linux_abi64_getpid_denial_count;
 }
 
+u32 linux_abi64_geteuid_count(void)
+{
+    return g_linux_abi64_geteuid_count;
+}
+
+u32 linux_abi64_geteuid_denial_count(void)
+{
+    return g_linux_abi64_geteuid_denial_count;
+}
+
+u32 linux_abi64_getppid_count(void)
+{
+    return g_linux_abi64_getppid_count;
+}
+
+u32 linux_abi64_getppid_denial_count(void)
+{
+    return g_linux_abi64_getppid_denial_count;
+}
+
 u32 linux_abi64_gettid_count(void)
 {
     return g_linux_abi64_gettid_count;
@@ -10320,6 +11650,86 @@ u32 linux_abi64_gettid_count(void)
 u32 linux_abi64_gettid_denial_count(void)
 {
     return g_linux_abi64_gettid_denial_count;
+}
+
+u32 linux_abi64_ioctl_count(void)
+{
+    return g_linux_abi64_ioctl_count;
+}
+
+u32 linux_abi64_ioctl_tty_count(void)
+{
+    return g_linux_abi64_ioctl_tty_count;
+}
+
+u32 linux_abi64_ioctl_enotty_count(void)
+{
+    return g_linux_abi64_ioctl_enotty_count;
+}
+
+u32 linux_abi64_ioctl_enosys_count(void)
+{
+    return g_linux_abi64_ioctl_enosys_count;
+}
+
+u32 linux_abi64_ioctl_denial_count(void)
+{
+    return g_linux_abi64_ioctl_denial_count;
+}
+
+u32 linux_abi64_ioctl_last_fd(void)
+{
+    return g_linux_abi64_ioctl_last_fd;
+}
+
+u32 linux_abi64_ioctl_last_request(void)
+{
+    return g_linux_abi64_ioctl_last_request;
+}
+
+u32 linux_abi64_ioctl_last_result(void)
+{
+    return g_linux_abi64_ioctl_last_result;
+}
+
+u32 linux_abi64_prctl_count(void)
+{
+    return g_linux_abi64_prctl_count;
+}
+
+u32 linux_abi64_prctl_set_name_count(void)
+{
+    return g_linux_abi64_prctl_set_name_count;
+}
+
+u32 linux_abi64_prctl_get_name_count(void)
+{
+    return g_linux_abi64_prctl_get_name_count;
+}
+
+u32 linux_abi64_prctl_enosys_count(void)
+{
+    return g_linux_abi64_prctl_enosys_count;
+}
+
+u32 linux_abi64_prctl_denial_count(void)
+{
+    return g_linux_abi64_prctl_denial_count;
+}
+
+u32 linux_abi64_prctl_fault_count(void)
+{
+    return g_linux_abi64_prctl_fault_count;
+}
+
+u32 linux_abi64_prctl_last_option(void)
+{
+    return g_linux_abi64_prctl_last_option;
+}
+
+u32 linux_abi64_prctl_last_result(void)
+{
+    return g_linux_abi64_prctl_last_result;
 }
 
 u32 linux_abi64_arch_prctl_count(void)

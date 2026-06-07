@@ -1,6 +1,7 @@
 #include "linux_vfs_x64.h"
 
 #include "fs_x64.h"
+#include "mmio_x64.h"
 #include "process_x64.h"
 #include "ramfs.h"
 #include "services.h"
@@ -23,12 +24,14 @@ static const u8 g_linux_vfs64_prefix_root[] = "/";
 static const u8 g_linux_vfs64_prefix_proc[] = "/proc";
 static const u8 g_linux_vfs64_prefix_dev[] = "/dev";
 static const u8 g_linux_vfs64_prefix_tmp[] = "/tmp";
+static const u8 g_linux_vfs64_prefix_nvme[] = "/nvme";
 
 static const linux_vfs64_mount_t g_linux_vfs64_mounts[LINUX_VFS64_MAX_MOUNTS] = {
     { g_linux_vfs64_prefix_root, 1u, LINUX_VFS64_PROVIDER_RAMFS, LINUX_VFS64_OPEN_READ },
     { g_linux_vfs64_prefix_proc, 5u, LINUX_VFS64_PROVIDER_PROC, LINUX_VFS64_OPEN_READ },
     { g_linux_vfs64_prefix_dev, 4u, LINUX_VFS64_PROVIDER_DEV, LINUX_VFS64_OPEN_READ | LINUX_VFS64_OPEN_WRITE },
-    { g_linux_vfs64_prefix_tmp, 4u, LINUX_VFS64_PROVIDER_RAMFS, LINUX_VFS64_OPEN_READ | LINUX_VFS64_OPEN_WRITE }
+    { g_linux_vfs64_prefix_tmp, 4u, LINUX_VFS64_PROVIDER_RAMFS, LINUX_VFS64_OPEN_READ | LINUX_VFS64_OPEN_WRITE },
+    { g_linux_vfs64_prefix_nvme, 5u, LINUX_VFS64_PROVIDER_NVME, LINUX_VFS64_OPEN_READ }
 };
 
 #define LINUX_VFS64_MAX_FD_PATH_RECORDS 16u
@@ -53,7 +56,8 @@ typedef struct linux_vfs64_dirent_template
 static const linux_vfs64_dirent_template_t g_linux_vfs64_root_dirents[] = {
     { "proc", LINUX_VFS64_DIRENT_TYPE_DIR, 0x1001ull },
     { "dev", LINUX_VFS64_DIRENT_TYPE_DIR, 0x1002ull },
-    { "tmp", LINUX_VFS64_DIRENT_TYPE_DIR, 0x1003ull }
+    { "tmp", LINUX_VFS64_DIRENT_TYPE_DIR, 0x1003ull },
+    { "nvme", LINUX_VFS64_DIRENT_TYPE_DIR, 0x1004ull }
 };
 
 static const linux_vfs64_dirent_template_t g_linux_vfs64_dev_dirents[] = {
@@ -86,6 +90,8 @@ static const linux_vfs64_dirent_template_t g_linux_vfs64_proc_self_dirents[] = {
 #define LINUX_VFS64_PROC_SCRATCH_BYTES 384u
 #define LINUX_VFS64_TMP_BACKEND_BYTES LINUX_VFS64_MAX_PATH_BYTES
 #define LINUX_VFS64_SYMLINK_MAX_DEPTH 4u
+#define LINUX_VFS64_MAX_NVME_BINDINGS 4u
+#define LINUX_VFS64_NVME_FILE_BYTES 4096u
 
 typedef struct linux_vfs64_proc_record
 {
@@ -109,6 +115,14 @@ typedef struct linux_vfs64_tmp_record
     u8 name[LINUX_VFS64_DIRENT_NAME_MAX];
     u8 target_path[LINUX_VFS64_MAX_PATH_BYTES];
 } linux_vfs64_tmp_record_t;
+
+typedef struct linux_vfs64_nvme_binding
+{
+    u32 active;
+    u32 pid;
+    u32 owner_id;
+    u32 capability;
+} linux_vfs64_nvme_binding_t;
 
 static u32 g_linux_vfs64_initialized = 0u;
 static u32 g_linux_vfs64_denial_count = 0u;
@@ -142,10 +156,20 @@ static u32 g_linux_vfs64_symlink_readlink_count = 0u;
 static u32 g_linux_vfs64_symlink_lstat_count = 0u;
 static u32 g_linux_vfs64_symlink_nofollow_denial_count = 0u;
 static u32 g_linux_vfs64_symlink_last_target_bytes = 0u;
+static u32 g_linux_vfs64_nvme_bind_count = 0u;
+static u32 g_linux_vfs64_nvme_release_count = 0u;
+static u32 g_linux_vfs64_nvme_read_count = 0u;
+static u32 g_linux_vfs64_nvme_readdir_count = 0u;
+static u32 g_linux_vfs64_nvme_dirent_count = 0u;
+static u32 g_linux_vfs64_nvme_denial_count = 0u;
+static u32 g_linux_vfs64_nvme_last_bytes = 0u;
 static u32 g_linux_vfs64_random_counter = 0x5A17A001u;
 static linux_vfs64_fd_path_record_t g_linux_vfs64_fd_paths[LINUX_VFS64_MAX_FD_PATH_RECORDS];
 static linux_vfs64_proc_record_t g_linux_vfs64_proc_records[LINUX_VFS64_MAX_PROC_RECORDS];
 static linux_vfs64_tmp_record_t g_linux_vfs64_tmp_records[LINUX_VFS64_MAX_TMP_RECORDS];
+static linux_vfs64_nvme_binding_t g_linux_vfs64_nvme_bindings[LINUX_VFS64_MAX_NVME_BINDINGS];
+
+static u32 linux_vfs64_bytes_equal(const u8 *left, const u8 *right, u32 byte_count);
 
 static void linux_vfs64_zero_result(linux_vfs64_result_t *result)
 {
@@ -178,6 +202,276 @@ static u32 linux_vfs64_deny(linux_vfs64_result_t *result, u32 error)
 static u32 linux_vfs64_process_is_valid(u32 pid)
 {
     return ((pid != PROCESS64_INVALID_PID) && (process64_principal(pid) != 0u)) ? 1u : 0u;
+}
+
+static void linux_vfs64_clear_nvme_binding(linux_vfs64_nvme_binding_t *binding)
+{
+    if (binding == 0)
+    {
+        return;
+    }
+
+    binding->active = 0u;
+    binding->pid = PROCESS64_INVALID_PID;
+    binding->owner_id = 0u;
+    binding->capability = CAPABILITY64_INVALID_HANDLE;
+}
+
+static linux_vfs64_nvme_binding_t *linux_vfs64_find_nvme_binding(u32 pid)
+{
+    u32 index;
+
+    for (index = 0u; index < LINUX_VFS64_MAX_NVME_BINDINGS; ++index)
+    {
+        if ((g_linux_vfs64_nvme_bindings[index].active != 0u)
+            && (g_linux_vfs64_nvme_bindings[index].pid == pid))
+        {
+            return &g_linux_vfs64_nvme_bindings[index];
+        }
+    }
+
+    return 0;
+}
+
+static u32 linux_vfs64_nvme_path_to_fat(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 **fat_path_out,
+    u32 *fat_path_bytes_out)
+{
+    if (fat_path_out != 0)
+    {
+        *fat_path_out = 0;
+    }
+    if (fat_path_bytes_out != 0)
+    {
+        *fat_path_bytes_out = 0u;
+    }
+
+    if ((path == 0)
+        || (fat_path_out == 0)
+        || (fat_path_bytes_out == 0)
+        || (path_byte_count <= 6u)
+        || (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_nvme, 5u) == 0u)
+        || (path[5] != (u8)'/'))
+    {
+        return 0u;
+    }
+
+    *fat_path_out = &path[5];
+    *fat_path_bytes_out = path_byte_count - 5u;
+    return 1u;
+}
+
+static u32 linux_vfs64_nvme_path_to_fat_rootable(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 **fat_path_out,
+    u32 *fat_path_bytes_out)
+{
+    static const u8 root_path[] = "/";
+
+    if (fat_path_out != 0)
+    {
+        *fat_path_out = 0;
+    }
+    if (fat_path_bytes_out != 0)
+    {
+        *fat_path_bytes_out = 0u;
+    }
+
+    if ((path == 0)
+        || (fat_path_out == 0)
+        || (fat_path_bytes_out == 0)
+        || (path_byte_count < 5u)
+        || (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_nvme, 5u) == 0u))
+    {
+        return 0u;
+    }
+
+    if (path_byte_count == 5u)
+    {
+        *fat_path_out = root_path;
+        *fat_path_bytes_out = 1u;
+        return 1u;
+    }
+
+    if (path[5] != (u8)'/')
+    {
+        return 0u;
+    }
+
+    *fat_path_out = &path[5];
+    *fat_path_bytes_out = path_byte_count - 5u;
+    return 1u;
+}
+
+static u32 linux_vfs64_nvme_read_all(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u8 *buffer,
+    u32 buffer_bytes,
+    u32 *bytes_out)
+{
+    const u8 *fat_path;
+    u32 fat_path_bytes;
+    linux_vfs64_nvme_binding_t *binding;
+
+    if (bytes_out != 0)
+    {
+        *bytes_out = 0u;
+    }
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if ((binding == 0)
+        || (buffer == 0)
+        || (buffer_bytes == 0u)
+        || (bytes_out == 0)
+        || (binding->capability != mmio64_nvme_rw_capability())
+        || (linux_vfs64_nvme_path_to_fat(
+                path,
+                path_byte_count,
+                &fat_path,
+                &fat_path_bytes) == 0u)
+        || (mmio64_nvme_fat_shell_read_file(
+                fat_path,
+                fat_path_bytes,
+                buffer,
+                buffer_bytes,
+                binding->owner_id,
+                bytes_out) == 0u))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    ++g_linux_vfs64_nvme_read_count;
+    g_linux_vfs64_nvme_last_bytes = *bytes_out;
+    return 1u;
+}
+
+static u32 linux_vfs64_nvme_stat(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    mmio64_nvme_fat_stat_t *stat_out)
+{
+    const u8 *fat_path;
+    u32 fat_path_bytes;
+    linux_vfs64_nvme_binding_t *binding;
+
+    if (stat_out != 0)
+    {
+        stat_out->entry_type = MMIO64_NVME_FAT_DIRENT_TYPE_UNKNOWN;
+        stat_out->attr = 0u;
+        stat_out->cluster = 0u;
+        stat_out->byte_count = 0u;
+    }
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if ((binding == 0)
+        || (stat_out == 0)
+        || (binding->capability != mmio64_nvme_rw_capability())
+        || (linux_vfs64_nvme_path_to_fat_rootable(
+                path,
+                path_byte_count,
+                &fat_path,
+                &fat_path_bytes) == 0u)
+        || (mmio64_nvme_fat_shell_stat_path(
+                fat_path,
+                fat_path_bytes,
+                binding->owner_id,
+                stat_out) == 0u))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    return 1u;
+}
+
+static u32 linux_vfs64_copy_mmio_dirent(
+    const mmio64_nvme_fat_dirent_t *source,
+    linux_vfs64_dirent_t *target)
+{
+    u32 index;
+
+    if ((source == 0)
+        || (target == 0)
+        || (source->name_byte_count == 0u)
+        || (source->name_byte_count >= LINUX_VFS64_DIRENT_NAME_MAX))
+    {
+        return 0u;
+    }
+
+    target->inode = (source->cluster != 0u)
+        ? (u64)source->cluster
+        : (u64)source->next_cursor;
+    target->next_offset = source->next_cursor;
+    target->name_byte_count = source->name_byte_count;
+    target->entry_type = (source->entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+        ? LINUX_VFS64_DIRENT_TYPE_DIR
+        : LINUX_VFS64_DIRENT_TYPE_REG;
+    for (index = 0u; index < source->name_byte_count; ++index)
+    {
+        target->name[index] = source->name[index];
+    }
+    for (; index < LINUX_VFS64_DIRENT_NAME_MAX; ++index)
+    {
+        target->name[index] = 0u;
+    }
+    return 1u;
+}
+
+static u32 linux_vfs64_read_nvme_dirent(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u32 cursor,
+    linux_vfs64_dirent_t *entry_out)
+{
+    const u8 *fat_path;
+    u32 fat_path_bytes;
+    linux_vfs64_nvme_binding_t *binding;
+    mmio64_nvme_fat_dirent_t mmio_entry;
+    u32 result;
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if ((binding == 0)
+        || (entry_out == 0)
+        || (binding->capability != mmio64_nvme_rw_capability())
+        || (linux_vfs64_nvme_path_to_fat_rootable(
+                path,
+                path_byte_count,
+                &fat_path,
+                &fat_path_bytes) == 0u))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return LINUX_VFS64_READDIR_NOT_DIRECTORY;
+    }
+
+    result = mmio64_nvme_fat_shell_read_dirent(
+        fat_path,
+        fat_path_bytes,
+        cursor,
+        binding->owner_id,
+        &mmio_entry);
+    if (result == MMIO64_NVME_FAT_READDIR_EOF)
+    {
+        ++g_linux_vfs64_nvme_readdir_count;
+        return LINUX_VFS64_READDIR_EOF;
+    }
+    if ((result != MMIO64_NVME_FAT_READDIR_OK)
+        || (linux_vfs64_copy_mmio_dirent(&mmio_entry, entry_out) == 0u))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return LINUX_VFS64_READDIR_NOT_DIRECTORY;
+    }
+
+    ++g_linux_vfs64_nvme_readdir_count;
+    ++g_linux_vfs64_nvme_dirent_count;
+    return LINUX_VFS64_READDIR_OK;
 }
 
 static u32 linux_vfs64_bytes_equal(const u8 *left, const u8 *right, u32 byte_count)
@@ -1265,20 +1559,31 @@ static u32 linux_vfs64_read_tmp_dirent(u32 pid, u32 cursor, linux_vfs64_dirent_t
 static u32 linux_vfs64_copy_proc_payload(
     const u8 *payload,
     u32 payload_bytes,
+    u64 file_offset,
     u8 *output,
     u32 byte_count)
 {
     u32 index;
-    u32 copied = (payload_bytes < byte_count) ? payload_bytes : byte_count;
+    u32 available;
+    u32 copied;
 
     if ((output == 0) || ((payload == 0) && (payload_bytes != 0u)))
     {
         return LINUX_VFS64_INVALID_RESULT;
     }
 
+    if (file_offset >= (u64)payload_bytes)
+    {
+        ++g_linux_vfs64_read_count;
+        ++g_linux_vfs64_proc_read_count;
+        return 0u;
+    }
+
+    available = payload_bytes - (u32)file_offset;
+    copied = (available < byte_count) ? available : byte_count;
     for (index = 0u; index < copied; ++index)
     {
-        output[index] = payload[index];
+        output[index] = payload[(u32)file_offset + index];
     }
 
     ++g_linux_vfs64_read_count;
@@ -1425,12 +1730,17 @@ static u32 linux_vfs64_fill_fd_dirent(
 static u32 linux_vfs64_read_proc_fd_dirent(
     u32 pid,
     u32 cursor,
+    u32 iterator_fd,
     linux_vfs64_dirent_t *entry_out)
 {
     u32 fd_number;
 
     for (fd_number = cursor; fd_number <= LINUX_VFS64_PROC_FD_MASK; ++fd_number)
     {
+        if (fd_number == iterator_fd)
+        {
+            continue;
+        }
         if (fd64_entry_type(pid, fd_number) != FD64_TYPE_EMPTY)
         {
             ++g_linux_vfs64_proc_last_fd_entries;
@@ -1456,7 +1766,8 @@ static u32 linux_vfs64_result_is_directory(
     }
 
     if ((result->node_type == LINUX_VFS64_NODE_PROC_DIR)
-        || (result->node_type == LINUX_VFS64_NODE_DEV_DIR))
+        || (result->node_type == LINUX_VFS64_NODE_DEV_DIR)
+        || (result->node_type == LINUX_VFS64_NODE_NVME_DIR))
     {
         return 1u;
     }
@@ -1638,7 +1949,8 @@ static u32 linux_vfs64_read_proc_payload(
     u32 device_type,
     u32 handle,
     u8 *output,
-    u32 byte_count)
+    u32 byte_count,
+    u64 file_offset)
 {
     static u8 proc_scratch[LINUX_VFS64_PROC_SCRATCH_BYTES];
     linux_vfs64_proc_record_t *record = linux_vfs64_find_proc_record(pid);
@@ -1705,12 +2017,22 @@ static u32 linux_vfs64_read_proc_payload(
         if ((record != 0) && (record->cmdline_bytes != 0u))
         {
             g_linux_vfs64_proc_last_cmdline_bytes = record->cmdline_bytes;
-            return linux_vfs64_copy_proc_payload(record->cmdline, record->cmdline_bytes, output, byte_count);
+            return linux_vfs64_copy_proc_payload(
+                record->cmdline,
+                record->cmdline_bytes,
+                file_offset,
+                output,
+                byte_count);
         }
         if ((record != 0) && (record->exe_path_bytes != 0u))
         {
             g_linux_vfs64_proc_last_cmdline_bytes = record->exe_path_bytes;
-            return linux_vfs64_copy_proc_payload(record->exe_path, record->exe_path_bytes, output, byte_count);
+            return linux_vfs64_copy_proc_payload(
+                record->exe_path,
+                record->exe_path_bytes,
+                file_offset,
+                output,
+                byte_count);
         }
         g_linux_vfs64_proc_last_cmdline_bytes = 0u;
         return 0u;
@@ -1720,7 +2042,12 @@ static u32 linux_vfs64_read_proc_payload(
         if ((record != 0) && (record->environ_bytes != 0u))
         {
             g_linux_vfs64_proc_last_environ_bytes = record->environ_bytes;
-            return linux_vfs64_copy_proc_payload(record->environ, record->environ_bytes, output, byte_count);
+            return linux_vfs64_copy_proc_payload(
+                record->environ,
+                record->environ_bytes,
+                file_offset,
+                output,
+                byte_count);
         }
         g_linux_vfs64_proc_last_environ_bytes = 0u;
         return 0u;
@@ -1745,7 +2072,7 @@ static u32 linux_vfs64_read_proc_payload(
         return LINUX_VFS64_INVALID_RESULT;
     }
 
-    return linux_vfs64_copy_proc_payload(proc_scratch, payload_bytes, output, byte_count);
+    return linux_vfs64_copy_proc_payload(proc_scratch, payload_bytes, file_offset, output, byte_count);
 }
 
 static u32 linux_vfs64_resolve_dev(
@@ -1870,6 +2197,47 @@ static u32 linux_vfs64_resolve_ramfs(linux_vfs64_result_t *result)
     return 1u;
 }
 
+static u32 linux_vfs64_resolve_nvme(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    linux_vfs64_result_t *result)
+{
+    mmio64_nvme_fat_stat_t fat_stat;
+
+    result->provider = LINUX_VFS64_PROVIDER_NVME;
+    if (linux_vfs64_path_is_exact(path, path_byte_count, "/nvme") != 0u)
+    {
+        result->node_type = LINUX_VFS64_NODE_NVME_DIR;
+        result->device_type = LINUX_VFS64_DEVICE_DIRECTORY;
+        result->capability_handle = linux_vfs64_device_handle(LINUX_VFS64_DEVICE_DIRECTORY);
+        return 1u;
+    }
+
+    if (linux_vfs64_nvme_stat(pid, path, path_byte_count, &fat_stat) == 0u)
+    {
+        return linux_vfs64_deny(result, LINUX_VFS64_ERROR_NOT_FOUND);
+    }
+
+    if (fat_stat.entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+    {
+        result->node_type = LINUX_VFS64_NODE_NVME_DIR;
+        result->device_type = LINUX_VFS64_DEVICE_DIRECTORY;
+        result->capability_handle = linux_vfs64_device_handle(LINUX_VFS64_DEVICE_DIRECTORY);
+        return 1u;
+    }
+
+    if (fat_stat.entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        return linux_vfs64_deny(result, LINUX_VFS64_ERROR_NOT_FOUND);
+    }
+
+    result->node_type = LINUX_VFS64_NODE_NVME_FILE;
+    result->device_type = LINUX_VFS64_DEVICE_NVME_FILE;
+    result->capability_handle = linux_vfs64_device_handle(LINUX_VFS64_DEVICE_NVME_FILE);
+    return 1u;
+}
+
 static u32 linux_vfs64_fd_is_linux_device(u32 pid, u32 fd_number, u32 *device_type_out)
 {
     u32 handle;
@@ -1934,6 +2302,13 @@ void linux_vfs64_init(void)
     g_linux_vfs64_symlink_lstat_count = 0u;
     g_linux_vfs64_symlink_nofollow_denial_count = 0u;
     g_linux_vfs64_symlink_last_target_bytes = 0u;
+    g_linux_vfs64_nvme_bind_count = 0u;
+    g_linux_vfs64_nvme_release_count = 0u;
+    g_linux_vfs64_nvme_read_count = 0u;
+    g_linux_vfs64_nvme_readdir_count = 0u;
+    g_linux_vfs64_nvme_dirent_count = 0u;
+    g_linux_vfs64_nvme_denial_count = 0u;
+    g_linux_vfs64_nvme_last_bytes = 0u;
     g_linux_vfs64_random_counter = 0x5A17A001u;
     for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
     {
@@ -1946,6 +2321,10 @@ void linux_vfs64_init(void)
     for (index = 0u; index < LINUX_VFS64_MAX_TMP_RECORDS; ++index)
     {
         linux_vfs64_clear_tmp_record(&g_linux_vfs64_tmp_records[index]);
+    }
+    for (index = 0u; index < LINUX_VFS64_MAX_NVME_BINDINGS; ++index)
+    {
+        linux_vfs64_clear_nvme_binding(&g_linux_vfs64_nvme_bindings[index]);
     }
     g_linux_vfs64_initialized = 1u;
 }
@@ -1968,6 +2347,72 @@ const linux_vfs64_mount_t *linux_vfs64_mount_at(u32 index)
     }
 
     return (index < LINUX_VFS64_MAX_MOUNTS) ? &g_linux_vfs64_mounts[index] : 0;
+}
+
+u32 linux_vfs64_bind_nvme_read(u32 pid, u32 owner_id, u32 nvme_capability)
+{
+    linux_vfs64_nvme_binding_t *binding;
+    u32 index;
+
+    if (g_linux_vfs64_initialized == 0u)
+    {
+        linux_vfs64_init();
+    }
+
+    if ((linux_vfs64_process_is_valid(pid) == 0u)
+        || (owner_id == 0u)
+        || (nvme_capability == CAPABILITY64_INVALID_HANDLE)
+        || (nvme_capability != mmio64_nvme_rw_capability()))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if (binding == 0)
+    {
+        for (index = 0u; index < LINUX_VFS64_MAX_NVME_BINDINGS; ++index)
+        {
+            if (g_linux_vfs64_nvme_bindings[index].active == 0u)
+            {
+                binding = &g_linux_vfs64_nvme_bindings[index];
+                break;
+            }
+        }
+    }
+    if (binding == 0)
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    binding->active = 1u;
+    binding->pid = pid;
+    binding->owner_id = owner_id;
+    binding->capability = nvme_capability;
+    ++g_linux_vfs64_nvme_bind_count;
+    return 1u;
+}
+
+u32 linux_vfs64_release_nvme_read(u32 pid)
+{
+    linux_vfs64_nvme_binding_t *binding;
+
+    if (g_linux_vfs64_initialized == 0u)
+    {
+        linux_vfs64_init();
+    }
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if (binding == 0)
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    linux_vfs64_clear_nvme_binding(binding);
+    ++g_linux_vfs64_nvme_release_count;
+    return 1u;
 }
 
 u32 linux_vfs64_resolve(
@@ -2027,6 +2472,10 @@ u32 linux_vfs64_resolve(
     else if (mount->provider == LINUX_VFS64_PROVIDER_RAMFS)
     {
         resolved = linux_vfs64_resolve_ramfs(result);
+    }
+    else if (mount->provider == LINUX_VFS64_PROVIDER_NVME)
+    {
+        resolved = linux_vfs64_resolve_nvme(pid, path, path_byte_count, result);
     }
     else
     {
@@ -2127,6 +2576,20 @@ u32 linux_vfs64_open(u32 pid, const u8 *path, u32 path_byte_count, u32 flags, u3
         return fd_number;
     }
 
+    if ((result.provider == LINUX_VFS64_PROVIDER_NVME)
+        && (result.node_type == LINUX_VFS64_NODE_NVME_FILE)
+        && (result.capability_handle != CAPABILITY64_INVALID_HANDLE)
+        && (create_requested == 0u))
+    {
+        fd_number = fd64_alloc(pid, result.capability_handle, FD64_TYPE_DEVICE, fd_flags);
+        if (fd_number != FD64_INVALID_FD)
+        {
+            (void)linux_vfs64_record_fd_path(pid, fd_number, effective_path, effective_path_bytes);
+            ++g_linux_vfs64_open_count;
+        }
+        return fd_number;
+    }
+
     if (result.provider == LINUX_VFS64_PROVIDER_RAMFS)
     {
         const u8 *tmp_name = 0;
@@ -2185,6 +2648,8 @@ u32 linux_vfs64_read_fd(u32 pid, u32 fd_number, u8 *output, u32 byte_count)
     u32 handle;
     u32 index;
     u32 state;
+    u32 bytes_read;
+    fd_entry_t *entry;
 
     if (byte_count == 0u)
     {
@@ -2240,6 +2705,59 @@ u32 linux_vfs64_read_fd(u32 pid, u32 fd_number, u8 *output, u32 byte_count)
         return byte_count;
     }
 
+    if (device_type == LINUX_VFS64_DEVICE_NVME_FILE)
+    {
+        static u8 nvme_scratch[LINUX_VFS64_NVME_FILE_BYTES];
+        u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+        u32 path_byte_count;
+        u32 file_bytes = 0u;
+        u32 available;
+        u32 copied;
+        fd_entry_t *nvme_entry;
+
+        nvme_entry = fd64_get(pid, fd_number);
+        if ((nvme_entry == 0)
+            || (linux_vfs64_fd_path(
+                    pid,
+                    fd_number,
+                    path,
+                    LINUX_VFS64_MAX_PATH_BYTES,
+                    &path_byte_count) == 0u)
+            || (linux_vfs64_nvme_read_all(
+                    pid,
+                    path,
+                    path_byte_count,
+                    nvme_scratch,
+                    (u32)sizeof(nvme_scratch),
+                    &file_bytes) == 0u))
+        {
+            if (nvme_entry != 0)
+            {
+                (void)fd64_put(pid, nvme_entry);
+            }
+            ++g_linux_vfs64_denial_count;
+            return LINUX_VFS64_INVALID_RESULT;
+        }
+
+        if (nvme_entry->file_offset >= (u64)file_bytes)
+        {
+            (void)fd64_put(pid, nvme_entry);
+            ++g_linux_vfs64_read_count;
+            return 0u;
+        }
+
+        available = file_bytes - (u32)nvme_entry->file_offset;
+        copied = (available < byte_count) ? available : byte_count;
+        for (index = 0u; index < copied; ++index)
+        {
+            output[index] = nvme_scratch[(u32)nvme_entry->file_offset + index];
+        }
+        nvme_entry->file_offset += (u64)copied;
+        (void)fd64_put(pid, nvme_entry);
+        ++g_linux_vfs64_read_count;
+        return copied;
+    }
+
     if ((device_type == LINUX_VFS64_DEVICE_PROC_MAPS)
         || (device_type == LINUX_VFS64_DEVICE_PROC_EXE)
         || (device_type == LINUX_VFS64_DEVICE_PROC_STATUS)
@@ -2248,8 +2766,27 @@ u32 linux_vfs64_read_fd(u32 pid, u32 fd_number, u8 *output, u32 byte_count)
         || (device_type == LINUX_VFS64_DEVICE_PROC_FD_LINK)
         || (device_type == LINUX_VFS64_DEVICE_PROC_MEMINFO))
     {
-        handle = fd64_entry_capability(pid, fd_number);
-        return linux_vfs64_read_proc_payload(pid, device_type, handle, output, byte_count);
+        entry = fd64_get(pid, fd_number);
+        if (entry == 0)
+        {
+            ++g_linux_vfs64_denial_count;
+            return LINUX_VFS64_INVALID_RESULT;
+        }
+
+        handle = entry->capability_handle;
+        bytes_read = linux_vfs64_read_proc_payload(
+            pid,
+            device_type,
+            handle,
+            output,
+            byte_count,
+            entry->file_offset);
+        if (bytes_read != LINUX_VFS64_INVALID_RESULT)
+        {
+            entry->file_offset += (u64)bytes_read;
+        }
+        (void)fd64_put(pid, entry);
+        return bytes_read;
     }
 
     ++g_linux_vfs64_denial_count;
@@ -2282,6 +2819,13 @@ u32 linux_vfs64_write_fd(u32 pid, u32 fd_number, const u8 *input, u32 byte_count
     {
         ++g_linux_vfs64_write_count;
         return byte_count;
+    }
+
+    if (device_type == LINUX_VFS64_DEVICE_NVME_FILE)
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        ++g_linux_vfs64_denial_count;
+        return LINUX_VFS64_INVALID_RESULT;
     }
 
     if ((device_type == LINUX_VFS64_DEVICE_PROC_MAPS)
@@ -2447,7 +2991,8 @@ u32 linux_vfs64_readlink(
             result.device_type,
             result.capability_handle,
             output,
-            byte_capacity);
+            byte_capacity,
+            0ull);
         if (copied != LINUX_VFS64_INVALID_RESULT)
         {
             ++g_linux_vfs64_symlink_readlink_count;
@@ -2847,6 +3392,36 @@ static u32 linux_vfs64_fill_resolved_stat(
             pid,
             target_bytes,
             linux_vfs64_path_token(path, path_byte_count),
+            stat_out);
+    }
+
+    if ((result->provider == LINUX_VFS64_PROVIDER_NVME)
+        && (result->node_type == LINUX_VFS64_NODE_NVME_FILE))
+    {
+        mmio64_nvme_fat_stat_t fat_stat;
+
+        if ((linux_vfs64_nvme_stat(
+                pid,
+                path,
+                path_byte_count,
+                &fat_stat) == 0u)
+            || (fat_stat.entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE))
+        {
+            return 0u;
+        }
+        return linux_vfs64_fill_basic_stat(
+            pid,
+            result->provider,
+            result->node_type,
+            FD64_TYPE_DEVICE,
+            FD64_STAT_NODE_FILE,
+            FD64_STAT_MODE_FILE | FD64_STAT_MODE_READ,
+            FS64_RIGHT_READ | FS64_RIGHT_STAT,
+            (u64)fat_stat.byte_count,
+            1u,
+            result->path_token,
+            path,
+            path_byte_count,
             stat_out);
     }
 
@@ -3269,12 +3844,34 @@ u32 linux_vfs64_read_dirent(u32 pid, u32 fd_number, u32 cursor, linux_vfs64_dire
         {
             g_linux_vfs64_proc_last_fd_entries = 0u;
         }
-        return linux_vfs64_read_proc_fd_dirent(pid, cursor, entry_out);
+        return linux_vfs64_read_proc_fd_dirent(pid, cursor, fd_number, entry_out);
     }
 
     if (linux_vfs64_path_is_exact(path, path_byte_count, "/tmp") != 0u)
     {
         return linux_vfs64_read_tmp_dirent(pid, cursor, entry_out);
+    }
+
+    if (linux_vfs64_path_is_exact(path, path_byte_count, "/nvme") != 0u)
+    {
+        return linux_vfs64_read_nvme_dirent(
+            pid,
+            path,
+            path_byte_count,
+            cursor,
+            entry_out);
+    }
+
+    if ((path_byte_count > 6u)
+        && (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_nvme, 5u) != 0u)
+        && (path[5] == (u8)'/'))
+    {
+        return linux_vfs64_read_nvme_dirent(
+            pid,
+            path,
+            path_byte_count,
+            cursor,
+            entry_out);
     }
 
     return LINUX_VFS64_READDIR_NOT_DIRECTORY;
@@ -3527,4 +4124,39 @@ u32 linux_vfs64_symlink_nofollow_denial_count(void)
 u32 linux_vfs64_symlink_last_target_bytes(void)
 {
     return g_linux_vfs64_symlink_last_target_bytes;
+}
+
+u32 linux_vfs64_nvme_bind_count(void)
+{
+    return g_linux_vfs64_nvme_bind_count;
+}
+
+u32 linux_vfs64_nvme_release_count(void)
+{
+    return g_linux_vfs64_nvme_release_count;
+}
+
+u32 linux_vfs64_nvme_read_count(void)
+{
+    return g_linux_vfs64_nvme_read_count;
+}
+
+u32 linux_vfs64_nvme_readdir_count(void)
+{
+    return g_linux_vfs64_nvme_readdir_count;
+}
+
+u32 linux_vfs64_nvme_dirent_count(void)
+{
+    return g_linux_vfs64_nvme_dirent_count;
+}
+
+u32 linux_vfs64_nvme_denial_count(void)
+{
+    return g_linux_vfs64_nvme_denial_count;
+}
+
+u32 linux_vfs64_nvme_last_bytes(void)
+{
+    return g_linux_vfs64_nvme_last_bytes;
 }

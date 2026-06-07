@@ -1,6 +1,7 @@
 #include "scheduler_x64.h"
 
 #include "interrupts_x64.h"
+#include "paging_x64.h"
 #include "pit.h"
 #include "process_x64.h"
 
@@ -50,6 +51,17 @@ struct scheduler64_runqueue
 };
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+enum
+{
+    SCHEDULER64_CR3_REASON_START = 0x53544152u,
+    SCHEDULER64_CR3_REASON_TIMER = 0x54494D52u,
+    SCHEDULER64_CR3_REASON_BLOCKED_SYSCALL = 0x42535953u,
+    SCHEDULER64_CR3_REASON_EXIT_RESUME = 0x45585245u,
+    SCHEDULER64_CR3_REASON_EXIT_KERNEL = 0x45584B52u,
+    SCHEDULER64_CR3_REASON_STOP = 0x53544F50u,
+    SCHEDULER64_CR3_REASON_RESET = 0x52534554u
+};
+
 struct scheduler64_sleep_entry
 {
     u32 active;
@@ -266,6 +278,27 @@ static u32 scheduler64_next_runnable(u32 current)
     return SCHEDULER64_INVALID_TASK;
 }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static u32 scheduler64_switch_cr3_for_task(
+    const struct scheduler64_task *task,
+    u32 reason)
+{
+    if ((task == 0)
+        || (task->pid == 0u)
+        || (process64_page_root_physical(task->pid) == 0ull))
+    {
+        return 1u;
+    }
+
+    return paging64_switch_to_process_root(task->pid, reason);
+}
+
+static void scheduler64_switch_cr3_to_kernel(u32 reason)
+{
+    (void)paging64_switch_to_kernel_root(reason);
+}
+#endif
+
 void scheduler64_init(void)
 {
     scheduler64_runqueue_reset();
@@ -307,6 +340,7 @@ void scheduler64_runqueue_reset(void)
         scheduler64_clear_task(&g_runqueue.tasks[index]);
     }
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+    scheduler64_switch_cr3_to_kernel(SCHEDULER64_CR3_REASON_RESET);
     scheduler64_sleep_queue_reset();
 #endif
 }
@@ -434,6 +468,15 @@ u32 scheduler64_runqueue_start(u32 first_task)
     ++task->dispatches;
     g_runqueue.cs = task->frame.cs;
     g_runqueue.ss = task->frame.ss;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    if (scheduler64_switch_cr3_for_task(task, SCHEDULER64_CR3_REASON_START) == 0u)
+    {
+        task->state = SCHEDULER64_TASK_READY;
+        g_runqueue.active = 0u;
+        g_runqueue.current_task = SCHEDULER64_INVALID_TASK;
+        return 0u;
+    }
+#endif
     return 1u;
 }
 
@@ -441,6 +484,9 @@ void scheduler64_runqueue_stop(void)
 {
     g_runqueue.active = 0u;
     g_runqueue.current_task = SCHEDULER64_INVALID_TASK;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    scheduler64_switch_cr3_to_kernel(SCHEDULER64_CR3_REASON_STOP);
+#endif
 }
 
 u32 scheduler64_runqueue_block_task(u32 task_id)
@@ -618,6 +664,16 @@ u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame)
     }
 
     next_task = &g_runqueue.tasks[next];
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    if (scheduler64_switch_cr3_for_task(next_task, SCHEDULER64_CR3_REASON_TIMER) == 0u)
+    {
+        if (current_task->state == SCHEDULER64_TASK_READY)
+        {
+            current_task->state = SCHEDULER64_TASK_RUNNING;
+        }
+        return 0u;
+    }
+#endif
     next_task->state = SCHEDULER64_TASK_RUNNING;
     ++next_task->dispatches;
     g_runqueue.current_task = next;
@@ -666,6 +722,19 @@ u32 scheduler64_runqueue_on_blocked_syscall(struct interrupt_frame64 *frame)
     }
 
     next_task = &g_runqueue.tasks[next];
+    /*
+     * M22 does not switch CR3 on ordinary syscall entry: every process root
+     * shares the higher-half kernel mapping, so syscall handlers can run on
+     * the current process CR3. Scheduler-mediated returns switch CR3 only when
+     * a different user task is selected.
+     */
+    if (scheduler64_switch_cr3_for_task(
+            next_task,
+            SCHEDULER64_CR3_REASON_BLOCKED_SYSCALL) == 0u)
+    {
+        ++g_runqueue.block_denials;
+        return 0u;
+    }
     next_task->state = SCHEDULER64_TASK_RUNNING;
     ++next_task->dispatches;
     g_runqueue.current_task = next;
@@ -700,6 +769,16 @@ u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result)
     if (next != SCHEDULER64_INVALID_TASK)
     {
         struct scheduler64_task *next_task = &g_runqueue.tasks[next];
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        if (scheduler64_switch_cr3_for_task(next_task, SCHEDULER64_CR3_REASON_EXIT_RESUME) == 0u)
+        {
+            scheduler64_switch_cr3_to_kernel(SCHEDULER64_CR3_REASON_EXIT_KERNEL);
+            g_runqueue.active = 0u;
+            g_runqueue.current_task = SCHEDULER64_INVALID_TASK;
+            g_runqueue.result = result;
+            return SCHEDULER64_RUNQUEUE_EXIT_COMPLETE;
+        }
+#endif
         next_task->state = SCHEDULER64_TASK_RUNNING;
         ++next_task->dispatches;
         g_runqueue.current_task = next;
@@ -713,6 +792,9 @@ u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result)
     g_runqueue.active = 0u;
     g_runqueue.current_task = SCHEDULER64_INVALID_TASK;
     g_runqueue.result = result;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    scheduler64_switch_cr3_to_kernel(SCHEDULER64_CR3_REASON_EXIT_KERNEL);
+#endif
     return SCHEDULER64_RUNQUEUE_EXIT_COMPLETE;
 }
 

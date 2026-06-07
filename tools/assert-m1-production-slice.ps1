@@ -56,6 +56,20 @@ function Get-Fnv1aDataChecksum
     return $hash
 }
 
+function Get-Sha256Hex
+{
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash($Bytes)
+        return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Get-RepoRelativePath
 {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -489,7 +503,7 @@ function Assert-RuntimeShellSurfaceSource
     $source = Get-Content -Path $shellPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
-        "Builtins: apps help hwval info lock net pkginfo pwd",
+        "Builtins: apps help hwval info linux lock net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write",
         "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
@@ -659,7 +673,7 @@ function Assert-X64Artifacts
     }
 
     $manifest = Read-KeyValueFile -Path $manifestPath
-    foreach ($key in @("architecture", "kernel", "kernel-bytes", "kernel-byte-limit", "kernel-byte-reserve", "kernel-checksum", "boot-contract")) {
+    foreach ($key in @("architecture", "kernel", "kernel-bytes", "kernel-byte-limit", "kernel-byte-reserve", "kernel-checksum-algorithm", "kernel-checksum", "kernel-sha256", "boot-contract", "non-product-package-registry-stubs")) {
         if (-not $manifest.ContainsKey($key)) {
             Fail-M1 "BOOTMAN.TXT is missing required key '$key'."
         }
@@ -682,8 +696,17 @@ function Assert-X64Artifacts
     if ($manifest["kernel-checksum"] -ne ("0x{0:X8}" -f $stagedChecksum)) {
         Fail-M1 "BOOTMAN.TXT kernel checksum is stale."
     }
+    if ($manifest["kernel-checksum-algorithm"] -ne "fnv1a-32") {
+        Fail-M1 "BOOTMAN.TXT kernel checksum algorithm is not documented as fnv1a-32."
+    }
+    if ($manifest["kernel-sha256"] -ne (Get-Sha256Hex -Bytes $stagedKernelBytes)) {
+        Fail-M1 "BOOTMAN.TXT kernel SHA-256 is stale."
+    }
     if ($manifest["boot-contract"] -ne "uefi-kernel-file") {
         Fail-M1 "BOOTMAN.TXT boot contract is not the UEFI kernel file-size contract."
+    }
+    if ($manifest["non-product-package-registry-stubs"] -ne "ASK,ECHO") {
+        Fail-M1 "BOOTMAN.TXT does not label ASK/ECHO as non-product package registry stubs."
     }
 
     $appFiles = @(Get-ChildItem -Path $appsDir -Filter "*.APP" -File | Sort-Object Name)

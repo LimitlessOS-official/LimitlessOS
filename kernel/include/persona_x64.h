@@ -26,6 +26,7 @@
 #define PERSONA64_TLS_UNSET 0ull
 #define PERSONA64_BRK_UNSET 0ull
 #define PERSONA64_LINUX_CWD_MAX_BYTES 128u
+#define PERSONA64_LINUX_COMM_BYTES 16u
 #define PERSONA64_WINDOWS_IMAGE_PATH_MAX_BYTES 96u
 #define PERSONA64_ATTACH_OK 1u
 #define PERSONA64_ATTACH_DENIED 0u
@@ -147,6 +148,7 @@ typedef struct persona_context
     u32 isolation_last_result;
     u32 linux_cwd_length;
     u8 linux_cwd[PERSONA64_LINUX_CWD_MAX_BYTES];
+    u8 linux_comm[PERSONA64_LINUX_COMM_BYTES];
     u64 linux_signal_pending;
     u64 linux_signal_mask;
     linux_signal64_sigaction_t linux_sigactions[LINUX_SIGNAL64_MAX_SIGNALS];

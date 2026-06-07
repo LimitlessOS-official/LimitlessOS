@@ -1,5 +1,8 @@
 param(
-    [string]$OutputPath
+    [string]$OutputPath,
+    [string]$BusyBoxPath,
+    [string]$BusyBoxSource = "",
+    [string]$BusyBoxVersion = ""
 )
 
 Set-StrictMode -Version Latest
@@ -31,6 +34,7 @@ $deleteFileCluster = 14
 $homeDirectoryCluster = 15
 $assistantDirectoryCluster = 16
 $assistantNoteCluster = 17
+$busyBoxStartCluster = 18
 $dataStart = $partitionStart + $fatReservedSectors + ($fatCount * $fatSectors)
 $rootDirectoryLba = $dataStart + (($rootCluster - 2) * $sectorsPerCluster)
 $fileContentLba = $dataStart + (($nvmeFileCluster - 2) * $sectorsPerCluster)
@@ -53,6 +57,29 @@ $unicodeFileContent = [System.Text.Encoding]::ASCII.GetBytes("Unicode FAT32 LFN 
 $subdirFileContent = [System.Text.Encoding]::ASCII.GetBytes("Nested FAT32 path fixture`r`n")
 $deleteFileContent = [System.Text.Encoding]::ASCII.GetBytes("Delete me through FAT32 proof`r`n")
 $assistantNoteContent = [System.Text.Encoding]::ASCII.GetBytes("Assistant action note initial`r`n")
+$busyBoxContent = $null
+$busyBoxClusterCount = 0
+$busyBoxLastCluster = 0
+$busyBoxFileLba = 0
+$busyBoxSha256 = ""
+if (-not [string]::IsNullOrWhiteSpace($BusyBoxPath)) {
+    if (-not (Test-Path $BusyBoxPath)) {
+        throw "BusyBox staging source not found: $BusyBoxPath"
+    }
+    $busyBoxContent = [System.IO.File]::ReadAllBytes((Resolve-Path $BusyBoxPath))
+    if ($busyBoxContent.Length -le 0) {
+        throw "BusyBox staging source is empty: $BusyBoxPath"
+    }
+    $clusterBytes = $sectorBytes * $sectorsPerCluster
+    $dataClusterCount = [Math]::Floor(($partitionSectors - $fatReservedSectors - ($fatCount * $fatSectors)) / $sectorsPerCluster)
+    $busyBoxClusterCount = [Math]::Ceiling($busyBoxContent.Length / [double]$clusterBytes)
+    $busyBoxLastCluster = $busyBoxStartCluster + $busyBoxClusterCount - 1
+    if ($busyBoxLastCluster -gt ($rootCluster + $dataClusterCount - 1)) {
+        throw "BusyBox staging source does not fit in the NVMe FAT fixture."
+    }
+    $busyBoxFileLba = $dataStart + (($busyBoxStartCluster - 2) * $sectorsPerCluster)
+    $busyBoxSha256 = (Get-FileHash -Algorithm SHA256 -Path $BusyBoxPath).Hash.ToLowerInvariant()
+}
 $multiFileContent = New-Object byte[] 2500
 for ($index = 0; $index -lt $multiFileContent.Length; $index++) {
     $multiFileContent[$index] = [byte](($index * 17 + 23) -band 0xFF)
@@ -368,6 +395,16 @@ Set-FatEntry -Cluster $deleteFileCluster -Value 0x0FFFFFFF
 Set-FatEntry -Cluster $homeDirectoryCluster -Value 0x0FFFFFFF
 Set-FatEntry -Cluster $assistantDirectoryCluster -Value 0x0FFFFFFF
 Set-FatEntry -Cluster $assistantNoteCluster -Value 0x0FFFFFFF
+if ($busyBoxContent -ne $null) {
+    for ($cluster = $busyBoxStartCluster; $cluster -le $busyBoxLastCluster; $cluster++) {
+        if ($cluster -lt $busyBoxLastCluster) {
+            Set-FatEntry -Cluster $cluster -Value ([uint32]($cluster + 1))
+        }
+        else {
+            Set-FatEntry -Cluster $cluster -Value 0x0FFFFFFF
+        }
+    }
+}
 
 Set-DirectoryEntry -DirectoryCluster $rootCluster -EntryIndex 0 -ShortName "NVME    TXT" -Attributes 0x20 -StartCluster $nvmeFileCluster -Size $fileContent.Length
 Set-LongFileEntry -DirectoryCluster $rootCluster -EntryIndex 1 -LongName $longFileName -ShortName "LIMITL~1TXT" -StartCluster $longFileCluster -Size $longFileContent.Length
@@ -380,6 +417,9 @@ Set-DeletedDirectorySlot -DirectoryCluster $rootCluster -EntryIndex 10
 Set-DirectoryEntry -DirectoryCluster $rootCluster -EntryIndex 11 -ShortName "REMOVE  ME " -Attributes 0x20 -StartCluster $deleteFileCluster -Size $deleteFileContent.Length
 Set-DirectoryEntry -DirectoryCluster $rootCluster -EntryIndex 12 -ShortName "HOME       " -Attributes 0x10 -StartCluster $homeDirectoryCluster -Size 0
 Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex 0 -ShortName "DATA       " -Attributes 0x10 -StartCluster $dataDirectoryCluster -Size 0
+if ($busyBoxContent -ne $null) {
+    Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex 1 -ShortName "BUSYBOX    " -Attributes 0x20 -StartCluster $busyBoxStartCluster -Size $busyBoxContent.Length
+}
 Set-DirectoryEntry -DirectoryCluster $dataDirectoryCluster -EntryIndex 0 -ShortName "FILE    TXT" -Attributes 0x20 -StartCluster $subdirFileCluster -Size $subdirFileContent.Length
 Set-DirectoryEntry -DirectoryCluster $homeDirectoryCluster -EntryIndex 0 -ShortName "ASSIST     " -Attributes 0x10 -StartCluster $assistantDirectoryCluster -Size 0
 Set-DirectoryEntry -DirectoryCluster $assistantDirectoryCluster -EntryIndex 0 -ShortName "NOTE    TXT" -Attributes 0x20 -StartCluster $assistantNoteCluster -Size $assistantNoteContent.Length
@@ -393,6 +433,9 @@ Set-Bytes -Bytes $imageBytes -Offset ($assistantNoteLba * $sectorBytes) -Value $
 $multiOffset = $multiFileLba * $sectorBytes
 for ($index = 0; $index -lt $multiFileContent.Length; $index++) {
     $imageBytes[$multiOffset + $index] = $multiFileContent[$index]
+}
+if ($busyBoxContent -ne $null) {
+    Set-Bytes -Bytes $imageBytes -Offset ($busyBoxFileLba * $sectorBytes) -Value $busyBoxContent
 }
 
 $outputDir = Split-Path -Parent $OutputPath
@@ -453,9 +496,26 @@ $meta = @(
     "second-free-cluster=13",
     ("gpt-header-crc32=0x{0:X8}" -f $headerCrc)
 )
+if ($busyBoxContent -ne $null) {
+    $meta += @(
+        "real-binary-path=/APPS/BUSYBOX",
+        "real-binary-source=$BusyBoxSource",
+        "real-binary-version=$BusyBoxVersion",
+        "real-binary-sha256=$busyBoxSha256",
+        "real-binary-lba=$busyBoxFileLba",
+        "real-binary-cluster=$busyBoxStartCluster",
+        "real-binary-clusters=$busyBoxClusterCount",
+        "real-binary-bytes=$($busyBoxContent.Length)"
+    )
+}
 Set-Content -Path $metaPath -Value $meta -Encoding Ascii
 Write-Host "Generated NVMe GPT image: $OutputPath"
 Write-Host "  fat32-start-lba : $partitionStart"
 Write-Host "  sectors/cluster : $sectorsPerCluster"
 Write-Host "  nvme-file-lba   : $fileContentLba"
 Write-Host "  multi-file-lba  : $multiFileLba"
+if ($busyBoxContent -ne $null) {
+    Write-Host "  real-binary     : /APPS/BUSYBOX"
+    Write-Host "  real-binary-lba : $busyBoxFileLba"
+    Write-Host "  real-binary-bytes: $($busyBoxContent.Length)"
+}

@@ -41,6 +41,11 @@ struct process64_record
     void *fd_table;
     void *persona_ctx;
     void *audit_ctx;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u64 page_root_physical;
+    u32 page_root_index;
+    u32 page_root_token;
+#endif
 };
 
 struct process64_seed_record
@@ -127,6 +132,9 @@ static struct process64_record g_processes[PROCESS64_RECORD_COUNT];
 static struct process64_record g_process64_clone_records[PROCESS64_CLONE_RECORD_COUNT];
 static u32 g_process64_clone_count = 0u;
 static u32 g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
+static u32 g_process64_page_root_attach_count = 0u;
+static u32 g_process64_page_root_clear_count = 0u;
+static u32 g_process64_page_root_denial_count = 0u;
 #endif
 static u32 g_process_init = 0u;
 static u32 g_manifest_verified_count = 0u;
@@ -176,6 +184,9 @@ static void process64_clear_record(struct process64_record *record)
     record->fd_table = 0;
     record->persona_ctx = 0;
     record->audit_ctx = 0;
+    record->page_root_physical = 0ull;
+    record->page_root_index = 0xFFFFFFFFu;
+    record->page_root_token = 0u;
 }
 
 static u32 process64_clone_record_active(const struct process64_record *record)
@@ -207,6 +218,14 @@ static void process64_seed_record(u32 index, u32 preserve_extensions)
     void *fd_table = (preserve_extensions != 0u) ? g_processes[index].fd_table : 0;
     void *persona_ctx = (preserve_extensions != 0u) ? g_processes[index].persona_ctx : 0;
     void *audit_ctx = (preserve_extensions != 0u) ? g_processes[index].audit_ctx : 0;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    u64 page_root_physical =
+        (preserve_extensions != 0u) ? g_processes[index].page_root_physical : 0ull;
+    u32 page_root_index =
+        (preserve_extensions != 0u) ? g_processes[index].page_root_index : 0xFFFFFFFFu;
+    u32 page_root_token =
+        (preserve_extensions != 0u) ? g_processes[index].page_root_token : 0u;
+#endif
 
     g_processes[index].pid = g_process_seeds[index].pid;
     process64_copy_name(g_processes[index].name, g_process_seeds[index].name);
@@ -224,6 +243,11 @@ static void process64_seed_record(u32 index, u32 preserve_extensions)
     g_processes[index].fd_table = fd_table;
     g_processes[index].persona_ctx = persona_ctx;
     g_processes[index].audit_ctx = audit_ctx;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    g_processes[index].page_root_physical = page_root_physical;
+    g_processes[index].page_root_index = page_root_index;
+    g_processes[index].page_root_token = page_root_token;
+#endif
 }
 
 static u32 process64_records_valid(void)
@@ -1095,6 +1119,88 @@ void *process64_audit_ctx(u32 pid)
 }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 process64_attach_page_root(
+    u32 pid,
+    u64 root_physical,
+    u32 root_index,
+    u32 root_token,
+    u32 authority_token)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    if ((record == 0)
+        || (root_physical == 0ull)
+        || (root_token == 0u)
+        || (authority_token == 0u)
+        || (record->page_root_physical != 0ull)
+        || (record->page_root_token != 0u))
+    {
+        ++g_process64_page_root_denial_count;
+        return 0u;
+    }
+
+    record->page_root_physical = root_physical;
+    record->page_root_index = root_index;
+    record->page_root_token = root_token;
+    ++g_process64_page_root_attach_count;
+    return 1u;
+}
+
+u32 process64_clear_page_root(u32 pid, u32 root_token)
+{
+    struct process64_record *record = process64_find_mutable(pid);
+
+    if ((record == 0)
+        || (root_token == 0u)
+        || (record->page_root_token != root_token))
+    {
+        ++g_process64_page_root_denial_count;
+        return 0u;
+    }
+
+    record->page_root_physical = 0ull;
+    record->page_root_index = 0xFFFFFFFFu;
+    record->page_root_token = 0u;
+    ++g_process64_page_root_clear_count;
+    return 1u;
+}
+
+u64 process64_page_root_physical(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->page_root_physical : 0ull;
+}
+
+u32 process64_page_root_index(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->page_root_index : 0xFFFFFFFFu;
+}
+
+u32 process64_page_root_token(u32 pid)
+{
+    const struct process64_record *record = process64_find(pid);
+
+    return (record != 0) ? record->page_root_token : 0u;
+}
+
+u32 process64_page_root_attach_count(void)
+{
+    return g_process64_page_root_attach_count;
+}
+
+u32 process64_page_root_clear_count(void)
+{
+    return g_process64_page_root_clear_count;
+}
+
+u32 process64_page_root_denial_count(void)
+{
+    return g_process64_page_root_denial_count;
+}
+
 u32 process64_spawn_clone(u32 parent_pid)
 {
     const struct process64_record *parent = process64_find(parent_pid);
@@ -1189,4 +1295,33 @@ u32 process64_clone_count(void)
     process64_ensure_init();
     return g_process64_clone_count;
 }
+#else
+u32 process64_attach_page_root(
+    u32 pid,
+    u64 root_physical,
+    u32 root_index,
+    u32 root_token,
+    u32 authority_token)
+{
+    (void)pid;
+    (void)root_physical;
+    (void)root_index;
+    (void)root_token;
+    (void)authority_token;
+    return 0u;
+}
+
+u32 process64_clear_page_root(u32 pid, u32 root_token)
+{
+    (void)pid;
+    (void)root_token;
+    return 0u;
+}
+
+u64 process64_page_root_physical(u32 pid) { (void)pid; return 0ull; }
+u32 process64_page_root_index(u32 pid) { (void)pid; return 0xFFFFFFFFu; }
+u32 process64_page_root_token(u32 pid) { (void)pid; return 0u; }
+u32 process64_page_root_attach_count(void) { return 0u; }
+u32 process64_page_root_clear_count(void) { return 0u; }
+u32 process64_page_root_denial_count(void) { return 0u; }
 #endif

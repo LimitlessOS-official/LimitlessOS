@@ -182,6 +182,10 @@ static void persona64_clear_context(persona_context_t *context)
     {
         context->linux_cwd[index] = 0u;
     }
+    for (index = 0u; index < PERSONA64_LINUX_COMM_BYTES; ++index)
+    {
+        context->linux_comm[index] = 0u;
+    }
     context->linux_signal_pending = LINUX_SIGNAL64_PENDING_NONE;
     context->linux_signal_mask = LINUX_SIGNAL64_MASK_EMPTY;
     for (index = 0u; index < LINUX_SIGNAL64_MAX_SIGNALS; ++index)
@@ -485,6 +489,10 @@ u32 persona64_init_linux_elf(u32 pid, void *syscall_dispatch_table)
     context->linux_cwd_length = 1u;
     context->linux_cwd[0] = (u8)'/';
     context->linux_cwd[1] = 0u;
+    context->linux_comm[0] = (u8)'e';
+    context->linux_comm[1] = (u8)'x';
+    context->linux_comm[2] = (u8)'e';
+    context->linux_comm[3] = 0u;
 
     if (process64_attach_persona(pid, context) == 0u)
     {

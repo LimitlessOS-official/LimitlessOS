@@ -14,6 +14,7 @@
 #include "input_x64.h"
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
+#include "linux_exec_x64.h"
 #include "mmio_x64.h"
 #include "network_socket_x64.h"
 #include "package_signing_x64.h"
@@ -37,6 +38,9 @@ static u8 g_shell64_path_b[SHELL64_MAX_PATH_BYTES];
 static u8 g_shell64_pair[SHELL64_MAX_PATH_BYTES * 2u];
 static u8 g_shell64_io[SHELL64_IO_BYTES];
 static u8 g_shell64_stat[64u];
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static char g_shell64_linux_argv_storage[LINUX_EXEC64_ARG_MAX][SHELL64_MAX_LINE_BYTES + 1u];
+#endif
 
 static u32 shell64_length(const char *text)
 {
@@ -173,10 +177,10 @@ static u32 shell64_write_builtins_line(u32 console_capability_handle, u32 owner_
 {
     if (shell64_login_available() != 0u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info lock net pkginfo pwd\n");
+        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info linux lock net pkginfo pwd\n");
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info net pkginfo pwd\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info linux net pkginfo pwd\n");
 }
 
 static u32 shell64_write_login_status_line(u32 console_capability_handle, u32 owner_id)
@@ -869,6 +873,99 @@ static u32 shell64_next_token(u32 *cursor, u32 line_length, u32 *token_start)
     return *cursor - start;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_next_linux_arg(
+    u32 *cursor,
+    u32 line_length,
+    char *destination,
+    u32 destination_bytes,
+    u32 *out_length,
+    u32 *out_error)
+{
+    u32 copied = 0u;
+    u8 quote = 0u;
+    u8 value;
+
+    if (out_length != 0)
+    {
+        *out_length = 0u;
+    }
+    if (out_error != 0)
+    {
+        *out_error = 0u;
+    }
+    if ((destination == 0) || (destination_bytes == 0u))
+    {
+        if (out_error != 0)
+        {
+            *out_error = 1u;
+        }
+        return 0u;
+    }
+
+    *cursor = shell64_skip_spaces(*cursor, line_length);
+    if (*cursor >= line_length)
+    {
+        destination[0] = '\0';
+        return 0u;
+    }
+
+    while (*cursor < line_length)
+    {
+        value = g_shell64_line[*cursor];
+        if (quote == 0u)
+        {
+            if (shell64_is_space(value))
+            {
+                break;
+            }
+            if ((value == (u8)'\'') || (value == (u8)'"'))
+            {
+                quote = value;
+                ++*cursor;
+                continue;
+            }
+        }
+        else if (value == quote)
+        {
+            quote = 0u;
+            ++*cursor;
+            continue;
+        }
+
+        if ((copied + 1u) >= destination_bytes)
+        {
+            if (out_error != 0)
+            {
+                *out_error = 2u;
+            }
+            destination[0] = '\0';
+            return 0u;
+        }
+        destination[copied] = (char)value;
+        ++copied;
+        ++*cursor;
+    }
+
+    if (quote != 0u)
+    {
+        if (out_error != 0)
+        {
+            *out_error = 3u;
+        }
+        destination[0] = '\0';
+        return 0u;
+    }
+
+    destination[copied] = '\0';
+    if (out_length != 0)
+    {
+        *out_length = copied;
+    }
+    return 1u;
+}
+#endif
+
 static int shell64_token_equals(u32 token_start, u32 token_length, const char *text)
 {
     u32 expected_length = shell64_length(text);
@@ -1099,6 +1196,15 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: nethello - native app-model socket client\n");
     }
 
+    if (shell64_token_equals(token_start, token_length, "linux"))
+    {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return shell64_write_text(console_capability_handle, owner_id, "usage: linux <path> [args...]\n");
+#else
+        return shell64_write_text(console_capability_handle, owner_id, "usage: linux unavailable on BIOS checksum fallback\n");
+#endif
+    }
+
     if (shell64_token_equals(token_start, token_length, "apps"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: apps\n");
@@ -1181,10 +1287,104 @@ static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
         || shell64_token_equals(token_start, token_length, "help")
         || shell64_token_equals(token_start, token_length, "hwval")
         || shell64_token_equals(token_start, token_length, "info")
+        || shell64_token_equals(token_start, token_length, "linux")
         || shell64_token_equals(token_start, token_length, "lock")
         || shell64_token_equals(token_start, token_length, "net")
         || shell64_token_equals(token_start, token_length, "pkginfo")
         || shell64_token_equals(token_start, token_length, "pwd");
+}
+
+static u32 shell64_linux_run(
+    u32 console_capability_handle,
+    u32 line_byte_count,
+    u32 *cursor,
+    u32 owner_id)
+{
+    const char *argv[LINUX_EXEC64_ARG_MAX];
+    u32 path_start = 0u;
+    u32 path_length;
+    u32 argc = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 nvme_capability;
+    u32 index;
+    u32 arg_error = 0u;
+    u32 arg_length = 0u;
+#endif
+
+    path_length = shell64_next_token(cursor, line_byte_count, &path_start);
+    if (path_length == 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: linux <path> [args...]\n");
+    }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (path_length > SHELL64_MAX_LINE_BYTES)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "linux: argument too long\n");
+    }
+    for (index = 0u; index < path_length; ++index)
+    {
+        g_shell64_linux_argv_storage[argc][index] = (char)g_shell64_line[path_start + index];
+    }
+    g_shell64_linux_argv_storage[argc][path_length] = '\0';
+    argv[argc++] = g_shell64_linux_argv_storage[0];
+
+    while (argc < LINUX_EXEC64_ARG_MAX)
+    {
+        if (shell64_next_linux_arg(
+                cursor,
+                line_byte_count,
+                g_shell64_linux_argv_storage[argc],
+                SHELL64_MAX_LINE_BYTES + 1u,
+                &arg_length,
+                &arg_error) == 0u)
+        {
+            if (arg_error == 2u)
+            {
+                return shell64_write_text(console_capability_handle, owner_id, "linux: argument too long\n");
+            }
+            if (arg_error == 3u)
+            {
+                return shell64_write_text(console_capability_handle, owner_id, "linux: unterminated quote\n");
+            }
+            if (arg_error != 0u)
+            {
+                return shell64_write_text(console_capability_handle, owner_id, "linux: argument parse error\n");
+            }
+            break;
+        }
+        (void)arg_length;
+        argv[argc] = g_shell64_linux_argv_storage[argc];
+        ++argc;
+    }
+    if (shell64_skip_spaces(*cursor, line_byte_count) < line_byte_count)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "linux: too many args\n");
+    }
+
+    nvme_capability = mmio64_nvme_rw_capability();
+    if ((nvme_capability == CAPABILITY64_INVALID_HANDLE) || (mmio64_nvme_probe_found() == 0u))
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "linux: NVMe FAT unavailable\n");
+        return shell64_write_text(console_capability_handle, owner_id, "drs-realbin-unavailable bios 0 nvme 0\n");
+    }
+
+    return linux_exec64_run_nvme(
+        g_shell64_line + path_start,
+        path_length,
+        argv,
+        argc,
+        owner_id,
+        nvme_capability,
+        console_capability_handle);
+#else
+    (void)argv;
+    (void)argc;
+    return shell64_write_text(
+        console_capability_handle,
+        owner_id,
+        "linux: unavailable on BIOS checksum fallback\ndrs-realbin-unavailable bios 1 nvme 0\n");
+#endif
 }
 
 static u32 shell64_info(u32 console_capability_handle, u32 owner_id, u32 token_start, u32 token_length)
@@ -1735,6 +1935,11 @@ u32 shell64_execute_line(
     if (shell64_token_equals(command_start, command_length, "nethello"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "nethello: packaged native app runs during boot validation\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "linux"))
+    {
+        return shell64_linux_run(console_capability_handle, line_byte_count, &cursor, owner_id);
     }
 
     if (shell64_token_equals(command_start, command_length, "ls"))

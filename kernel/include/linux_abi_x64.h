@@ -12,6 +12,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_SYSCALL_CLOSE 3u
 #define LINUX_ABI64_SYSCALL_STAT 4u
 #define LINUX_ABI64_SYSCALL_FSTAT 5u
+#define LINUX_ABI64_SYSCALL_LSTAT 6u
 #define LINUX_ABI64_SYSCALL_POLL 7u
 #define LINUX_ABI64_SYSCALL_LSEEK 8u
 #define LINUX_ABI64_SYSCALL_MMAP 9u
@@ -21,6 +22,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_SYSCALL_RT_SIGACTION 13u
 #define LINUX_ABI64_SYSCALL_RT_SIGPROCMASK 14u
 #define LINUX_ABI64_SYSCALL_RT_SIGRETURN 15u
+#define LINUX_ABI64_SYSCALL_IOCTL 16u
 #define LINUX_ABI64_SYSCALL_PREAD64 17u
 #define LINUX_ABI64_SYSCALL_PWRITE64 18u
 #define LINUX_ABI64_SYSCALL_READV 19u
@@ -30,6 +32,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_SYSCALL_NANOSLEEP 35u
 #define LINUX_ABI64_SYSCALL_GETPID 39u
 #define LINUX_ABI64_SYSCALL_CLONE 56u
+#define LINUX_ABI64_SYSCALL_FORK 57u
 #define LINUX_ABI64_SYSCALL_EXECVE 59u
 #define LINUX_ABI64_SYSCALL_EXIT 60u
 #define LINUX_ABI64_SYSCALL_WAIT4 61u
@@ -38,7 +41,11 @@ struct interrupt_frame64;
 #define LINUX_ABI64_SYSCALL_GETCWD 79u
 #define LINUX_ABI64_SYSCALL_CHDIR 80u
 #define LINUX_ABI64_SYSCALL_FCHDIR 81u
+#define LINUX_ABI64_SYSCALL_READLINK 89u
 #define LINUX_ABI64_SYSCALL_GETRLIMIT 97u
+#define LINUX_ABI64_SYSCALL_GETEUID 107u
+#define LINUX_ABI64_SYSCALL_GETPPID 110u
+#define LINUX_ABI64_SYSCALL_PRCTL 157u
 #define LINUX_ABI64_SYSCALL_ARCH_PRCTL 158u
 #define LINUX_ABI64_SYSCALL_SETRLIMIT 160u
 #define LINUX_ABI64_SYSCALL_GETTID 186u
@@ -78,6 +85,11 @@ struct interrupt_frame64;
 #define LINUX_ABI64_STAT_BYTES 144u
 #define LINUX_ABI64_TIMESPEC_BYTES 16u
 #define LINUX_ABI64_RLIMIT_BYTES 16u
+#define LINUX_ABI64_WINSIZE_BYTES 8u
+#define LINUX_ABI64_TERMINAL_ROWS 25u
+#define LINUX_ABI64_TERMINAL_COLUMNS 80u
+#define LINUX_ABI64_TERMINAL_READ_WAIT_TICKS 300u
+#define LINUX_ABI64_TERMINAL_READ_SPIN_BUDGET 40000000u
 #define LINUX_ABI64_DIRENT64_HEADER_BYTES 19u
 #define LINUX_ABI64_DIRENT64_ALIGN_BYTES 8u
 #define LINUX_ABI64_DIRENT64_MAX_RECORD_BYTES 64u
@@ -87,6 +99,20 @@ struct interrupt_frame64;
 #define LINUX_ABI64_EXEC_ARG_MAX 8u
 #define LINUX_ABI64_EXEC_ENV_MAX 8u
 #define LINUX_ABI64_GETRANDOM_MAX_BYTES 256u
+#define LINUX_ABI64_FIXED_UID 1000u
+#define LINUX_ABI64_FIXED_PPID 1u
+#define LINUX_ABI64_PR_SET_NAME 15u
+#define LINUX_ABI64_PR_GET_NAME 16u
+#define LINUX_ABI64_PR_NAME_BYTES 16u
+#define LINUX_ABI64_TCGETS 0x00005401u
+#define LINUX_ABI64_TIOCGETD 0x00005424u
+#define LINUX_ABI64_TIOCGETP 0x00005408u
+#define LINUX_ABI64_TIOCGETC 0x00005412u
+#define LINUX_ABI64_TIOCGWINSZ 0x00005413u
+#define LINUX_ABI64_TIOCGPGRP 0x0000540Fu
+#define LINUX_ABI64_TIOCOUTQ 0x00005411u
+#define LINUX_ABI64_TIOCINQ 0x0000541Bu
+#define LINUX_ABI64_TIOCGSID 0x00005429u
 #define LINUX_ABI64_GETRANDOM_SUPPORTED_FLAGS 0u
 #define LINUX_ABI64_POSITIONAL_OFFSET_MAX 0x00000000FFFFFFFFull
 #define LINUX_ABI64_FUTEX_WAIT 0u
@@ -148,6 +174,8 @@ struct interrupt_frame64;
 #define LINUX_ABI64_O_RDWR 0x00000002u
 #define LINUX_ABI64_O_CREAT 0x00000040u
 #define LINUX_ABI64_O_NONBLOCK 0x00000800u
+#define LINUX_ABI64_O_LARGEFILE 0x00008000u
+#define LINUX_ABI64_O_DIRECTORY 0x00010000u
 #define LINUX_ABI64_O_NOFOLLOW 0x00020000u
 #define LINUX_ABI64_O_CLOEXEC 0x00080000u
 #define LINUX_ABI64_F_DUPFD 0u
@@ -183,6 +211,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_ENOTDIR 20u
 #define LINUX_ABI64_EINVAL 22u
 #define LINUX_ABI64_EMFILE 24u
+#define LINUX_ABI64_ENOTTY 25u
 #define LINUX_ABI64_ERANGE 34u
 #define LINUX_ABI64_ENOSYS 38u
 #define LINUX_ABI64_ETIMEDOUT 110u
@@ -284,11 +313,19 @@ u64 linux_abi64_sys_ppoll(
     u64 user_sigmask,
     u64 sigset_size,
     u64 rip);
+u64 linux_abi64_sys_ioctl(u32 pid, u64 fd_number, u64 request, u64 argument, u64 rip);
 u64 linux_abi64_sys_open(u32 pid, u64 user_path, u64 flags, u64 mode, u64 rip);
 u64 linux_abi64_sys_close(u32 pid, u64 fd_number, u64 rip);
 u64 linux_abi64_sys_lseek(u32 pid, u64 fd_number, u64 offset, u64 whence, u64 rip);
 u64 linux_abi64_sys_stat(u32 pid, u64 user_path, u64 user_stat, u64 rip);
+u64 linux_abi64_sys_lstat(u32 pid, u64 user_path, u64 user_stat, u64 rip);
 u64 linux_abi64_sys_fstat(u32 pid, u64 fd_number, u64 user_stat, u64 rip);
+u64 linux_abi64_sys_readlink(
+    u32 pid,
+    u64 user_path,
+    u64 user_buffer,
+    u64 byte_count,
+    u64 rip);
 u64 linux_abi64_sys_newfstatat(
     u32 pid,
     u64 dirfd,
@@ -331,7 +368,10 @@ u64 linux_abi64_sys_rt_sigprocmask(
     u64 rip);
 u64 linux_abi64_sys_rt_sigreturn(u32 pid, struct interrupt_frame64 *frame);
 u64 linux_abi64_sys_getpid(u32 pid, u64 rip);
+u64 linux_abi64_sys_geteuid(u32 pid, u64 rip);
+u64 linux_abi64_sys_getppid(u32 pid, u64 rip);
 u64 linux_abi64_sys_gettid(u32 pid, u64 rip);
+u64 linux_abi64_sys_prctl(u32 pid, u64 option, u64 arg2, u64 arg3, u64 arg4, u64 arg5, u64 rip);
 u64 linux_abi64_sys_arch_prctl(u32 pid, u64 code, u64 address, u64 rip);
 u64 linux_abi64_sys_set_tid_address(u32 pid, u64 clear_child_tid, u64 rip);
 u64 linux_abi64_sys_clock_gettime(u32 pid, u64 clock_id, u64 user_timespec, u64 rip);
@@ -364,6 +404,7 @@ u64 linux_abi64_sys_clone(
     u64 child_tid,
     u64 tls,
     u64 rip);
+u64 linux_abi64_sys_fork(u32 pid, u64 rip);
 u64 linux_abi64_sys_execve(u32 pid, u64 user_path, u64 user_argv, u64 user_envp, u64 rip);
 u64 linux_abi64_sys_execveat(
     u32 pid,
@@ -439,6 +480,8 @@ u32 linux_abi64_exit_group_entry_installed(void);
 u32 linux_abi64_openat_entry_installed(void);
 u32 linux_abi64_dispatch_count(void);
 u32 linux_abi64_unimplemented_count(void);
+u32 linux_abi64_unimplemented_last_syscall(void);
+u64 linux_abi64_unimplemented_last_rip(void);
 u32 linux_abi64_read_count(void);
 u32 linux_abi64_read_byte_count(void);
 u32 linux_abi64_read_denial_count(void);
@@ -495,6 +538,11 @@ u32 linux_abi64_fstat_fault_count(void);
 u32 linux_abi64_newfstatat_count(void);
 u32 linux_abi64_newfstatat_denial_count(void);
 u32 linux_abi64_newfstatat_fault_count(void);
+u32 linux_abi64_readlink_count(void);
+u32 linux_abi64_readlink_byte_count(void);
+u32 linux_abi64_readlink_denial_count(void);
+u32 linux_abi64_readlink_fault_count(void);
+u32 linux_abi64_readlink_last_result(void);
 u32 linux_abi64_mmap_count(void);
 u32 linux_abi64_mmap_byte_count(void);
 u32 linux_abi64_mmap_denial_count(void);
@@ -547,6 +595,10 @@ u32 linux_abi64_getcwd_count(void);
 u32 linux_abi64_getcwd_byte_count(void);
 u32 linux_abi64_getcwd_denial_count(void);
 u32 linux_abi64_getcwd_fault_count(void);
+u32 linux_abi64_path_relative_count(void);
+u32 linux_abi64_path_dot_count(void);
+u32 linux_abi64_path_dotdot_count(void);
+u32 linux_abi64_path_fault_count(void);
 u32 linux_abi64_chdir_count(void);
 u32 linux_abi64_fchdir_count(void);
 u32 linux_abi64_chdir_denial_count(void);
@@ -578,6 +630,10 @@ u32 linux_abi64_clone_thread_count(void);
 u32 linux_abi64_clone_denial_count(void);
 u32 linux_abi64_clone_fork_denial_count(void);
 u32 linux_abi64_clone_scheduler_count(void);
+u32 linux_abi64_fork_count(void);
+u32 linux_abi64_fork_enosys_count(void);
+u32 linux_abi64_fork_denial_count(void);
+u64 linux_abi64_fork_last_rip(void);
 u32 linux_abi64_clone_last_parent_pid(void);
 u32 linux_abi64_clone_last_child_pid(void);
 u32 linux_abi64_clone_last_flags(void);
@@ -660,8 +716,28 @@ u32 linux_abi64_getrandom_last_flags(void);
 u32 linux_abi64_getrandom_last_result(void);
 u32 linux_abi64_getpid_count(void);
 u32 linux_abi64_getpid_denial_count(void);
+u32 linux_abi64_geteuid_count(void);
+u32 linux_abi64_geteuid_denial_count(void);
+u32 linux_abi64_getppid_count(void);
+u32 linux_abi64_getppid_denial_count(void);
 u32 linux_abi64_gettid_count(void);
 u32 linux_abi64_gettid_denial_count(void);
+u32 linux_abi64_ioctl_count(void);
+u32 linux_abi64_ioctl_tty_count(void);
+u32 linux_abi64_ioctl_enotty_count(void);
+u32 linux_abi64_ioctl_enosys_count(void);
+u32 linux_abi64_ioctl_denial_count(void);
+u32 linux_abi64_ioctl_last_fd(void);
+u32 linux_abi64_ioctl_last_request(void);
+u32 linux_abi64_ioctl_last_result(void);
+u32 linux_abi64_prctl_count(void);
+u32 linux_abi64_prctl_set_name_count(void);
+u32 linux_abi64_prctl_get_name_count(void);
+u32 linux_abi64_prctl_enosys_count(void);
+u32 linux_abi64_prctl_denial_count(void);
+u32 linux_abi64_prctl_fault_count(void);
+u32 linux_abi64_prctl_last_option(void);
+u32 linux_abi64_prctl_last_result(void);
 u32 linux_abi64_arch_prctl_count(void);
 u32 linux_abi64_arch_prctl_set_count(void);
 u32 linux_abi64_arch_prctl_get_count(void);

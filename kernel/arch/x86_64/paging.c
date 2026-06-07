@@ -48,6 +48,7 @@
 #define PAGING64_CPUID_EXTENDED_MAX 0x80000000u
 #define PAGING64_CPUID_EXTENDED_FEATURES 0x80000001u
 #define PAGING64_CPUID_EDX_NX (1u << 20)
+#define PAGING64_INVALID_PID 0xFFFFFFFFu
 
 static u32 g_runtime_mapping_installed = 0u;
 static u32 g_runtime_mapping_page_count = 0u;
@@ -81,10 +82,49 @@ static u64 g_paging64_kernel_physical_base = 0ull;
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
 #define PAGING64_VMA_USER_PT_COUNT 32u
+#define PAGING64_PROCESS_ROOT_POOL_LIMIT 4u
+#define PAGING64_PROCESS_ROOT_VMA_PT_COUNT 16u
 static u64 g_paging64_vma_user_pts[PAGING64_VMA_USER_PT_COUNT][PAGING64_ENTRY_COUNT]
     __attribute__((aligned(PAGING64_PAGE_BYTES)));
 static u32 g_paging64_vma_user_pt_initialized[PAGING64_VMA_USER_PT_COUNT];
 static u32 g_paging64_vma_user_pd_index[PAGING64_VMA_USER_PT_COUNT];
+static u64 g_paging64_process_pml4[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_ENTRY_COUNT]
+    __attribute__((aligned(PAGING64_PAGE_BYTES)));
+static u64 g_paging64_process_pdpt[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_ENTRY_COUNT]
+    __attribute__((aligned(PAGING64_PAGE_BYTES)));
+static u64 g_paging64_process_runtime_pd[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_ENTRY_COUNT]
+    __attribute__((aligned(PAGING64_PAGE_BYTES)));
+static u64 g_paging64_process_vma_pts[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_PROCESS_ROOT_VMA_PT_COUNT][PAGING64_ENTRY_COUNT]
+    __attribute__((aligned(PAGING64_PAGE_BYTES)));
+static u32 g_paging64_process_root_used[PAGING64_PROCESS_ROOT_POOL_LIMIT];
+static u32 g_paging64_process_root_pid[PAGING64_PROCESS_ROOT_POOL_LIMIT];
+static u32 g_paging64_process_root_owner[PAGING64_PROCESS_ROOT_POOL_LIMIT];
+static u32 g_paging64_process_root_token[PAGING64_PROCESS_ROOT_POOL_LIMIT];
+static u32 g_paging64_process_root_initialized[PAGING64_PROCESS_ROOT_POOL_LIMIT];
+static u32 g_paging64_process_vma_pt_initialized[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_PROCESS_ROOT_VMA_PT_COUNT];
+static u32 g_paging64_process_vma_pt_pd_index[PAGING64_PROCESS_ROOT_POOL_LIMIT][PAGING64_PROCESS_ROOT_VMA_PT_COUNT];
+static u64 g_paging64_kernel_root_physical = 0ull;
+static u32 g_paging64_process_root_pool_used = 0u;
+static u32 g_paging64_process_root_alloc_count = 0u;
+static u32 g_paging64_process_root_release_count = 0u;
+static u32 g_paging64_process_root_alloc_denial_count = 0u;
+static u32 g_paging64_process_root_switch_count = 0u;
+static u32 g_paging64_process_root_switch_denial_count = 0u;
+static u32 g_paging64_process_root_kernel_switch_count = 0u;
+static u32 g_paging64_process_root_last_switch_reason = 0u;
+static u32 g_paging64_process_root_low_compat_count = 0u;
+static u32 g_paging64_process_root_last_low_compat = 0u;
+static u32 g_paging64_process_root_high_copy_count = 0u;
+static u32 g_paging64_process_root_last_high_copy = 0u;
+static u32 g_paging64_process_root_mmio_shared_count = 0u;
+static u32 g_paging64_process_root_last_mmio_shared = 0u;
+static u32 g_paging64_process_root_user_pdpt_private_count = 0u;
+static u32 g_paging64_process_root_last_user_pdpt_private = 0u;
+static u32 g_paging64_process_root_vma_pt_private_count = 0u;
+static u32 g_paging64_process_root_last_vma_pt_private = 0u;
+static u32 g_paging64_process_root_last_slot = 0xFFFFFFFFu;
+static u32 g_paging64_process_root_last_pid = PAGING64_INVALID_PID;
+static u64 g_paging64_process_root_last_physical = 0ull;
 #endif
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
@@ -243,6 +283,382 @@ static void paging64_zero_table(volatile u64 *table)
         table[index] = 0ull;
     }
 }
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static u64 paging64_ensure_kernel_root_physical(void)
+{
+    if (g_paging64_kernel_root_physical == 0ull)
+    {
+        g_paging64_kernel_root_physical = paging64_active_root_physical();
+    }
+
+    return g_paging64_kernel_root_physical;
+}
+
+u64 paging64_current_root_physical(void)
+{
+    return read_cr3_64() & PAGING64_PAGE_MASK;
+}
+
+static u32 paging64_process_root_find_slot(u32 pid)
+{
+    u32 slot;
+
+    if ((pid == 0u) || (pid == PAGING64_INVALID_PID))
+    {
+        return 0xFFFFFFFFu;
+    }
+
+    for (slot = 0u; slot < PAGING64_PROCESS_ROOT_POOL_LIMIT; ++slot)
+    {
+        if ((g_paging64_process_root_used[slot] != 0u)
+            && (g_paging64_process_root_pid[slot] == pid))
+        {
+            return slot;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static void paging64_process_root_clear_slot(u32 slot)
+{
+    u32 index;
+
+    if (slot >= PAGING64_PROCESS_ROOT_POOL_LIMIT)
+    {
+        return;
+    }
+
+    paging64_zero_table((volatile u64 *)g_paging64_process_pml4[slot]);
+    paging64_zero_table((volatile u64 *)g_paging64_process_pdpt[slot]);
+    paging64_zero_table((volatile u64 *)g_paging64_process_runtime_pd[slot]);
+    for (index = 0u; index < PAGING64_PROCESS_ROOT_VMA_PT_COUNT; ++index)
+    {
+        paging64_zero_table((volatile u64 *)g_paging64_process_vma_pts[slot][index]);
+        g_paging64_process_vma_pt_initialized[slot][index] = 0u;
+        g_paging64_process_vma_pt_pd_index[slot][index] = 0u;
+    }
+    g_paging64_process_root_used[slot] = 0u;
+    g_paging64_process_root_pid[slot] = PAGING64_INVALID_PID;
+    g_paging64_process_root_owner[slot] = 0u;
+    g_paging64_process_root_token[slot] = 0u;
+    g_paging64_process_root_initialized[slot] = 1u;
+}
+
+static u32 paging64_process_root_token_for(
+    u32 pid,
+    u32 owner_id,
+    u32 authority_token,
+    u32 slot,
+    u64 root_physical)
+{
+    u32 token = 2166136261u;
+
+    token = paging64_mix_token(token, pid);
+    token = paging64_mix_token(token, owner_id);
+    token = paging64_mix_token(token, authority_token);
+    token = paging64_mix_token(token, slot);
+    token = paging64_mix_token(token, (u32)(root_physical & 0xFFFFFFFFull));
+    token = paging64_mix_token(token, (u32)((root_physical >> 32) & 0xFFFFFFFFull));
+    return (token != 0u) ? token : 1u;
+}
+
+u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
+{
+    volatile u64 *kernel_pml4;
+    volatile u64 *kernel_pdpt;
+    volatile u64 *pml4;
+    volatile u64 *pdpt;
+    u64 kernel_root;
+    u64 root_physical;
+    u64 pdpt_physical;
+    u64 runtime_pd_physical;
+    u32 slot;
+    u32 framebuffer_pdpt_index;
+    u32 framebuffer_shared = 0u;
+
+    if ((pid == 0u)
+        || (pid == PAGING64_INVALID_PID)
+        || (owner_id == 0u)
+        || (authority_token == 0u))
+    {
+        ++g_paging64_process_root_alloc_denial_count;
+        return 0u;
+    }
+
+    if (paging64_process_root_find_slot(pid) != 0xFFFFFFFFu)
+    {
+        return 1u;
+    }
+
+    for (slot = 0u; slot < PAGING64_PROCESS_ROOT_POOL_LIMIT; ++slot)
+    {
+        if (g_paging64_process_root_used[slot] == 0u)
+        {
+            break;
+        }
+    }
+    if (slot >= PAGING64_PROCESS_ROOT_POOL_LIMIT)
+    {
+        ++g_paging64_process_root_alloc_denial_count;
+        return 0u;
+    }
+
+    kernel_root = paging64_ensure_kernel_root_physical();
+    kernel_pml4 = (volatile u64 *)(u64)kernel_root;
+    kernel_pdpt = (volatile u64 *)(u64)(kernel_pml4[0u] & PAGING64_PHYSICAL_ADDRESS_MASK);
+    pml4 = (volatile u64 *)g_paging64_process_pml4[slot];
+    pdpt = (volatile u64 *)g_paging64_process_pdpt[slot];
+    root_physical = paging64_kernel_physical_alias(g_paging64_process_pml4[slot]);
+    pdpt_physical = paging64_kernel_physical_alias(g_paging64_process_pdpt[slot]);
+    runtime_pd_physical = paging64_kernel_physical_alias(g_paging64_process_runtime_pd[slot]);
+
+    paging64_process_root_clear_slot(slot);
+    pml4[0u] = (pdpt_physical & PAGING64_PAGE_MASK)
+        | PAGING64_PAGE_PRESENT
+        | PAGING64_PAGE_WRITABLE
+        | PAGING64_PAGE_USER;
+    g_paging64_process_root_last_user_pdpt_private =
+        (((pml4[0u] & PAGING64_PHYSICAL_ADDRESS_MASK)
+            == (pdpt_physical & PAGING64_PAGE_MASK))
+            && ((pml4[0u] & PAGING64_PAGE_PRESENT) != 0ull))
+            ? 1u
+            : 0u;
+    if (g_paging64_process_root_last_user_pdpt_private != 0u)
+    {
+        ++g_paging64_process_root_user_pdpt_private_count;
+    }
+    pml4[PAGING64_HIGH_HALF_PML4_INDEX] = kernel_pml4[PAGING64_HIGH_HALF_PML4_INDEX];
+
+    /*
+     * M22 transitional low-identity compatibility mapping. This keeps the
+     * loader's low 16 MiB identity window visible while user mappings move to
+     * private per-process lower-half tables. Keep the low-compat telemetry in
+     * every gate run until this compatibility entry is removed.
+     */
+    if ((kernel_pdpt != 0) && ((kernel_pdpt[0u] & PAGING64_PAGE_PRESENT) != 0ull))
+    {
+        pdpt[0u] = kernel_pdpt[0u];
+        g_paging64_process_root_last_low_compat = 1u;
+        ++g_paging64_process_root_low_compat_count;
+    }
+    else
+    {
+        g_paging64_process_root_last_low_compat = 0u;
+    }
+
+    framebuffer_pdpt_index = paging64_index64(0x80000000ull, 30u);
+    if ((kernel_pdpt != 0)
+        && (framebuffer_pdpt_index != paging64_index64(0x40000000ull, 30u))
+        && ((kernel_pdpt[framebuffer_pdpt_index] & PAGING64_PAGE_PRESENT) != 0ull))
+    {
+        pdpt[framebuffer_pdpt_index] =
+            kernel_pdpt[framebuffer_pdpt_index] & ~PAGING64_PAGE_USER;
+        framebuffer_shared = 1u;
+    }
+    pdpt[paging64_index64(0x40000000ull, 30u)] =
+        (runtime_pd_physical & PAGING64_PAGE_MASK)
+        | PAGING64_PAGE_PRESENT
+        | PAGING64_PAGE_WRITABLE
+        | PAGING64_PAGE_USER;
+
+    g_paging64_process_root_last_high_copy =
+        ((pml4[PAGING64_HIGH_HALF_PML4_INDEX] & PAGING64_PAGE_PRESENT) != 0ull)
+            ? 1u
+            : 0u;
+    if (g_paging64_process_root_last_high_copy != 0u)
+    {
+        ++g_paging64_process_root_high_copy_count;
+    }
+    g_paging64_process_root_last_mmio_shared =
+        ((g_paging64_process_root_last_high_copy != 0u)
+            && ((g_kernel_mmio_mapping_installed != 0u)
+                || (framebuffer_shared != 0u)))
+            ? 1u
+            : 0u;
+    if (g_paging64_process_root_last_mmio_shared != 0u)
+    {
+        ++g_paging64_process_root_mmio_shared_count;
+    }
+
+    g_paging64_process_root_used[slot] = 1u;
+    g_paging64_process_root_pid[slot] = pid;
+    g_paging64_process_root_owner[slot] = owner_id;
+    g_paging64_process_root_token[slot] =
+        paging64_process_root_token_for(pid, owner_id, authority_token, slot, root_physical);
+    ++g_paging64_process_root_pool_used;
+    ++g_paging64_process_root_alloc_count;
+    g_paging64_process_root_last_slot = slot;
+    g_paging64_process_root_last_pid = pid;
+    g_paging64_process_root_last_physical = root_physical;
+    return 1u;
+}
+
+u32 paging64_process_root_release(u32 pid, u32 authority_token)
+{
+    u32 slot = paging64_process_root_find_slot(pid);
+    u64 root_physical;
+
+    if ((slot == 0xFFFFFFFFu)
+        || (authority_token == 0u)
+        || (authority_token != g_paging64_process_root_token[slot]))
+    {
+        ++g_paging64_process_root_alloc_denial_count;
+        return 0u;
+    }
+
+    root_physical = paging64_kernel_physical_alias(g_paging64_process_pml4[slot]);
+    if ((read_cr3_64() & PAGING64_PAGE_MASK) == (root_physical & PAGING64_PAGE_MASK))
+    {
+        (void)paging64_switch_to_kernel_root(0x52454C00u);
+    }
+
+    paging64_process_root_clear_slot(slot);
+    if (g_paging64_process_root_pool_used != 0u)
+    {
+        --g_paging64_process_root_pool_used;
+    }
+    ++g_paging64_process_root_release_count;
+    g_paging64_process_root_last_slot = slot;
+    g_paging64_process_root_last_pid = pid;
+    g_paging64_process_root_last_physical = root_physical;
+    return 1u;
+}
+
+u64 paging64_process_root_physical(u32 pid)
+{
+    u32 slot = paging64_process_root_find_slot(pid);
+
+    return (slot != 0xFFFFFFFFu)
+        ? paging64_kernel_physical_alias(g_paging64_process_pml4[slot])
+        : 0ull;
+}
+
+u32 paging64_process_root_slot(u32 pid)
+{
+    return paging64_process_root_find_slot(pid);
+}
+
+u32 paging64_process_root_token(u32 pid)
+{
+    u32 slot = paging64_process_root_find_slot(pid);
+
+    return (slot != 0xFFFFFFFFu) ? g_paging64_process_root_token[slot] : 0u;
+}
+
+u32 paging64_switch_to_process_root(u32 pid, u32 reason)
+{
+    u64 root = paging64_process_root_physical(pid);
+
+    if (root == 0ull)
+    {
+        ++g_paging64_process_root_switch_denial_count;
+        return 0u;
+    }
+
+    write_cr3_64(root & PAGING64_PAGE_MASK);
+    ++g_paging64_process_root_switch_count;
+    g_paging64_process_root_last_switch_reason = reason;
+    g_paging64_process_root_last_pid = pid;
+    g_paging64_process_root_last_physical = root & PAGING64_PAGE_MASK;
+    return 1u;
+}
+
+u32 paging64_switch_to_kernel_root(u32 reason)
+{
+    u64 root = paging64_ensure_kernel_root_physical();
+
+    if (root == 0ull)
+    {
+        ++g_paging64_process_root_switch_denial_count;
+        return 0u;
+    }
+
+    write_cr3_64(root & PAGING64_PAGE_MASK);
+    ++g_paging64_process_root_kernel_switch_count;
+    g_paging64_process_root_last_switch_reason = reason;
+    g_paging64_process_root_last_pid = 0u;
+    g_paging64_process_root_last_physical = root & PAGING64_PAGE_MASK;
+    return 1u;
+}
+
+u64 paging64_kernel_root_physical(void) { return paging64_ensure_kernel_root_physical(); }
+u32 paging64_process_root_pool_limit(void) { return PAGING64_PROCESS_ROOT_POOL_LIMIT; }
+u32 paging64_process_root_pool_used(void) { return g_paging64_process_root_pool_used; }
+u32 paging64_process_root_alloc_count(void) { return g_paging64_process_root_alloc_count; }
+u32 paging64_process_root_release_count(void) { return g_paging64_process_root_release_count; }
+u32 paging64_process_root_alloc_denial_count(void) { return g_paging64_process_root_alloc_denial_count; }
+u32 paging64_process_root_switch_count(void) { return g_paging64_process_root_switch_count; }
+u32 paging64_process_root_switch_denial_count(void) { return g_paging64_process_root_switch_denial_count; }
+u32 paging64_process_root_kernel_switch_count(void) { return g_paging64_process_root_kernel_switch_count; }
+u32 paging64_process_root_last_switch_reason(void) { return g_paging64_process_root_last_switch_reason; }
+u32 paging64_process_root_low_compat_count(void) { return g_paging64_process_root_low_compat_count; }
+u32 paging64_process_root_last_low_compat(void) { return g_paging64_process_root_last_low_compat; }
+u32 paging64_process_root_high_copy_count(void) { return g_paging64_process_root_high_copy_count; }
+u32 paging64_process_root_last_high_copy(void) { return g_paging64_process_root_last_high_copy; }
+u32 paging64_process_root_mmio_shared_count(void) { return g_paging64_process_root_mmio_shared_count; }
+u32 paging64_process_root_last_mmio_shared(void) { return g_paging64_process_root_last_mmio_shared; }
+u32 paging64_process_root_last_user_pdpt_private(void)
+{
+    return g_paging64_process_root_last_user_pdpt_private;
+}
+u32 paging64_process_root_last_vma_pt_private(void)
+{
+    return g_paging64_process_root_last_vma_pt_private;
+}
+u32 paging64_process_root_last_slot(void) { return g_paging64_process_root_last_slot; }
+u32 paging64_process_root_last_pid(void) { return g_paging64_process_root_last_pid; }
+u64 paging64_process_root_last_physical(void) { return g_paging64_process_root_last_physical; }
+#else
+u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
+{
+    (void)pid;
+    (void)owner_id;
+    (void)authority_token;
+    return 0u;
+}
+
+u32 paging64_process_root_release(u32 pid, u32 authority_token)
+{
+    (void)pid;
+    (void)authority_token;
+    return 0u;
+}
+
+u64 paging64_process_root_physical(u32 pid) { (void)pid; return 0ull; }
+u32 paging64_process_root_slot(u32 pid) { (void)pid; return 0xFFFFFFFFu; }
+u32 paging64_process_root_token(u32 pid) { (void)pid; return 0u; }
+u32 paging64_switch_to_process_root(u32 pid, u32 reason)
+{
+    (void)pid;
+    (void)reason;
+    return 0u;
+}
+u32 paging64_switch_to_kernel_root(u32 reason) { (void)reason; return 0u; }
+u64 paging64_current_root_physical(void) { return read_cr3_64() & PAGING64_PAGE_MASK; }
+u64 paging64_kernel_root_physical(void) { return read_cr3_64() & PAGING64_PAGE_MASK; }
+u32 paging64_process_root_pool_limit(void) { return 0u; }
+u32 paging64_process_root_pool_used(void) { return 0u; }
+u32 paging64_process_root_alloc_count(void) { return 0u; }
+u32 paging64_process_root_release_count(void) { return 0u; }
+u32 paging64_process_root_alloc_denial_count(void) { return 0u; }
+u32 paging64_process_root_switch_count(void) { return 0u; }
+u32 paging64_process_root_switch_denial_count(void) { return 0u; }
+u32 paging64_process_root_kernel_switch_count(void) { return 0u; }
+u32 paging64_process_root_last_switch_reason(void) { return 0u; }
+u32 paging64_process_root_low_compat_count(void) { return 0u; }
+u32 paging64_process_root_last_low_compat(void) { return 0u; }
+u32 paging64_process_root_high_copy_count(void) { return 0u; }
+u32 paging64_process_root_last_high_copy(void) { return 0u; }
+u32 paging64_process_root_mmio_shared_count(void) { return 0u; }
+u32 paging64_process_root_last_mmio_shared(void) { return 0u; }
+u32 paging64_process_root_last_user_pdpt_private(void) { return 0u; }
+u32 paging64_process_root_last_vma_pt_private(void) { return 0u; }
+u32 paging64_process_root_last_slot(void) { return 0xFFFFFFFFu; }
+u32 paging64_process_root_last_pid(void) { return PAGING64_INVALID_PID; }
+u64 paging64_process_root_last_physical(void) { return 0ull; }
+#endif
 
 static void paging64_clear_user_runtime_mapping(void)
 {
@@ -851,6 +1267,311 @@ u64 paging64_user_page_physical(u64 virtual_address)
 u32 paging64_user_page_protection(u64 virtual_address)
 {
     volatile u64 *slot = paging64_user_page_entry_slot(virtual_address);
+    u32 protection = 0u;
+
+    if ((slot == 0) || ((*slot & PAGING64_PAGE_PRESENT) == 0ull))
+    {
+        return 0u;
+    }
+
+    protection |= PAGING64_USER_PROT_READ;
+    if ((*slot & PAGING64_PAGE_WRITABLE) != 0ull)
+    {
+        protection |= PAGING64_USER_PROT_WRITE;
+    }
+    if ((*slot & PAGING64_PAGE_NO_EXECUTE) == 0ull)
+    {
+        protection |= PAGING64_USER_PROT_EXECUTE;
+    }
+
+    return protection;
+}
+
+static u32 paging64_process_vma_user_pt_find_slot(u32 root_slot, u32 pd_index)
+{
+    u32 slot;
+
+    if (root_slot >= PAGING64_PROCESS_ROOT_POOL_LIMIT)
+    {
+        return 0xFFFFFFFFu;
+    }
+
+    for (slot = 0u; slot < PAGING64_PROCESS_ROOT_VMA_PT_COUNT; ++slot)
+    {
+        if ((g_paging64_process_vma_pt_initialized[root_slot][slot] != 0u)
+            && (g_paging64_process_vma_pt_pd_index[root_slot][slot] == pd_index))
+        {
+            return slot;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static u32 paging64_process_vma_user_pt_acquire_slot(u32 root_slot, u32 pd_index)
+{
+    u32 slot = paging64_process_vma_user_pt_find_slot(root_slot, pd_index);
+
+    if (root_slot >= PAGING64_PROCESS_ROOT_POOL_LIMIT)
+    {
+        return 0xFFFFFFFFu;
+    }
+    if (slot != 0xFFFFFFFFu)
+    {
+        return slot;
+    }
+
+    for (slot = 0u; slot < PAGING64_PROCESS_ROOT_VMA_PT_COUNT; ++slot)
+    {
+        if (g_paging64_process_vma_pt_initialized[root_slot][slot] == 0u)
+        {
+            paging64_zero_table((volatile u64 *)g_paging64_process_vma_pts[root_slot][slot]);
+            g_paging64_process_vma_pt_pd_index[root_slot][slot] = pd_index;
+            g_paging64_process_vma_pt_initialized[root_slot][slot] = 1u;
+            return slot;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static volatile u64 *paging64_process_user_page_entry_slot(u32 pid, u64 virtual_address)
+{
+    u32 root_slot = paging64_process_root_find_slot(pid);
+    u32 pml4_index = paging64_index64(virtual_address, 39u);
+    u32 pdpt_index = paging64_index64(virtual_address, 30u);
+    u32 pd_index = paging64_index64(virtual_address, 21u);
+    u32 pt_index = paging64_index64(virtual_address, 12u);
+    u32 pt_slot;
+
+    if ((root_slot == 0xFFFFFFFFu)
+        || (pml4_index != 0u)
+        || (pdpt_index != paging64_index64(0x40000000ull, 30u)))
+    {
+        return 0;
+    }
+
+    pt_slot = paging64_process_vma_user_pt_find_slot(root_slot, pd_index);
+    if (pt_slot == 0xFFFFFFFFu)
+    {
+        return 0;
+    }
+
+    return &g_paging64_process_vma_pts[root_slot][pt_slot][pt_index];
+}
+
+static void paging64_reload_root_if_active(u64 root_physical)
+{
+    if ((read_cr3_64() & PAGING64_PAGE_MASK) == (root_physical & PAGING64_PAGE_MASK))
+    {
+        paging64_reload_active_root();
+    }
+}
+
+u32 paging64_install_user_page_mapping_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u64 physical_address,
+    u32 protection_flags)
+{
+    u32 root_slot = paging64_process_root_find_slot(pid);
+    volatile u64 *pml4;
+    volatile u64 *pdpt;
+    volatile u64 *runtime_pd;
+    volatile u64 *vma_pt;
+    u64 root_physical;
+    u64 pdpt_physical;
+    u64 runtime_pd_physical;
+    u64 vma_pt_physical;
+    u64 pte_flags;
+    u32 pml4_index = paging64_index64(virtual_address, 39u);
+    u32 pdpt_index = paging64_index64(virtual_address, 30u);
+    u32 pd_index = paging64_index64(virtual_address, 21u);
+    u32 pt_index = paging64_index64(virtual_address, 12u);
+    u32 pt_slot;
+
+    if ((root_slot == 0xFFFFFFFFu)
+        || ((virtual_address & ((u64)PAGING64_PAGE_BYTES - 1ull)) != 0ull)
+        || ((physical_address & ((u64)PAGING64_PAGE_BYTES - 1ull)) != 0ull)
+        || (physical_address == 0ull)
+        || ((protection_flags & (PAGING64_USER_PROT_READ
+                | PAGING64_USER_PROT_WRITE
+                | PAGING64_USER_PROT_EXECUTE)) == 0u)
+        || (pml4_index != 0u)
+        || (pdpt_index != paging64_index64(0x40000000ull, 30u))
+        || (pd_index == paging64_index64(0x40000000ull, 21u))
+        || (pd_index == paging64_index64(0x41000000ull, 21u)))
+    {
+        return 0u;
+    }
+
+    pt_slot = paging64_process_vma_user_pt_acquire_slot(root_slot, pd_index);
+    if (pt_slot == 0xFFFFFFFFu)
+    {
+        g_paging64_process_root_last_vma_pt_private = 0u;
+        return 0u;
+    }
+
+    pml4 = (volatile u64 *)g_paging64_process_pml4[root_slot];
+    pdpt = (volatile u64 *)g_paging64_process_pdpt[root_slot];
+    runtime_pd = (volatile u64 *)g_paging64_process_runtime_pd[root_slot];
+    vma_pt = (volatile u64 *)g_paging64_process_vma_pts[root_slot][pt_slot];
+    root_physical = paging64_kernel_physical_alias(g_paging64_process_pml4[root_slot]);
+    pdpt_physical = paging64_kernel_physical_alias(g_paging64_process_pdpt[root_slot]);
+    runtime_pd_physical = paging64_kernel_physical_alias(g_paging64_process_runtime_pd[root_slot]);
+    vma_pt_physical =
+        paging64_kernel_physical_alias(g_paging64_process_vma_pts[root_slot][pt_slot]);
+
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        wrmsr64(PAGING64_EFER_MSR, rdmsr64(PAGING64_EFER_MSR) | PAGING64_EFER_NXE);
+    }
+
+    pml4[pml4_index] = (pdpt_physical & PAGING64_PAGE_MASK)
+        | PAGING64_PAGE_PRESENT
+        | PAGING64_PAGE_WRITABLE
+        | PAGING64_PAGE_USER;
+    pdpt[pdpt_index] = (runtime_pd_physical & PAGING64_PAGE_MASK)
+        | PAGING64_PAGE_PRESENT
+        | PAGING64_PAGE_WRITABLE
+        | PAGING64_PAGE_USER;
+    runtime_pd[pd_index] = (vma_pt_physical & PAGING64_PAGE_MASK)
+        | PAGING64_PAGE_PRESENT
+        | PAGING64_PAGE_WRITABLE
+        | PAGING64_PAGE_USER;
+
+    pte_flags = PAGING64_PAGE_PRESENT | PAGING64_PAGE_USER;
+    if ((protection_flags & PAGING64_USER_PROT_WRITE) != 0u)
+    {
+        pte_flags |= PAGING64_PAGE_WRITABLE;
+    }
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        pte_flags |= PAGING64_PAGE_NO_EXECUTE;
+    }
+
+    vma_pt[pt_index] = (physical_address & PAGING64_PAGE_MASK) | pte_flags;
+    g_paging64_process_root_last_vma_pt_private = 1u;
+    ++g_paging64_process_root_vma_pt_private_count;
+    paging64_reload_root_if_active(root_physical);
+    return 1u;
+}
+
+u32 paging64_clear_user_page_mapping_for_process(u32 pid, u64 virtual_address)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
+    u64 root_physical = paging64_process_root_physical(pid);
+
+    if ((slot == 0) || ((*slot & PAGING64_PAGE_PRESENT) == 0ull))
+    {
+        return 0u;
+    }
+
+    *slot = 0ull;
+    paging64_reload_root_if_active(root_physical);
+    return 1u;
+}
+
+u32 paging64_remap_user_page_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u64 physical_address,
+    u32 protection_flags)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
+    u64 root_physical = paging64_process_root_physical(pid);
+    u64 pte_flags;
+
+    if ((slot == 0)
+        || ((*slot & PAGING64_PAGE_PRESENT) == 0ull)
+        || ((physical_address & ((u64)PAGING64_PAGE_BYTES - 1ull)) != 0ull)
+        || (physical_address == 0ull)
+        || ((protection_flags & (PAGING64_USER_PROT_READ
+                | PAGING64_USER_PROT_WRITE
+                | PAGING64_USER_PROT_EXECUTE)) == 0u))
+    {
+        return 0u;
+    }
+
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        wrmsr64(PAGING64_EFER_MSR, rdmsr64(PAGING64_EFER_MSR) | PAGING64_EFER_NXE);
+    }
+
+    pte_flags = PAGING64_PAGE_PRESENT | PAGING64_PAGE_USER;
+    if ((protection_flags & PAGING64_USER_PROT_WRITE) != 0u)
+    {
+        pte_flags |= PAGING64_PAGE_WRITABLE;
+    }
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        pte_flags |= PAGING64_PAGE_NO_EXECUTE;
+    }
+
+    *slot = (physical_address & PAGING64_PAGE_MASK) | pte_flags;
+    paging64_reload_root_if_active(root_physical);
+    return 1u;
+}
+
+u32 paging64_update_user_page_protection_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u32 protection_flags)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
+    u64 root_physical = paging64_process_root_physical(pid);
+    u64 physical_address;
+    u64 pte_flags;
+
+    if ((slot == 0)
+        || ((*slot & PAGING64_PAGE_PRESENT) == 0ull)
+        || ((protection_flags & (PAGING64_USER_PROT_READ
+                | PAGING64_USER_PROT_WRITE
+                | PAGING64_USER_PROT_EXECUTE)) == 0u))
+    {
+        return 0u;
+    }
+
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        wrmsr64(PAGING64_EFER_MSR, rdmsr64(PAGING64_EFER_MSR) | PAGING64_EFER_NXE);
+    }
+
+    physical_address = *slot & PAGING64_PHYSICAL_ADDRESS_MASK;
+    pte_flags = PAGING64_PAGE_PRESENT | PAGING64_PAGE_USER;
+    if ((protection_flags & PAGING64_USER_PROT_WRITE) != 0u)
+    {
+        pte_flags |= PAGING64_PAGE_WRITABLE;
+    }
+    if ((protection_flags & PAGING64_USER_PROT_EXECUTE) == 0u)
+    {
+        pte_flags |= PAGING64_PAGE_NO_EXECUTE;
+    }
+
+    *slot = physical_address | pte_flags;
+    paging64_reload_root_if_active(root_physical);
+    return 1u;
+}
+
+u32 paging64_user_page_present_for_process(u32 pid, u64 virtual_address)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
+
+    return ((slot != 0) && ((*slot & PAGING64_PAGE_PRESENT) != 0ull)) ? 1u : 0u;
+}
+
+u64 paging64_user_page_physical_for_process(u32 pid, u64 virtual_address)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
+
+    return ((slot != 0) && ((*slot & PAGING64_PAGE_PRESENT) != 0ull))
+        ? (*slot & PAGING64_PHYSICAL_ADDRESS_MASK)
+        : 0ull;
+}
+
+u32 paging64_user_page_protection_for_process(u32 pid, u64 virtual_address)
+{
+    volatile u64 *slot = paging64_process_user_page_entry_slot(pid, virtual_address);
     u32 protection = 0u;
 
     if ((slot == 0) || ((*slot & PAGING64_PAGE_PRESENT) == 0ull))

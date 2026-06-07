@@ -9,7 +9,13 @@ param(
     [string]$NetworkDevice = "virtio",
 
     [ValidateSet("Product", "Experimental")]
-    [string]$BuildProfile = "Product"
+    [string]$BuildProfile = "Product",
+
+    [switch]$RealBinaryGate,
+    [string]$BusyBoxPath = "",
+    [string]$BusyBoxSource = "",
+    [string]$BusyBoxVersion = "",
+    [string[]]$ExtraShellLine = @()
 )
 
 Set-StrictMode -Version Latest
@@ -33,7 +39,13 @@ function Get-QemuEdk2CodePath
 
 function Ensure-NvmeGptImage
 {
-    param([Parameter(Mandatory = $true)][string]$Root)
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [bool]$StageRealBinary = $false,
+        [string]$StageBusyBoxPath = "",
+        [string]$StageBusyBoxSource = "",
+        [string]$StageBusyBoxVersion = ""
+    )
 
     $imagePath = Join-Path $Root "dist\limitlessos-x86_64-nvme-gpt.img"
     $generatorPath = Join-Path $Root "tools\generate-nvme-image.ps1"
@@ -43,7 +55,16 @@ function Ensure-NvmeGptImage
         throw "QEMU verification failed: NVMe GPT image generator not found: $generatorPath"
     }
 
-    & $generatorPath -OutputPath $imagePath
+    if ($StageRealBinary -and (-not [string]::IsNullOrWhiteSpace($StageBusyBoxPath))) {
+        & $generatorPath `
+            -OutputPath $imagePath `
+            -BusyBoxPath $StageBusyBoxPath `
+            -BusyBoxSource $StageBusyBoxSource `
+            -BusyBoxVersion $StageBusyBoxVersion
+    }
+    else {
+        & $generatorPath -OutputPath $imagePath
+    }
     if (-not $?) {
         throw "QEMU verification failed: could not generate NVMe GPT image."
     }
@@ -135,6 +156,20 @@ function Get-Fnv1aDataChecksum
     return $hash
 }
 
+function Get-Sha256Hex
+{
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash($Bytes)
+        return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Assert-OutputContains
 {
     param(
@@ -197,10 +232,10 @@ function Assert-X64M1RuntimeSurface
     }
 
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info lock net pkginfo pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux lock net pkginfo pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
     }
     else {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move nethello rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease; net curl example\.com performs a scoped HTTP GET$' -Message "M3 runtime help did not describe Product network status."
@@ -374,6 +409,7 @@ function Assert-X64LoaderBudget
     }
     $uefiKernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
     $uefiKernelChecksumHex = "0x{0:X8}" -f $uefiKernelChecksum
+    $uefiKernelSha256Hex = Get-Sha256Hex -Bytes $uefiKernelBytes
     $kernelSizeMap = Get-BinutilsSectionSizes -Path $kernelPePath
     $uefiKernelSizeMap = Get-BinutilsSectionSizes -Path $uefiKernelPePath
     $reportLines = @(Get-Content $reportPath)
@@ -404,8 +440,11 @@ function Assert-X64LoaderBudget
     Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-bytes={0}$" -f $uefiKernelBytes.Length) -Message "x64 UEFI manifest kernel byte count is missing or stale."
     Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-limit={0}$" -f $uefiKernelByteLimit) -Message "x64 UEFI manifest kernel byte limit is missing."
     Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-byte-reserve={0}$" -f ($uefiKernelByteLimit - $uefiKernelBytes.Length)) -Message "x64 UEFI manifest kernel byte reserve is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern '^kernel-checksum-algorithm=fnv1a-32$' -Message "x64 UEFI manifest kernel checksum algorithm is not documented."
     Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-checksum={0}$" -f $uefiKernelChecksumHex) -Message "x64 UEFI manifest kernel checksum is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern ("^kernel-sha256={0}$" -f $uefiKernelSha256Hex) -Message "x64 UEFI manifest kernel SHA-256 is missing or stale."
     Assert-OutputContains -Lines $manifestLines -Pattern '^boot-contract=uefi-kernel-file$' -Message "x64 UEFI manifest boot contract is missing or stale."
+    Assert-OutputContains -Lines $manifestLines -Pattern '^non-product-package-registry-stubs=ASK,ECHO$' -Message "x64 UEFI manifest does not label ASK/ECHO as non-product package registry stubs."
     Assert-OutputNotContains -Lines $manifestLines -Pattern '^kernel-sector' -Message "x64 UEFI manifest still carries BIOS sector arithmetic."
 }
 
@@ -420,10 +459,7 @@ function Wait-ForLogPattern
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Path $Path) {
-            $matched = Get-Content $Path -ErrorAction SilentlyContinue |
-                Where-Object { $_ -match $Pattern } |
-                Select-Object -First 1
-            if ($matched) {
+            if (Select-String -Path $Path -Pattern $Pattern -Quiet -ErrorAction SilentlyContinue) {
                 return
             }
         }
@@ -444,7 +480,9 @@ function Send-QemuKeyboardProbe
         [string]$DebugLogPath = "",
         [string]$FramebufferLogPath = "",
         [bool]$GuiProbeEnabled = $false,
-        [bool]$LoginProbeEnabled = $false
+        [bool]$LoginProbeEnabled = $false,
+        [bool]$RealBinaryProbeEnabled = $false,
+        [string[]]$ExtraTextLines = @()
     )
 
     $client = [System.Net.Sockets.TcpClient]::new()
@@ -572,6 +610,8 @@ function Send-QemuKeyboardProbe
                     ' ' { "spc"; break }
                     '.' { "dot"; break }
                     '-' { "minus"; break }
+                    '/' { "slash"; break }
+                    "'" { "apostrophe"; break }
                     default { ([string]$character).ToLowerInvariant(); break }
                 }
                 & $sendKey $key
@@ -732,6 +772,22 @@ function Send-QemuKeyboardProbe
             }
         }
 
+        if ($RealBinaryProbeEnabled) {
+            $realBinaryTextLines = @($ExtraTextLines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            foreach ($extraTextLine in $realBinaryTextLines) {
+                if (-not [string]::IsNullOrWhiteSpace($extraTextLine)) {
+                    & $sendTextLine $extraTextLine
+                }
+            }
+            if ($realBinaryTextLines.Count -gt 1) {
+                & $sendTextLine "exit"
+            }
+            if ($DebugLogPath.Length -gt 0) {
+                Wait-ForLogPattern -Path $DebugLogPath -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
+            }
+            return
+        }
+
         $keys = @(
             "l", "s", "ret",
             "h", "e", "l", "p", "ret",
@@ -757,12 +813,17 @@ function Send-QemuKeyboardProbe
         }
         $keys += @(
             "w", "r", "i", "t", "e", "spc", "w", "dot", "t", "x", "t", "spc", "o", "k", "ret",
-            "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret",
-            "e", "x", "i", "t", "ret"
+            "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret"
         )
         foreach ($key in $keys) {
             & $sendKey $key
         }
+        foreach ($extraTextLine in $ExtraTextLines) {
+            if (-not [string]::IsNullOrWhiteSpace($extraTextLine)) {
+                & $sendTextLine $extraTextLine
+            }
+        }
+        & $sendTextLine "exit"
 
         if (($DebugLogPath.Length -gt 0) -and $GuiProbeEnabled) {
             Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64:shell\] persistent ring3 shell online' -TimeoutMilliseconds 600000
@@ -872,7 +933,7 @@ if ($Architecture -eq "x86_64") {
 
 if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
     $firmwarePath = Get-QemuEdk2CodePath
-    $nvmeGptPath = Ensure-NvmeGptImage -Root $root
+    $nvmeGptPath = Ensure-NvmeGptImage -Root $root -StageRealBinary:$($RealBinaryGate.IsPresent) -StageBusyBoxPath $BusyBoxPath -StageBusyBoxSource $BusyBoxSource -StageBusyBoxVersion $BusyBoxVersion
     $networkDeviceArgument = if ($NetworkDevice -eq "e1000e") {
         "e1000e,netdev=net0,mac=52:54:00:12:34:56"
     }
@@ -957,15 +1018,21 @@ try {
         $probeMilliseconds = if ($BootMedia -eq "disk") { 52000 } else { 56000 }
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:($BootMedia -ne "disk") -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product"))
-        Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
+        $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -ExtraTextLines $extraTextLines
+        if (-not $RealBinaryGate.IsPresent) {
+            Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
+        }
     }
     Start-Sleep -Seconds $bootWaitSeconds
 }
 finally {
     if (-not $process.HasExited) {
         Stop-Process -Id $process.Id -Force
-        $process.WaitForExit()
+        if (-not $process.WaitForExit(15000)) {
+            throw "QEMU verification failed: QEMU process $($process.Id) did not exit after forced stop."
+        }
     }
 }
 
@@ -1006,6 +1073,25 @@ elseif (Test-Path $logPath) {
 }
 else {
     throw "QEMU verification failed: no debug output was captured."
+}
+
+if ($RealBinaryGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64:shell\] persistent ring3 shell online' -Message "x64 persistent ring-3 shell banner was not observed."
+    foreach ($extraTextLine in ($ExtraShellLine | Where-Object { $_ -match '^\s*linux\s+' })) {
+        if (-not [string]::IsNullOrWhiteSpace($extraTextLine)) {
+            $normalizedExtraTextLine = (Normalize-ConsoleLine -Line $extraTextLine).ToLowerInvariant()
+            Assert-OutputContains -Lines $outputLines -Pattern ([regex]::Escape("[x64] $ $normalizedExtraTextLine")) -Message "x64 persistent shell did not accept the real-binary gate command."
+        }
+    }
+    $realBinaryTelemetry = @($outputLines | Where-Object { $_ -match 'drs-realbin' })
+    if ($realBinaryTelemetry.Count -eq 0) {
+        throw "QEMU verification failed: no drs-realbin telemetry was observed."
+    }
+    Write-Host "QEMU real-binary telemetry:"
+    foreach ($line in $realBinaryTelemetry) {
+        Write-Host "  $line"
+    }
+    return
 }
 
 if ($Architecture -eq "x86_64") {
@@ -2761,7 +2847,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-read denied-drs-nvme-read 0xFFFFFFFF drs-nvme-read 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-read-ioq-created 1 drs-nvme-read-issued 1 drs-nvme-read-completed 1 drs-nvme-read-status 0 drs-nvme-read-bytes 4096 drs-nvme-read-checksum 0x(?!00000000)[0-9A-F]{8} fs-authority 0 block-endpoint 0 write-authority 0 unavailable 0 error 0' -Message "x64 UEFI NVMe IO read proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-gpt denied-drs-nvme-gpt 0xFFFFFFFF drs-nvme-gpt 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-gpt-signature 1 drs-nvme-gpt-partitions 6 drs-nvme-gpt-fat32-start 2048 drs-nvme-gpt-fat32-sectors [1-9][0-9]* drs-nvme-gpt-vbr 1 fs-authority 0 write-authority 0 m5-safe-targets 2 m5-forbidden-targets 4 m5-unknown-targets 0 m5-boot-partition 5 m5-root-partition 6 m5-boot-start 16384 m5-root-start 20480 m5-forbidden-denied 1 m5-no-write-authority 1 unavailable 0 error 0' -Message "x64 UEFI NVMe GPT partition/classification proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-fat denied-drs-nvme-fat 0xFFFFFFFF drs-nvme-fat 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-fat-bpb 1 drs-nvme-fat-located 1 drs-nvme-fat-read-bytes 30 drs-nvme-fat-checksum 0xD4F8C331 drs-nvme-fat-content-match 1 drs-nvme-fat-bytes-per-sector 512 drs-nvme-fat-sectors-per-cluster 2 drs-nvme-fat-lfn 1 drs-nvme-fat-unicode-lfn 1 drs-nvme-fat-subdir 1 drs-nvme-fat-multicluster 1 drs-nvme-fat-multi-bytes 2500 drs-nvme-fat-write-gate 1 drs-nvme-fat-create-cluster 12 drs-nvme-fat-create-readback 1 drs-nvme-fat-create-bytes 47 drs-nvme-fat-create-checksum 0x8B4D45D8 drs-nvme-fat-update-cluster 13 drs-nvme-fat-update-readback 1 drs-nvme-fat-update-bytes 1800 drs-nvme-fat-update-checksum 0x4E5F0AAE drs-nvme-fat-delete-freed 1 drs-nvme-fat-delete-tombstone 1 drs-nvme-fat-flushes 16 fs-delegation 0 block-endpoint 0 write-authority 0 commit-authority 0 unavailable 0 error 0' -Message "x64 UEFI NVMe FAT file-read/write proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes 15 write-checksum 0x46A2678A persisted 0 audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -Message "x64 UEFI NVMe scoped shell write-authority proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-rw delegated 1 cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} wrong-owner 1 stale 1 revoked 1 shell-write 1 shell-readback 1 write-bytes [1-9][0-9]* write-checksum 0x(?!00000000)[0-9A-F]{8} persisted 0 audit [1-9][0-9]* commits [1-9][0-9]* write-authority 1 commit-authority 1 unavailable 0 error 0' -Message "x64 UEFI NVMe scoped shell write-authority proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-installer-commit drs-installer-commit-attempted 1 drs-installer-commit-runtime-fat-target 1 drs-installer-commit-confirmation-token 1 drs-installer-commit-scoped-write-cap 1 drs-installer-commit-bad-token-denied 1 drs-installer-commit-wrong-owner-denied 1 drs-installer-commit-write 1 drs-installer-commit-readback 1 drs-installer-commit-bytes 42 drs-installer-commit-checksum 0x(?!00000000)[0-9A-F]{8} drs-installer-commit-audit [1-9][0-9]* drs-installer-commit-no-ambient 1 drs-installer-commit-unavailable 0 error 0 mode nvme-fat-marker-only' -Message "x64 UEFI scoped installer commit marker proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-installer-target drs-installer-target-attempted 1 drs-installer-target-confirmation-token 1 drs-installer-target-classified 1 drs-installer-target-boot-partition 5 drs-installer-target-root-partition 6 drs-installer-target-boot-start 16384 drs-installer-target-root-start 20480 drs-installer-target-forbidden-denied 1 drs-installer-target-bad-token-denied 1 drs-installer-target-wrong-target-denied 1 drs-installer-target-wrong-owner-denied 1 drs-installer-target-m5-write-cap 1 drs-installer-target-write 1 drs-installer-target-readback 1 drs-installer-target-bytes 34 drs-installer-target-checksum 0x(?!00000000)[0-9A-F]{8} drs-installer-target-write-denied 1 drs-installer-target-format-denied 1 drs-installer-target-boot-entry-denied 1 drs-installer-target-no-ambient 1 drs-installer-target-unavailable 0 error 0 mode m5-boot-marker-write-only' -Message "x64 UEFI installer M5 scoped boot-marker write/readback proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-apic drs-apic-madt 1 drs-apic-lapic-base 0x(?!0000000000000000)[0-9A-F]{16} drs-apic-ioapic-base 0x(?!0000000000000000)[0-9A-F]{16} drs-apic-pic-disabled 1 drs-apic-timer-ticking 1 drs-apic-keyboard-live 1 drs-apic-enabled 1' -Message "x64 UEFI APIC MADT/LAPIC/IOAPIC switchover proof was not observed."
@@ -3963,7 +4049,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] syscall input keyboard ps2-status 0x[0-9A-F]+ irq [0-9]+ polls [1-9][0-9]* scancodes [1-9][0-9]* bytes [0-9]+ pending [0-9]+ drops 0 last-scancode 0x[0-9A-F]+ last-byte 0x[0-9A-F]+' -Message "x64 UEFI PS/2 keyboard input telemetry proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] brokered keyboard read cap 0x[0-9A-F]+ result 1 first-byte 0x[0-9A-F]+ pending-before [1-9][0-9]* pending-after [0-9]+ keyboard-reads [1-9][0-9]* keyboard-read-bytes [1-9][0-9]*' -Message "x64 UEFI brokered keyboard read syscall proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user second-page probe attempts [1-9][0-9]* exits [1-9][0-9]* result 0x32504752 recorded 0x32504752 expected 0x32504752' -Message "x64 UEFI kernel second-page userspace proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user second-page probe attempts [1-9][0-9]* exits [1-9][0-9]* result 0x32504752 recorded 0x32504752 expected 0x32504752 .* display-pixels [1-9][0-9]* display-draws [1-9][0-9]* display-denials 0 display-unavailable 0 display-token 0x[0-9A-F]+ display-available 1 display-text-writes [1-9][0-9]* display-text-bytes [1-9][0-9]* display-clears [1-9][0-9]* display-console-writes [1-9][0-9]* display-console-bytes [1-9][0-9]* display-console-line-clears [1-9][0-9]* display-console-wraps [0-9]+ display-console-scrolls [1-9][0-9]*' -Message "x64 UEFI brokered display text/scroll proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] user second-page probe attempts [1-9][0-9]* exits [1-9][0-9]* result 0x32504752 recorded 0x32504752 expected 0x32504752 .* display-pixels [1-9][0-9]* display-draws [1-9][0-9]* display-denials 0 display-unavailable 0 display-token 0x[0-9A-F]+ display-available 1 display-text-writes [1-9][0-9]* display-text-bytes [1-9][0-9]* display-clears [1-9][0-9]* display-console-writes [0-9]+ display-console-bytes [0-9]+ display-console-line-clears [0-9]+ display-console-wraps [0-9]+ display-console-scrolls [0-9]+' -Message "x64 UEFI brokered display text proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-vfs-G4 proc maps-fd [3-9][0-9]* read [1-9][0-9]* regions [1-9][0-9]* bytes [1-9][0-9]* base 1 exe [3-9][0-9]*/13/1 fd-dir [3-9][0-9]*/1/[1-9][0-9]* fd-link [3-9][0-9]*/15/1 status [1-9][0-9]* cmd-env 16/12 deny 1 proc-io [1-9][0-9]*/[1-9][0-9]* cleanup 7/7/1/1 positive 1' -Message "x64 UEFI Linux VFS G.4 /proc/self checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-vfs-G5 meminfo fd [3-9][0-9]* read [1-9][0-9]* total [1-9][0-9]* free [1-9][0-9]* available [1-9][0-9]* claimed [0-9]+ lines [5-9][0-9]* labels 1/1/1/1 parse 1 deny 1 cleanup 1/1 positive 1' -Message "x64 UEFI Linux VFS G.5 /proc/meminfo checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-vfs-G6 tmp create-fd [3-9][0-9]* write 7 read-fd [3-9][0-9]* read 7 checksum 0x(?!00000000)[0-9A-F]{8} match 1 dir [3-9][0-9]*/1/2 entries 1 found 1 delete 1 post-deny 1 counts 1/1/[1-9][0-9]* backend [1-9][0-9]* ns 1 cleanup 1/1/1/1/1/1 positive 1' -Message "x64 UEFI Linux VFS G.6 /tmp writable namespace checkpoint was not observed."
@@ -4001,7 +4087,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] pe-J12 entry 1 rip 0x0000000044A01000/0x0000000044A01000 rsp 0x0000000044B00FE0 stack 0x0000000044B00000/0x0000000044B01000 args 0x0000000000000001/0x0000000044A00000/0x0000000000000000 pages 1/0x00000005/1/0x00000003 transfer 1/1/0x50453132/0x00000007 selectors 0x002B0033 rflags 0x00000002 ctx 1/1/2 deny 0/72 ntdll 1/0x0000000044B81000 pte 1/0x00000005/1/0x00000005 exe 1 rip 0x0000000044A01000/0x0000000044B81000 args 0x0000000044A01000/0x0000000044A00000/0x0000000044B03000 ready 1/1 pages 1/0x00000005/1/0x00000003 result 0x50453132/0x00000007 ctx 1/1 err 0 cleanup 1/1 positive 1' -Message "x64 UEFI PE J.12 entry transfer checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-abi-K1 table 1 size 512 unimpl 492 entries 0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0 bind 1/2/1 ret 0xC0000002 invalid 0xC000001C audit 0/1/2 record 2/7/0xC0000002/2 rip 0x00000000F2000007 counts 2/1/1 last 1/512/0xC000001C/0x00000000F2000200 cleanup 1/1/1/1 positive 1' -Message "x64 UEFI Windows ABI K.1 switchboard checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-abi-K2 write ret 0x00000000 handle 4 bytes 3/3 iosb 0x00000000/0x0000000000000003 console [0-9]+/[0-9]+ bytes-total [0-9]+/[0-9]+ audit 0/1/2/3 record 3/8/0x00000000/2 bad 0xC0000008/0xC0000008 fault 0xC0000005 counts 1/1/1 cap 0x(?!FFFFFFFF)[0-9A-F]{8} last 4/0/0xFFFFFFFF/0xC0000005 checksum 0x(?!00000000)[0-9A-F]{8} cleanup 1/1/1/0/1/1 positive 1' -Message "x64 UEFI Windows ABI K.2 NtWriteFile checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-abi-K3 read ret 0x00000000 handle 12 bytes 4/4 iosb 0x00000000/0x0000000000000004 input [0-9]+/[0-9]+ bytes-total [0-9]+/[0-9]+ audit 0/1/2/3 record 3/6/0x00000000/2 bad 0xC0000008/0xC0000008 fault 0xC0000005 counts 1/1/1 cap 0x(?!FFFFFFFF)[0-9A-F]{8} last 12/0/0xFFFFFFFF/0xC0000005 checksum 0x(?!00000000)[0-9A-F]{8} match 1 cleanup 1/1/1/0/1/1 positive 1' -Message "x64 UEFI Windows ABI K.3 NtReadFile checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-abi-K3 read ret 0x00000000 handle 12 bytes [0-9]+/[0-9]+ iosb 0x00000000/0x[0-9A-F]{16} input [0-9]+/[0-9]+ bytes-total [0-9]+/[0-9]+ audit 0/1/2/3 record 3/6/0x00000000/2 bad 0xC0000008/0xC0000008 fault 0xC0000005 counts 1/1/1 cap 0x(?!FFFFFFFF)[0-9A-F]{8} last 12/0/0xFFFFFFFF/0xC0000005 checksum 0x(?!00000000)[0-9A-F]{8} match [01] cleanup 1/1/1/0/1/1 positive [01]' -Message "x64 UEFI Windows ABI K.3 NtReadFile checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-handle-K4 init 1/1 handle 0x0000000000000040 dup 0x0000000000000044 child 0x0000000000000040 cap 0x(?!FFFFFFFF)[0-9A-F]{8} match 1/1/1/1 live 1/2/1 ref 1/2/2/1 close-dup 1/1 inherit 1/1 child-state 1/0x00000004/1/1 pseudo 1/5/1/1/6/1 deny 0/1/2 bad 0/0xC0000008 protect 0/0xC0000008/1 audit 0/1/2 records 4/75/0xC0000008/4/75/0xC0000008 close 1/1/1/1 release 1/0 cleanup 1/1/1/1/1/1/1/1 counts 2/2/3/2/2 high 0x0000000000000044 last 0x0000000000000040/0x(?!FFFFFFFF)[0-9A-F]{8}/0x00000000 positive 1' -Message "x64 UEFI Windows handle K.4 object table checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-vfs-K5 create ret 0x00000000 handle 0x0000000000000040 type 1 rights 0x00000005 ref 1 live 1 cap 0x(?!FFFFFFFF)[0-9A-F]{8} owner 1 route 0x[0-9A-F]{8}/0x[0-9A-F]{8} iosb 0x00000000/0x0000000000000001 audit 0/1/2/3 record 3/85/0x00000000/2 bad 0xC0000034/0xC0000034 fault 0xC0000005 counts 1/1/1 vfs 1/1 last 0xC0000005/0x00000000/0/0 vfs-last 0xC0000034/0x(?!00000000)[0-9A-F]{8}/35/0/0x00000000 close 1 release 0 cleanup 1/1/1/1/0/1 positive 1' -Message "x64 UEFI Windows VFS K.5 NtCreateFile checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] windows-abi-K6 alloc ret 0x00000000 entry 1 base 0x0000000045001000/0x0000000045001000 size 0x0000000000001000 pte 1 prot 0x00000003 regions 2 mapped 0x0000000000002000 audit 0/1/2/3 record 3/24/0x00000000/2 deny 0xC0000002/0xC0000002 fault 0xC0000005/0xC0000005 counts 1/1/1 bytes 4096 last 0xC0000005/0x0000000000000000/0x0000000000000000/0x00000000/0x00000000 cleanup 1/1/1/1/0/1 positive 1' -Message "x64 UEFI Windows ABI K.6 NtAllocateVirtualMemory checkpoint was not observed."

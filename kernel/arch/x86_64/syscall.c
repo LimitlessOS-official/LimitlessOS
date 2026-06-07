@@ -8613,6 +8613,13 @@ u32 syscall64_native_complete_persona_return(
             g_native_linux_exit_probe_result,
             linux_abi64_exit_code(pid)) != 0u))
     {
+        /*
+         * Fast Linux exit completion returns directly to kernel cleanup. M22
+         * keeps syscall entry on the process CR3 because the higher-half
+         * kernel is shared; the direct exit path must still restore the
+         * kernel root before the launcher tears down the process tables.
+         */
+        (void)paging64_switch_to_kernel_root(0x4E455852u);
         return 1u;
     }
 

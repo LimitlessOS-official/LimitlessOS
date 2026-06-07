@@ -5,6 +5,42 @@
 
 #define MMIO64_INVALID_RESULT 0xFFFFFFFFu
 
+#define MMIO64_NVME_FAT_DIRENT_NAME_MAX 32u
+#define MMIO64_NVME_FAT_DIRENT_TYPE_UNKNOWN 0u
+#define MMIO64_NVME_FAT_DIRENT_TYPE_FILE 1u
+#define MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY 2u
+#define MMIO64_NVME_FAT_READDIR_OK 1u
+#define MMIO64_NVME_FAT_READDIR_EOF 2u
+
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_NONE 0u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_ARGUMENT 1u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_AUTHORITY 2u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_PATH 3u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_OPEN 4u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_NOT_FOUND 5u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_DIRECTORY 6u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_TOO_LARGE 7u
+#define MMIO64_NVME_FAT_SHELL_READ_ERROR_READ_CHAIN 8u
+
+typedef struct mmio64_nvme_fat_stat
+{
+    u32 entry_type;
+    u32 attr;
+    u32 cluster;
+    u32 byte_count;
+} mmio64_nvme_fat_stat_t;
+
+typedef struct mmio64_nvme_fat_dirent
+{
+    u32 entry_type;
+    u32 attr;
+    u32 cluster;
+    u32 byte_count;
+    u32 next_cursor;
+    u32 name_byte_count;
+    u8 name[MMIO64_NVME_FAT_DIRENT_NAME_MAX];
+} mmio64_nvme_fat_dirent_t;
+
 #define MMIO64_PLAN_STATE_SAFE_NO_TOUCH 1u
 #define MMIO64_PLAN_STATE_CANDIDATE 2u
 
@@ -7462,6 +7498,22 @@ u32 mmio64_nvme_rw_write_authority(void);
 u32 mmio64_nvme_rw_commit_authority(void);
 u32 mmio64_nvme_rw_unavailable(void);
 u32 mmio64_nvme_rw_error(void);
+u32 mmio64_nvme_fat_shell_read_last_error(void);
+u32 mmio64_nvme_fat_shell_read_last_bytes(void);
+u32 mmio64_nvme_fat_shell_read_last_capacity(void);
+u32 mmio64_nvme_fat_shell_read_last_size(void);
+u32 mmio64_nvme_fat_shell_read_last_attr(void);
+u32 mmio64_nvme_fat_shell_stat_path(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 owner_id,
+    mmio64_nvme_fat_stat_t *stat_out);
+u32 mmio64_nvme_fat_shell_read_dirent(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 cursor,
+    u32 owner_id,
+    mmio64_nvme_fat_dirent_t *entry_out);
 u32 mmio64_map_request_count(void);
 u32 mmio64_map_denial_count(void);
 u32 mmio64_map_unavailable_count(void);

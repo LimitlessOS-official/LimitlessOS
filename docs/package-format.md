@@ -96,7 +96,7 @@ In practice, the shell now enforces the authority bits for capability delegation
 - `WRITE.APP` and `APPEND.APP` request buffer plus base directory authority with policy `3` and launch flags `1`
 - `RENAME.APP` requests buffer plus base directory authority with policy `4` and launch flags `1`
 - `MOVE.APP` and `COPY.APP` request buffer plus both base and destination directory authority with policy `5` and launch flags `1`
-- `ASK.APP`, `ECHO.APP`, and alias descriptors remain unavailable/non-product in the Product shell unless promoted by a later milestone with matching descriptors, binaries, docs, and verification
+- `ASK.APP`, `ECHO.APP`, and alias descriptors remain unavailable/non-product in the Product shell unless promoted by a later milestone with matching descriptors, binaries, docs, and verification. The shared bootstrap package registry can still carry legacy `pkg.limitless.utility-ask` and `pkg.limitless.utility-echo` strings inside the kernel image, but Product UEFI media intentionally does not stage matching ASK/ECHO descriptor or binary files; `BOOTMAN.TXT` labels these as non-product registry stubs so ISO inspection does not imply they are shipped apps.
 
 ## Archive layout
 

@@ -7941,6 +7941,7 @@ static void log_process_namespace(void)
     linux_vfs64_result_t linux_g1_proc;
     linux_vfs64_result_t linux_g1_dev;
     linux_vfs64_result_t linux_g1_tmp;
+    linux_vfs64_result_t linux_g1_nvme;
     linux_vfs64_result_t linux_g2_dev_null;
     linux_vfs64_result_t linux_g2_relative;
     linux_vfs64_result_t linux_g2_missing_dev;
@@ -7951,6 +7952,7 @@ static void log_process_namespace(void)
     static u32 linux_g1_proc_provider;
     static u32 linux_g1_dev_provider;
     static u32 linux_g1_tmp_provider;
+    static u32 linux_g1_nvme_provider;
     static u32 linux_g1_positive;
     static u32 linux_g2_root_ok;
     static u32 linux_g2_proc_ok;
@@ -20651,10 +20653,17 @@ static void log_process_namespace(void)
         8u,
         0u,
         &linux_g1_tmp);
+    (void)linux_vfs64_resolve(
+        init_pid,
+        (const u8 *)"/nvme",
+        5u,
+        0u,
+        &linux_g1_nvme);
     linux_g1_root_provider = linux_g1_root.provider;
     linux_g1_proc_provider = linux_g1_proc.provider;
     linux_g1_dev_provider = linux_g1_dev.provider;
     linux_g1_tmp_provider = linux_g1_tmp.provider;
+    linux_g1_nvme_provider = linux_g1_nvme.provider;
     linux_g1_positive =
         ((linux_g1_mount_count == LINUX_VFS64_MAX_MOUNTS)
             && (linux_g2_root_ok != 0u)
@@ -20664,7 +20673,9 @@ static void log_process_namespace(void)
             && (linux_g1_dev.provider == LINUX_VFS64_PROVIDER_DEV)
             && (linux_g1_dev.node_type == LINUX_VFS64_NODE_DEV_DIR)
             && (linux_g2_tmp_ok != 0u)
-            && (linux_g1_tmp_provider == LINUX_VFS64_PROVIDER_RAMFS))
+            && (linux_g1_tmp_provider == LINUX_VFS64_PROVIDER_RAMFS)
+            && (linux_g1_nvme_provider == LINUX_VFS64_PROVIDER_NVME)
+            && (linux_g1_nvme.node_type == LINUX_VFS64_NODE_NVME_DIR))
             ? 1u
             : 0u;
     linux_g2_null_ok = linux_vfs64_resolve(

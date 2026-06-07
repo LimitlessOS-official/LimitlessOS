@@ -27,6 +27,53 @@ u32 paging64_update_user_page_protection(u64 virtual_address, u32 protection_fla
 u32 paging64_user_page_present(u64 virtual_address);
 u64 paging64_user_page_physical(u64 virtual_address);
 u32 paging64_user_page_protection(u64 virtual_address);
+u32 paging64_install_user_page_mapping_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u64 physical_address,
+    u32 protection_flags);
+u32 paging64_clear_user_page_mapping_for_process(u32 pid, u64 virtual_address);
+u32 paging64_remap_user_page_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u64 physical_address,
+    u32 protection_flags);
+u32 paging64_update_user_page_protection_for_process(
+    u32 pid,
+    u64 virtual_address,
+    u32 protection_flags);
+u32 paging64_user_page_present_for_process(u32 pid, u64 virtual_address);
+u64 paging64_user_page_physical_for_process(u32 pid, u64 virtual_address);
+u32 paging64_user_page_protection_for_process(u32 pid, u64 virtual_address);
+u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token);
+u32 paging64_process_root_release(u32 pid, u32 authority_token);
+u64 paging64_process_root_physical(u32 pid);
+u32 paging64_process_root_slot(u32 pid);
+u32 paging64_process_root_token(u32 pid);
+u32 paging64_switch_to_process_root(u32 pid, u32 reason);
+u32 paging64_switch_to_kernel_root(u32 reason);
+u64 paging64_current_root_physical(void);
+u64 paging64_kernel_root_physical(void);
+u32 paging64_process_root_pool_limit(void);
+u32 paging64_process_root_pool_used(void);
+u32 paging64_process_root_alloc_count(void);
+u32 paging64_process_root_release_count(void);
+u32 paging64_process_root_alloc_denial_count(void);
+u32 paging64_process_root_switch_count(void);
+u32 paging64_process_root_switch_denial_count(void);
+u32 paging64_process_root_kernel_switch_count(void);
+u32 paging64_process_root_last_switch_reason(void);
+u32 paging64_process_root_low_compat_count(void);
+u32 paging64_process_root_last_low_compat(void);
+u32 paging64_process_root_high_copy_count(void);
+u32 paging64_process_root_last_high_copy(void);
+u32 paging64_process_root_mmio_shared_count(void);
+u32 paging64_process_root_last_mmio_shared(void);
+u32 paging64_process_root_last_user_pdpt_private(void);
+u32 paging64_process_root_last_vma_pt_private(void);
+u32 paging64_process_root_last_slot(void);
+u32 paging64_process_root_last_pid(void);
+u64 paging64_process_root_last_physical(void);
 u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u32 page_count);
 u32 paging64_install_apic_mmio_mapping(u64 lapic_virtual, u32 lapic_physical, u64 ioapic_virtual, u32 ioapic_physical);
 u32 paging64_runtime_mapping_installed(void);

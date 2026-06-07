@@ -5,7 +5,7 @@
 #include "fd_x64.h"
 #include "types.h"
 
-#define LINUX_VFS64_MAX_MOUNTS 4u
+#define LINUX_VFS64_MAX_MOUNTS 5u
 #define LINUX_VFS64_MAX_PATH_BYTES 128u
 #define LINUX_VFS64_INVALID_RESULT 0xFFFFFFFFu
 #define LINUX_VFS64_DEVICE_HANDLE_TAG 0x76000000u
@@ -16,6 +16,7 @@
 #define LINUX_VFS64_PROVIDER_RAMFS 1u
 #define LINUX_VFS64_PROVIDER_PROC 2u
 #define LINUX_VFS64_PROVIDER_DEV 3u
+#define LINUX_VFS64_PROVIDER_NVME 4u
 
 #define LINUX_VFS64_NODE_UNKNOWN 0u
 #define LINUX_VFS64_NODE_RAMFS_PATH 1u
@@ -25,6 +26,8 @@
 #define LINUX_VFS64_NODE_PROC_FILE 5u
 #define LINUX_VFS64_NODE_PROC_SYMLINK 6u
 #define LINUX_VFS64_NODE_TMP_SYMLINK 7u
+#define LINUX_VFS64_NODE_NVME_DIR 8u
+#define LINUX_VFS64_NODE_NVME_FILE 9u
 
 #define LINUX_VFS64_DEVICE_UNKNOWN 0u
 #define LINUX_VFS64_DEVICE_NULL 1u
@@ -42,7 +45,8 @@
 #define LINUX_VFS64_DEVICE_PROC_FD_DIR 13u
 #define LINUX_VFS64_DEVICE_PROC_FD_LINK 14u
 #define LINUX_VFS64_DEVICE_PROC_MEMINFO 15u
-#define LINUX_VFS64_DEVICE_LAST LINUX_VFS64_DEVICE_PROC_MEMINFO
+#define LINUX_VFS64_DEVICE_NVME_FILE 16u
+#define LINUX_VFS64_DEVICE_LAST LINUX_VFS64_DEVICE_NVME_FILE
 
 #define LINUX_VFS64_PROC_IDENTITY_BYTES 128u
 #define LINUX_VFS64_PROC_PAYLOAD_BYTES 128u
@@ -139,6 +143,8 @@ u32 linux_vfs64_set_fd_dir_cursor(u32 pid, u32 fd_number, u32 cursor);
 u32 linux_vfs64_read_dirent(u32 pid, u32 fd_number, u32 cursor, linux_vfs64_dirent_t *entry_out);
 u32 linux_vfs64_device_handle(u32 device_type);
 u32 linux_vfs64_device_type_from_handle(u32 handle);
+u32 linux_vfs64_bind_nvme_read(u32 pid, u32 owner_id, u32 nvme_capability);
+u32 linux_vfs64_release_nvme_read(u32 pid);
 u32 linux_vfs64_proc_set_identity(
     u32 pid,
     const u8 *exe_path,
@@ -179,5 +185,12 @@ u32 linux_vfs64_symlink_readlink_count(void);
 u32 linux_vfs64_symlink_lstat_count(void);
 u32 linux_vfs64_symlink_nofollow_denial_count(void);
 u32 linux_vfs64_symlink_last_target_bytes(void);
+u32 linux_vfs64_nvme_bind_count(void);
+u32 linux_vfs64_nvme_release_count(void);
+u32 linux_vfs64_nvme_read_count(void);
+u32 linux_vfs64_nvme_readdir_count(void);
+u32 linux_vfs64_nvme_dirent_count(void);
+u32 linux_vfs64_nvme_denial_count(void);
+u32 linux_vfs64_nvme_last_bytes(void);
 
 #endif

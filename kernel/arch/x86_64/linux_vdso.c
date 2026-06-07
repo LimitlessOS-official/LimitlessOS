@@ -241,6 +241,20 @@ static u32 linux_vdso64_name_present(const volatile u8 *page, const char *name)
     return 0u;
 }
 
+static u32 linux_vdso64_user_page_present(u32 pid, u64 address)
+{
+    return (paging64_process_root_physical(pid) != 0ull)
+        ? paging64_user_page_present_for_process(pid, address)
+        : paging64_user_page_present(address);
+}
+
+static u32 linux_vdso64_user_page_protection(u32 pid, u64 address)
+{
+    return (paging64_process_root_physical(pid) != 0ull)
+        ? paging64_user_page_protection_for_process(pid, address)
+        : paging64_user_page_protection(address);
+}
+
 static u32 linux_vdso64_user_buffer_writable(u32 pid, u64 address, u32 byte_count)
 {
     u64 cursor;
@@ -268,8 +282,8 @@ static u32 linux_vdso64_user_buffer_writable(u32 pid, u64 address, u32 byte_coun
             || (cursor < region->virt_base)
             || (cursor >= region->virt_end)
             || ((region->prot_flags & VMA64_PROT_WRITE) == 0u)
-            || (paging64_user_page_present(page) == 0u)
-            || ((paging64_user_page_protection(page) & PAGING64_USER_PROT_WRITE) == 0u))
+            || (linux_vdso64_user_page_present(pid, page) == 0u)
+            || ((linux_vdso64_user_page_protection(pid, page) & PAGING64_USER_PROT_WRITE) == 0u))
         {
             return 0u;
         }
@@ -364,7 +378,7 @@ u32 linux_vdso64_validate(u32 pid, linux_vdso64_info_t *out_info)
         || (process64_principal(pid) == 0u)
         || (persona64_type(pid) != PERSONA64_TYPE_LINUX_ELF)
         || (vma64_find(pid, LINUX_VDSO64_BASE) == 0)
-        || (paging64_user_page_present(LINUX_VDSO64_BASE) == 0u))
+        || (linux_vdso64_user_page_present(pid, LINUX_VDSO64_BASE) == 0u))
     {
         return LINUX_VDSO64_MAP_DENIED;
     }
@@ -377,8 +391,8 @@ u32 linux_vdso64_validate(u32 pid, linux_vdso64_info_t *out_info)
     first_phdr = LINUX_VDSO64_ELF_EHDR_BYTES;
     second_phdr = LINUX_VDSO64_ELF_EHDR_BYTES + LINUX_VDSO64_ELF_PHDR_BYTES;
     out_info->mapped = 1u;
-    out_info->page_present = paging64_user_page_present(LINUX_VDSO64_BASE);
-    out_info->page_prot = paging64_user_page_protection(LINUX_VDSO64_BASE);
+    out_info->page_present = linux_vdso64_user_page_present(pid, LINUX_VDSO64_BASE);
+    out_info->page_prot = linux_vdso64_user_page_protection(pid, LINUX_VDSO64_BASE);
     out_info->elf_magic =
         ((page[0] == 0x7Fu)
             && (page[1] == (u8)'E')
@@ -420,7 +434,7 @@ u32 linux_vdso64_map(u32 pid, linux_vdso64_info_t *out_info)
         || (persona64_type(pid) != PERSONA64_TYPE_LINUX_ELF)
         || (vma64_init_process(pid) == 0u)
         || (vma64_find(pid, LINUX_VDSO64_BASE) != 0)
-        || (paging64_user_page_present(LINUX_VDSO64_BASE) != 0u))
+        || (linux_vdso64_user_page_present(pid, LINUX_VDSO64_BASE) != 0u))
     {
         if (out_info != 0)
         {
@@ -459,7 +473,7 @@ u32 linux_vdso64_unmap(u32 pid)
 {
     if ((pid == PROCESS64_INVALID_PID)
         || (vma64_find(pid, LINUX_VDSO64_BASE) == 0)
-        || (paging64_user_page_present(LINUX_VDSO64_BASE) == 0u))
+        || (linux_vdso64_user_page_present(pid, LINUX_VDSO64_BASE) == 0u))
     {
         return 0u;
     }

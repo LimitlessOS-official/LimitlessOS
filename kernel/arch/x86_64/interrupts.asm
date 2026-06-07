@@ -224,11 +224,35 @@ syscall64_native_entry:
     pop r11
     cmp dword [rel syscall64_native_return_to_user], 0
     jne .return_to_user
+    mov rdi, [rel syscall64_native_linux_rdi]
+    mov rsi, [rel syscall64_native_linux_rsi]
+    mov rdx, [rel syscall64_native_linux_rdx]
+    mov r10, [rel syscall64_native_linux_r10]
+    mov r8, [rel syscall64_native_linux_r8]
+    mov r9, [rel syscall64_native_linux_r9]
+    mov rbx, [rel syscall64_native_user_rbx]
+    mov rbp, [rel syscall64_native_user_rbp]
+    mov r12, [rel syscall64_native_user_r12]
+    mov r13, [rel syscall64_native_user_r13]
+    mov r14, [rel syscall64_native_user_r14]
+    mov r15, [rel syscall64_native_user_r15]
     mov rsp, [rel syscall64_native_user_rsp]
     push r11
     popfq
     jmp rcx
 .return_to_user:
+    mov rdi, [rel syscall64_native_linux_rdi]
+    mov rsi, [rel syscall64_native_linux_rsi]
+    mov rdx, [rel syscall64_native_linux_rdx]
+    mov r10, [rel syscall64_native_linux_r10]
+    mov r8, [rel syscall64_native_linux_r8]
+    mov r9, [rel syscall64_native_linux_r9]
+    mov rbx, [rel syscall64_native_user_rbx]
+    mov rbp, [rel syscall64_native_user_rbp]
+    mov r12, [rel syscall64_native_user_r12]
+    mov r13, [rel syscall64_native_user_r13]
+    mov r14, [rel syscall64_native_user_r14]
+    mov r15, [rel syscall64_native_user_r15]
     mov rsp, [rel syscall64_native_user_rsp]
     o64 sysret
 .switch_to_frame:

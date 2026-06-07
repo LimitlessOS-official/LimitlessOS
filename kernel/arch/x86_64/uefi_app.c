@@ -366,6 +366,12 @@ struct acpi_madt_interrupt_source_override
     u16 flags;
 } __attribute__((packed));
 
+/*
+ * UEFI-only staging buffer for KERNEL64.BIN. This intentionally contributes a
+ * large .bss reservation in BOOTX64.EFI so firmware can zero one bounded buffer
+ * before the kernel file is copied, checksum-verified, and moved into final
+ * loader-owned pages. Keep this out of BIOS paths.
+ */
 static u8 g_loader_kernel_buffer[LIMITLESS_UEFI_LOADER_BUFFER_BYTES] __attribute__((aligned(4096)));
 static u8 g_memory_map_buffer[LIMITLESS_UEFI_MEMORY_MAP_BYTES] __attribute__((aligned(8)));
 static u32 g_serial_debug_available = 0u;

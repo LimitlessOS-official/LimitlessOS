@@ -475,7 +475,7 @@ static u32 elf64_auxv_has_null_terminator(const elf64_auxv_t *auxv)
         : 0u;
 }
 
-static u32 elf64_stack_range_writable(u64 stack_base, u64 stack_top)
+static u32 elf64_stack_range_writable(u32 pid, u64 stack_base, u64 stack_top)
 {
     u64 page;
 
@@ -488,8 +488,16 @@ static u32 elf64_stack_range_writable(u64 stack_base, u64 stack_top)
 
     for (page = stack_base; page < stack_top; page += VMA64_PAGE_BYTES)
     {
-        if ((paging64_user_page_present(page) == 0u)
-            || ((paging64_user_page_protection(page) & PAGING64_USER_PROT_WRITE) == 0u))
+        if ((paging64_process_root_physical(pid) != 0ull)
+            && ((paging64_user_page_present_for_process(pid, page) == 0u)
+                || ((paging64_user_page_protection_for_process(pid, page)
+                    & PAGING64_USER_PROT_WRITE) == 0u)))
+        {
+            return 0u;
+        }
+        if ((paging64_process_root_physical(pid) == 0ull)
+            && ((paging64_user_page_present(page) == 0u)
+                || ((paging64_user_page_protection(page) & PAGING64_USER_PROT_WRITE) == 0u)))
         {
             return 0u;
         }
@@ -666,10 +674,22 @@ static u32 elf64_transfer_frame_ready(
     }
 
     entry_page = elf64_align_down(entry_rip, VMA64_PAGE_BYTES);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (paging64_process_root_physical(pid) != 0ull)
+    {
+        entry_present = paging64_user_page_present_for_process(pid, entry_page);
+        entry_prot = paging64_user_page_protection_for_process(pid, entry_page);
+        stack_present = paging64_user_page_present_for_process(pid, stack_base);
+        stack_prot = paging64_user_page_protection_for_process(pid, stack_base);
+    }
+    else
+#endif
+    {
     entry_present = paging64_user_page_present(entry_page);
     entry_prot = paging64_user_page_protection(entry_page);
     stack_present = paging64_user_page_present(stack_base);
     stack_prot = paging64_user_page_protection(stack_base);
+    }
 
     if (result != 0)
     {
@@ -1457,7 +1477,7 @@ u32 elf64_build_initial_stack(
 
     if ((stack_base >= stack_top)
         || ((stack_top - stack_base) > 0xFFFFFFFFull)
-        || (elf64_stack_range_writable(stack_base, stack_top) == 0u))
+        || (elf64_stack_range_writable(pid, stack_base, stack_top) == 0u))
     {
         elf64_set_stack_error(out_result, ELF64_ERROR_STACK_RANGE);
         return ELF64_DENIED;
