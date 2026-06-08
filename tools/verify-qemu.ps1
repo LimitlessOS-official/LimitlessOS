@@ -602,10 +602,25 @@ function Send-QemuKeyboardProbe
                 Start-Sleep -Milliseconds $LineDelayMilliseconds
             }
         }
+        $sendShiftedKey = {
+            param([string]$Key)
+
+            $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}}]}}')
+            & $drainQmp
+            Start-Sleep -Milliseconds $keyHoldMilliseconds
+            & $sendKey $Key
+            $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}')
+            & $drainQmp
+            Start-Sleep -Milliseconds $KeyDelayMilliseconds
+        }
         $sendTextLine = {
             param([string]$Text)
 
             foreach ($character in $Text.ToCharArray()) {
+                if ($character -eq '|') {
+                    & $sendShiftedKey "backslash"
+                    continue
+                }
                 $key = switch ($character) {
                     ' ' { "spc"; break }
                     '.' { "dot"; break }

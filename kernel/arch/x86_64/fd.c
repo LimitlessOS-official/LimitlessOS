@@ -35,6 +35,9 @@ static u32 g_fd64_fork_copy_last_parent_pid = PROCESS64_INVALID_PID;
 static u32 g_fd64_fork_copy_last_child_pid = PROCESS64_INVALID_PID;
 static u32 g_fd64_fork_copy_last_entries = 0u;
 static u32 g_fd64_fork_copy_last_stage = 0u;
+static u32 g_fd64_fork_pipe_copy_count = 0u;
+static u32 g_fd64_fork_pipe_denial_count = 0u;
+static u32 g_fd64_fork_pipe_last_fd = FD64_INVALID_FD;
 #endif
 
 static void fd64_clear_entry(fd_entry_t *entry, u32 fd_number)
@@ -547,6 +550,9 @@ void fd64_init(void)
     g_fd64_fork_copy_last_child_pid = PROCESS64_INVALID_PID;
     g_fd64_fork_copy_last_entries = 0u;
     g_fd64_fork_copy_last_stage = 0u;
+    g_fd64_fork_pipe_copy_count = 0u;
+    g_fd64_fork_pipe_denial_count = 0u;
+    g_fd64_fork_pipe_last_fd = FD64_INVALID_FD;
 #endif
     g_fd64_initialized = 1u;
 }
@@ -674,7 +680,7 @@ static u32 fd64_fork_copy_capability(
 
     /*
      * M23 only duplicates provider handles that can be owned independently.
-     * RAMFS and pipe handles need provider-level duplication before a forked
+     * RAMFS handles still need provider-level duplication before a forked
      * child can close them without revoking the parent's descriptor.
      */
     return CAPABILITY64_INVALID_HANDLE;
@@ -726,6 +732,24 @@ u32 fd64_fork_process(u32 parent_pid, u32 child_pid)
 
         if (fd64_entry_active(source) == 0u)
         {
+            continue;
+        }
+
+        if ((source->fd_type == FD64_TYPE_PIPE_READ) || (source->fd_type == FD64_TYPE_PIPE_WRITE))
+        {
+            g_fd64_fork_copy_last_stage = 5u;
+            g_fd64_fork_pipe_last_fd = index;
+            if (pipe64_grant_endpoint_at(parent_pid, index, child_pid, index) == 0u)
+            {
+                ++g_fd64_fork_pipe_denial_count;
+                ++g_fd64_fork_copy_denial_count;
+                (void)fd64_release_process(child_pid);
+                return 0u;
+            }
+
+            child_table->entries[index].file_offset = source->file_offset;
+            ++g_fd64_fork_pipe_copy_count;
+            ++copied;
             continue;
         }
 
@@ -816,6 +840,24 @@ u32 fd64_release_process(u32 pid)
     }
 
     return released;
+}
+
+u32 fd64_alloc_at(u32 pid, u32 fd_number, u32 capability_handle, u32 fd_type, u32 flags)
+{
+    fd_table_t *table = fd64_table_for_process(pid);
+
+    if ((table == 0) || (fd_number >= FD64_TABLE_LIMIT))
+    {
+        if (table != 0)
+        {
+            ++table->denial_count;
+        }
+        return FD64_INVALID_FD;
+    }
+
+    return (fd64_install_entry(table, fd_number, capability_handle, fd_type, flags) != 0u)
+        ? fd_number
+        : FD64_INVALID_FD;
 }
 
 u32 fd64_alloc(u32 pid, u32 capability_handle, u32 fd_type, u32 flags)
@@ -1776,5 +1818,32 @@ u32 fd64_fork_copy_last_stage(void)
     return g_fd64_fork_copy_last_stage;
 #else
     return 0u;
+#endif
+}
+
+u32 fd64_fork_pipe_copy_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_fd64_fork_pipe_copy_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 fd64_fork_pipe_denial_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_fd64_fork_pipe_denial_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 fd64_fork_pipe_last_fd(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_fd64_fork_pipe_last_fd;
+#else
+    return FD64_INVALID_FD;
 #endif
 }

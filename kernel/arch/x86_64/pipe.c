@@ -389,7 +389,12 @@ u32 pipe64_create(u32 pid, u32 *read_fd_out, u32 *write_fd_out)
     return pipe64_create_flags(pid, 0u, read_fd_out, write_fd_out);
 }
 
-u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *target_fd_out)
+static u32 pipe64_grant_endpoint_inner(
+    u32 source_pid,
+    u32 source_fd,
+    u32 target_pid,
+    u32 requested_target_fd,
+    u32 *target_fd_out)
 {
     u32 source_owner;
     u32 target_owner;
@@ -411,7 +416,8 @@ u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *ta
         || (target_pid == PROCESS64_INVALID_PID)
         || (source_pid == target_pid)
         || (fd64_table_for_process(source_pid) == 0)
-        || (fd64_table_for_process(target_pid) == 0))
+        || (fd64_table_for_process(target_pid) == 0)
+        || ((requested_target_fd != FD64_INVALID_FD) && (requested_target_fd >= FD64_TABLE_LIMIT)))
     {
         ++g_pipe64_denials;
         return 0u;
@@ -448,7 +454,18 @@ u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *ta
             return 0u;
         }
 
-        target_fd = fd64_alloc(target_pid, pipe_handle, FD64_TYPE_PIPE_READ, fd64_entry_flags(source_pid, source_fd));
+        target_fd = (requested_target_fd == FD64_INVALID_FD)
+            ? fd64_alloc(
+                target_pid,
+                pipe_handle,
+                FD64_TYPE_PIPE_READ,
+                fd64_entry_flags(source_pid, source_fd))
+            : fd64_alloc_at(
+                target_pid,
+                requested_target_fd,
+                pipe_handle,
+                FD64_TYPE_PIPE_READ,
+                fd64_entry_flags(source_pid, source_fd));
         if (target_fd == FD64_INVALID_FD)
         {
             ++g_pipe64_denials;
@@ -467,7 +484,18 @@ u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *ta
             return 0u;
         }
 
-        target_fd = fd64_alloc(target_pid, pipe_handle, FD64_TYPE_PIPE_WRITE, fd64_entry_flags(source_pid, source_fd));
+        target_fd = (requested_target_fd == FD64_INVALID_FD)
+            ? fd64_alloc(
+                target_pid,
+                pipe_handle,
+                FD64_TYPE_PIPE_WRITE,
+                fd64_entry_flags(source_pid, source_fd))
+            : fd64_alloc_at(
+                target_pid,
+                requested_target_fd,
+                pipe_handle,
+                FD64_TYPE_PIPE_WRITE,
+                fd64_entry_flags(source_pid, source_fd));
         if (target_fd == FD64_INVALID_FD)
         {
             ++g_pipe64_denials;
@@ -480,6 +508,28 @@ u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *ta
 
     *target_fd_out = target_fd;
     return 1u;
+}
+
+u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *target_fd_out)
+{
+    return pipe64_grant_endpoint_inner(
+        source_pid,
+        source_fd,
+        target_pid,
+        FD64_INVALID_FD,
+        target_fd_out);
+}
+
+u32 pipe64_grant_endpoint_at(u32 source_pid, u32 source_fd, u32 target_pid, u32 target_fd)
+{
+    u32 granted_fd = FD64_INVALID_FD;
+
+    if (pipe64_grant_endpoint_inner(source_pid, source_fd, target_pid, target_fd, &granted_fd) == 0u)
+    {
+        return 0u;
+    }
+
+    return (granted_fd == target_fd) ? 1u : 0u;
 }
 
 u32 pipe64_write(u32 pipe_handle, const u8 *input, u32 byte_count, u32 owner_id)

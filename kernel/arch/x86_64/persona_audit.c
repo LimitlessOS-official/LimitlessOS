@@ -196,6 +196,7 @@ static const char *persona_audit64_linux_syscall_name(u32 syscall_number)
     case LINUX_ABI64_SYSCALL_PWRITE64: return "linux.pwrite64";
     case LINUX_ABI64_SYSCALL_READV: return "linux.readv";
     case LINUX_ABI64_SYSCALL_WRITEV: return "linux.writev";
+    case LINUX_ABI64_SYSCALL_PIPE: return "linux.pipe";
     case LINUX_ABI64_SYSCALL_DUP: return "linux.dup";
     case LINUX_ABI64_SYSCALL_DUP2: return "linux.dup2";
     case LINUX_ABI64_SYSCALL_NANOSLEEP: return "linux.nanosleep";
@@ -347,6 +348,7 @@ static u32 persona_audit64_linux_operation(u32 syscall_number)
         return PERSONA_AUDIT64_OP_FD;
     case LINUX_ABI64_SYSCALL_POLL:
     case LINUX_ABI64_SYSCALL_FUTEX:
+    case LINUX_ABI64_SYSCALL_PIPE:
     case LINUX_ABI64_SYSCALL_PIPE2:
     case LINUX_ABI64_SYSCALL_PPOLL:
         return PERSONA_AUDIT64_OP_IPC;

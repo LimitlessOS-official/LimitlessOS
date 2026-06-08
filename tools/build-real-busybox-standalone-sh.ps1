@@ -142,11 +142,27 @@ if (-not (Test-Path $configPath)) {
 }
 
 $configLines = Get-Content -LiteralPath $configPath
+$configLines = Set-ConfigLine -Lines $configLines -Name "CONFIG_FEATURE_PREFER_APPLETS" -Value "y"
 $configLines = Set-ConfigLine -Lines $configLines -Name "CONFIG_FEATURE_SH_STANDALONE" -Value "y"
 $configLines = Set-ConfigLine -Lines $configLines -Name "CONFIG_FEATURE_SH_NOFORK" -Value "y"
 $configLines = Set-ConfigLine -Lines $configLines -Name "CONFIG_STATIC" -Value "y"
 $configLines = Set-ConfigLine -Lines $configLines -Name "CONFIG_EXTRA_LDFLAGS" -Value '"-static -no-pie -Wl,-Ttext-segment=0x52000000"'
 Set-Content -LiteralPath $configPath -Value $configLines -Encoding Ascii
+
+$catSourcePath = Join-Path $sourcePath "coreutils\cat.c"
+$catAppletSourceLine = "//applet:IF_CAT(APPLET(cat, BB_DIR_BIN, BB_SUID_DROP))"
+$catNoexecSourceLine = "//applet:IF_CAT(APPLET_NOEXEC(cat, cat, BB_DIR_BIN, BB_SUID_DROP, cat))"
+if (-not (Test-Path $catSourcePath)) {
+    throw "BusyBox source tree does not contain coreutils\cat.c."
+}
+$catSource = Get-Content -LiteralPath $catSourcePath -Raw
+if ($catSource.Contains($catAppletSourceLine)) {
+    $catSource = $catSource.Replace($catAppletSourceLine, $catNoexecSourceLine)
+    Set-Content -LiteralPath $catSourcePath -Value $catSource -Encoding Ascii
+}
+elseif (-not $catSource.Contains($catNoexecSourceLine)) {
+    throw "BusyBox cat.c does not contain the expected applet declaration."
+}
 
 New-Item -ItemType Directory -Force -Path (Join-Path $sourcePath "include\asm-x86_64") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $BuildDir "include2") | Out-Null
@@ -197,6 +213,34 @@ if ($autoconfText -notmatch "#define CONFIG_FEATURE_SH_STANDALONE 1") {
 if ($autoconfText -notmatch "#define CONFIG_FEATURE_SH_NOFORK 1") {
     throw "BusyBox generated config did not enable CONFIG_FEATURE_SH_NOFORK."
 }
+if ($autoconfText -notmatch "#define CONFIG_FEATURE_PREFER_APPLETS 1") {
+    throw "BusyBox generated config did not enable CONFIG_FEATURE_PREFER_APPLETS."
+}
+
+$appletsHeaderPath = Join-Path $BuildDir "include\applets.h"
+if (-not (Test-Path $appletsHeaderPath)) {
+    throw "BusyBox oldconfig did not produce include\applets.h."
+}
+$appletsHeader = Get-Content -LiteralPath $appletsHeaderPath
+$catAppletLine = "IF_CAT(APPLET(cat, BB_DIR_BIN, BB_SUID_DROP))"
+$catNoexecLine = "IF_CAT(APPLET_NOEXEC(cat, cat, BB_DIR_BIN, BB_SUID_DROP, cat))"
+$catAppletPatched = $false
+$patchedAppletsHeader = New-Object System.Collections.Generic.List[string]
+foreach ($line in $appletsHeader) {
+    if ($line -eq $catAppletLine) {
+        $patchedAppletsHeader.Add($catNoexecLine)
+        $catAppletPatched = $true
+    }
+    else {
+        $patchedAppletsHeader.Add($line)
+    }
+}
+if (-not $catAppletPatched) {
+    if (($appletsHeader -join "`n") -notmatch [regex]::Escape($catNoexecLine)) {
+        throw "BusyBox generated applets.h does not contain the expected cat applet line."
+    }
+}
+Set-Content -LiteralPath $appletsHeaderPath -Value $patchedAppletsHeader.ToArray() -Encoding Ascii
 
 $appletTablesPath = Join-Path $BuildDir "applets\applet_tables.exe"
 if (-not (Test-Path $appletTablesPath)) {
@@ -273,5 +317,5 @@ Write-Host "Built standalone-shell BusyBox artifact."
 Write-Host "  output : $OutputPath"
 Write-Host "  bytes  : $((Get-Item $OutputPath).Length)"
 Write-Host "  sha256 : $hash"
-Write-Host "  config : FEATURE_SH_STANDALONE=y FEATURE_SH_NOFORK=y"
+Write-Host "  config : FEATURE_PREFER_APPLETS=y FEATURE_SH_STANDALONE=y FEATURE_SH_NOFORK=y CAT_NOEXEC=patched"
 Write-Host "  link   : static non-PIE ET_EXEC at 0x52000000"

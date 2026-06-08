@@ -53,6 +53,7 @@ void pipe64_init(void);
 u32 pipe64_create(u32 pid, u32 *read_fd_out, u32 *write_fd_out);
 u32 pipe64_create_flags(u32 pid, u32 flags, u32 *read_fd_out, u32 *write_fd_out);
 u32 pipe64_grant_endpoint(u32 source_pid, u32 source_fd, u32 target_pid, u32 *target_fd_out);
+u32 pipe64_grant_endpoint_at(u32 source_pid, u32 source_fd, u32 target_pid, u32 target_fd);
 u32 pipe64_write(u32 pipe_handle, const u8 *input, u32 byte_count, u32 owner_id);
 u32 pipe64_read(u32 pipe_handle, u8 *output, u32 byte_count, u32 owner_id);
 u32 pipe64_revoke_handle(u32 pipe_handle, u32 owner_id);

@@ -27,6 +27,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_SYSCALL_PWRITE64 18u
 #define LINUX_ABI64_SYSCALL_READV 19u
 #define LINUX_ABI64_SYSCALL_WRITEV 20u
+#define LINUX_ABI64_SYSCALL_PIPE 22u
 #define LINUX_ABI64_SYSCALL_DUP 32u
 #define LINUX_ABI64_SYSCALL_DUP2 33u
 #define LINUX_ABI64_SYSCALL_NANOSLEEP 35u
@@ -378,6 +379,7 @@ u64 linux_abi64_sys_clock_gettime(u32 pid, u64 clock_id, u64 user_timespec, u64 
 u64 linux_abi64_sys_nanosleep(u32 pid, u64 user_request, u64 user_remain, u64 rip);
 u64 linux_abi64_sys_getrlimit(u32 pid, u64 resource, u64 user_rlimit, u64 rip);
 u64 linux_abi64_sys_setrlimit(u32 pid, u64 resource, u64 user_rlimit, u64 rip);
+u64 linux_abi64_sys_pipe(u32 pid, u64 user_pipefd, u64 rip);
 u64 linux_abi64_sys_pipe2(u32 pid, u64 user_pipefd, u64 flags, u64 rip);
 u64 linux_abi64_sys_dup(u32 pid, u64 old_fd_number, u64 rip);
 u64 linux_abi64_sys_dup2(u32 pid, u64 old_fd_number, u64 new_fd_number, u64 rip);
@@ -453,6 +455,7 @@ u32 linux_abi64_rt_sigreturn_entry_installed(void);
 u32 linux_abi64_nanosleep_entry_installed(void);
 u32 linux_abi64_getrlimit_entry_installed(void);
 u32 linux_abi64_setrlimit_entry_installed(void);
+u32 linux_abi64_pipe_entry_installed(void);
 u32 linux_abi64_pipe2_entry_installed(void);
 u32 linux_abi64_dup_entry_installed(void);
 u32 linux_abi64_dup2_entry_installed(void);
@@ -585,6 +588,9 @@ u32 linux_abi64_getrlimit_count(void);
 u32 linux_abi64_setrlimit_count(void);
 u32 linux_abi64_rlimit_denial_count(void);
 u32 linux_abi64_rlimit_fault_count(void);
+u32 linux_abi64_pipe_count(void);
+u32 linux_abi64_pipe_denial_count(void);
+u32 linux_abi64_pipe_fault_count(void);
 u32 linux_abi64_pipe2_count(void);
 u32 linux_abi64_pipe2_denial_count(void);
 u32 linux_abi64_pipe2_fault_count(void);

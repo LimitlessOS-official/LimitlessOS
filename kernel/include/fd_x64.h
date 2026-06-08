@@ -97,6 +97,7 @@ u32 fd64_init_process(
 u32 fd64_fork_process(u32 parent_pid, u32 child_pid);
 u32 fd64_release_process(u32 pid);
 fd_table_t *fd64_table_for_process(u32 pid);
+u32 fd64_alloc_at(u32 pid, u32 fd_number, u32 capability_handle, u32 fd_type, u32 flags);
 u32 fd64_alloc(u32 pid, u32 capability_handle, u32 fd_type, u32 flags);
 u32 fd64_open_ramfs(u32 pid, const u8 *path, u32 path_byte_count, u32 flags, u32 mode);
 u32 fd64_read(u32 pid, u32 fd_number, u8 *output, u32 byte_count);
@@ -130,5 +131,8 @@ u32 fd64_fork_copy_last_parent_pid(void);
 u32 fd64_fork_copy_last_child_pid(void);
 u32 fd64_fork_copy_last_entries(void);
 u32 fd64_fork_copy_last_stage(void);
+u32 fd64_fork_pipe_copy_count(void);
+u32 fd64_fork_pipe_denial_count(void);
+u32 fd64_fork_pipe_last_fd(void);
 
 #endif

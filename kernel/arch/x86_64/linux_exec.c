@@ -13,6 +13,7 @@
 #include "paging_x64.h"
 #include "persona_audit_x64.h"
 #include "persona_x64.h"
+#include "pipe_x64.h"
 #include "principal_x64.h"
 #include "process_x64.h"
 #include "scheduler_x64.h"
@@ -110,6 +111,19 @@ typedef struct linux_exec64_telemetry
     u32 read_bytes;
     u32 write_calls;
     u32 write_bytes;
+    u32 pipe_calls;
+    u32 pipe_denial;
+    u32 pipe_fault;
+    u32 pipe2_calls;
+    u32 pipe2_denial;
+    u32 pipe2_fault;
+    u32 pipe_live_final;
+    u32 pipe_blocks;
+    u32 pipe_wakes;
+    u32 pipe_provider_denial;
+    u32 fd_fork_pipe_copy;
+    u32 fd_fork_pipe_denial;
+    u32 fd_fork_pipe_last_fd;
     u32 readv_calls;
     u32 readv_bytes;
     u32 writev_calls;
@@ -477,6 +491,37 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.write_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " write-bytes ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.write_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-create ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-denials ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-faults ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_fault);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe2 ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe2_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe2-denials ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe2_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe2-faults ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe2_fault);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-live-final ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_live_final);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-blocks ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_blocks);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-wakes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_wakes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-provider-denials ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.pipe_provider_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fd-fork-pipe-copy ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fd_fork_pipe_copy);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fd-fork-pipe-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fd_fork_pipe_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fd-fork-pipe-last-fd ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fd_fork_pipe_last_fd);
     (void)linux_exec64_write_text(console_capability, owner_id, " readv ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.readv_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " readv-bytes ");
@@ -818,6 +863,28 @@ u32 linux_exec64_run_nvme(
     u32 write_calls_after;
     u32 write_bytes_before;
     u32 write_bytes_after;
+    u32 pipe_calls_before;
+    u32 pipe_calls_after;
+    u32 pipe_denial_before;
+    u32 pipe_denial_after;
+    u32 pipe_fault_before;
+    u32 pipe_fault_after;
+    u32 pipe2_calls_before;
+    u32 pipe2_calls_after;
+    u32 pipe2_denial_before;
+    u32 pipe2_denial_after;
+    u32 pipe2_fault_before;
+    u32 pipe2_fault_after;
+    u32 pipe_blocks_before;
+    u32 pipe_blocks_after;
+    u32 pipe_wakes_before;
+    u32 pipe_wakes_after;
+    u32 pipe_provider_denial_before;
+    u32 pipe_provider_denial_after;
+    u32 fd_fork_pipe_copy_before;
+    u32 fd_fork_pipe_copy_after;
+    u32 fd_fork_pipe_denial_before;
+    u32 fd_fork_pipe_denial_after;
     u32 readv_calls_before;
     u32 readv_calls_after;
     u32 readv_bytes_before;
@@ -1216,6 +1283,17 @@ u32 linux_exec64_run_nvme(
     read_bytes_before = linux_abi64_read_byte_count();
     write_calls_before = linux_abi64_write_count();
     write_bytes_before = linux_abi64_write_byte_count();
+    pipe_calls_before = linux_abi64_pipe_count();
+    pipe_denial_before = linux_abi64_pipe_denial_count();
+    pipe_fault_before = linux_abi64_pipe_fault_count();
+    pipe2_calls_before = linux_abi64_pipe2_count();
+    pipe2_denial_before = linux_abi64_pipe2_denial_count();
+    pipe2_fault_before = linux_abi64_pipe2_fault_count();
+    pipe_blocks_before = pipe64_block_count();
+    pipe_wakes_before = pipe64_wake_count();
+    pipe_provider_denial_before = pipe64_denial_count();
+    fd_fork_pipe_copy_before = fd64_fork_pipe_copy_count();
+    fd_fork_pipe_denial_before = fd64_fork_pipe_denial_count();
     readv_calls_before = linux_abi64_readv_count();
     readv_bytes_before = linux_abi64_readv_byte_count();
     writev_calls_before = linux_abi64_writev_count();
@@ -1310,6 +1388,17 @@ u32 linux_exec64_run_nvme(
     read_bytes_after = linux_abi64_read_byte_count();
     write_calls_after = linux_abi64_write_count();
     write_bytes_after = linux_abi64_write_byte_count();
+    pipe_calls_after = linux_abi64_pipe_count();
+    pipe_denial_after = linux_abi64_pipe_denial_count();
+    pipe_fault_after = linux_abi64_pipe_fault_count();
+    pipe2_calls_after = linux_abi64_pipe2_count();
+    pipe2_denial_after = linux_abi64_pipe2_denial_count();
+    pipe2_fault_after = linux_abi64_pipe2_fault_count();
+    pipe_blocks_after = pipe64_block_count();
+    pipe_wakes_after = pipe64_wake_count();
+    pipe_provider_denial_after = pipe64_denial_count();
+    fd_fork_pipe_copy_after = fd64_fork_pipe_copy_count();
+    fd_fork_pipe_denial_after = fd64_fork_pipe_denial_count();
     readv_calls_after = linux_abi64_readv_count();
     readv_bytes_after = linux_abi64_readv_byte_count();
     writev_calls_after = linux_abi64_writev_count();
@@ -1481,6 +1570,52 @@ u32 linux_exec64_run_nvme(
         (write_bytes_after >= write_bytes_before)
             ? (write_bytes_after - write_bytes_before)
             : 0u;
+    g_linux_exec64_telemetry.pipe_calls =
+        (pipe_calls_after >= pipe_calls_before)
+            ? (pipe_calls_after - pipe_calls_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_denial =
+        (pipe_denial_after >= pipe_denial_before)
+            ? (pipe_denial_after - pipe_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_fault =
+        (pipe_fault_after >= pipe_fault_before)
+            ? (pipe_fault_after - pipe_fault_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe2_calls =
+        (pipe2_calls_after >= pipe2_calls_before)
+            ? (pipe2_calls_after - pipe2_calls_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe2_denial =
+        (pipe2_denial_after >= pipe2_denial_before)
+            ? (pipe2_denial_after - pipe2_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe2_fault =
+        (pipe2_fault_after >= pipe2_fault_before)
+            ? (pipe2_fault_after - pipe2_fault_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_live_final = pipe64_live_count();
+    g_linux_exec64_telemetry.pipe_blocks =
+        (pipe_blocks_after >= pipe_blocks_before)
+            ? (pipe_blocks_after - pipe_blocks_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_wakes =
+        (pipe_wakes_after >= pipe_wakes_before)
+            ? (pipe_wakes_after - pipe_wakes_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_provider_denial =
+        (pipe_provider_denial_after >= pipe_provider_denial_before)
+            ? (pipe_provider_denial_after - pipe_provider_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.fd_fork_pipe_copy =
+        (fd_fork_pipe_copy_after >= fd_fork_pipe_copy_before)
+            ? (fd_fork_pipe_copy_after - fd_fork_pipe_copy_before)
+            : 0u;
+    g_linux_exec64_telemetry.fd_fork_pipe_denial =
+        (fd_fork_pipe_denial_after >= fd_fork_pipe_denial_before)
+            ? (fd_fork_pipe_denial_after - fd_fork_pipe_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.fd_fork_pipe_last_fd = fd64_fork_pipe_last_fd();
     g_linux_exec64_telemetry.readv_calls =
         (readv_calls_after >= readv_calls_before)
             ? (readv_calls_after - readv_calls_before)
