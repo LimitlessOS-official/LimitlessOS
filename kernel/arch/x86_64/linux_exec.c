@@ -85,6 +85,10 @@ typedef struct linux_exec64_telemetry
     u32 bin_vfs_opens;
     u32 bin_vfs_reads;
     u32 bin_vfs_denials;
+    u32 localbin_vfs_aliases;
+    u32 localbin_vfs_opens;
+    u32 localbin_vfs_reads;
+    u32 localbin_vfs_denials;
     u32 getdents64_calls;
     u32 getdents64_entries;
     u32 getdents64_bytes;
@@ -686,6 +690,14 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_reads);
     (void)linux_exec64_write_text(console_capability, owner_id, " vfs-bin-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_denials);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-localbin-alias ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.localbin_vfs_aliases);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-localbin-open ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.localbin_vfs_opens);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-localbin-read ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.localbin_vfs_reads);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-localbin-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.localbin_vfs_denials);
     (void)linux_exec64_write_text(console_capability, owner_id, "\n");
 
     (void)linux_exec64_write_text(console_capability, owner_id, "drs-realbin-syscall-last number ");
@@ -1039,6 +1051,14 @@ u32 linux_exec64_run_nvme(
     u32 bin_vfs_read_after;
     u32 bin_vfs_denial_before;
     u32 bin_vfs_denial_after;
+    u32 localbin_vfs_alias_before;
+    u32 localbin_vfs_alias_after;
+    u32 localbin_vfs_open_before;
+    u32 localbin_vfs_open_after;
+    u32 localbin_vfs_read_before;
+    u32 localbin_vfs_read_after;
+    u32 localbin_vfs_denial_before;
+    u32 localbin_vfs_denial_after;
     u32 exit_probe_arm;
     u32 exit_probe_clear = 0u;
     u32 reattach_vma = 0u;
@@ -1431,6 +1451,10 @@ u32 linux_exec64_run_nvme(
     bin_vfs_open_before = linux_vfs64_bin_open_count();
     bin_vfs_read_before = linux_vfs64_bin_read_count();
     bin_vfs_denial_before = linux_vfs64_bin_denial_count();
+    localbin_vfs_alias_before = linux_vfs64_localbin_alias_count();
+    localbin_vfs_open_before = linux_vfs64_localbin_open_count();
+    localbin_vfs_read_before = linux_vfs64_localbin_read_count();
+    localbin_vfs_denial_before = linux_vfs64_localbin_denial_count();
     cr3_process_switch_before = paging64_process_root_switch_count();
     cr3_kernel_switch_before = paging64_process_root_kernel_switch_count();
     runqueue_started = scheduler64_runqueue_start(task);
@@ -1547,6 +1571,10 @@ u32 linux_exec64_run_nvme(
     bin_vfs_open_after = linux_vfs64_bin_open_count();
     bin_vfs_read_after = linux_vfs64_bin_read_count();
     bin_vfs_denial_after = linux_vfs64_bin_denial_count();
+    localbin_vfs_alias_after = linux_vfs64_localbin_alias_count();
+    localbin_vfs_open_after = linux_vfs64_localbin_open_count();
+    localbin_vfs_read_after = linux_vfs64_localbin_read_count();
+    localbin_vfs_denial_after = linux_vfs64_localbin_denial_count();
 
     g_linux_exec64_telemetry.started = (runqueue_started != 0u) ? 1u : 0u;
     g_linux_exec64_telemetry.console_bytes =
@@ -1920,6 +1948,22 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.bin_vfs_denials =
         (bin_vfs_denial_after >= bin_vfs_denial_before)
             ? (bin_vfs_denial_after - bin_vfs_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.localbin_vfs_aliases =
+        (localbin_vfs_alias_after >= localbin_vfs_alias_before)
+            ? (localbin_vfs_alias_after - localbin_vfs_alias_before)
+            : 0u;
+    g_linux_exec64_telemetry.localbin_vfs_opens =
+        (localbin_vfs_open_after >= localbin_vfs_open_before)
+            ? (localbin_vfs_open_after - localbin_vfs_open_before)
+            : 0u;
+    g_linux_exec64_telemetry.localbin_vfs_reads =
+        (localbin_vfs_read_after >= localbin_vfs_read_before)
+            ? (localbin_vfs_read_after - localbin_vfs_read_before)
+            : 0u;
+    g_linux_exec64_telemetry.localbin_vfs_denials =
+        (localbin_vfs_denial_after >= localbin_vfs_denial_before)
+            ? (localbin_vfs_denial_after - localbin_vfs_denial_before)
             : 0u;
     g_linux_exec64_telemetry.page_fault_rip = interrupts64_last_exception_rip();
 

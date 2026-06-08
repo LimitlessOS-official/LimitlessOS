@@ -1324,7 +1324,7 @@ static u32 shell64_linux_run(
     }
     for (index = 0u; index < path_length; ++index)
     {
-        g_shell64_linux_argv_storage[argc][index] = (char)g_shell64_line[path_start + index];
+        g_shell64_linux_argv_storage[argc][index] = (char)shell64_lower(g_shell64_line[path_start + index]);
     }
     g_shell64_linux_argv_storage[argc][path_length] = '\0';
     argv[argc++] = g_shell64_linux_argv_storage[0];

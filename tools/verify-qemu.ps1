@@ -672,10 +672,19 @@ function Send-QemuKeyboardProbe
                     & $sendShiftedKey "backslash"
                     continue
                 }
+                if ($character -eq ':') {
+                    & $sendShiftedKey "semicolon"
+                    continue
+                }
+                if (($character -ge 'A') -and ($character -le 'Z')) {
+                    & $sendShiftedKey ([string]$character).ToLowerInvariant()
+                    continue
+                }
                 $key = switch ($character) {
                     ' ' { "spc"; break }
                     '.' { "dot"; break }
                     '-' { "minus"; break }
+                    '=' { "equal"; break }
                     '/' { "slash"; break }
                     "'" { "apostrophe"; break }
                     ';' { "semicolon"; break }

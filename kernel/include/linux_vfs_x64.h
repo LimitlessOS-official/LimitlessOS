@@ -5,7 +5,7 @@
 #include "fd_x64.h"
 #include "types.h"
 
-#define LINUX_VFS64_MAX_MOUNTS 10u
+#define LINUX_VFS64_MAX_MOUNTS 12u
 #define LINUX_VFS64_MAX_PATH_BYTES 128u
 #define LINUX_VFS64_INVALID_RESULT 0xFFFFFFFFu
 #define LINUX_VFS64_DEVICE_HANDLE_TAG 0x76000000u
@@ -210,6 +210,10 @@ u32 linux_vfs64_bin_alias_count(void);
 u32 linux_vfs64_bin_open_count(void);
 u32 linux_vfs64_bin_read_count(void);
 u32 linux_vfs64_bin_denial_count(void);
+u32 linux_vfs64_localbin_alias_count(void);
+u32 linux_vfs64_localbin_open_count(void);
+u32 linux_vfs64_localbin_read_count(void);
+u32 linux_vfs64_localbin_denial_count(void);
 u32 linux_vfs64_fork_copy_count(void);
 u32 linux_vfs64_fork_copy_denial_count(void);
 u32 linux_vfs64_fork_copy_last_parent_pid(void);

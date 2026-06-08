@@ -30,7 +30,11 @@ static const u8 g_linux_vfs64_prefix_sbin[] = "/sbin";
 static const u8 g_linux_vfs64_prefix_usr[] = "/usr";
 static const u8 g_linux_vfs64_prefix_usr_bin[] = "/usr/bin";
 static const u8 g_linux_vfs64_prefix_usr_sbin[] = "/usr/sbin";
+static const u8 g_linux_vfs64_prefix_usr_local[] = "/usr/local";
+static const u8 g_linux_vfs64_prefix_usr_local_bin[] = "/usr/local/bin";
 static const u8 g_linux_vfs64_busybox_backend_path[] = "/nvme/apps/busybox";
+static const u8 g_linux_vfs64_sbecho_backend_path[] = "/nvme/apps/sbecho";
+static const u8 g_linux_vfs64_sbcat_backend_path[] = "/nvme/apps/sbcat";
 
 static const linux_vfs64_mount_t g_linux_vfs64_mounts[LINUX_VFS64_MAX_MOUNTS] = {
     { g_linux_vfs64_prefix_root, 1u, LINUX_VFS64_PROVIDER_RAMFS, LINUX_VFS64_OPEN_READ },
@@ -42,7 +46,9 @@ static const linux_vfs64_mount_t g_linux_vfs64_mounts[LINUX_VFS64_MAX_MOUNTS] = 
     { g_linux_vfs64_prefix_sbin, 5u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ },
     { g_linux_vfs64_prefix_usr, 4u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ },
     { g_linux_vfs64_prefix_usr_bin, 8u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ },
-    { g_linux_vfs64_prefix_usr_sbin, 9u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ }
+    { g_linux_vfs64_prefix_usr_sbin, 9u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ },
+    { g_linux_vfs64_prefix_usr_local, 10u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ },
+    { g_linux_vfs64_prefix_usr_local_bin, 14u, LINUX_VFS64_PROVIDER_BIN, LINUX_VFS64_OPEN_READ }
 };
 
 #define LINUX_VFS64_MAX_FD_PATH_RECORDS 16u
@@ -108,7 +114,17 @@ static const linux_vfs64_dirent_template_t g_linux_vfs64_bin_dirents[] = {
 
 static const linux_vfs64_dirent_template_t g_linux_vfs64_usr_dirents[] = {
     { "bin", LINUX_VFS64_DIRENT_TYPE_DIR, 0x4101ull },
-    { "sbin", LINUX_VFS64_DIRENT_TYPE_DIR, 0x4102ull }
+    { "sbin", LINUX_VFS64_DIRENT_TYPE_DIR, 0x4102ull },
+    { "local", LINUX_VFS64_DIRENT_TYPE_DIR, 0x4103ull }
+};
+
+static const linux_vfs64_dirent_template_t g_linux_vfs64_usr_local_dirents[] = {
+    { "bin", LINUX_VFS64_DIRENT_TYPE_DIR, 0x4201ull }
+};
+
+static const linux_vfs64_dirent_template_t g_linux_vfs64_usr_local_bin_dirents[] = {
+    { "sbecho", LINUX_VFS64_DIRENT_TYPE_REG, 0x4301ull },
+    { "sbcat", LINUX_VFS64_DIRENT_TYPE_REG, 0x4302ull }
 };
 
 #define LINUX_VFS64_MAX_PROC_RECORDS 16u
@@ -195,6 +211,10 @@ static u32 g_linux_vfs64_bin_alias_count = 0u;
 static u32 g_linux_vfs64_bin_open_count = 0u;
 static u32 g_linux_vfs64_bin_read_count = 0u;
 static u32 g_linux_vfs64_bin_denial_count = 0u;
+static u32 g_linux_vfs64_localbin_alias_count = 0u;
+static u32 g_linux_vfs64_localbin_open_count = 0u;
+static u32 g_linux_vfs64_localbin_read_count = 0u;
+static u32 g_linux_vfs64_localbin_denial_count = 0u;
 static u32 g_linux_vfs64_fork_copy_count = 0u;
 static u32 g_linux_vfs64_fork_copy_denial_count = 0u;
 static u32 g_linux_vfs64_fork_copy_last_parent_pid = PROCESS64_INVALID_PID;
@@ -212,6 +232,11 @@ static void linux_vfs64_clear_fd_path_record(linux_vfs64_fd_path_record_t *recor
 static void linux_vfs64_clear_proc_record(linux_vfs64_proc_record_t *record);
 static void linux_vfs64_clear_tmp_record(linux_vfs64_tmp_record_t *record);
 static u32 linux_vfs64_bin_backend_path(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 **backend_path_out,
+    u32 *backend_path_bytes_out);
+static u32 linux_vfs64_localbin_backend_path(
     const u8 *path,
     u32 path_byte_count,
     const u8 **backend_path_out,
@@ -418,6 +443,16 @@ static u32 linux_vfs64_nvme_read_all(
         path = backend_path;
         path_byte_count = backend_path_bytes;
         ++g_linux_vfs64_bin_read_count;
+    }
+    else if (linux_vfs64_localbin_backend_path(
+            path,
+            path_byte_count,
+            &backend_path,
+            &backend_path_bytes) != 0u)
+    {
+        path = backend_path;
+        path_byte_count = backend_path_bytes;
+        ++g_linux_vfs64_localbin_read_count;
     }
 
     binding = linux_vfs64_find_nvme_binding(pid);
@@ -862,6 +897,96 @@ static u32 linux_vfs64_bin_backend_path(
     *backend_path_out = g_linux_vfs64_busybox_backend_path;
     *backend_path_bytes_out = (u32)(sizeof(g_linux_vfs64_busybox_backend_path) - 1u);
     return 1u;
+}
+
+static u32 linux_vfs64_localbin_name(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 **name_out,
+    u32 *name_byte_count_out)
+{
+    u32 name_bytes;
+    u32 prefix_bytes = 15u;
+    u32 index;
+
+    if (name_out != 0)
+    {
+        *name_out = 0;
+    }
+    if (name_byte_count_out != 0)
+    {
+        *name_byte_count_out = 0u;
+    }
+
+    if ((path == 0)
+        || (name_out == 0)
+        || (name_byte_count_out == 0)
+        || (path_byte_count <= prefix_bytes)
+        || (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_usr_local_bin, 14u) == 0u)
+        || (path[14] != (u8)'/'))
+    {
+        return 0u;
+    }
+
+    name_bytes = path_byte_count - prefix_bytes;
+    if ((name_bytes == 0u) || (name_bytes > LINUX_VFS64_DIRENT_NAME_MAX))
+    {
+        return 0u;
+    }
+
+    for (index = prefix_bytes; index < path_byte_count; ++index)
+    {
+        if (path[index] == (u8)'/')
+        {
+            return 0u;
+        }
+    }
+
+    *name_out = &path[prefix_bytes];
+    *name_byte_count_out = name_bytes;
+    return 1u;
+}
+
+static u32 linux_vfs64_localbin_backend_path(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 **backend_path_out,
+    u32 *backend_path_bytes_out)
+{
+    const u8 *name;
+    u32 name_bytes;
+
+    if (backend_path_out != 0)
+    {
+        *backend_path_out = 0;
+    }
+    if (backend_path_bytes_out != 0)
+    {
+        *backend_path_bytes_out = 0u;
+    }
+
+    if ((backend_path_out == 0)
+        || (backend_path_bytes_out == 0)
+        || (linux_vfs64_localbin_name(path, path_byte_count, &name, &name_bytes) == 0u))
+    {
+        return 0u;
+    }
+
+    if (linux_vfs64_name_is_exact(name, name_bytes, "sbecho") != 0u)
+    {
+        *backend_path_out = g_linux_vfs64_sbecho_backend_path;
+        *backend_path_bytes_out = (u32)(sizeof(g_linux_vfs64_sbecho_backend_path) - 1u);
+        return 1u;
+    }
+
+    if (linux_vfs64_name_is_exact(name, name_bytes, "sbcat") != 0u)
+    {
+        *backend_path_out = g_linux_vfs64_sbcat_backend_path;
+        *backend_path_bytes_out = (u32)(sizeof(g_linux_vfs64_sbcat_backend_path) - 1u);
+        return 1u;
+    }
+
+    return 0u;
 }
 
 static u32 linux_vfs64_parse_proc_fd_path(const u8 *path, u32 path_byte_count, u32 *fd_number_out)
@@ -2531,7 +2656,9 @@ static u32 linux_vfs64_resolve_bin(
         || (linux_vfs64_path_is_exact(path, path_byte_count, "/sbin") != 0u)
         || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr") != 0u)
         || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/bin") != 0u)
-        || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/sbin") != 0u))
+        || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/sbin") != 0u)
+        || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/local") != 0u)
+        || (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/local/bin") != 0u))
     {
         result->node_type = LINUX_VFS64_NODE_BIN_DIR;
         result->device_type = LINUX_VFS64_DEVICE_DIRECTORY;
@@ -2542,8 +2669,23 @@ static u32 linux_vfs64_resolve_bin(
     if ((linux_vfs64_bin_applet_name(path, path_byte_count, &name, &name_bytes) == 0u)
         || (linux_vfs64_bin_applet_supported(name, name_bytes) == 0u))
     {
-        ++g_linux_vfs64_bin_denial_count;
-        return linux_vfs64_deny(result, LINUX_VFS64_ERROR_NOT_FOUND);
+        if (linux_vfs64_localbin_backend_path(path, path_byte_count, &name, &name_bytes) == 0u)
+        {
+            ++g_linux_vfs64_bin_denial_count;
+            if ((path_byte_count > 15u)
+                && (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_usr_local_bin, 14u) != 0u)
+                && (path[14] == (u8)'/'))
+            {
+                ++g_linux_vfs64_localbin_denial_count;
+            }
+            return linux_vfs64_deny(result, LINUX_VFS64_ERROR_NOT_FOUND);
+        }
+
+        ++g_linux_vfs64_localbin_alias_count;
+        result->node_type = LINUX_VFS64_NODE_BIN_APPLET;
+        result->device_type = LINUX_VFS64_DEVICE_NVME_FILE;
+        result->capability_handle = linux_vfs64_device_handle(LINUX_VFS64_DEVICE_NVME_FILE);
+        return 1u;
     }
 
     ++g_linux_vfs64_bin_alias_count;
@@ -2628,6 +2770,10 @@ void linux_vfs64_init(void)
     g_linux_vfs64_bin_open_count = 0u;
     g_linux_vfs64_bin_read_count = 0u;
     g_linux_vfs64_bin_denial_count = 0u;
+    g_linux_vfs64_localbin_alias_count = 0u;
+    g_linux_vfs64_localbin_open_count = 0u;
+    g_linux_vfs64_localbin_read_count = 0u;
+    g_linux_vfs64_localbin_denial_count = 0u;
     g_linux_vfs64_random_counter = 0x5A17A001u;
     for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
     {
@@ -3107,12 +3253,25 @@ u32 linux_vfs64_open(u32 pid, const u8 *path, u32 path_byte_count, u32 flags, u3
         && (result.capability_handle != CAPABILITY64_INVALID_HANDLE)
         && (create_requested == 0u))
     {
+        const u8 *alias_backend_path;
+        u32 alias_backend_path_bytes;
         fd_number = fd64_alloc(pid, result.capability_handle, FD64_TYPE_DEVICE, fd_flags);
         if (fd_number != FD64_INVALID_FD)
         {
             (void)linux_vfs64_record_fd_path(pid, fd_number, effective_path, effective_path_bytes);
             ++g_linux_vfs64_open_count;
-            ++g_linux_vfs64_bin_open_count;
+            if (linux_vfs64_localbin_backend_path(
+                    effective_path,
+                    effective_path_bytes,
+                    &alias_backend_path,
+                    &alias_backend_path_bytes) != 0u)
+            {
+                ++g_linux_vfs64_localbin_open_count;
+            }
+            else
+            {
+                ++g_linux_vfs64_bin_open_count;
+            }
         }
         return fd_number;
     }
@@ -3960,11 +4119,27 @@ static u32 linux_vfs64_fill_resolved_stat(
         mmio64_nvme_fat_stat_t fat_stat;
 
         if ((linux_vfs64_bin_backend_path(
-                path,
-                path_byte_count,
-                &backend_path,
-                &backend_path_bytes) == 0u)
-            || (linux_vfs64_nvme_stat(
+                    path,
+                    path_byte_count,
+                    &backend_path,
+                    &backend_path_bytes) == 0u)
+                && (linux_vfs64_localbin_backend_path(
+                    path,
+                    path_byte_count,
+                    &backend_path,
+                    &backend_path_bytes) == 0u))
+        {
+            ++g_linux_vfs64_bin_denial_count;
+            if ((path_byte_count > 15u)
+                && (linux_vfs64_bytes_equal(path, g_linux_vfs64_prefix_usr_local_bin, 14u) != 0u)
+                && (path[14] == (u8)'/'))
+            {
+                ++g_linux_vfs64_localbin_denial_count;
+            }
+            return 0u;
+        }
+
+        if ((linux_vfs64_nvme_stat(
                 pid,
                 backend_path,
                 backend_path_bytes,
@@ -4429,11 +4604,29 @@ u32 linux_vfs64_read_dirent(u32 pid, u32 fd_number, u32 cursor, linux_vfs64_dire
             entry_out);
     }
 
+    if (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/local/bin") != 0u)
+    {
+        return linux_vfs64_dirent_from_table(
+            &g_linux_vfs64_usr_local_bin_dirents[0],
+            (u32)(sizeof(g_linux_vfs64_usr_local_bin_dirents) / sizeof(g_linux_vfs64_usr_local_bin_dirents[0])),
+            cursor,
+            entry_out);
+    }
+
     if (linux_vfs64_path_is_exact(path, path_byte_count, "/usr") != 0u)
     {
         return linux_vfs64_dirent_from_table(
             &g_linux_vfs64_usr_dirents[0],
             (u32)(sizeof(g_linux_vfs64_usr_dirents) / sizeof(g_linux_vfs64_usr_dirents[0])),
+            cursor,
+            entry_out);
+    }
+
+    if (linux_vfs64_path_is_exact(path, path_byte_count, "/usr/local") != 0u)
+    {
+        return linux_vfs64_dirent_from_table(
+            &g_linux_vfs64_usr_local_dirents[0],
+            (u32)(sizeof(g_linux_vfs64_usr_local_dirents) / sizeof(g_linux_vfs64_usr_local_dirents[0])),
             cursor,
             entry_out);
     }
@@ -4765,6 +4958,26 @@ u32 linux_vfs64_bin_read_count(void)
 u32 linux_vfs64_bin_denial_count(void)
 {
     return g_linux_vfs64_bin_denial_count;
+}
+
+u32 linux_vfs64_localbin_alias_count(void)
+{
+    return g_linux_vfs64_localbin_alias_count;
+}
+
+u32 linux_vfs64_localbin_open_count(void)
+{
+    return g_linux_vfs64_localbin_open_count;
+}
+
+u32 linux_vfs64_localbin_read_count(void)
+{
+    return g_linux_vfs64_localbin_read_count;
+}
+
+u32 linux_vfs64_localbin_denial_count(void)
+{
+    return g_linux_vfs64_localbin_denial_count;
 }
 
 u32 linux_vfs64_fork_copy_count(void)

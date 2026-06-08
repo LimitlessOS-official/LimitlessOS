@@ -238,7 +238,32 @@ drs-realbin path /APPS/BUSYBOX provenance 1 nvme-read 1 elf 1 static 1 mapped 4 
 drs-realbin-syscall-last number 231 result 0x00000000 unimplemented 0 unimplemented-last 511 unimplemented-rip 0x00000000F05001FF page-faults 0 page-fault-rip 0xFFFFFFFF8001016E
 ```
 
-Proposed M30 scope: `third-party PATH directory proof`. M30 should make multiple staged third-party ET_EXEC utilities visible through a bounded Linux VFS directory such as `/usr/local/bin` or another explicit Product-owned path, then prove BusyBox ash can run `sbecho` and `sbcat` by PATH name without absolute `/nvme/apps/...` paths. It should remain narrower than dynamic linking, glibc, vfork, real threading, signal delivery, sockets, broad clone flag compatibility, broad ioctl/device control, or arbitrary distro filesystem population.
+## M30 Third-Party PATH Directory Proof
+
+M30 is accepted on the UEFI Product path with `linux /APPS/BUSYBOX sh -c 'PATH=/usr/local/bin:/bin:/usr/bin; sbecho m30-path-pipe | sbcat'`. The command stages upstream suckless sbase 0.1 `echo` and `cat` artifacts as `/APPS/SBECHO` and `/APPS/SBCAT`, exposes them as Linux-visible `/usr/local/bin/sbecho` and `/usr/local/bin/sbcat`, lets BusyBox ash find both utilities by PATH name, forks both pipeline sides, execs both third-party ET_EXEC children, moves bytes through the pipe, and reaps both children.
+
+Visible PATH pipeline output:
+
+```text
+m30-path-pipe
+```
+
+The source tarball remains `https://dl.suckless.org/sbase/sbase-0.1.tar.gz`, SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`. The staged `/APPS/SBECHO` artifact SHA-256 is `35DA6DB9DCF1C7E76AE605EAE175318831BCD10BBBF406D5A30A600D2AE4B667`, byte count 46,952. The staged `/APPS/SBCAT` artifact SHA-256 is `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, byte count 36,968.
+
+M30 extends the bounded Linux VFS with fixed `/usr/local` and `/usr/local/bin` directory entries plus `sbecho` and `sbcat` aliases backed by the existing NVMe FAT `/nvme/apps/sbecho` and `/nvme/apps/sbcat` providers. It also extends real-binary telemetry with `vfs-localbin-*` counters and fixes the QMP keyboard map for uppercase, `=`, and `:` so PATH-setting commands are injected faithfully. Because uppercase FAT-style `/APPS/BUSYBOX` now reaches the guest as uppercase text, the shell launcher canonicalizes only Linux `argv[0]` to lowercase while preserving the actual NVMe read path; this keeps BusyBox multicall dispatch compatible with the documented Product command.
+
+Supporting directory control: `linux /APPS/BUSYBOX ls /usr/local/bin` prints `sbcat   sbecho` and reports `getdents64 2 getdents64-entries 2 stat 3 stat-denial 0 vfs-localbin-alias 2 vfs-localbin-denial 0 page-faults 0`.
+
+Final reserves are UEFI 827,872 bytes and BIOS 101 sectors. The implementation delta before docs is 5 files changed with 283 insertions and 13 deletions.
+
+M30 PATH pipeline acceptance telemetry:
+
+```text
+drs-realbin path /APPS/BUSYBOX provenance 1 nvme-read 1 elf 1 static 1 mapped 4 pages 38 stack 16 pml4 1 pml4-pool 4 pml4-slot 0 root 0x000000000224F000 kernel-root 0x0000000000001000 root-distinct 1 high-copy 1 mmio-shared 1 pool-mapped 1 low-compat 1 kernel-cr3-entry 1 syscall-root-repair 0 syscall-root-reload 69 syscall-root-denial 0 fs-save 3 fs-restore 4 fs-set 7 user-pdpt-private 1 vma-pt-private 1 cr3-start 1 cr3-exit 1 cr3-syscall-entry 0 active-cr3-match 1 root-cleanup 3 task 0 started 1 console-bytes 14 exit 0 cleanup 1 getdents64 0 getdents64-entries 0 getdents64-bytes 0 stat 2 stat-denial 0 stat-fault 0 fstat 0 fstat-denial 0 fstat-fault 0 newfstatat 0 newfstatat-denial 0 newfstatat-fault 0 readlink 0 readlink-bytes 0 readlink-denial 0 readlink-fault 0 readlink-last-result 0 getcwd 1 getcwd-bytes 2 getcwd-denial 0 getcwd-fault 0 path-relative 0 path-dot 0 path-dotdot 0 path-fault 0 chdir 0 fchdir 0 chdir-denial 0 chdir-fault 0 read 2 read-bytes 14 write 1 write-bytes 14 pipe 1 pipe-create 1 pipe-denials 0 pipe-faults 0 pipe2 0 pipe2-denials 0 pipe2-faults 0 pipe-live-final 0 pipe-blocks 0 pipe-wakes 0 pipe-provider-denials 0 fd-fork-pipe-copy 3 fd-fork-pipe-denial 0 fd-fork-pipe-last-fd 3 readv 0 readv-bytes 0 writev 1 writev-bytes 14 poll 0 ppoll 0 poll-ready 0 poll-last-revents 0x00000000 geteuid 1 getppid 1 ioctl 1 ioctl-tty 0 ioctl-enotty 1 ioctl-enosys 0 ioctl-last-request 0x00005413 ioctl-last-result 0x00000019 prctl 2 prctl-set-name 1 prctl-get-name 1 prctl-enosys 0 prctl-last-option 0x0000000F prctl-last-result 0x00000000 execve 2 execveat 0 execve-denial 0 execve-fault 0 execve-last-error 0 execve-last-binary-bytes 36968 execve-last-closed-fds 0 execve-last-fd-live-before 3 execve-last-fd-live-after 3 execve-last-vma-before 11 execve-last-vma-released 11 execve-last-vma-after 7 execve-last-argc 1 execve-last-envc 1 execve-last-transfer-ready 1 execve-last-transfer-rip 0x000000005200117F execve-last-transfer-rsp 0x000000004420FE80 fork 2 fork-success 2 fork-enosys 0 fork-denial 0 fork-child-slot 2 fork-child-root-distinct 1 fork-last-rip 0x000000005200EF74 wait4 2 wait4-reap 2 wait4-last-exit-code 0 child-root-cleanup 2 pml4-pool-used-final 0 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 2 vfs-nvme-readdirs 0 vfs-nvme-dirents 0 vfs-nvme-bytes 36968 vfs-bin-alias 0 vfs-bin-open 0 vfs-bin-read 0 vfs-bin-denial 0 vfs-localbin-alias 6 vfs-localbin-open 0 vfs-localbin-read 2 vfs-localbin-denial 0
+drs-realbin-syscall-last number 231 result 0x00000000 unimplemented 0 unimplemented-last 511 unimplemented-rip 0x00000000F05001FF page-faults 0 page-fault-rip 0xFFFFFFFF8001016E
+```
+
+Proposed M31 scope: `default Linux environment proof`. M31 should seed a bounded initial Linux environment for real launches, including a Product-owned default `PATH=/usr/local/bin:/bin:/usr/bin`, then prove `linux /APPS/BUSYBOX sh -c 'sbecho m31-default-path | sbcat'` works without command-local PATH assignment. It should remain narrower than dynamic linking, glibc, vfork, real threading, signal delivery, sockets, broad clone flag compatibility, broad ioctl/device control, or arbitrary distro filesystem population.
 
 Later targets are:
 
