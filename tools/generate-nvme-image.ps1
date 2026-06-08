@@ -10,7 +10,11 @@ param(
     [string]$ExtraApp2Path = "",
     [string]$ExtraApp2Name = "EXTRA2",
     [string]$ExtraApp2Source = "",
-    [string]$ExtraApp2Version = ""
+    [string]$ExtraApp2Version = "",
+    [string]$ExtraApp3Path = "",
+    [string]$ExtraApp3Name = "EXTRA3",
+    [string]$ExtraApp3Source = "",
+    [string]$ExtraApp3Version = ""
 )
 
 Set-StrictMode -Version Latest
@@ -102,6 +106,13 @@ $extraApp2LastCluster = 0
 $extraApp2FileLba = 0
 $extraApp2Sha256 = ""
 $extraApp2ShortName = ""
+$extraApp3Content = $null
+$extraApp3ClusterCount = 0
+$extraApp3StartCluster = 0
+$extraApp3LastCluster = 0
+$extraApp3FileLba = 0
+$extraApp3Sha256 = ""
+$extraApp3ShortName = ""
 if (-not [string]::IsNullOrWhiteSpace($ExtraAppPath)) {
     if (-not (Test-Path $ExtraAppPath)) {
         throw "Extra app staging source not found: $ExtraAppPath"
@@ -162,6 +173,48 @@ if (-not [string]::IsNullOrWhiteSpace($ExtraApp2Path)) {
     }
     $extraApp2FileLba = $dataStart + (($extraApp2StartCluster - 2) * $sectorsPerCluster)
     $extraApp2Sha256 = (Get-FileHash -Algorithm SHA256 -Path $ExtraApp2Path).Hash.ToLowerInvariant()
+}
+if (-not [string]::IsNullOrWhiteSpace($ExtraApp3Path)) {
+    if (-not (Test-Path $ExtraApp3Path)) {
+        throw "Extra app 3 staging source not found: $ExtraApp3Path"
+    }
+    $normalizedExtraApp3Name = $ExtraApp3Name.Trim().ToUpperInvariant()
+    if (($normalizedExtraApp3Name.Length -lt 1) -or ($normalizedExtraApp3Name.Length -gt 8) -or ($normalizedExtraApp3Name -notmatch '^[A-Z0-9_]+$')) {
+        throw "Extra app 3 name must be 1-8 uppercase FAT short-name characters: $ExtraApp3Name"
+    }
+    if (($busyBoxContent -ne $null) -and ($normalizedExtraApp3Name -eq "BUSYBOX")) {
+        throw "Extra app 3 name must be distinct from BusyBox: $ExtraApp3Name"
+    }
+    if ((-not [string]::IsNullOrWhiteSpace($ExtraAppPath)) -and ($normalizedExtraApp3Name -eq $ExtraAppName.Trim().ToUpperInvariant())) {
+        throw "Extra app 3 name must be distinct from extra app name: $ExtraApp3Name"
+    }
+    if ((-not [string]::IsNullOrWhiteSpace($ExtraApp2Path)) -and ($normalizedExtraApp3Name -eq $ExtraApp2Name.Trim().ToUpperInvariant())) {
+        throw "Extra app 3 name must be distinct from extra app 2 name: $ExtraApp3Name"
+    }
+    $extraApp3ShortName = $normalizedExtraApp3Name.PadRight(11, ' ')
+    $extraApp3Content = [System.IO.File]::ReadAllBytes((Resolve-Path $ExtraApp3Path))
+    if ($extraApp3Content.Length -le 0) {
+        throw "Extra app 3 staging source is empty: $ExtraApp3Path"
+    }
+    $extraApp3StartCluster = if ($extraApp2Content -ne $null) {
+        $extraApp2LastCluster + 1
+    }
+    elseif ($extraAppContent -ne $null) {
+        $extraAppLastCluster + 1
+    }
+    elseif ($busyBoxContent -ne $null) {
+        $busyBoxLastCluster + 1
+    }
+    else {
+        $busyBoxStartCluster
+    }
+    $extraApp3ClusterCount = [Math]::Ceiling($extraApp3Content.Length / [double]$clusterBytes)
+    $extraApp3LastCluster = $extraApp3StartCluster + $extraApp3ClusterCount - 1
+    if ($extraApp3LastCluster -gt ($rootCluster + $dataClusterCount - 1)) {
+        throw "Extra app 3 staging source does not fit in the NVMe FAT fixture."
+    }
+    $extraApp3FileLba = $dataStart + (($extraApp3StartCluster - 2) * $sectorsPerCluster)
+    $extraApp3Sha256 = (Get-FileHash -Algorithm SHA256 -Path $ExtraApp3Path).Hash.ToLowerInvariant()
 }
 $multiFileContent = New-Object byte[] 2500
 for ($index = 0; $index -lt $multiFileContent.Length; $index++) {
@@ -508,6 +561,16 @@ if ($extraApp2Content -ne $null) {
         }
     }
 }
+if ($extraApp3Content -ne $null) {
+    for ($cluster = $extraApp3StartCluster; $cluster -le $extraApp3LastCluster; $cluster++) {
+        if ($cluster -lt $extraApp3LastCluster) {
+            Set-FatEntry -Cluster $cluster -Value ([uint32]($cluster + 1))
+        }
+        else {
+            Set-FatEntry -Cluster $cluster -Value 0x0FFFFFFF
+        }
+    }
+}
 
 Set-DirectoryEntry -DirectoryCluster $rootCluster -EntryIndex 0 -ShortName "NVME    TXT" -Attributes 0x20 -StartCluster $nvmeFileCluster -Size $fileContent.Length
 Set-LongFileEntry -DirectoryCluster $rootCluster -EntryIndex 1 -LongName $longFileName -ShortName "LIMITL~1TXT" -StartCluster $longFileCluster -Size $longFileContent.Length
@@ -537,6 +600,19 @@ if ($extraApp2Content -ne $null) {
     }
     Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraApp2EntryIndex -ShortName $extraApp2ShortName -Attributes 0x20 -StartCluster $extraApp2StartCluster -Size $extraApp2Content.Length
 }
+if ($extraApp3Content -ne $null) {
+    $extraApp3EntryIndex = 1
+    if ($busyBoxContent -ne $null) {
+        $extraApp3EntryIndex++
+    }
+    if ($extraAppContent -ne $null) {
+        $extraApp3EntryIndex++
+    }
+    if ($extraApp2Content -ne $null) {
+        $extraApp3EntryIndex++
+    }
+    Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraApp3EntryIndex -ShortName $extraApp3ShortName -Attributes 0x20 -StartCluster $extraApp3StartCluster -Size $extraApp3Content.Length
+}
 Set-DirectoryEntry -DirectoryCluster $dataDirectoryCluster -EntryIndex 0 -ShortName "FILE    TXT" -Attributes 0x20 -StartCluster $subdirFileCluster -Size $subdirFileContent.Length
 Set-DirectoryEntry -DirectoryCluster $homeDirectoryCluster -EntryIndex 0 -ShortName "ASSIST     " -Attributes 0x10 -StartCluster $assistantDirectoryCluster -Size 0
 Set-DirectoryEntry -DirectoryCluster $assistantDirectoryCluster -EntryIndex 0 -ShortName "NOTE    TXT" -Attributes 0x20 -StartCluster $assistantNoteCluster -Size $assistantNoteContent.Length
@@ -559,6 +635,9 @@ if ($extraAppContent -ne $null) {
 }
 if ($extraApp2Content -ne $null) {
     Set-Bytes -Bytes $imageBytes -Offset ($extraApp2FileLba * $sectorBytes) -Value $extraApp2Content
+}
+if ($extraApp3Content -ne $null) {
+    Set-Bytes -Bytes $imageBytes -Offset ($extraApp3FileLba * $sectorBytes) -Value $extraApp3Content
 }
 
 $outputDir = Split-Path -Parent $OutputPath
@@ -655,6 +734,18 @@ if ($extraApp2Content -ne $null) {
         "extra-app-2-bytes=$($extraApp2Content.Length)"
     )
 }
+if ($extraApp3Content -ne $null) {
+    $meta += @(
+        "extra-app-3-path=/APPS/$($ExtraApp3Name.Trim().ToUpperInvariant())",
+        "extra-app-3-source=$ExtraApp3Source",
+        "extra-app-3-version=$ExtraApp3Version",
+        "extra-app-3-sha256=$extraApp3Sha256",
+        "extra-app-3-lba=$extraApp3FileLba",
+        "extra-app-3-cluster=$extraApp3StartCluster",
+        "extra-app-3-clusters=$extraApp3ClusterCount",
+        "extra-app-3-bytes=$($extraApp3Content.Length)"
+    )
+}
 Set-Content -Path $metaPath -Value $meta -Encoding Ascii
 Write-Host "Generated NVMe GPT image: $OutputPath"
 Write-Host "  fat32-start-lba : $partitionStart"
@@ -675,4 +766,9 @@ if ($extraApp2Content -ne $null) {
     Write-Host "  extra-app-2     : /APPS/$($ExtraApp2Name.Trim().ToUpperInvariant())"
     Write-Host "  extra-app-2-lba : $extraApp2FileLba"
     Write-Host "  extra-app-2-bytes: $($extraApp2Content.Length)"
+}
+if ($extraApp3Content -ne $null) {
+    Write-Host "  extra-app-3     : /APPS/$($ExtraApp3Name.Trim().ToUpperInvariant())"
+    Write-Host "  extra-app-3-lba : $extraApp3FileLba"
+    Write-Host "  extra-app-3-bytes: $($extraApp3Content.Length)"
 }
