@@ -676,6 +676,10 @@ function Send-QemuKeyboardProbe
                     & $sendShiftedKey "semicolon"
                     continue
                 }
+                if ($character -eq '$') {
+                    & $sendShiftedKey "4"
+                    continue
+                }
                 if (($character -ge 'A') -and ($character -le 'Z')) {
                     & $sendShiftedKey ([string]$character).ToLowerInvariant()
                     continue

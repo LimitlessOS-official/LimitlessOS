@@ -37,10 +37,13 @@ typedef enum linux_exec64_stage
     LINUX_EXEC64_STAGE_CLEANUP = 10u
 } linux_exec64_stage_t;
 
-#define LINUX_EXEC64_DEFAULT_ENV_COUNT 1u
+#define LINUX_EXEC64_DEFAULT_ENV_COUNT 4u
 
 static const char *const g_linux_exec64_default_envp[LINUX_EXEC64_DEFAULT_ENV_COUNT] = {
-    "PATH=/usr/local/bin:/bin:/usr/bin"
+    "PATH=/usr/local/bin:/bin:/usr/bin",
+    "HOME=/",
+    "USER=limitless",
+    "PWD=/"
 };
 
 typedef struct linux_exec64_telemetry
