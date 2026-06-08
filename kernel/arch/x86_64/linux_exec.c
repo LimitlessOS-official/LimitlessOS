@@ -1045,12 +1045,11 @@ u32 linux_exec64_run_nvme(
     u32 reattach_fd = 0u;
     u32 reattach_audit = 0u;
     u32 vma_release = 0u;
-    u32 fd_release = 0u;
     u32 audit_release = 0u;
     u32 exit_vma_release = 0u;
-    u32 exit_fd_release = 0u;
     u32 exit_audit_release = 0u;
     u32 clone_release = 0u;
+    u32 fd_cleanup = 0u;
     u32 nvme_vfs_release = 0u;
     u32 process_root_token = 0u;
     u32 root_authority = 0u;
@@ -1970,7 +1969,6 @@ u32 linux_exec64_run_nvme(
     if (linux_abi64_last_exit_pid() == pid)
     {
         exit_vma_release = linux_abi64_last_exit_vma_regions();
-        exit_fd_release = linux_abi64_last_exit_fd_entries();
         exit_audit_release = linux_abi64_last_exit_audit_released();
     }
     vma_release = ((reattach_vma != 0u) || (process64_vma_root(pid) != 0))
@@ -1991,9 +1989,17 @@ u32 linux_exec64_run_nvme(
             : 0u)
         + g_linux_exec64_telemetry.child_root_cleanup;
     g_linux_exec64_telemetry.pml4_pool_used_final = paging64_process_root_pool_used();
-    fd_release = ((reattach_fd != 0u) || (process64_fd_table(pid) != 0))
-        ? fd64_release_process(pid)
-        : 0u;
+    if ((reattach_fd != 0u) || (process64_fd_table(pid) != 0))
+    {
+        (void)fd64_release_process(pid);
+    }
+    fd_cleanup =
+        (((linux_abi64_last_exit_pid() != pid)
+            || (linux_abi64_last_exit_detached_fd() == 0)
+            || (reattach_fd != 0u))
+            && (process64_fd_table(pid) == 0))
+            ? 1u
+            : 0u;
     if (process64_persona_ctx(pid) != 0)
     {
         (void)persona64_release(pid);
@@ -2010,7 +2016,7 @@ u32 linux_exec64_run_nvme(
             && ((vma_release + exit_vma_release)
                 >= (g_linux_exec64_telemetry.mapped_regions + 1u))
             && (g_linux_exec64_telemetry.root_cleanup != 0u)
-            && ((fd_release + exit_fd_release) >= 3u)
+            && (fd_cleanup != 0u)
             && ((audit_release + exit_audit_release) != 0u)
             && (clone_release != 0u))
             ? 1u
