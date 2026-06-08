@@ -6516,6 +6516,9 @@ u64 linux_abi64_sys_arch_prctl(u32 pid, u64 code, u64 address, u64 rip)
         context->tls_base = address;
         context->tls_size = 0ull;
         write_fs_base64(address);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)scheduler64_runqueue_set_current_fs_base(address);
+#endif
         ++g_linux_abi64_arch_prctl_count;
         ++g_linux_abi64_arch_prctl_set_count;
         (void)persona_audit64_record(
@@ -8686,6 +8689,9 @@ u64 linux_abi64_sys_clone(
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)scheduler64_runqueue_set_task_fs_base(task_id, child_context->tls_base);
+#endif
 
     if ((flags32 & LINUX_ABI64_CLONE_PARENT_SETTID) != 0u)
     {
@@ -8894,6 +8900,9 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
         }
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)scheduler64_runqueue_set_task_fs_base(task_id, context->tls_base);
+#endif
 
     record->active = 1u;
     record->parent_pid = pid;

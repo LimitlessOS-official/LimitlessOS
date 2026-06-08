@@ -80,6 +80,11 @@ u32 scheduler64_runqueue_wake_count(void);
 u32 scheduler64_runqueue_block_denial_count(void);
 u32 scheduler64_runqueue_blocked_count(void);
 u32 scheduler64_runqueue_task_state(u32 task_id);
+u32 scheduler64_runqueue_set_task_fs_base(u32 task_id, u64 fs_base);
+u32 scheduler64_runqueue_set_current_fs_base(u64 fs_base);
+u32 scheduler64_runqueue_fs_save_count(void);
+u32 scheduler64_runqueue_fs_restore_count(void);
+u32 scheduler64_runqueue_fs_set_count(void);
 #endif
 u32 scheduler64_runqueue_task_result(u32 task_id);
 u32 scheduler64_runqueue_task_pid(u32 task_id);

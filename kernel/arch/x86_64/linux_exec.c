@@ -60,6 +60,9 @@ typedef struct linux_exec64_telemetry
     u32 syscall_root_repair;
     u32 syscall_root_reload;
     u32 syscall_root_denial;
+    u32 fs_save;
+    u32 fs_restore;
+    u32 fs_set;
     u32 user_pdpt_private;
     u32 vma_pt_private;
     u32 cr3_start;
@@ -422,6 +425,12 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.syscall_root_reload);
     (void)linux_exec64_write_text(console_capability, owner_id, " syscall-root-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.syscall_root_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fs-save ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fs_save);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fs-restore ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fs_restore);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fs-set ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fs_set);
     (void)linux_exec64_write_text(console_capability, owner_id, " user-pdpt-private ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.user_pdpt_private);
     (void)linux_exec64_write_text(console_capability, owner_id, " vma-pt-private ");
@@ -996,6 +1005,12 @@ u32 linux_exec64_run_nvme(
     u32 syscall_root_reload_after;
     u32 syscall_root_denial_before;
     u32 syscall_root_denial_after;
+    u32 fs_save_before;
+    u32 fs_save_after;
+    u32 fs_restore_before;
+    u32 fs_restore_after;
+    u32 fs_set_before;
+    u32 fs_set_after;
     u32 fork_before;
     u32 fork_after;
     u32 fork_success_before;
@@ -1400,6 +1415,9 @@ u32 linux_exec64_run_nvme(
     syscall_root_repair_before = linux_abi64_dispatch_root_repair_count();
     syscall_root_reload_before = linux_abi64_dispatch_root_reload_count();
     syscall_root_denial_before = linux_abi64_dispatch_root_denial_count();
+    fs_save_before = scheduler64_runqueue_fs_save_count();
+    fs_restore_before = scheduler64_runqueue_fs_restore_count();
+    fs_set_before = scheduler64_runqueue_fs_set_count();
     fork_before = linux_abi64_fork_count();
     fork_success_before = linux_abi64_fork_success_count();
     fork_enosys_before = linux_abi64_fork_enosys_count();
@@ -1513,6 +1531,9 @@ u32 linux_exec64_run_nvme(
     syscall_root_repair_after = linux_abi64_dispatch_root_repair_count();
     syscall_root_reload_after = linux_abi64_dispatch_root_reload_count();
     syscall_root_denial_after = linux_abi64_dispatch_root_denial_count();
+    fs_save_after = scheduler64_runqueue_fs_save_count();
+    fs_restore_after = scheduler64_runqueue_fs_restore_count();
+    fs_set_after = scheduler64_runqueue_fs_set_count();
     fork_after = linux_abi64_fork_count();
     fork_success_after = linux_abi64_fork_success_count();
     fork_enosys_after = linux_abi64_fork_enosys_count();
@@ -1828,6 +1849,14 @@ u32 linux_exec64_run_nvme(
         (syscall_root_denial_after >= syscall_root_denial_before)
             ? (syscall_root_denial_after - syscall_root_denial_before)
             : 0u;
+    g_linux_exec64_telemetry.fs_save =
+        (fs_save_after >= fs_save_before) ? (fs_save_after - fs_save_before) : 0u;
+    g_linux_exec64_telemetry.fs_restore =
+        (fs_restore_after >= fs_restore_before)
+            ? (fs_restore_after - fs_restore_before)
+            : 0u;
+    g_linux_exec64_telemetry.fs_set =
+        (fs_set_after >= fs_set_before) ? (fs_set_after - fs_set_before) : 0u;
     g_linux_exec64_telemetry.fork_calls =
         (fork_after >= fork_before)
             ? (fork_after - fork_before)

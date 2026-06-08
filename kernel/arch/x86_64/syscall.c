@@ -8711,6 +8711,9 @@ u32 syscall64_native_complete_persona_return(
         && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF)
         && (linux_abi64_execve_consume_transfer(pid, &linux_exec_rip, &linux_exec_rsp) != 0u))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)scheduler64_runqueue_set_current_fs_base(0ull);
+#endif
         frame.r15 = 0ull;
         frame.r14 = 0ull;
         frame.r13 = 0ull;
