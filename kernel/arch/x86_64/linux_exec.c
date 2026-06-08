@@ -37,6 +37,12 @@ typedef enum linux_exec64_stage
     LINUX_EXEC64_STAGE_CLEANUP = 10u
 } linux_exec64_stage_t;
 
+#define LINUX_EXEC64_DEFAULT_ENV_COUNT 1u
+
+static const char *const g_linux_exec64_default_envp[LINUX_EXEC64_DEFAULT_ENV_COUNT] = {
+    "PATH=/usr/local/bin:/bin:/usr/bin"
+};
+
 typedef struct linux_exec64_telemetry
 {
     linux_exec64_stage_t stage;
@@ -46,6 +52,7 @@ typedef struct linux_exec64_telemetry
     u32 mapped_pages;
     u32 mapped_regions;
     u32 stack_pages;
+    u32 envc;
     u32 pml4;
     u32 pml4_pool;
     u32 pml4_slot;
@@ -401,6 +408,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mapped_pages);
     (void)linux_exec64_write_text(console_capability, owner_id, " stack ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.stack_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " envc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.envc);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4 ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool ");
@@ -1316,8 +1325,8 @@ u32 linux_exec64_run_nvme(
         LINUX_EXEC64_REAL_STACK_BYTES,
         argc,
         argv,
-        0u,
-        0,
+        LINUX_EXEC64_DEFAULT_ENV_COUNT,
+        g_linux_exec64_default_envp,
         0u,
         &g_linux_exec64_launch);
     load_cr3_restore = paging64_switch_to_kernel_root(0x4C4F414Bu);
@@ -1325,6 +1334,7 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.mapped_pages =
         (u32)(g_linux_exec64_launch.load_result.total_map_bytes / VMA64_PAGE_BYTES);
     g_linux_exec64_telemetry.stack_pages = LINUX_EXEC64_REAL_STACK_BYTES / VMA64_PAGE_BYTES;
+    g_linux_exec64_telemetry.envc = g_linux_exec64_launch.stack_result.envc;
     g_linux_exec64_telemetry.vma_pt_private = paging64_process_root_last_vma_pt_private();
     if ((launch_result != ELF64_OK)
         || (g_linux_exec64_launch.transfer_ready == 0u)
