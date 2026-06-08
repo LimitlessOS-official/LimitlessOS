@@ -35,6 +35,7 @@ static const u8 g_linux_vfs64_prefix_usr_local_bin[] = "/usr/local/bin";
 static const u8 g_linux_vfs64_busybox_backend_path[] = "/nvme/apps/busybox";
 static const u8 g_linux_vfs64_sbecho_backend_path[] = "/nvme/apps/sbecho";
 static const u8 g_linux_vfs64_sbcat_backend_path[] = "/nvme/apps/sbcat";
+static const u8 g_linux_vfs64_sbenv_backend_path[] = "/nvme/apps/sbenv";
 
 static const linux_vfs64_mount_t g_linux_vfs64_mounts[LINUX_VFS64_MAX_MOUNTS] = {
     { g_linux_vfs64_prefix_root, 1u, LINUX_VFS64_PROVIDER_RAMFS, LINUX_VFS64_OPEN_READ },
@@ -124,7 +125,8 @@ static const linux_vfs64_dirent_template_t g_linux_vfs64_usr_local_dirents[] = {
 
 static const linux_vfs64_dirent_template_t g_linux_vfs64_usr_local_bin_dirents[] = {
     { "sbecho", LINUX_VFS64_DIRENT_TYPE_REG, 0x4301ull },
-    { "sbcat", LINUX_VFS64_DIRENT_TYPE_REG, 0x4302ull }
+    { "sbcat", LINUX_VFS64_DIRENT_TYPE_REG, 0x4302ull },
+    { "sbenv", LINUX_VFS64_DIRENT_TYPE_REG, 0x4303ull }
 };
 
 #define LINUX_VFS64_MAX_PROC_RECORDS 16u
@@ -983,6 +985,13 @@ static u32 linux_vfs64_localbin_backend_path(
     {
         *backend_path_out = g_linux_vfs64_sbcat_backend_path;
         *backend_path_bytes_out = (u32)(sizeof(g_linux_vfs64_sbcat_backend_path) - 1u);
+        return 1u;
+    }
+
+    if (linux_vfs64_name_is_exact(name, name_bytes, "sbenv") != 0u)
+    {
+        *backend_path_out = g_linux_vfs64_sbenv_backend_path;
+        *backend_path_bytes_out = (u32)(sizeof(g_linux_vfs64_sbenv_backend_path) - 1u);
         return 1u;
     }
 
