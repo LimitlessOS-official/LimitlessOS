@@ -19,6 +19,10 @@ param(
     [string]$ExtraAppName = "SMOKE",
     [string]$ExtraAppSource = "",
     [string]$ExtraAppVersion = "",
+    [string]$ExtraApp2Path = "",
+    [string]$ExtraApp2Name = "EXTRA2",
+    [string]$ExtraApp2Source = "",
+    [string]$ExtraApp2Version = "",
     [string[]]$ExtraShellLine = @()
 )
 
@@ -52,7 +56,11 @@ function Ensure-NvmeGptImage
         [string]$StageExtraAppPath = "",
         [string]$StageExtraAppName = "SMOKE",
         [string]$StageExtraAppSource = "",
-        [string]$StageExtraAppVersion = ""
+        [string]$StageExtraAppVersion = "",
+        [string]$StageExtraApp2Path = "",
+        [string]$StageExtraApp2Name = "EXTRA2",
+        [string]$StageExtraApp2Source = "",
+        [string]$StageExtraApp2Version = ""
     )
 
     $imagePath = Join-Path $Root "dist\limitlessos-x86_64-nvme-gpt.img"
@@ -63,7 +71,7 @@ function Ensure-NvmeGptImage
         throw "QEMU verification failed: NVMe GPT image generator not found: $generatorPath"
     }
 
-    if ($StageRealBinary -and ((-not [string]::IsNullOrWhiteSpace($StageBusyBoxPath)) -or (-not [string]::IsNullOrWhiteSpace($StageExtraAppPath)))) {
+    if ($StageRealBinary -and ((-not [string]::IsNullOrWhiteSpace($StageBusyBoxPath)) -or (-not [string]::IsNullOrWhiteSpace($StageExtraAppPath)) -or (-not [string]::IsNullOrWhiteSpace($StageExtraApp2Path)))) {
         & $generatorPath `
             -OutputPath $imagePath `
             -BusyBoxPath $StageBusyBoxPath `
@@ -72,7 +80,11 @@ function Ensure-NvmeGptImage
             -ExtraAppPath $StageExtraAppPath `
             -ExtraAppName $StageExtraAppName `
             -ExtraAppSource $StageExtraAppSource `
-            -ExtraAppVersion $StageExtraAppVersion
+            -ExtraAppVersion $StageExtraAppVersion `
+            -ExtraApp2Path $StageExtraApp2Path `
+            -ExtraApp2Name $StageExtraApp2Name `
+            -ExtraApp2Source $StageExtraApp2Source `
+            -ExtraApp2Version $StageExtraApp2Version
     }
     else {
         & $generatorPath -OutputPath $imagePath
@@ -986,7 +998,7 @@ if ($Architecture -eq "x86_64") {
 
 if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
     $firmwarePath = Get-QemuEdk2CodePath
-    $nvmeGptPath = Ensure-NvmeGptImage -Root $root -StageRealBinary:$($RealBinaryGate.IsPresent) -StageBusyBoxPath $BusyBoxPath -StageBusyBoxSource $BusyBoxSource -StageBusyBoxVersion $BusyBoxVersion -StageExtraAppPath $ExtraAppPath -StageExtraAppName $ExtraAppName -StageExtraAppSource $ExtraAppSource -StageExtraAppVersion $ExtraAppVersion
+    $nvmeGptPath = Ensure-NvmeGptImage -Root $root -StageRealBinary:$($RealBinaryGate.IsPresent) -StageBusyBoxPath $BusyBoxPath -StageBusyBoxSource $BusyBoxSource -StageBusyBoxVersion $BusyBoxVersion -StageExtraAppPath $ExtraAppPath -StageExtraAppName $ExtraAppName -StageExtraAppSource $ExtraAppSource -StageExtraAppVersion $ExtraAppVersion -StageExtraApp2Path $ExtraApp2Path -StageExtraApp2Name $ExtraApp2Name -StageExtraApp2Source $ExtraApp2Source -StageExtraApp2Version $ExtraApp2Version
     $networkDeviceArgument = if ($NetworkDevice -eq "e1000e") {
         "e1000e,netdev=net0,mac=52:54:00:12:34:56"
     }
