@@ -8623,6 +8623,8 @@ u32 syscall64_native_complete_persona_return(
     u32 pid;
     u32 linux_exited;
     u32 linux_exit_code;
+    u64 linux_exec_rip;
+    u64 linux_exec_rsp;
     u64 selectors;
 
     if (syscall64_native_return_to_user == 0u)
@@ -8702,6 +8704,43 @@ u32 syscall64_native_complete_persona_return(
         }
         (void)paging64_switch_to_kernel_root(0x4E45584Bu);
         return 0u;
+    }
+
+    if ((task_id != SCHEDULER64_INVALID_TASK)
+        && (g_native_persona_last_pid == pid)
+        && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF)
+        && (linux_abi64_execve_consume_transfer(pid, &linux_exec_rip, &linux_exec_rsp) != 0u))
+    {
+        frame.r15 = 0ull;
+        frame.r14 = 0ull;
+        frame.r13 = 0ull;
+        frame.r12 = 0ull;
+        frame.r11 = 0ull;
+        frame.r10 = 0ull;
+        frame.r9 = 0ull;
+        frame.r8 = 0ull;
+        frame.rdi = 0ull;
+        frame.rsi = 0ull;
+        frame.rbp = 0ull;
+        frame.rbx = 0ull;
+        frame.rdx = 0ull;
+        frame.rcx = 0ull;
+        frame.rax = 0ull;
+        frame.vector = 0ull;
+        frame.error_code = 0ull;
+        frame.rip = linux_exec_rip;
+        frame.rflags = user_rflags;
+        frame.rsp = linux_exec_rsp;
+        frame.cs = scheduler64_runqueue_cs();
+        frame.ss = scheduler64_runqueue_ss();
+        if (((frame.cs & 0x3ull) != 0x3ull) || ((frame.ss & 0x3ull) != 0x3ull))
+        {
+            selectors = process64_runtime_user_entry_selectors(pid);
+            frame.cs = selectors & 0xFFFFull;
+            frame.ss = (selectors >> 16) & 0xFFFFull;
+        }
+        syscall64_native_load_switch_frame(&frame);
+        return 1u;
     }
 
     if ((task_id == SCHEDULER64_INVALID_TASK)

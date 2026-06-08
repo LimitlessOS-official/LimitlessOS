@@ -97,6 +97,8 @@ struct interrupt_frame64;
 #define LINUX_ABI64_EXEC_BINARY_MAX_BYTES 256u
 #define LINUX_ABI64_EXEC_STACK_BASE 0x00000000441E0000ull
 #define LINUX_ABI64_EXEC_STACK_BYTES 0x00001000u
+#define LINUX_ABI64_REAL_EXEC_STACK_BASE 0x0000000044200000ull
+#define LINUX_ABI64_REAL_EXEC_STACK_BYTES 0x00010000u
 #define LINUX_ABI64_EXEC_ARG_MAX 8u
 #define LINUX_ABI64_EXEC_ENV_MAX 8u
 #define LINUX_ABI64_GETRANDOM_MAX_BYTES 256u
@@ -679,6 +681,7 @@ u64 linux_abi64_execve_last_transfer_rip(void);
 u64 linux_abi64_execve_last_transfer_rsp(void);
 u32 linux_abi64_execve_last_entry_prot(void);
 u32 linux_abi64_execve_last_stack_prot(void);
+u32 linux_abi64_execve_consume_transfer(u32 pid, u64 *rip_out, u64 *rsp_out);
 u32 linux_abi64_wait4_count(void);
 u32 linux_abi64_wait4_reap_count(void);
 u32 linux_abi64_wait4_nohang_count(void);
@@ -775,5 +778,8 @@ u32 linux_abi64_last_exit_fd_entries(void);
 u32 linux_abi64_last_exit_persona_released(void);
 u32 linux_abi64_last_exit_audit_released(void);
 u32 linux_abi64_last_exit_audit_recorded(void);
+void *linux_abi64_last_exit_detached_vma(void);
+void *linux_abi64_last_exit_detached_fd(void);
+void *linux_abi64_last_exit_detached_audit(void);
 
 #endif

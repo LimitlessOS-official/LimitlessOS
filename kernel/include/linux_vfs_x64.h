@@ -5,7 +5,7 @@
 #include "fd_x64.h"
 #include "types.h"
 
-#define LINUX_VFS64_MAX_MOUNTS 5u
+#define LINUX_VFS64_MAX_MOUNTS 10u
 #define LINUX_VFS64_MAX_PATH_BYTES 128u
 #define LINUX_VFS64_INVALID_RESULT 0xFFFFFFFFu
 #define LINUX_VFS64_DEVICE_HANDLE_TAG 0x76000000u
@@ -17,6 +17,7 @@
 #define LINUX_VFS64_PROVIDER_PROC 2u
 #define LINUX_VFS64_PROVIDER_DEV 3u
 #define LINUX_VFS64_PROVIDER_NVME 4u
+#define LINUX_VFS64_PROVIDER_BIN 5u
 
 #define LINUX_VFS64_NODE_UNKNOWN 0u
 #define LINUX_VFS64_NODE_RAMFS_PATH 1u
@@ -28,6 +29,8 @@
 #define LINUX_VFS64_NODE_TMP_SYMLINK 7u
 #define LINUX_VFS64_NODE_NVME_DIR 8u
 #define LINUX_VFS64_NODE_NVME_FILE 9u
+#define LINUX_VFS64_NODE_BIN_DIR 10u
+#define LINUX_VFS64_NODE_BIN_APPLET 11u
 
 #define LINUX_VFS64_DEVICE_UNKNOWN 0u
 #define LINUX_VFS64_DEVICE_NULL 1u
@@ -117,6 +120,15 @@ u32 linux_vfs64_resolve(
     u32 flags,
     linux_vfs64_result_t *result);
 u32 linux_vfs64_open(u32 pid, const u8 *path, u32 path_byte_count, u32 flags, u32 mode);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 linux_vfs64_read_file_all(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u8 *output,
+    u32 output_capacity,
+    u32 *bytes_out);
+#endif
 u32 linux_vfs64_read_fd(u32 pid, u32 fd_number, u8 *output, u32 byte_count);
 u32 linux_vfs64_write_fd(u32 pid, u32 fd_number, const u8 *input, u32 byte_count);
 u32 linux_vfs64_delete(u32 pid, const u8 *path, u32 path_byte_count);
@@ -194,6 +206,10 @@ u32 linux_vfs64_nvme_readdir_count(void);
 u32 linux_vfs64_nvme_dirent_count(void);
 u32 linux_vfs64_nvme_denial_count(void);
 u32 linux_vfs64_nvme_last_bytes(void);
+u32 linux_vfs64_bin_alias_count(void);
+u32 linux_vfs64_bin_open_count(void);
+u32 linux_vfs64_bin_read_count(void);
+u32 linux_vfs64_bin_denial_count(void);
 u32 linux_vfs64_fork_copy_count(void);
 u32 linux_vfs64_fork_copy_denial_count(void);
 u32 linux_vfs64_fork_copy_last_parent_pid(void);

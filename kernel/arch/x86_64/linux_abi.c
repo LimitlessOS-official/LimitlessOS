@@ -4,6 +4,7 @@
 #include "fd_x64.h"
 #include "input_x64.h"
 #include "interrupts_x64.h"
+#include "linux_exec_x64.h"
 #include "linux_vfs_x64.h"
 #include "paging_x64.h"
 #include "persona_x64.h"
@@ -58,8 +59,8 @@
      * reading the new image through linux_vfs_x64.h and fd_x64.h, validating a
      * static ELF through elf64_x64.h, resetting process VMA state through
      * vma_x64.h, preserving non-CLOEXEC descriptors, closing CLOEXEC
-     * descriptors, and exposing the prepared ring-3 transfer frame as
-     * deterministic telemetry until the syscall-return reframe path exists.
+     * descriptors, and exposing the prepared ring-3 transfer frame to the
+     * syscall-return reframe path and deterministic telemetry.
      * F.28 adds wait4 over the current clone-child substrate: exited child
      * records remain waitable zombies until the parent collects their encoded
      * status, with ECHILD/EFAULT/ENOSYS denials audited instead of fabricated
@@ -159,7 +160,13 @@ static linux_abi64_exit_record_t g_linux_abi64_exit_records[LINUX_ABI64_MAX_EXIT
 static linux_abi64_rlimit_record_t g_linux_abi64_rlimit_records[LINUX_ABI64_MAX_RLIMIT_RECORDS];
 static linux_abi64_futex_waiter_t g_linux_abi64_futex_waiters[LINUX_ABI64_MAX_FUTEX_WAITERS];
 static linux_abi64_clone_record_t g_linux_abi64_clone_records[LINUX_ABI64_MAX_CLONE_RECORDS];
-static u8 g_linux_abi64_exec_binary[LINUX_ABI64_EXEC_BINARY_MAX_BYTES];
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define LINUX_ABI64_EXEC_STAGING_BYTES LINUX_EXEC64_REAL_BINARY_MAX_BYTES
+#else
+#define LINUX_ABI64_EXEC_STAGING_BYTES LINUX_ABI64_EXEC_BINARY_MAX_BYTES
+#endif
+
+static u8 g_linux_abi64_exec_binary[LINUX_ABI64_EXEC_STAGING_BYTES];
 static char g_linux_abi64_exec_path[LINUX_VFS64_MAX_PATH_BYTES + 1u];
 static char g_linux_abi64_exec_argv_storage[LINUX_ABI64_EXEC_ARG_MAX][ELF64_STACK_MAX_STRING_BYTES];
 static char g_linux_abi64_exec_envp_storage[LINUX_ABI64_EXEC_ENV_MAX][ELF64_STACK_MAX_STRING_BYTES];
@@ -362,6 +369,8 @@ static u64 g_linux_abi64_execve_last_transfer_rip = 0ull;
 static u64 g_linux_abi64_execve_last_transfer_rsp = 0ull;
 static u32 g_linux_abi64_execve_last_entry_prot = 0u;
 static u32 g_linux_abi64_execve_last_stack_prot = 0u;
+static u32 g_linux_abi64_execve_transfer_pending = 0u;
+static u32 g_linux_abi64_execve_transfer_pid = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_wait4_count = 0u;
 static u32 g_linux_abi64_wait4_reap_count = 0u;
 static u32 g_linux_abi64_wait4_nohang_count = 0u;
@@ -459,6 +468,9 @@ static u32 g_linux_abi64_last_exit_fd_entries = 0u;
 static u32 g_linux_abi64_last_exit_persona_released = 0u;
 static u32 g_linux_abi64_last_exit_audit_released = 0u;
 static u32 g_linux_abi64_last_exit_audit_recorded = 0u;
+static void *g_linux_abi64_last_exit_detached_vma = 0;
+static void *g_linux_abi64_last_exit_detached_fd = 0;
+static void *g_linux_abi64_last_exit_detached_audit = 0;
 
 extern volatile u64 syscall64_native_linux_rdi;
 extern volatile u64 syscall64_native_linux_rsi;
@@ -2230,6 +2242,8 @@ void linux_abi64_init(void)
     g_linux_abi64_execve_last_transfer_rsp = 0ull;
     g_linux_abi64_execve_last_entry_prot = 0u;
     g_linux_abi64_execve_last_stack_prot = 0u;
+    g_linux_abi64_execve_transfer_pending = 0u;
+    g_linux_abi64_execve_transfer_pid = PROCESS64_INVALID_PID;
     g_linux_abi64_wait4_count = 0u;
     g_linux_abi64_wait4_reap_count = 0u;
     g_linux_abi64_wait4_nohang_count = 0u;
@@ -2325,6 +2339,9 @@ void linux_abi64_init(void)
     g_linux_abi64_last_exit_persona_released = 0u;
     g_linux_abi64_last_exit_audit_released = 0u;
     g_linux_abi64_last_exit_audit_recorded = 0u;
+    g_linux_abi64_last_exit_detached_vma = 0;
+    g_linux_abi64_last_exit_detached_fd = 0;
+    g_linux_abi64_last_exit_detached_audit = 0;
     g_linux_abi64_initialized = 1u;
 }
 
@@ -3010,9 +3027,11 @@ static u32 linux_abi64_read_exec_binary(
     u32 *out_binary_bytes)
 {
     fd64_stat_t stat;
-    u32 fd_number;
     u32 bytes_read;
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
+    u32 fd_number;
     u32 close_ok;
+#endif
 
     if (out_binary_bytes != 0)
     {
@@ -3028,19 +3047,31 @@ static u32 linux_abi64_read_exec_binary(
     }
 
     stat.size = 0ull;
-    fd_number = linux_vfs64_open(pid, path, path_byte_count, 0u, 0u);
-    if (fd_number == FD64_INVALID_FD)
-    {
-        return LINUX_ABI64_ENOENT;
-    }
-
-    if ((fd64_fstat(pid, fd_number, &stat) == 0u)
+    if ((linux_vfs64_stat(pid, path, path_byte_count, &stat) == 0u)
         || (stat.size == 0ull)
         || (stat.size > (u64)binary_capacity)
         || (stat.size > 0xFFFFFFFFull))
     {
-        (void)fd64_close(pid, fd_number);
         return (stat.size > (u64)binary_capacity) ? LINUX_ABI64_E2BIG : LINUX_ABI64_EINVAL;
+    }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if ((linux_vfs64_read_file_all(
+            pid,
+            path,
+            path_byte_count,
+            binary,
+            (u32)stat.size,
+            &bytes_read) == 0u)
+        || (bytes_read != (u32)stat.size))
+    {
+        return LINUX_ABI64_EINVAL;
+    }
+#else
+    fd_number = linux_vfs64_open(pid, path, path_byte_count, 0u, 0u);
+    if (fd_number == FD64_INVALID_FD)
+    {
+        return LINUX_ABI64_ENOENT;
     }
 
     bytes_read = linux_vfs64_read_fd(pid, fd_number, binary, (u32)stat.size);
@@ -3051,6 +3082,7 @@ static u32 linux_abi64_read_exec_binary(
     {
         return LINUX_ABI64_EINVAL;
     }
+#endif
 
     *out_binary_bytes = bytes_read;
     return 0u;
@@ -8917,6 +8949,8 @@ static u64 linux_abi64_sys_exec_common(
     u32 binary_bytes = 0u;
     u32 argc = 0u;
     u32 envc = 0u;
+    u64 exec_stack_base = LINUX_ABI64_EXEC_STACK_BASE;
+    u64 exec_stack_bytes = LINUX_ABI64_EXEC_STACK_BYTES;
     u32 error;
 
     if (g_linux_abi64_initialized == 0u)
@@ -8940,6 +8974,8 @@ static u64 linux_abi64_sys_exec_common(
     g_linux_abi64_execve_last_transfer_rsp = 0ull;
     g_linux_abi64_execve_last_entry_prot = 0u;
     g_linux_abi64_execve_last_stack_prot = 0u;
+    g_linux_abi64_execve_transfer_pending = 0u;
+    g_linux_abi64_execve_transfer_pid = PROCESS64_INVALID_PID;
 
     context = persona64_context_for_process(pid);
     if ((pid == PROCESS64_INVALID_PID)
@@ -9014,12 +9050,19 @@ static u64 linux_abi64_sys_exec_common(
         (const u8 *)g_linux_abi64_exec_path,
         path_byte_count,
         g_linux_abi64_exec_binary,
-        LINUX_ABI64_EXEC_BINARY_MAX_BYTES,
+        LINUX_ABI64_EXEC_STAGING_BYTES,
         &binary_bytes);
     if (error != 0u)
     {
         return linux_abi64_execve_error_return(pid, syscall_number, error, rip, 0u);
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (binary_bytes > LINUX_ABI64_EXEC_BINARY_MAX_BYTES)
+    {
+        exec_stack_base = LINUX_ABI64_REAL_EXEC_STACK_BASE;
+        exec_stack_bytes = LINUX_ABI64_REAL_EXEC_STACK_BYTES;
+    }
+#endif
 
     error = linux_abi64_validate_static_exec(
         g_linux_abi64_exec_binary,
@@ -9076,8 +9119,8 @@ static u64 linux_abi64_sys_exec_common(
             g_linux_abi64_exec_binary,
             binary_bytes,
             0ull,
-            LINUX_ABI64_EXEC_STACK_BASE,
-            LINUX_ABI64_EXEC_STACK_BYTES,
+            exec_stack_base,
+            exec_stack_bytes,
             argc,
             g_linux_abi64_exec_argv,
             envc,
@@ -9108,6 +9151,8 @@ static u64 linux_abi64_sys_exec_common(
     g_linux_abi64_execve_last_entry_prot = g_linux_abi64_exec_launch.entry_page_prot;
     g_linux_abi64_execve_last_stack_prot = g_linux_abi64_exec_launch.stack_page_prot;
     g_linux_abi64_execve_last_error = g_linux_abi64_exec_launch.error;
+    g_linux_abi64_execve_transfer_pending = 1u;
+    g_linux_abi64_execve_transfer_pid = pid;
 
     (void)linux_vfs64_proc_set_identity(
         pid,
@@ -9332,10 +9377,15 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
         g_linux_abi64_last_exit_fd_entries = 0u;
         g_linux_abi64_last_exit_persona_released = persona64_release(pid);
         g_linux_abi64_last_exit_audit_released = 0u;
-        linux_abi64_clone_detach_shared_state(pid);
+        g_linux_abi64_last_exit_detached_vma = process64_detach_vma(pid);
+        g_linux_abi64_last_exit_detached_fd = process64_detach_fd(pid);
+        g_linux_abi64_last_exit_detached_audit = process64_detach_audit(pid);
     }
     else
     {
+        g_linux_abi64_last_exit_detached_vma = 0;
+        g_linux_abi64_last_exit_detached_fd = 0;
+        g_linux_abi64_last_exit_detached_audit = 0;
         g_linux_abi64_last_exit_vma_regions = vma64_release_process(pid);
         g_linux_abi64_last_exit_fd_entries = fd64_release_process(pid);
         g_linux_abi64_last_exit_persona_released = persona64_release(pid);
@@ -11934,6 +11984,36 @@ u32 linux_abi64_execve_last_stack_prot(void)
     return g_linux_abi64_execve_last_stack_prot;
 }
 
+u32 linux_abi64_execve_consume_transfer(u32 pid, u64 *rip_out, u64 *rsp_out)
+{
+    if (rip_out != 0)
+    {
+        *rip_out = 0ull;
+    }
+    if (rsp_out != 0)
+    {
+        *rsp_out = 0ull;
+    }
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (rip_out == 0)
+        || (rsp_out == 0)
+        || (g_linux_abi64_execve_transfer_pending == 0u)
+        || (g_linux_abi64_execve_transfer_pid != pid)
+        || (g_linux_abi64_execve_last_transfer_ready == 0u)
+        || (g_linux_abi64_execve_last_transfer_rip == 0ull)
+        || (g_linux_abi64_execve_last_transfer_rsp == 0ull))
+    {
+        return 0u;
+    }
+
+    *rip_out = g_linux_abi64_execve_last_transfer_rip;
+    *rsp_out = g_linux_abi64_execve_last_transfer_rsp;
+    g_linux_abi64_execve_transfer_pending = 0u;
+    g_linux_abi64_execve_transfer_pid = PROCESS64_INVALID_PID;
+    return 1u;
+}
+
 u32 linux_abi64_wait4_count(void)
 {
     return g_linux_abi64_wait4_count;
@@ -12430,4 +12510,19 @@ u32 linux_abi64_last_exit_audit_released(void)
 u32 linux_abi64_last_exit_audit_recorded(void)
 {
     return g_linux_abi64_last_exit_audit_recorded;
+}
+
+void *linux_abi64_last_exit_detached_vma(void)
+{
+    return g_linux_abi64_last_exit_detached_vma;
+}
+
+void *linux_abi64_last_exit_detached_fd(void)
+{
+    return g_linux_abi64_last_exit_detached_fd;
+}
+
+void *linux_abi64_last_exit_detached_audit(void)
+{
+    return g_linux_abi64_last_exit_detached_audit;
 }

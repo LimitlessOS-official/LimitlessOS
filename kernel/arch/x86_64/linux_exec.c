@@ -78,6 +78,10 @@ typedef struct linux_exec64_telemetry
     u32 nvme_vfs_readdirs;
     u32 nvme_vfs_dirents;
     u32 nvme_vfs_last_bytes;
+    u32 bin_vfs_aliases;
+    u32 bin_vfs_opens;
+    u32 bin_vfs_reads;
+    u32 bin_vfs_denials;
     u32 getdents64_calls;
     u32 getdents64_entries;
     u32 getdents64_bytes;
@@ -146,6 +150,23 @@ typedef struct linux_exec64_telemetry
     u32 prctl_enosys;
     u32 prctl_last_option;
     u32 prctl_last_result;
+    u32 execve_calls;
+    u32 execveat_calls;
+    u32 execve_denial;
+    u32 execve_fault;
+    u32 execve_last_error;
+    u32 execve_last_binary_bytes;
+    u32 execve_last_closed_fds;
+    u32 execve_last_fd_live_before;
+    u32 execve_last_fd_live_after;
+    u32 execve_last_vma_before;
+    u32 execve_last_vma_released;
+    u32 execve_last_vma_after;
+    u32 execve_last_argc;
+    u32 execve_last_envc;
+    u32 execve_last_transfer_ready;
+    u64 execve_last_transfer_rip;
+    u64 execve_last_transfer_rsp;
     u32 fork_calls;
     u32 fork_success;
     u32 fork_enosys;
@@ -566,6 +587,40 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.prctl_last_option);
     (void)linux_exec64_write_text(console_capability, owner_id, " prctl-last-result ");
     linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.prctl_last_result);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execveat ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execveat_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-fault ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_fault);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-binary-bytes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_binary_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-closed-fds ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_closed_fds);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-fd-live-before ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_fd_live_before);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-fd-live-after ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_fd_live_after);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-vma-before ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_vma_before);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-vma-released ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_vma_released);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-vma-after ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_vma_after);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-argc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_argc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-envc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_envc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-transfer-ready ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_transfer_ready);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-transfer-rip ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_transfer_rip);
+    (void)linux_exec64_write_text(console_capability, owner_id, " execve-last-transfer-rsp ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.execve_last_transfer_rsp);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fork_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork-success ");
@@ -614,6 +669,14 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.nvme_vfs_dirents);
     (void)linux_exec64_write_text(console_capability, owner_id, " vfs-nvme-bytes ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.nvme_vfs_last_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-bin-alias ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_aliases);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-bin-open ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_opens);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-bin-read ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_reads);
+    (void)linux_exec64_write_text(console_capability, owner_id, " vfs-bin-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.bin_vfs_denials);
     (void)linux_exec64_write_text(console_capability, owner_id, "\n");
 
     (void)linux_exec64_write_text(console_capability, owner_id, "drs-realbin-syscall-last number ");
@@ -919,6 +982,14 @@ u32 linux_exec64_run_nvme(
     u32 prctl_get_name_after;
     u32 prctl_enosys_before;
     u32 prctl_enosys_after;
+    u32 execve_before;
+    u32 execve_after;
+    u32 execveat_before;
+    u32 execveat_after;
+    u32 execve_denial_before;
+    u32 execve_denial_after;
+    u32 execve_fault_before;
+    u32 execve_fault_after;
     u32 syscall_root_repair_before;
     u32 syscall_root_repair_after;
     u32 syscall_root_reload_before;
@@ -945,6 +1016,14 @@ u32 linux_exec64_run_nvme(
     u32 nvme_vfs_readdirs_after;
     u32 nvme_vfs_dirents_before;
     u32 nvme_vfs_dirents_after;
+    u32 bin_vfs_alias_before;
+    u32 bin_vfs_alias_after;
+    u32 bin_vfs_open_before;
+    u32 bin_vfs_open_after;
+    u32 bin_vfs_read_before;
+    u32 bin_vfs_read_after;
+    u32 bin_vfs_denial_before;
+    u32 bin_vfs_denial_after;
     u32 exit_probe_arm;
     u32 exit_probe_clear = 0u;
     u32 reattach_vma = 0u;
@@ -953,6 +1032,9 @@ u32 linux_exec64_run_nvme(
     u32 vma_release = 0u;
     u32 fd_release = 0u;
     u32 audit_release = 0u;
+    u32 exit_vma_release = 0u;
+    u32 exit_fd_release = 0u;
+    u32 exit_audit_release = 0u;
     u32 clone_release = 0u;
     u32 nvme_vfs_release = 0u;
     u32 process_root_token = 0u;
@@ -1311,6 +1393,10 @@ u32 linux_exec64_run_nvme(
     prctl_set_name_before = linux_abi64_prctl_set_name_count();
     prctl_get_name_before = linux_abi64_prctl_get_name_count();
     prctl_enosys_before = linux_abi64_prctl_enosys_count();
+    execve_before = linux_abi64_execve_count();
+    execveat_before = linux_abi64_execveat_count();
+    execve_denial_before = linux_abi64_execve_denial_count();
+    execve_fault_before = linux_abi64_execve_fault_count();
     syscall_root_repair_before = linux_abi64_dispatch_root_repair_count();
     syscall_root_reload_before = linux_abi64_dispatch_root_reload_count();
     syscall_root_denial_before = linux_abi64_dispatch_root_denial_count();
@@ -1324,6 +1410,10 @@ u32 linux_exec64_run_nvme(
     nvme_vfs_reads_before = linux_vfs64_nvme_read_count();
     nvme_vfs_readdirs_before = linux_vfs64_nvme_readdir_count();
     nvme_vfs_dirents_before = linux_vfs64_nvme_dirent_count();
+    bin_vfs_alias_before = linux_vfs64_bin_alias_count();
+    bin_vfs_open_before = linux_vfs64_bin_open_count();
+    bin_vfs_read_before = linux_vfs64_bin_read_count();
+    bin_vfs_denial_before = linux_vfs64_bin_denial_count();
     cr3_process_switch_before = paging64_process_root_switch_count();
     cr3_kernel_switch_before = paging64_process_root_kernel_switch_count();
     runqueue_started = scheduler64_runqueue_start(task);
@@ -1416,6 +1506,10 @@ u32 linux_exec64_run_nvme(
     prctl_set_name_after = linux_abi64_prctl_set_name_count();
     prctl_get_name_after = linux_abi64_prctl_get_name_count();
     prctl_enosys_after = linux_abi64_prctl_enosys_count();
+    execve_after = linux_abi64_execve_count();
+    execveat_after = linux_abi64_execveat_count();
+    execve_denial_after = linux_abi64_execve_denial_count();
+    execve_fault_after = linux_abi64_execve_fault_count();
     syscall_root_repair_after = linux_abi64_dispatch_root_repair_count();
     syscall_root_reload_after = linux_abi64_dispatch_root_reload_count();
     syscall_root_denial_after = linux_abi64_dispatch_root_denial_count();
@@ -1429,6 +1523,10 @@ u32 linux_exec64_run_nvme(
     nvme_vfs_reads_after = linux_vfs64_nvme_read_count();
     nvme_vfs_readdirs_after = linux_vfs64_nvme_readdir_count();
     nvme_vfs_dirents_after = linux_vfs64_nvme_dirent_count();
+    bin_vfs_alias_after = linux_vfs64_bin_alias_count();
+    bin_vfs_open_after = linux_vfs64_bin_open_count();
+    bin_vfs_read_after = linux_vfs64_bin_read_count();
+    bin_vfs_denial_after = linux_vfs64_bin_denial_count();
 
     g_linux_exec64_telemetry.started = (runqueue_started != 0u) ? 1u : 0u;
     g_linux_exec64_telemetry.console_bytes =
@@ -1689,6 +1787,35 @@ u32 linux_exec64_run_nvme(
             : 0u;
     g_linux_exec64_telemetry.prctl_last_option = linux_abi64_prctl_last_option();
     g_linux_exec64_telemetry.prctl_last_result = linux_abi64_prctl_last_result();
+    g_linux_exec64_telemetry.execve_calls =
+        (execve_after >= execve_before)
+            ? (execve_after - execve_before)
+            : 0u;
+    g_linux_exec64_telemetry.execveat_calls =
+        (execveat_after >= execveat_before)
+            ? (execveat_after - execveat_before)
+            : 0u;
+    g_linux_exec64_telemetry.execve_denial =
+        (execve_denial_after >= execve_denial_before)
+            ? (execve_denial_after - execve_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.execve_fault =
+        (execve_fault_after >= execve_fault_before)
+            ? (execve_fault_after - execve_fault_before)
+            : 0u;
+    g_linux_exec64_telemetry.execve_last_error = linux_abi64_execve_last_error();
+    g_linux_exec64_telemetry.execve_last_binary_bytes = linux_abi64_execve_last_binary_bytes();
+    g_linux_exec64_telemetry.execve_last_closed_fds = linux_abi64_execve_last_closed_fds();
+    g_linux_exec64_telemetry.execve_last_fd_live_before = linux_abi64_execve_last_fd_live_before();
+    g_linux_exec64_telemetry.execve_last_fd_live_after = linux_abi64_execve_last_fd_live_after();
+    g_linux_exec64_telemetry.execve_last_vma_before = linux_abi64_execve_last_vma_before();
+    g_linux_exec64_telemetry.execve_last_vma_released = linux_abi64_execve_last_vma_released();
+    g_linux_exec64_telemetry.execve_last_vma_after = linux_abi64_execve_last_vma_after();
+    g_linux_exec64_telemetry.execve_last_argc = linux_abi64_execve_last_argc();
+    g_linux_exec64_telemetry.execve_last_envc = linux_abi64_execve_last_envc();
+    g_linux_exec64_telemetry.execve_last_transfer_ready = linux_abi64_execve_last_transfer_ready();
+    g_linux_exec64_telemetry.execve_last_transfer_rip = linux_abi64_execve_last_transfer_rip();
+    g_linux_exec64_telemetry.execve_last_transfer_rsp = linux_abi64_execve_last_transfer_rsp();
     g_linux_exec64_telemetry.syscall_root_repair =
         (syscall_root_repair_after >= syscall_root_repair_before)
             ? (syscall_root_repair_after - syscall_root_repair_before)
@@ -1750,6 +1877,22 @@ u32 linux_exec64_run_nvme(
         (g_linux_exec64_telemetry.nvme_vfs_reads != 0u)
             ? linux_vfs64_nvme_last_bytes()
             : 0u;
+    g_linux_exec64_telemetry.bin_vfs_aliases =
+        (bin_vfs_alias_after >= bin_vfs_alias_before)
+            ? (bin_vfs_alias_after - bin_vfs_alias_before)
+            : 0u;
+    g_linux_exec64_telemetry.bin_vfs_opens =
+        (bin_vfs_open_after >= bin_vfs_open_before)
+            ? (bin_vfs_open_after - bin_vfs_open_before)
+            : 0u;
+    g_linux_exec64_telemetry.bin_vfs_reads =
+        (bin_vfs_read_after >= bin_vfs_read_before)
+            ? (bin_vfs_read_after - bin_vfs_read_before)
+            : 0u;
+    g_linux_exec64_telemetry.bin_vfs_denials =
+        (bin_vfs_denial_after >= bin_vfs_denial_before)
+            ? (bin_vfs_denial_after - bin_vfs_denial_before)
+            : 0u;
     g_linux_exec64_telemetry.page_fault_rip = interrupts64_last_exception_rip();
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_CLEANUP;
@@ -1757,6 +1900,21 @@ u32 linux_exec64_run_nvme(
     scheduler64_runqueue_stop();
     scheduler64_runqueue_reset();
     nvme_vfs_release = linux_vfs64_release_nvme_read(pid);
+    if (linux_abi64_last_exit_pid() == pid)
+    {
+        if (linux_abi64_last_exit_detached_vma() != 0)
+        {
+            vma_ctx = linux_abi64_last_exit_detached_vma();
+        }
+        if (linux_abi64_last_exit_detached_fd() != 0)
+        {
+            fd_ctx = linux_abi64_last_exit_detached_fd();
+        }
+        if (linux_abi64_last_exit_detached_audit() != 0)
+        {
+            audit_ctx = linux_abi64_last_exit_detached_audit();
+        }
+    }
 
     reattach_vma =
         ((vma_ctx != 0) && (process64_vma_root(pid) == 0))
@@ -1780,6 +1938,12 @@ u32 linux_exec64_run_nvme(
         (linux_abi64_process_exited(pid) != 0u)
             ? linux_abi64_exit_code(pid)
             : 0xFFFFFFFFu;
+    if (linux_abi64_last_exit_pid() == pid)
+    {
+        exit_vma_release = linux_abi64_last_exit_vma_regions();
+        exit_fd_release = linux_abi64_last_exit_fd_entries();
+        exit_audit_release = linux_abi64_last_exit_audit_released();
+    }
     vma_release = ((reattach_vma != 0u) || (process64_vma_root(pid) != 0))
         ? vma64_release_process(pid)
         : 0u;
@@ -1814,10 +1978,11 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.cleanup =
         ((exit_probe_clear != 0u)
             && (nvme_vfs_release != 0u)
-            && (vma_release >= (g_linux_exec64_telemetry.mapped_regions + 1u))
+            && ((vma_release + exit_vma_release)
+                >= (g_linux_exec64_telemetry.mapped_regions + 1u))
             && (g_linux_exec64_telemetry.root_cleanup != 0u)
-            && (fd_release >= 3u)
-            && (audit_release != 0u)
+            && ((fd_release + exit_fd_release) >= 3u)
+            && ((audit_release + exit_audit_release) != 0u)
             && (clone_release != 0u))
             ? 1u
             : 0u;

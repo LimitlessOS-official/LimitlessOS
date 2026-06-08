@@ -470,6 +470,33 @@ function Wait-ForLogPattern
     throw "QEMU verification failed: timed out waiting for log marker $Pattern."
 }
 
+function Wait-ForAnyLogPattern
+{
+    param(
+        [string[]]$Paths,
+        [string]$Pattern,
+        [int]$TimeoutMilliseconds
+    )
+
+    $candidatePaths = @($Paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    if ($candidatePaths.Count -eq 0) {
+        throw "QEMU verification failed: no log path was available while waiting for marker $Pattern."
+    }
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        foreach ($candidatePath in $candidatePaths) {
+            if ((Test-Path $candidatePath) -and (Select-String -Path $candidatePath -Pattern $Pattern -Quiet -ErrorAction SilentlyContinue)) {
+                return
+            }
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+
+    throw "QEMU verification failed: timed out waiting for log marker $Pattern."
+}
+
 function Send-QemuKeyboardProbe
 {
     param(
@@ -798,9 +825,7 @@ function Send-QemuKeyboardProbe
             if ($realBinaryTextLines.Count -gt 1) {
                 & $sendTextLine "exit"
             }
-            if ($DebugLogPath.Length -gt 0) {
-                Wait-ForLogPattern -Path $DebugLogPath -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
-            }
+            Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
             return
         }
 
