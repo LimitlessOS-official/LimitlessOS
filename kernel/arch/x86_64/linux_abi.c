@@ -3073,8 +3073,11 @@ static u32 linux_abi64_read_exec_binary(
     }
 
     stat.size = 0ull;
-    if ((linux_vfs64_stat(pid, path, path_byte_count, &stat) == 0u)
-        || (stat.size == 0ull)
+    if (linux_vfs64_stat(pid, path, path_byte_count, &stat) == 0u)
+    {
+        return LINUX_ABI64_ENOENT;
+    }
+    if ((stat.size == 0ull)
         || (stat.size > (u64)binary_capacity)
         || (stat.size > 0xFFFFFFFFull))
     {
