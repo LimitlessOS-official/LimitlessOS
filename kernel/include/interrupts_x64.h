@@ -71,6 +71,8 @@ u32 interrupts64_page_fault_count(void);
 u32 interrupts64_probe_count(void);
 u32 interrupts64_irq_count(void);
 u32 interrupts64_syscall_count(void);
+u32 interrupts64_idt_high_targets(void);
+u32 interrupts64_idt_high_base(void);
 u64 interrupts64_last_syscall_code(void);
 u64 interrupts64_last_exception_vector(void);
 u64 interrupts64_last_exception_error(void);

@@ -4,6 +4,7 @@
 
 #include "capability_x64.h"
 #include "console_x64.h"
+#include "descriptors_x64.h"
 #include "elf64_x64.h"
 #include "fd_x64.h"
 #include "interrupts_x64.h"
@@ -45,6 +46,10 @@ static const char *const g_linux_exec64_default_envp[LINUX_EXEC64_DEFAULT_ENV_CO
     "USER=limitless",
     "PWD=/"
 };
+static char g_linux_exec64_staged_argv[LINUX_EXEC64_ARG_MAX][ELF64_STACK_MAX_STRING_BYTES];
+static const char *g_linux_exec64_staged_argv_ptrs[LINUX_EXEC64_ARG_MAX];
+static char g_linux_exec64_staged_envp[LINUX_EXEC64_DEFAULT_ENV_COUNT][ELF64_STACK_MAX_STRING_BYTES];
+static const char *g_linux_exec64_staged_envp_ptrs[LINUX_EXEC64_DEFAULT_ENV_COUNT];
 
 typedef struct linux_exec64_telemetry
 {
@@ -66,6 +71,11 @@ typedef struct linux_exec64_telemetry
     u32 mmio_shared;
     u32 pool_mapped;
     u32 low_compat;
+    u32 low_pdpt_present;
+    u32 syscall_entry_high;
+    u32 idt_high;
+    u32 descriptor_high;
+    u32 kernel_entry_high_ready;
     u32 kernel_cr3_entry;
     u32 syscall_root_repair;
     u32 syscall_root_reload;
@@ -254,6 +264,69 @@ static void linux_exec64_zero(void *target, u32 byte_count)
     }
 }
 
+static u32 linux_exec64_copy_bounded_cstr(char *target, u32 target_bytes, const char *source)
+{
+    u32 index;
+
+    if ((target == 0) || (target_bytes == 0u) || (source == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < target_bytes; ++index)
+    {
+        target[index] = source[index];
+        if (source[index] == '\0')
+        {
+            return 1u;
+        }
+    }
+
+    target[target_bytes - 1u] = '\0';
+    return 0u;
+}
+
+static u32 linux_exec64_stage_launch_strings(const char *const *argv, u32 argc)
+{
+    u32 index;
+
+    if ((argv == 0) || (argc == 0u) || (argc > LINUX_EXEC64_ARG_MAX))
+    {
+        return 0u;
+    }
+
+    linux_exec64_zero(g_linux_exec64_staged_argv, sizeof(g_linux_exec64_staged_argv));
+    linux_exec64_zero(g_linux_exec64_staged_argv_ptrs, sizeof(g_linux_exec64_staged_argv_ptrs));
+    linux_exec64_zero(g_linux_exec64_staged_envp, sizeof(g_linux_exec64_staged_envp));
+    linux_exec64_zero(g_linux_exec64_staged_envp_ptrs, sizeof(g_linux_exec64_staged_envp_ptrs));
+
+    for (index = 0u; index < argc; ++index)
+    {
+        if (linux_exec64_copy_bounded_cstr(
+                g_linux_exec64_staged_argv[index],
+                ELF64_STACK_MAX_STRING_BYTES,
+                argv[index]) == 0u)
+        {
+            return 0u;
+        }
+        g_linux_exec64_staged_argv_ptrs[index] = g_linux_exec64_staged_argv[index];
+    }
+
+    for (index = 0u; index < LINUX_EXEC64_DEFAULT_ENV_COUNT; ++index)
+    {
+        if (linux_exec64_copy_bounded_cstr(
+                g_linux_exec64_staged_envp[index],
+                ELF64_STACK_MAX_STRING_BYTES,
+                g_linux_exec64_default_envp[index]) == 0u)
+        {
+            return 0u;
+        }
+        g_linux_exec64_staged_envp_ptrs[index] = g_linux_exec64_staged_envp[index];
+    }
+
+    return 1u;
+}
+
 static u32 linux_exec64_write(
     u32 console_capability,
     u32 owner_id,
@@ -435,6 +508,25 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pool_mapped);
     (void)linux_exec64_write_text(console_capability, owner_id, " low-compat ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.low_compat);
+    (void)linux_exec64_write_text(console_capability, owner_id, " low-pdpt-present ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.low_pdpt_present);
+    (void)linux_exec64_write_text(console_capability, owner_id, " syscall-entry-high ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.syscall_entry_high);
+    (void)linux_exec64_write_text(console_capability, owner_id, " idt-high ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.idt_high);
+    (void)linux_exec64_write_text(console_capability, owner_id, " descriptor-high ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.descriptor_high);
+    (void)linux_exec64_write_text(console_capability, owner_id, " kernel-entry-high-ready ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.kernel_entry_high_ready);
     (void)linux_exec64_write_text(console_capability, owner_id, " kernel-cr3-entry ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.kernel_cr3_entry);
     (void)linux_exec64_write_text(console_capability, owner_id, " syscall-root-repair ");
@@ -1136,6 +1228,12 @@ u32 linux_exec64_run_nvme(
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
+    if (linux_exec64_stage_launch_strings(argv, argc) == 0u)
+    {
+        g_linux_exec64_telemetry.failure_code = 23u;
+        linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
+        return LINUX_EXEC64_RESULT_FAILED;
+    }
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_CAPABILITY;
     if ((nvme_fs_capability == CAPABILITY64_INVALID_HANDLE)
@@ -1283,6 +1381,26 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.mmio_shared = paging64_process_root_last_mmio_shared();
     g_linux_exec64_telemetry.pool_mapped = paging64_process_root_last_pool_mapped();
     g_linux_exec64_telemetry.low_compat = paging64_process_root_last_low_compat();
+    g_linux_exec64_telemetry.low_pdpt_present =
+        paging64_process_root_last_low_pdpt_present();
+    g_linux_exec64_telemetry.syscall_entry_high = syscall64_native_lstar_high();
+    g_linux_exec64_telemetry.idt_high =
+        ((interrupts64_idt_high_targets() != 0u)
+            && (interrupts64_idt_high_base() != 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.descriptor_high =
+        ((descriptors64_gdt_high_base() != 0u)
+            && (descriptors64_tss_high_base() != 0u)
+            && (descriptors64_tss_rsp0_high() != 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.kernel_entry_high_ready =
+        ((g_linux_exec64_telemetry.syscall_entry_high != 0u)
+            && (g_linux_exec64_telemetry.idt_high != 0u)
+            && (g_linux_exec64_telemetry.descriptor_high != 0u))
+            ? 1u
+            : 0u;
     g_linux_exec64_telemetry.user_pdpt_private =
         paging64_process_root_last_user_pdpt_private();
 
@@ -1337,9 +1455,9 @@ u32 linux_exec64_run_nvme(
         LINUX_EXEC64_REAL_STACK_BASE,
         LINUX_EXEC64_REAL_STACK_BYTES,
         argc,
-        argv,
+        g_linux_exec64_staged_argv_ptrs,
         LINUX_EXEC64_DEFAULT_ENV_COUNT,
-        g_linux_exec64_default_envp,
+        g_linux_exec64_staged_envp_ptrs,
         0u,
         &g_linux_exec64_launch);
     load_cr3_restore = paging64_switch_to_kernel_root(0x4C4F414Bu);

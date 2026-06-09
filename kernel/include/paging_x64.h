@@ -67,6 +67,7 @@ u32 paging64_process_root_kernel_switch_count(void);
 u32 paging64_process_root_last_switch_reason(void);
 u32 paging64_process_root_low_compat_count(void);
 u32 paging64_process_root_last_low_compat(void);
+u32 paging64_process_root_last_low_pdpt_present(void);
 u32 paging64_process_root_high_copy_count(void);
 u32 paging64_process_root_last_high_copy(void);
 u32 paging64_process_root_mmio_shared_count(void);

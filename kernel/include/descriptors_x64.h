@@ -31,6 +31,9 @@ u16 descriptors64_user_data_selector(void);
 u16 descriptors64_tss_selector(void);
 u16 descriptors64_sysret_selector_base(void);
 u64 descriptors64_tss_rsp0(void);
+u32 descriptors64_gdt_high_base(void);
+u32 descriptors64_tss_high_base(void);
+u32 descriptors64_tss_rsp0_high(void);
 u64 descriptors64_syscall_star_plan(void);
 
 #endif

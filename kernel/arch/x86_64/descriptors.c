@@ -14,7 +14,8 @@ enum
     GDT64_ENTRY_TSS_LOW = 7u,
     GDT64_ENTRY_TSS_HIGH = 8u,
     GDT64_ENTRY_COUNT = 9u,
-    TSS64_STACK_BYTES = 16384u
+    TSS64_STACK_BYTES = 16384u,
+    DESCRIPTORS64_KERNEL_HIGH_HALF_BASE = 0xFFFFFFFF80000000ull
 };
 
 struct tss64
@@ -42,6 +43,23 @@ static u8 g_tss_stack[TSS64_STACK_BYTES] __attribute__((aligned(16)));
 static volatile u32 g_descriptor_state = 0u;
 static volatile u32 g_gdt_token = 0u;
 static volatile u32 g_tss_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static volatile u32 g_gdt_high_base = 0u;
+static volatile u32 g_tss_high_base = 0u;
+static volatile u32 g_tss_rsp0_high = 0u;
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u64 descriptors64_high_half_alias(u64 address)
+{
+    if (address >= DESCRIPTORS64_KERNEL_HIGH_HALF_BASE)
+    {
+        return address;
+    }
+
+    return DESCRIPTORS64_KERNEL_HIGH_HALF_BASE + address;
+}
+#endif
 
 static u32 descriptors64_mix_token(u32 digest, u64 value)
 {
@@ -66,11 +84,18 @@ static u64 descriptors64_tss_descriptor_low(u64 base, u32 limit)
 
 static void descriptors64_install_tss_descriptor(void)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 base = descriptors64_high_half_alias((u64)&g_tss);
+#else
     u64 base = (u64)&g_tss;
+#endif
     u32 limit = (u32)(sizeof(g_tss) - 1u);
 
     g_gdt[GDT64_ENTRY_TSS_LOW] = descriptors64_tss_descriptor_low(base, limit);
     g_gdt[GDT64_ENTRY_TSS_HIGH] = (base >> 32) & 0xFFFFFFFFull;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_tss_high_base = (base >= DESCRIPTORS64_KERNEL_HIGH_HALF_BASE) ? 1u : 0u;
+#endif
 }
 
 static u32 descriptors64_compute_gdt_token(void)
@@ -119,7 +144,12 @@ static void descriptors64_seed_tables(void)
     g_gdt[GDT64_ENTRY_USER_CODE] = 0x00AFFA000000FFFFull;
 
     g_tss.reserved0 = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_tss.rsp0 = descriptors64_high_half_alias((u64)&g_tss_stack[TSS64_STACK_BYTES]) & ~0xFull;
+    g_tss_rsp0_high = (g_tss.rsp0 >= DESCRIPTORS64_KERNEL_HIGH_HALF_BASE) ? 1u : 0u;
+#else
     g_tss.rsp0 = ((u64)&g_tss_stack[TSS64_STACK_BYTES]) & ~0xFull;
+#endif
     g_tss.rsp1 = 0u;
     g_tss.rsp2 = 0u;
     g_tss.reserved1 = 0u;
@@ -142,7 +172,12 @@ void descriptors64_init(void)
     u32 state = 0u;
 
     descriptors64_seed_tables();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    lgdt64((const void *)descriptors64_high_half_alias((u64)g_gdt), (u16)(sizeof(g_gdt) - 1u));
+    g_gdt_high_base = 1u;
+#else
     lgdt64(g_gdt, (u16)(sizeof(g_gdt) - 1u));
+#endif
     load_code_segment64(DESCRIPTORS64_KERNEL_CODE_SELECTOR);
     load_data_segments64(DESCRIPTORS64_KERNEL_DATA_SELECTOR);
     ltr64(DESCRIPTORS64_TSS_SELECTOR);
@@ -236,6 +271,33 @@ u16 descriptors64_sysret_selector_base(void)
 u64 descriptors64_tss_rsp0(void)
 {
     return g_tss.rsp0;
+}
+
+u32 descriptors64_gdt_high_base(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_gdt_high_base;
+#else
+    return 0u;
+#endif
+}
+
+u32 descriptors64_tss_high_base(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_tss_high_base;
+#else
+    return 0u;
+#endif
+}
+
+u32 descriptors64_tss_rsp0_high(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_tss_rsp0_high;
+#else
+    return 0u;
+#endif
 }
 
 u64 descriptors64_syscall_star_plan(void)

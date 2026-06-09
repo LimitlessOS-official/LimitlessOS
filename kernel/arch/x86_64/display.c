@@ -113,6 +113,7 @@
 #define DISPLAY64_GUI_DISPLAY_PATH_TOKEN 0x44495350u
 #define DISPLAY64_GUI_FS_PATH_TOKEN 0x46535041u
 
+static struct boot_info g_display_boot_info_storage;
 static const struct boot_info *g_display_boot_info = 0;
 static u32 g_display_draw_count = 0u;
 static u32 g_display_pixel_count = 0u;
@@ -249,6 +250,18 @@ static u64 g_display_back_buffer_bytes = 0ull;
 static u64 g_display_back_buffer_next = 0ull;
 
 extern u8 __bss_end[];
+
+static void display64_set_boot_info(const struct boot_info *boot_info)
+{
+    if (boot_info == 0)
+    {
+        g_display_boot_info = 0;
+        return;
+    }
+
+    g_display_boot_info_storage = *boot_info;
+    g_display_boot_info = &g_display_boot_info_storage;
+}
 
 static const u8 g_display_alpha_font[26][DISPLAY64_FONT_HEIGHT] = {
     { 0x0Eu, 0x11u, 0x11u, 0x1Fu, 0x11u, 0x11u, 0x11u },
@@ -1102,6 +1115,7 @@ static u32 display64_draw_glyph(u8 character, u32 x, u32 y, u32 pixel, u32 *toke
 u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const char *text)
 {
     const struct boot_info *previous_boot_info = g_display_boot_info;
+    struct boot_info previous_boot_info_storage = g_display_boot_info_storage;
     u32 previous_compositor_active = g_display_compositor_active;
     volatile u32 *framebuffer;
     u32 text_pixel;
@@ -1116,10 +1130,11 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
     u32 drawn = 0u;
     u32 token = 2166136261u;
 
-    g_display_boot_info = boot_info;
+    display64_set_boot_info(boot_info);
     g_display_compositor_active = 0u;
     if (!display64_has_framebuffer())
     {
+        g_display_boot_info_storage = previous_boot_info_storage;
         g_display_boot_info = previous_boot_info;
         g_display_compositor_active = previous_compositor_active;
         return 0u;
@@ -1165,6 +1180,7 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
         ++text;
     }
 
+    g_display_boot_info_storage = previous_boot_info_storage;
     g_display_boot_info = previous_boot_info;
     g_display_compositor_active = previous_compositor_active;
     return (drawn != 0u && token != 0u) ? drawn : 0u;
@@ -3887,7 +3903,7 @@ void display64_init(const struct boot_info *boot_info)
 {
     u32 window_index;
 
-    g_display_boot_info = boot_info;
+    display64_set_boot_info(boot_info);
     g_display_draw_count = 0u;
     g_display_pixel_count = 0u;
     g_display_denial_count = 0u;

@@ -114,6 +114,7 @@ static u32 g_paging64_process_root_kernel_switch_count = 0u;
 static u32 g_paging64_process_root_last_switch_reason = 0u;
 static u32 g_paging64_process_root_low_compat_count = 0u;
 static u32 g_paging64_process_root_last_low_compat = 0u;
+static u32 g_paging64_process_root_last_low_pdpt_present = 0u;
 static u32 g_paging64_process_root_high_copy_count = 0u;
 static u32 g_paging64_process_root_last_high_copy = 0u;
 static u32 g_paging64_process_root_mmio_shared_count = 0u;
@@ -562,22 +563,9 @@ u32 paging64_process_root_alloc(u32 pid, u32 owner_id, u32 authority_token)
     }
     pml4[PAGING64_HIGH_HALF_PML4_INDEX] = kernel_pml4[PAGING64_HIGH_HALF_PML4_INDEX];
 
-    /*
-     * M22 transitional low-identity compatibility mapping. This keeps the
-     * loader's low 16 MiB identity window visible while user mappings move to
-     * private per-process lower-half tables. Keep the low-compat telemetry in
-     * every gate run until this compatibility entry is removed.
-     */
-    if ((kernel_pdpt != 0) && ((kernel_pdpt[0u] & PAGING64_PAGE_PRESENT) != 0ull))
-    {
-        pdpt[0u] = kernel_pdpt[0u];
-        g_paging64_process_root_last_low_compat = 1u;
-        ++g_paging64_process_root_low_compat_count;
-    }
-    else
-    {
-        g_paging64_process_root_last_low_compat = 0u;
-    }
+    g_paging64_process_root_last_low_compat = 0u;
+    g_paging64_process_root_last_low_pdpt_present =
+        ((pdpt[0u] & PAGING64_PAGE_PRESENT) != 0ull) ? 1u : 0u;
 
     framebuffer_pdpt_index = paging64_index64(0x80000000ull, 30u);
     if ((kernel_pdpt != 0)
@@ -808,6 +796,10 @@ u32 paging64_process_root_kernel_switch_count(void) { return g_paging64_process_
 u32 paging64_process_root_last_switch_reason(void) { return g_paging64_process_root_last_switch_reason; }
 u32 paging64_process_root_low_compat_count(void) { return g_paging64_process_root_low_compat_count; }
 u32 paging64_process_root_last_low_compat(void) { return g_paging64_process_root_last_low_compat; }
+u32 paging64_process_root_last_low_pdpt_present(void)
+{
+    return g_paging64_process_root_last_low_pdpt_present;
+}
 u32 paging64_process_root_high_copy_count(void) { return g_paging64_process_root_high_copy_count; }
 u32 paging64_process_root_last_high_copy(void) { return g_paging64_process_root_last_high_copy; }
 u32 paging64_process_root_mmio_shared_count(void) { return g_paging64_process_root_mmio_shared_count; }
@@ -902,6 +894,7 @@ u32 paging64_process_root_kernel_switch_count(void) { return 0u; }
 u32 paging64_process_root_last_switch_reason(void) { return 0u; }
 u32 paging64_process_root_low_compat_count(void) { return 0u; }
 u32 paging64_process_root_last_low_compat(void) { return 0u; }
+u32 paging64_process_root_last_low_pdpt_present(void) { return 0u; }
 u32 paging64_process_root_high_copy_count(void) { return 0u; }
 u32 paging64_process_root_last_high_copy(void) { return 0u; }
 u32 paging64_process_root_mmio_shared_count(void) { return 0u; }

@@ -74,6 +74,10 @@ static volatile u32 g_page_fault_count = 0u;
 static volatile u32 g_probe_count = 0u;
 static volatile u32 g_irq_count = 0u;
 static volatile u32 g_syscall_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static volatile u32 g_idt_high_targets = 0u;
+static volatile u32 g_idt_high_base = 0u;
+#endif
 static volatile u64 g_last_syscall_code = 0u;
 static volatile u64 g_last_exception_vector = 0u;
 static volatile u64 g_last_exception_error = 0u;
@@ -146,6 +150,10 @@ static const char *const EXCEPTION_NAMES[32] = {
     "Security exception",
     "Reserved"
 };
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u64 interrupt64_high_half_alias(u64 low_address);
+#endif
 
 static void debug_write_char(char character)
 {
@@ -236,6 +244,14 @@ static void idt64_set_gate(u8 vector, void (*handler)(void), u8 type_attributes)
 {
     u64 address = (u64)handler;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    address = interrupt64_high_half_alias(address);
+    if (address >= X64_HIGH_HALF_BASE)
+    {
+        g_idt_high_targets = 1u;
+    }
+#endif
+
     g_idt[vector].offset_low = (u16)(address & 0xFFFFu);
     g_idt[vector].selector = descriptors64_kernel_code_selector();
     g_idt[vector].ist = 0u;
@@ -247,11 +263,17 @@ static void idt64_set_gate(u8 vector, void (*handler)(void), u8 type_attributes)
 
 static void interrupt64_log_exception(const struct interrupt_frame64 *frame)
 {
+    const char *exception_name = EXCEPTION_NAMES[frame->vector];
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    exception_name = (const char *)interrupt64_high_half_alias((u64)exception_name);
+#endif
+
     debug_write_line("");
     debug_write_string("[x64-fault] vector ");
     debug_write_dec_u64(frame->vector);
     debug_write_string(" ");
-    debug_write_line(EXCEPTION_NAMES[frame->vector]);
+    debug_write_line(exception_name);
     debug_write_string("[x64-fault] error ");
     debug_write_hex_u64(frame->error_code);
     debug_write_string(" rip ");
@@ -370,6 +392,11 @@ void interrupts64_init(void)
         g_idt[index].zero = 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_idt_high_targets = 0u;
+    g_idt_high_base = 0u;
+#endif
+
     debug_write_line("[x64] binding exceptions");
     for (index = 0u; index < 32u; ++index)
     {
@@ -433,7 +460,14 @@ void interrupts64_init(void)
     scheduler64_init();
 
     debug_write_line("[x64] loading IDT");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    lidt64(
+        (const void *)interrupt64_high_half_alias((u64)g_idt),
+        (u16)(sizeof(g_idt) - 1u));
+    g_idt_high_base = 1u;
+#else
     lidt64(g_idt, (u16)(sizeof(g_idt) - 1u));
+#endif
     debug_write_line("[x64] IDT loaded");
 }
 
@@ -686,6 +720,24 @@ u32 interrupts64_irq_count(void)
 u32 interrupts64_syscall_count(void)
 {
     return g_syscall_count;
+}
+
+u32 interrupts64_idt_high_targets(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_idt_high_targets;
+#else
+    return 0u;
+#endif
+}
+
+u32 interrupts64_idt_high_base(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_idt_high_base;
+#else
+    return 0u;
+#endif
 }
 
 u64 interrupts64_last_syscall_code(void)

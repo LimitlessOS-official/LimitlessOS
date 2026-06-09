@@ -43,7 +43,8 @@ enum
     LSTAR_MSR = 0xC0000082u,
     FMASK_MSR = 0xC0000084u,
     EFER_SCE = 0x00000001u,
-    RFLAGS_INTERRUPT_FLAG = 0x00000200u
+    RFLAGS_INTERRUPT_FLAG = 0x00000200u,
+    SYSCALL64_KERNEL_HIGH_HALF_BASE = 0xFFFFFFFF80000000ull
 };
 
 extern void syscall64_native_entry(void);
@@ -53,6 +54,10 @@ static volatile u32 g_native_syscall_count = 0u;
 static volatile u64 g_native_last_syscall_code = 0u;
 static volatile u64 g_native_star_value = 0u;
 static volatile u32 g_native_star_ready = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static volatile u64 g_native_lstar_value = 0ull;
+static volatile u32 g_native_lstar_high = 0u;
+#endif
 volatile u64 syscall64_native_linux_rdi = 0ull;
 volatile u64 syscall64_native_linux_rsi = 0ull;
 volatile u64 syscall64_native_linux_rdx = 0ull;
@@ -109,6 +114,18 @@ static u32 syscall64_native_copy_windows_stack_args(
     u64 user_rsp,
     u64 *out_args,
     u32 max_args);
+
+static u64 syscall64_native_high_half_alias(const void *address)
+{
+    u64 value = (u64)address;
+
+    if (value >= SYSCALL64_KERNEL_HIGH_HALF_BASE)
+    {
+        return value;
+    }
+
+    return SYSCALL64_KERNEL_HIGH_HALF_BASE + value;
+}
 #endif
 
 static void syscall64_refresh_input_diagnostics_if_changed(void)
@@ -173,6 +190,8 @@ void syscall64_init(const struct boot_info *boot_info)
     g_native_star_value = 0u;
     g_native_star_ready = 0u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_native_lstar_value = 0ull;
+    g_native_lstar_high = 0u;
     syscall64_native_linux_rdi = 0ull;
     syscall64_native_linux_rsi = 0ull;
     syscall64_native_linux_rdx = 0ull;
@@ -7648,14 +7667,27 @@ void syscall64_native_init(void)
 {
     u64 efer = rdmsr64(EFER_MSR);
     u64 star = descriptors64_syscall_star_plan();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 lstar = syscall64_native_high_half_alias((const void *)syscall64_native_entry);
+#else
+    u64 lstar = (u64)syscall64_native_entry;
+#endif
 
     efer |= EFER_SCE;
     wrmsr64(EFER_MSR, efer);
     wrmsr64(STAR_MSR, star);
-    wrmsr64(LSTAR_MSR, (u64)syscall64_native_entry);
+    wrmsr64(LSTAR_MSR, lstar);
     wrmsr64(FMASK_MSR, (u64)RFLAGS_INTERRUPT_FLAG);
     g_native_star_value = rdmsr64(STAR_MSR);
     g_native_star_ready = (g_native_star_value == star) ? 1u : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_native_lstar_value = rdmsr64(LSTAR_MSR);
+    g_native_lstar_high =
+        ((g_native_lstar_value == lstar)
+            && (g_native_lstar_value >= SYSCALL64_KERNEL_HIGH_HALF_BASE))
+            ? 1u
+            : 0u;
+#endif
 }
 
 u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
@@ -8842,6 +8874,29 @@ u32 syscall64_native_star_ready(void)
 {
     return g_native_star_ready;
 }
+
+u32 syscall64_native_lstar_high(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_native_lstar_high;
+#else
+    return 0u;
+#endif
+}
+
+u64 syscall64_native_saved_linux_rdi(void) { return syscall64_native_linux_rdi; }
+u64 syscall64_native_saved_linux_rsi(void) { return syscall64_native_linux_rsi; }
+u64 syscall64_native_saved_linux_rdx(void) { return syscall64_native_linux_rdx; }
+u64 syscall64_native_saved_linux_r10(void) { return syscall64_native_linux_r10; }
+u64 syscall64_native_saved_linux_r8(void) { return syscall64_native_linux_r8; }
+u64 syscall64_native_saved_linux_r9(void) { return syscall64_native_linux_r9; }
+u64 syscall64_native_saved_user_rsp(void) { return syscall64_native_user_rsp; }
+u64 syscall64_native_saved_user_rbx(void) { return syscall64_native_user_rbx; }
+u64 syscall64_native_saved_user_rbp(void) { return syscall64_native_user_rbp; }
+u64 syscall64_native_saved_user_r12(void) { return syscall64_native_user_r12; }
+u64 syscall64_native_saved_user_r13(void) { return syscall64_native_user_r13; }
+u64 syscall64_native_saved_user_r14(void) { return syscall64_native_user_r14; }
+u64 syscall64_native_saved_user_r15(void) { return syscall64_native_user_r15; }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 static u32 syscall64_native_user_u64_readable(u32 pid, u64 user_address)

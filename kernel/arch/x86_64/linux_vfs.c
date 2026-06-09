@@ -229,6 +229,35 @@ static linux_vfs64_proc_record_t g_linux_vfs64_proc_records[LINUX_VFS64_MAX_PROC
 static linux_vfs64_tmp_record_t g_linux_vfs64_tmp_records[LINUX_VFS64_MAX_TMP_RECORDS];
 static linux_vfs64_nvme_binding_t g_linux_vfs64_nvme_bindings[LINUX_VFS64_MAX_NVME_BINDINGS];
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static const u8 *linux_vfs64_kernel_ro_u8(const u8 *pointer)
+{
+    u64 value = (u64)pointer;
+
+    if ((value == 0ull) || (value >= 0xFFFFFFFF80000000ull))
+    {
+        return pointer;
+    }
+
+    return (const u8 *)(0xFFFFFFFF80000000ull + value);
+}
+
+static const char *linux_vfs64_kernel_ro_cstr(const char *pointer)
+{
+    return (const char *)linux_vfs64_kernel_ro_u8((const u8 *)pointer);
+}
+#else
+static const u8 *linux_vfs64_kernel_ro_u8(const u8 *pointer)
+{
+    return pointer;
+}
+
+static const char *linux_vfs64_kernel_ro_cstr(const char *pointer)
+{
+    return pointer;
+}
+#endif
+
 static u32 linux_vfs64_bytes_equal(const u8 *left, const u8 *right, u32 byte_count);
 static void linux_vfs64_clear_fd_path_record(linux_vfs64_fd_path_record_t *record);
 static void linux_vfs64_clear_proc_record(linux_vfs64_proc_record_t *record);
@@ -698,6 +727,8 @@ static u32 linux_vfs64_prefix_matches(
     u32 path_byte_count,
     const linux_vfs64_mount_t *mount)
 {
+    const u8 *prefix;
+
     if ((path == 0)
         || (mount == 0)
         || (mount->prefix == 0)
@@ -707,7 +738,8 @@ static u32 linux_vfs64_prefix_matches(
         return 0u;
     }
 
-    if (linux_vfs64_bytes_equal(path, mount->prefix, mount->prefix_byte_count) == 0u)
+    prefix = linux_vfs64_kernel_ro_u8(mount->prefix);
+    if (linux_vfs64_bytes_equal(path, prefix, mount->prefix_byte_count) == 0u)
     {
         return 0u;
     }
@@ -2048,6 +2080,7 @@ static u32 linux_vfs64_fill_dirent(
     const linux_vfs64_dirent_template_t *source,
     u32 next_offset)
 {
+    const char *name;
     u32 index;
     u32 name_length;
 
@@ -2056,7 +2089,8 @@ static u32 linux_vfs64_fill_dirent(
         return 0u;
     }
 
-    name_length = linux_vfs64_string_length(source->name);
+    name = linux_vfs64_kernel_ro_cstr(source->name);
+    name_length = linux_vfs64_string_length(name);
     if (name_length == 0u)
     {
         return 0u;
@@ -2068,7 +2102,7 @@ static u32 linux_vfs64_fill_dirent(
     entry->entry_type = source->entry_type;
     for (index = 0u; index < name_length; ++index)
     {
-        entry->name[index] = (u8)source->name[index];
+        entry->name[index] = (u8)name[index];
     }
     for (; index < LINUX_VFS64_DIRENT_NAME_MAX; ++index)
     {
@@ -2194,7 +2228,7 @@ static u32 linux_vfs64_result_is_directory(
 
     mount = &g_linux_vfs64_mounts[result->mount_index];
     return ((mount->prefix_byte_count == path_byte_count)
-        && (linux_vfs64_bytes_equal(path, mount->prefix, path_byte_count) != 0u))
+        && (linux_vfs64_bytes_equal(path, linux_vfs64_kernel_ro_u8(mount->prefix), path_byte_count) != 0u))
         ? 1u
         : 0u;
 }

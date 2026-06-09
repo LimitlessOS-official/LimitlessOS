@@ -13,6 +13,7 @@
 #include "pipe_x64.h"
 #include "process_x64.h"
 #include "scheduler_x64.h"
+#include "syscall_x64.h"
 #include "vma_x64.h"
 #include "x64.h"
 
@@ -473,20 +474,6 @@ static u32 g_linux_abi64_last_exit_audit_recorded = 0u;
 static void *g_linux_abi64_last_exit_detached_vma = 0;
 static void *g_linux_abi64_last_exit_detached_fd = 0;
 static void *g_linux_abi64_last_exit_detached_audit = 0;
-
-extern volatile u64 syscall64_native_linux_rdi;
-extern volatile u64 syscall64_native_linux_rsi;
-extern volatile u64 syscall64_native_linux_rdx;
-extern volatile u64 syscall64_native_linux_r10;
-extern volatile u64 syscall64_native_linux_r8;
-extern volatile u64 syscall64_native_linux_r9;
-extern volatile u64 syscall64_native_user_rsp;
-extern volatile u64 syscall64_native_user_rbx;
-extern volatile u64 syscall64_native_user_rbp;
-extern volatile u64 syscall64_native_user_r12;
-extern volatile u64 syscall64_native_user_r13;
-extern volatile u64 syscall64_native_user_r14;
-extern volatile u64 syscall64_native_user_r15;
 
 static u64 linux_abi64_unimplemented_stub(
     u32 pid,
@@ -8775,6 +8762,7 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     u32 entry_token;
     u64 selectors;
     u64 rflags;
+    u64 saved_user_rsp;
     struct interrupt_frame64 child_frame;
     u32 task_id;
 
@@ -8809,13 +8797,14 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     selectors = (u64)process64_runtime_user_entry_selectors(pid);
     rflags = (u64)process64_runtime_user_entry_rflags(pid);
     root_authority = process64_page_root_token(pid);
+    saved_user_rsp = syscall64_native_saved_user_rsp();
     if ((runtime_token == 0u)
         || (entry_token == 0u)
         || (selectors == 0ull)
         || (rflags == 0ull)
         || (root_authority == 0u)
         || (rip == 0ull)
-        || (syscall64_native_user_rsp == 0ull))
+        || (saved_user_rsp == 0ull))
     {
         ++g_linux_abi64_fork_denial_count;
         (void)persona_audit64_record(
@@ -8885,19 +8874,19 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
     }
 
-    child_frame.r15 = syscall64_native_user_r15;
-    child_frame.r14 = syscall64_native_user_r14;
-    child_frame.r13 = syscall64_native_user_r13;
-    child_frame.r12 = syscall64_native_user_r12;
+    child_frame.r15 = syscall64_native_saved_user_r15();
+    child_frame.r14 = syscall64_native_saved_user_r14();
+    child_frame.r13 = syscall64_native_saved_user_r13();
+    child_frame.r12 = syscall64_native_saved_user_r12();
     child_frame.r11 = 0ull;
-    child_frame.r10 = syscall64_native_linux_r10;
-    child_frame.r9 = syscall64_native_linux_r9;
-    child_frame.r8 = syscall64_native_linux_r8;
-    child_frame.rdi = syscall64_native_linux_rdi;
-    child_frame.rsi = syscall64_native_linux_rsi;
-    child_frame.rbp = syscall64_native_user_rbp;
-    child_frame.rbx = syscall64_native_user_rbx;
-    child_frame.rdx = syscall64_native_linux_rdx;
+    child_frame.r10 = syscall64_native_saved_linux_r10();
+    child_frame.r9 = syscall64_native_saved_linux_r9();
+    child_frame.r8 = syscall64_native_saved_linux_r8();
+    child_frame.rdi = syscall64_native_saved_linux_rdi();
+    child_frame.rsi = syscall64_native_saved_linux_rsi();
+    child_frame.rbp = syscall64_native_saved_user_rbp();
+    child_frame.rbx = syscall64_native_saved_user_rbx();
+    child_frame.rdx = syscall64_native_saved_linux_rdx();
     child_frame.rcx = rip;
     child_frame.rax = 0ull;
     child_frame.vector = 0ull;
@@ -8905,7 +8894,7 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     child_frame.rip = rip;
     child_frame.cs = selectors & 0xFFFFull;
     child_frame.rflags = rflags;
-    child_frame.rsp = syscall64_native_user_rsp;
+    child_frame.rsp = saved_user_rsp;
     child_frame.ss = (selectors >> 16) & 0xFFFFull;
 
     task_id = scheduler64_runqueue_register_process_frame(
@@ -8941,7 +8930,7 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     record->shared_vma = 0u;
     record->shared_fd = 0u;
     record->shared_audit = 0u;
-    record->child_stack = syscall64_native_user_rsp;
+    record->child_stack = saved_user_rsp;
     record->tls_base = context->tls_base;
 
     ++g_linux_abi64_fork_success_count;
@@ -8958,7 +8947,7 @@ u64 linux_abi64_sys_fork(u32 pid, u64 rip)
     g_linux_abi64_clone_last_shared_vma = 0u;
     g_linux_abi64_clone_last_shared_fd = 0u;
     g_linux_abi64_clone_last_shared_audit = 0u;
-    g_linux_abi64_clone_last_child_stack = syscall64_native_user_rsp;
+    g_linux_abi64_clone_last_child_stack = saved_user_rsp;
     g_linux_abi64_clone_last_tls_base = context->tls_base;
     (void)persona_audit64_record(
         pid,
