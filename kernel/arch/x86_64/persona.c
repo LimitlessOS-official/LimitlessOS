@@ -193,6 +193,7 @@ static void persona64_clear_context(persona_context_t *context)
         context->linux_sigactions[index].handler = LINUX_SIGNAL64_DEFAULT_HANDLER;
         context->linux_sigactions[index].sa_mask = LINUX_SIGNAL64_MASK_EMPTY;
         context->linux_sigactions[index].sa_flags = LINUX_SIGNAL64_FLAGS_NONE;
+        context->linux_sigactions[index].restorer = 0ull;
     }
 }
 

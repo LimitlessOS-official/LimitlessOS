@@ -95,6 +95,10 @@ typedef struct linux_exec64_telemetry
     u32 console_bytes;
     u32 exit_code;
     u32 cleanup;
+    u32 signal_sigpipe;
+    u32 signal_sigchld;
+    u32 signal_rt_sigreturn;
+    u32 signal_frame_fault;
     u32 nvme_vfs_bind;
     u32 nvme_vfs_release;
     u32 nvme_vfs_reads;
@@ -565,6 +569,20 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.exit_code);
     (void)linux_exec64_write_text(console_capability, owner_id, " cleanup ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.cleanup);
+    (void)linux_exec64_write_text(console_capability, owner_id, " signal-sigpipe ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.signal_sigpipe);
+    (void)linux_exec64_write_text(console_capability, owner_id, " signal-sigchld ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.signal_sigchld);
+    (void)linux_exec64_write_text(console_capability, owner_id, " signal-rt-sigreturn ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.signal_rt_sigreturn);
+    (void)linux_exec64_write_text(console_capability, owner_id, " signal-frame-fault ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.signal_frame_fault);
     (void)linux_exec64_write_text(console_capability, owner_id, " getdents64 ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.getdents64_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " getdents64-entries ");
@@ -1061,6 +1079,14 @@ u32 linux_exec64_run_nvme(
     u32 write_calls_after;
     u32 write_bytes_before;
     u32 write_bytes_after;
+    u32 signal_sigpipe_before;
+    u32 signal_sigpipe_after;
+    u32 signal_sigchld_before;
+    u32 signal_sigchld_after;
+    u32 signal_rt_sigreturn_before;
+    u32 signal_rt_sigreturn_after;
+    u32 signal_frame_fault_before;
+    u32 signal_frame_fault_after;
     u32 pipe_calls_before;
     u32 pipe_calls_after;
     u32 pipe_denial_before;
@@ -1542,6 +1568,11 @@ u32 linux_exec64_run_nvme(
     read_bytes_before = linux_abi64_read_byte_count();
     write_calls_before = linux_abi64_write_count();
     write_bytes_before = linux_abi64_write_byte_count();
+    signal_sigpipe_before = linux_abi64_signal_sigpipe_count();
+    signal_sigchld_before = linux_abi64_signal_sigchld_count();
+    signal_rt_sigreturn_before = linux_abi64_rt_sigreturn_count();
+    signal_frame_fault_before = linux_abi64_signal_delivery_fault_count()
+        + linux_abi64_rt_sigreturn_fault_count();
     pipe_calls_before = linux_abi64_pipe_count();
     pipe_denial_before = linux_abi64_pipe_denial_count();
     pipe_fault_before = linux_abi64_pipe_fault_count();
@@ -1664,6 +1695,11 @@ u32 linux_exec64_run_nvme(
     read_bytes_after = linux_abi64_read_byte_count();
     write_calls_after = linux_abi64_write_count();
     write_bytes_after = linux_abi64_write_byte_count();
+    signal_sigpipe_after = linux_abi64_signal_sigpipe_count();
+    signal_sigchld_after = linux_abi64_signal_sigchld_count();
+    signal_rt_sigreturn_after = linux_abi64_rt_sigreturn_count();
+    signal_frame_fault_after = linux_abi64_signal_delivery_fault_count()
+        + linux_abi64_rt_sigreturn_fault_count();
     pipe_calls_after = linux_abi64_pipe_count();
     pipe_denial_after = linux_abi64_pipe_denial_count();
     pipe_fault_after = linux_abi64_pipe_fault_count();
@@ -1725,6 +1761,22 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.console_bytes =
         (console_bytes_after >= console_bytes_before)
             ? (console_bytes_after - console_bytes_before)
+            : 0u;
+    g_linux_exec64_telemetry.signal_sigpipe =
+        (signal_sigpipe_after >= signal_sigpipe_before)
+            ? (signal_sigpipe_after - signal_sigpipe_before)
+            : 0u;
+    g_linux_exec64_telemetry.signal_sigchld =
+        (signal_sigchld_after >= signal_sigchld_before)
+            ? (signal_sigchld_after - signal_sigchld_before)
+            : 0u;
+    g_linux_exec64_telemetry.signal_rt_sigreturn =
+        (signal_rt_sigreturn_after >= signal_rt_sigreturn_before)
+            ? (signal_rt_sigreturn_after - signal_rt_sigreturn_before)
+            : 0u;
+    g_linux_exec64_telemetry.signal_frame_fault =
+        (signal_frame_fault_after >= signal_frame_fault_before)
+            ? (signal_frame_fault_after - signal_frame_fault_before)
             : 0u;
     g_linux_exec64_telemetry.syscall_unimplemented_delta =
         (unimplemented_after >= unimplemented_before)

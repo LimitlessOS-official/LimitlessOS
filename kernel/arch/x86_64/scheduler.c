@@ -1,6 +1,10 @@
 #include "scheduler_x64.h"
 
 #include "interrupts_x64.h"
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+#include "linux_abi_x64.h"
+#include "persona_x64.h"
+#endif
 #include "paging_x64.h"
 #include "pit.h"
 #include "process_x64.h"
@@ -33,6 +37,23 @@ struct scheduler64_task
 #endif
     struct interrupt_frame64 frame;
 };
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+static void scheduler64_deliver_linux_signal_on_resume(
+    const struct scheduler64_task *task,
+    struct interrupt_frame64 *frame)
+{
+    if ((task == 0)
+        || (frame == 0)
+        || ((frame->cs & 0x3ull) != 0x3ull)
+        || (persona64_type(task->pid) != PERSONA64_TYPE_LINUX_ELF))
+    {
+        return;
+    }
+
+    (void)linux_abi64_signal_deliver_pending(task->pid, frame);
+}
+#endif
 
 struct scheduler64_runqueue
 {
@@ -825,6 +846,7 @@ u32 scheduler64_runqueue_on_blocked_syscall(struct interrupt_frame64 *frame)
     ++g_runqueue.switches;
     scheduler64_restore_fs_base_for_task(next_task);
     *frame = next_task->frame;
+    scheduler64_deliver_linux_signal_on_resume(next_task, frame);
     g_runqueue.cs = frame->cs;
     g_runqueue.ss = frame->ss;
     return 1u;
@@ -875,6 +897,9 @@ u32 scheduler64_runqueue_on_exit(struct interrupt_frame64 *frame, u32 result)
         scheduler64_restore_fs_base_for_task(next_task);
 #endif
         *frame = next_task->frame;
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+        scheduler64_deliver_linux_signal_on_resume(next_task, frame);
+#endif
         g_runqueue.cs = frame->cs;
         g_runqueue.ss = frame->ss;
         return SCHEDULER64_RUNQUEUE_EXIT_RESUMED;

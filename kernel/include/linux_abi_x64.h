@@ -215,6 +215,7 @@ struct interrupt_frame64;
 #define LINUX_ABI64_EINVAL 22u
 #define LINUX_ABI64_EMFILE 24u
 #define LINUX_ABI64_ENOTTY 25u
+#define LINUX_ABI64_EPIPE 32u
 #define LINUX_ABI64_ERANGE 34u
 #define LINUX_ABI64_ENOSYS 38u
 #define LINUX_ABI64_ETIMEDOUT 110u
@@ -706,6 +707,8 @@ u32 linux_abi64_kill_last_target(void);
 u32 linux_abi64_kill_last_signal(void);
 u32 linux_abi64_kill_last_result(void);
 u32 linux_abi64_signal_pending_count(void);
+u32 linux_abi64_signal_sigpipe_count(void);
+u32 linux_abi64_signal_sigchld_count(void);
 u32 linux_abi64_signal_delivery_count(void);
 u32 linux_abi64_signal_masked_count(void);
 u32 linux_abi64_signal_delivery_denial_count(void);

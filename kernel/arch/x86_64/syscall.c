@@ -8572,6 +8572,11 @@ u64 syscall64_native_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
         g_native_persona_last_pid = pid;
         g_native_persona_last_type = persona_type;
         syscall64_native_return_to_user = 1u;
+        if (number == (u64)LINUX_ABI64_SYSCALL_RT_SIGRETURN)
+        {
+            g_native_persona_last_result = 0ull;
+            return 0ull;
+        }
         g_native_persona_last_result = linux_abi64_dispatch(
             pid,
             (u32)number,
@@ -8640,6 +8645,46 @@ static void syscall64_native_load_switch_frame(const struct interrupt_frame64 *f
     syscall64_native_switch_rflags = frame->rflags;
     syscall64_native_switch_rsp = frame->rsp;
     syscall64_native_switch_ss = frame->ss;
+}
+
+static void syscall64_native_build_linux_return_frame(
+    struct interrupt_frame64 *frame,
+    u32 pid,
+    u64 result,
+    u64 user_rip,
+    u64 user_rsp,
+    u64 user_rflags)
+{
+    u64 selectors;
+
+    frame->r15 = syscall64_native_user_r15;
+    frame->r14 = syscall64_native_user_r14;
+    frame->r13 = syscall64_native_user_r13;
+    frame->r12 = syscall64_native_user_r12;
+    frame->r11 = 0ull;
+    frame->r10 = syscall64_native_linux_r10;
+    frame->r9 = syscall64_native_linux_r9;
+    frame->r8 = syscall64_native_linux_r8;
+    frame->rdi = syscall64_native_linux_rdi;
+    frame->rsi = syscall64_native_linux_rsi;
+    frame->rbp = syscall64_native_user_rbp;
+    frame->rbx = syscall64_native_user_rbx;
+    frame->rdx = syscall64_native_linux_rdx;
+    frame->rcx = user_rip;
+    frame->rax = result;
+    frame->vector = 0ull;
+    frame->error_code = 0ull;
+    frame->rip = user_rip;
+    frame->rflags = user_rflags;
+    frame->rsp = user_rsp;
+    frame->cs = scheduler64_runqueue_cs();
+    frame->ss = scheduler64_runqueue_ss();
+    if (((frame->cs & 0x3ull) != 0x3ull) || ((frame->ss & 0x3ull) != 0x3ull))
+    {
+        selectors = process64_runtime_user_entry_selectors(pid);
+        frame->cs = selectors & 0xFFFFull;
+        frame->ss = (selectors >> 16) & 0xFFFFull;
+    }
 }
 #endif
 
@@ -8776,6 +8821,35 @@ u32 syscall64_native_complete_persona_return(
         }
         syscall64_native_load_switch_frame(&frame);
         return 1u;
+    }
+
+    if ((task_id != SCHEDULER64_INVALID_TASK)
+        && (g_native_persona_last_pid == pid)
+        && (g_native_persona_last_type == PERSONA64_TYPE_LINUX_ELF))
+    {
+        syscall64_native_build_linux_return_frame(
+            &frame,
+            pid,
+            result,
+            user_rip,
+            user_rsp,
+            user_rflags);
+        /*
+         * rt_sigreturn must restore the interrupted frame before any pending
+         * signal delivery check. Delivering first would allow a nested signal
+         * while the process is still unwinding the previous rt_sigframe.
+         */
+        if (g_native_last_syscall_code == (u64)LINUX_ABI64_SYSCALL_RT_SIGRETURN)
+        {
+            frame.rax = linux_abi64_sys_rt_sigreturn(pid, &frame);
+            syscall64_native_load_switch_frame(&frame);
+            return 1u;
+        }
+        if (linux_abi64_signal_deliver_pending(pid, &frame) != 0u)
+        {
+            syscall64_native_load_switch_frame(&frame);
+            return 1u;
+        }
     }
 
     if ((task_id == SCHEDULER64_INVALID_TASK)

@@ -396,6 +396,8 @@ static u32 g_linux_abi64_kill_last_target = PROCESS64_INVALID_PID;
 static u32 g_linux_abi64_kill_last_signal = 0u;
 static u32 g_linux_abi64_kill_last_result = 0u;
 static u32 g_linux_abi64_signal_pending_count = 0u;
+static u32 g_linux_abi64_signal_sigpipe_count = 0u;
+static u32 g_linux_abi64_signal_sigchld_count = 0u;
 static u32 g_linux_abi64_signal_delivery_count = 0u;
 static u32 g_linux_abi64_signal_masked_count = 0u;
 static u32 g_linux_abi64_signal_delivery_denial_count = 0u;
@@ -2257,6 +2259,8 @@ void linux_abi64_init(void)
     g_linux_abi64_kill_last_signal = 0u;
     g_linux_abi64_kill_last_result = 0u;
     g_linux_abi64_signal_pending_count = 0u;
+    g_linux_abi64_signal_sigpipe_count = 0u;
+    g_linux_abi64_signal_sigchld_count = 0u;
     g_linux_abi64_signal_delivery_count = 0u;
     g_linux_abi64_signal_masked_count = 0u;
     g_linux_abi64_signal_delivery_denial_count = 0u;
@@ -4644,6 +4648,63 @@ static u32 linux_abi64_terminal_read_kernel(
     return bytes_read;
 }
 
+static u64 linux_abi64_signal_mask_direct(u32 signal_number)
+{
+    if ((signal_number == 0u) || (signal_number > LINUX_SIGNAL64_MAX_SIGNALS))
+    {
+        return 0ull;
+    }
+
+    return 1ull << (signal_number - 1u);
+}
+
+static u32 linux_abi64_mark_signal_pending_direct(u32 pid, u32 signal_number)
+{
+    persona_context_t *context;
+    u64 signal_mask;
+
+    context = persona64_context_for_process(pid);
+    signal_mask = linux_abi64_signal_mask_direct(signal_number);
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (context == 0)
+        || (context->persona_type != PERSONA64_TYPE_LINUX_ELF)
+        || (signal_mask == 0ull))
+    {
+        return 0u;
+    }
+
+    context->linux_signal_pending |= signal_mask;
+    ++g_linux_abi64_signal_pending_count;
+    if (signal_number == LINUX_SIGNAL64_SIGPIPE)
+    {
+        ++g_linux_abi64_signal_sigpipe_count;
+    }
+    else if (signal_number == LINUX_SIGNAL64_SIGCHLD)
+    {
+        ++g_linux_abi64_signal_sigchld_count;
+    }
+    return 1u;
+}
+
+static u32 linux_abi64_unmasked_signal_pending(u32 pid)
+{
+    persona_context_t *context = persona64_context_for_process(pid);
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (process64_principal(pid) == 0u)
+        || (context == 0)
+        || (context->persona_type != PERSONA64_TYPE_LINUX_ELF))
+    {
+        return 0u;
+    }
+
+    return ((context->linux_signal_pending
+            & ~(context->linux_signal_mask | LINUX_SIGNAL64_UNBLOCKABLE_MASK)) != 0ull)
+        ? 1u
+        : 0u;
+}
+
 u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count, u64 rip)
 {
     static u8 read_scratch[LINUX_ABI64_READ_CHUNK_BYTES];
@@ -4752,9 +4813,13 @@ u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count
                 pid,
                 PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
                 LINUX_ABI64_SYSCALL_READ,
-                LINUX_ABI64_EAGAIN,
+                (linux_abi64_unmasked_signal_pending(pid) != 0u)
+                    ? LINUX_ABI64_EINTR
+                    : LINUX_ABI64_EAGAIN,
                 rip);
-            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+            return (linux_abi64_unmasked_signal_pending(pid) != 0u)
+                ? LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINTR)
+                : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
         }
         if (bytes_read == FD64_IO_ERROR)
         {
@@ -4857,13 +4922,28 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
             pid,
             PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
             LINUX_ABI64_SYSCALL_WRITE,
-            LINUX_ABI64_EAGAIN,
+            (linux_abi64_unmasked_signal_pending(pid) != 0u)
+                ? LINUX_ABI64_EINTR
+                : LINUX_ABI64_EAGAIN,
             rip);
-        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+        return (linux_abi64_unmasked_signal_pending(pid) != 0u)
+            ? LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINTR)
+            : LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
     }
     if ((bytes_written == FD64_IO_ERROR) || (bytes_written == LINUX_VFS64_INVALID_RESULT))
     {
         ++g_linux_abi64_write_denial_count;
+        if (fd_type == FD64_TYPE_PIPE_WRITE)
+        {
+            (void)linux_abi64_mark_signal_pending_direct(pid, LINUX_SIGNAL64_SIGPIPE);
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_WRITE,
+                LINUX_ABI64_EPIPE,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EPIPE);
+        }
         (void)persona_audit64_record(
             pid,
             PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
@@ -9416,6 +9496,7 @@ static void linux_abi64_wait4_complete_blocked_child(
 static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 syscall_number)
 {
     linux_abi64_exit_record_t *record;
+    linux_abi64_clone_record_t *clone_record;
     u32 code32 = (u32)(exit_code & 0xFFFFFFFFull);
     u32 fork_child;
     u32 root_token;
@@ -9510,6 +9591,13 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
     record->reserved = 0u;
     if (fork_child != 0u)
     {
+        clone_record = linux_abi64_clone_record_for_child(pid);
+        if (clone_record != 0)
+        {
+            (void)linux_abi64_mark_signal_pending_direct(
+                clone_record->parent_pid,
+                LINUX_SIGNAL64_SIGCHLD);
+        }
         (void)process64_mark_child_exited(pid, code32);
         linux_abi64_wait4_complete_blocked_child(pid, record);
     }
@@ -9630,6 +9718,17 @@ u64 linux_abi64_sys_wait4(
         pending_record = linux_abi64_clone_record_for_parent_any(pid, wait_pid);
         if (pending_record != 0)
         {
+            if (linux_abi64_unmasked_signal_pending(pid) != 0u)
+            {
+                ++g_linux_abi64_wait4_denial_count;
+                (void)persona_audit64_record(
+                    pid,
+                    PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                    LINUX_ABI64_SYSCALL_WAIT4,
+                    LINUX_ABI64_EINTR,
+                    rip);
+                return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINTR);
+            }
             task_id = scheduler64_runqueue_current_task_id();
             if ((task_id == SCHEDULER64_INVALID_TASK)
                 || (scheduler64_runqueue_task_pid(task_id) != pid)
@@ -9831,7 +9930,8 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
     }
 
     if (frame->rsp < (u64)(sizeof(linux_signal64_delivery_frame_t)
-            + LINUX_SIGNAL64_DELIVERY_ALIGN))
+            + LINUX_SIGNAL64_DELIVERY_ALIGN
+            + LINUX_SIGNAL64_REDZONE_BYTES))
     {
         ++g_linux_abi64_signal_delivery_fault_count;
         g_linux_abi64_signal_delivery_last_signal = signal_number;
@@ -9846,8 +9946,11 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
     }
 
     frame_address =
-        (frame->rsp - (u64)sizeof(linux_signal64_delivery_frame_t))
-            & ~(u64)(LINUX_SIGNAL64_DELIVERY_ALIGN - 1u);
+        ((frame->rsp
+            - (u64)LINUX_SIGNAL64_REDZONE_BYTES
+            - (u64)sizeof(linux_signal64_delivery_frame_t))
+            & ~(u64)(LINUX_SIGNAL64_DELIVERY_ALIGN - 1u))
+        - 8ull;
     if (linux_abi64_user_buffer_writable(
             pid,
             frame_address,
@@ -9865,7 +9968,45 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
         return 0u;
     }
 
-    signal_frame.restorer = 0ull;
+    signal_frame.pretcode = action.restorer;
+    signal_frame.ucontext.flags = 0ull;
+    signal_frame.ucontext.link = 0ull;
+    signal_frame.ucontext.stack.sp = frame->rsp;
+    signal_frame.ucontext.stack.flags = 0u;
+    signal_frame.ucontext.stack.reserved0 = 0u;
+    signal_frame.ucontext.stack.size = 0ull;
+    signal_frame.ucontext.mcontext.r8 = frame->r8;
+    signal_frame.ucontext.mcontext.r9 = frame->r9;
+    signal_frame.ucontext.mcontext.r10 = frame->r10;
+    signal_frame.ucontext.mcontext.r11 = frame->r11;
+    signal_frame.ucontext.mcontext.r12 = frame->r12;
+    signal_frame.ucontext.mcontext.r13 = frame->r13;
+    signal_frame.ucontext.mcontext.r14 = frame->r14;
+    signal_frame.ucontext.mcontext.r15 = frame->r15;
+    signal_frame.ucontext.mcontext.rdi = frame->rdi;
+    signal_frame.ucontext.mcontext.rsi = frame->rsi;
+    signal_frame.ucontext.mcontext.rbp = frame->rbp;
+    signal_frame.ucontext.mcontext.rbx = frame->rbx;
+    signal_frame.ucontext.mcontext.rdx = frame->rdx;
+    signal_frame.ucontext.mcontext.rax = frame->rax;
+    signal_frame.ucontext.mcontext.rcx = frame->rcx;
+    signal_frame.ucontext.mcontext.rsp = frame->rsp;
+    signal_frame.ucontext.mcontext.rip = frame->rip;
+    signal_frame.ucontext.mcontext.eflags = frame->rflags;
+    signal_frame.ucontext.mcontext.cs = frame->cs;
+    signal_frame.ucontext.mcontext.gs = 0ull;
+    signal_frame.ucontext.mcontext.fs = 0ull;
+    signal_frame.ucontext.mcontext.ss = frame->ss;
+    signal_frame.ucontext.mcontext.err = frame->error_code;
+    signal_frame.ucontext.mcontext.trapno = frame->vector;
+    signal_frame.ucontext.mcontext.oldmask = old_mask;
+    signal_frame.ucontext.mcontext.cr2 = 0ull;
+    signal_frame.ucontext.mcontext.fpstate = 0ull;
+    for (u32 index = 0u; index < 8u; ++index)
+    {
+        signal_frame.ucontext.mcontext.reserved1[index] = 0ull;
+    }
+    signal_frame.ucontext.sigmask = old_mask;
     signal_frame.siginfo.signo = signal_number;
     signal_frame.siginfo.errno_value = 0u;
     signal_frame.siginfo.code = 0u;
@@ -9876,32 +10017,6 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
     {
         signal_frame.siginfo.reserved[index] = 0ull;
     }
-    signal_frame.ucontext.flags = 0ull;
-    signal_frame.ucontext.link = 0ull;
-    signal_frame.ucontext.stack_sp = frame->rsp;
-    signal_frame.ucontext.stack_flags = 0ull;
-    signal_frame.ucontext.stack_size = 0ull;
-    signal_frame.ucontext.signal_mask = old_mask;
-    signal_frame.ucontext.rip = frame->rip;
-    signal_frame.ucontext.rsp = frame->rsp;
-    signal_frame.ucontext.rflags = frame->rflags;
-    signal_frame.ucontext.cs = frame->cs;
-    signal_frame.ucontext.ss = frame->ss;
-    signal_frame.ucontext.rax = frame->rax;
-    signal_frame.ucontext.rbx = frame->rbx;
-    signal_frame.ucontext.rcx = frame->rcx;
-    signal_frame.ucontext.rdx = frame->rdx;
-    signal_frame.ucontext.rbp = frame->rbp;
-    signal_frame.ucontext.rsi = frame->rsi;
-    signal_frame.ucontext.rdi = frame->rdi;
-    signal_frame.ucontext.r8 = frame->r8;
-    signal_frame.ucontext.r9 = frame->r9;
-    signal_frame.ucontext.r10 = frame->r10;
-    signal_frame.ucontext.r11 = frame->r11;
-    signal_frame.ucontext.r12 = frame->r12;
-    signal_frame.ucontext.r13 = frame->r13;
-    signal_frame.ucontext.r14 = frame->r14;
-    signal_frame.ucontext.r15 = frame->r15;
     linux_abi64_copy_to_user(
         frame_address,
         (const u8 *)&signal_frame,
@@ -9911,8 +10026,10 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
     context->linux_signal_mask =
         (old_mask | signal_mask | action.sa_mask) & ~LINUX_SIGNAL64_UNBLOCKABLE_MASK;
     frame->rdi = signal_number;
-    frame->rsi = frame_address + (u64)sizeof(u64);
-    frame->rdx = frame->rsi + (u64)sizeof(linux_signal64_siginfo_t);
+    frame->rsi = frame_address
+        + (u64)sizeof(u64)
+        + (u64)sizeof(linux_signal64_ucontext_t);
+    frame->rdx = frame_address + (u64)sizeof(u64);
     frame->rip = action.handler;
     frame->rsp = frame_address;
 
@@ -9920,8 +10037,8 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
     g_linux_abi64_signal_delivery_last_signal = signal_number;
     g_linux_abi64_signal_delivery_last_handler = action.handler;
     g_linux_abi64_signal_delivery_last_frame = frame_address;
-    g_linux_abi64_signal_delivery_last_saved_rip = signal_frame.ucontext.rip;
-    g_linux_abi64_signal_delivery_last_saved_rsp = signal_frame.ucontext.rsp;
+    g_linux_abi64_signal_delivery_last_saved_rip = signal_frame.ucontext.mcontext.rip;
+    g_linux_abi64_signal_delivery_last_saved_rsp = signal_frame.ucontext.mcontext.rsp;
     g_linux_abi64_signal_delivery_last_mask = old_mask;
     g_linux_abi64_signal_delivery_last_result = PERSONA_AUDIT64_RESULT_OK;
     (void)persona_audit64_record(
@@ -9929,7 +10046,7 @@ u32 linux_abi64_signal_deliver_pending(u32 pid, struct interrupt_frame64 *frame)
         PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
         signal_number,
         PERSONA_AUDIT64_RESULT_OK,
-        signal_frame.ucontext.rip);
+        signal_frame.ucontext.mcontext.rip);
     return 1u;
 }
 
@@ -9964,17 +10081,17 @@ static u32 linux_abi64_rt_sigreturn_context_valid(
         return 0u;
     }
 
-    if (((ucontext->cs & 0x3ull) != 0x3ull)
-        || ((ucontext->ss & 0x3ull) != 0x3ull))
+    if (((ucontext->mcontext.cs & 0x3ull) != 0x3ull)
+        || ((ucontext->mcontext.ss & 0x3ull) != 0x3ull))
     {
         return 0u;
     }
 
-    if ((ucontext->rip == 0ull)
-        || (ucontext->rip >= LINUX_ABI64_USER_CANONICAL_LIMIT)
-        || (ucontext->rsp == 0ull)
-        || (ucontext->rsp >= LINUX_ABI64_USER_CANONICAL_LIMIT)
-        || ((ucontext->rflags & LINUX_SIGNAL64_RFLAGS_FORBIDDEN_MASK) != 0ull))
+    if ((ucontext->mcontext.rip == 0ull)
+        || (ucontext->mcontext.rip >= LINUX_ABI64_USER_CANONICAL_LIMIT)
+        || (ucontext->mcontext.rsp == 0ull)
+        || (ucontext->mcontext.rsp >= LINUX_ABI64_USER_CANONICAL_LIMIT)
+        || ((ucontext->mcontext.eflags & LINUX_SIGNAL64_RFLAGS_FORBIDDEN_MASK) != 0ull))
     {
         return 0u;
     }
@@ -10023,7 +10140,12 @@ u64 linux_abi64_sys_rt_sigreturn(u32 pid, struct interrupt_frame64 *frame)
         return linux_abi64_rt_sigreturn_error(pid, LINUX_ABI64_EINVAL, syscall_rip, 0u);
     }
 
-    frame_address = frame->rsp;
+    if (frame->rsp < (u64)sizeof(u64))
+    {
+        return linux_abi64_rt_sigreturn_error(pid, LINUX_ABI64_EFAULT, syscall_rip, 1u);
+    }
+
+    frame_address = frame->rsp - (u64)sizeof(u64);
     g_linux_abi64_rt_sigreturn_last_frame = frame_address;
     if (linux_abi64_user_buffer_readable(
             pid,
@@ -10043,31 +10165,31 @@ u64 linux_abi64_sys_rt_sigreturn(u32 pid, struct interrupt_frame64 *frame)
     }
 
     context->linux_signal_mask =
-        signal_frame.ucontext.signal_mask & ~LINUX_SIGNAL64_UNBLOCKABLE_MASK;
+        signal_frame.ucontext.sigmask & ~LINUX_SIGNAL64_UNBLOCKABLE_MASK;
     restored_rflags =
-        (signal_frame.ucontext.rflags | LINUX_SIGNAL64_RFLAGS_FIXED_BIT)
+        (signal_frame.ucontext.mcontext.eflags | LINUX_SIGNAL64_RFLAGS_FIXED_BIT)
             & ~LINUX_SIGNAL64_RFLAGS_FORBIDDEN_MASK;
 
-    frame->r15 = signal_frame.ucontext.r15;
-    frame->r14 = signal_frame.ucontext.r14;
-    frame->r13 = signal_frame.ucontext.r13;
-    frame->r12 = signal_frame.ucontext.r12;
-    frame->r11 = signal_frame.ucontext.r11;
-    frame->r10 = signal_frame.ucontext.r10;
-    frame->r9 = signal_frame.ucontext.r9;
-    frame->r8 = signal_frame.ucontext.r8;
-    frame->rdi = signal_frame.ucontext.rdi;
-    frame->rsi = signal_frame.ucontext.rsi;
-    frame->rbp = signal_frame.ucontext.rbp;
-    frame->rbx = signal_frame.ucontext.rbx;
-    frame->rdx = signal_frame.ucontext.rdx;
-    frame->rcx = signal_frame.ucontext.rcx;
-    frame->rax = signal_frame.ucontext.rax;
-    frame->rip = signal_frame.ucontext.rip;
-    frame->cs = signal_frame.ucontext.cs;
+    frame->r15 = signal_frame.ucontext.mcontext.r15;
+    frame->r14 = signal_frame.ucontext.mcontext.r14;
+    frame->r13 = signal_frame.ucontext.mcontext.r13;
+    frame->r12 = signal_frame.ucontext.mcontext.r12;
+    frame->r11 = signal_frame.ucontext.mcontext.r11;
+    frame->r10 = signal_frame.ucontext.mcontext.r10;
+    frame->r9 = signal_frame.ucontext.mcontext.r9;
+    frame->r8 = signal_frame.ucontext.mcontext.r8;
+    frame->rdi = signal_frame.ucontext.mcontext.rdi;
+    frame->rsi = signal_frame.ucontext.mcontext.rsi;
+    frame->rbp = signal_frame.ucontext.mcontext.rbp;
+    frame->rbx = signal_frame.ucontext.mcontext.rbx;
+    frame->rdx = signal_frame.ucontext.mcontext.rdx;
+    frame->rcx = signal_frame.ucontext.mcontext.rcx;
+    frame->rax = signal_frame.ucontext.mcontext.rax;
+    frame->rip = signal_frame.ucontext.mcontext.rip;
+    frame->cs = signal_frame.ucontext.mcontext.cs;
     frame->rflags = restored_rflags;
-    frame->rsp = signal_frame.ucontext.rsp;
-    frame->ss = signal_frame.ucontext.ss;
+    frame->rsp = signal_frame.ucontext.mcontext.rsp;
+    frame->ss = signal_frame.ucontext.mcontext.ss;
 
     ++g_linux_abi64_rt_sigreturn_count;
     g_linux_abi64_rt_sigreturn_last_rip = frame->rip;
@@ -12231,6 +12353,16 @@ u32 linux_abi64_kill_last_result(void)
 u32 linux_abi64_signal_pending_count(void)
 {
     return g_linux_abi64_signal_pending_count;
+}
+
+u32 linux_abi64_signal_sigpipe_count(void)
+{
+    return g_linux_abi64_signal_sigpipe_count;
+}
+
+u32 linux_abi64_signal_sigchld_count(void)
+{
+    return g_linux_abi64_signal_sigchld_count;
 }
 
 u32 linux_abi64_signal_delivery_count(void)

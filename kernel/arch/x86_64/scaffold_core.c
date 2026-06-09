@@ -22230,9 +22230,9 @@ static void log_process_namespace(void)
     linux_i4_user_frame = (volatile linux_signal64_delivery_frame_t *)(u64)linux_i4_frame_address;
     if ((linux_i4_map_ok != 0u) && (linux_i4_deliver_result != 0u))
     {
-        linux_i4_saved_rip = linux_i4_user_frame->ucontext.rip;
-        linux_i4_saved_rsp = linux_i4_user_frame->ucontext.rsp;
-        linux_i4_saved_mask = linux_i4_user_frame->ucontext.signal_mask;
+        linux_i4_saved_rip = linux_i4_user_frame->ucontext.mcontext.rip;
+        linux_i4_saved_rsp = linux_i4_user_frame->ucontext.mcontext.rsp;
+        linux_i4_saved_mask = linux_i4_user_frame->ucontext.sigmask;
         linux_i4_siginfo_match =
             ((linux_i4_user_frame->siginfo.signo == LINUX_SIGNAL64_SIGUSR1)
                 && (linux_i4_user_frame->siginfo.sender_pid == init_pid))
@@ -22486,7 +22486,7 @@ static void log_process_namespace(void)
     linux_i5_invalid_frame.rsp = linux_i5_frame_address;
     if ((linux_i5_map_ok != 0u) && (linux_i5_deliver_result != 0u))
     {
-        linux_i5_user_frame->ucontext.cs = 0x10ull;
+        linux_i5_user_frame->ucontext.mcontext.cs = 0x10ull;
     }
     linux_i5_invalid_return =
         ((linux_i5_map_ok != 0u) && (linux_i5_deliver_result != 0u))
