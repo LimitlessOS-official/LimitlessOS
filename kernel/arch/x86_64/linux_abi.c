@@ -8954,7 +8954,11 @@ static u64 linux_abi64_sys_exec_common(
 {
     persona_context_t *context;
     linux_abi64_exec_validation_t validation;
+    u8 user_path_bytes[LINUX_VFS64_MAX_PATH_BYTES + 1u];
+    u8 canonical_path[LINUX_VFS64_MAX_PATH_BYTES];
     u32 path_byte_count = 0u;
+    u32 canonical_path_byte_count = 0u;
+    u32 path_index;
     u32 binary_bytes = 0u;
     u32 argc = 0u;
     u32 envc = 0u;
@@ -9005,7 +9009,7 @@ static u64 linux_abi64_sys_exec_common(
     if (linux_abi64_copy_user_path(
             pid,
             user_path,
-            (u8 *)g_linux_abi64_exec_path,
+            user_path_bytes,
             LINUX_VFS64_MAX_PATH_BYTES,
             &path_byte_count) == 0u)
     {
@@ -9016,9 +9020,32 @@ static u64 linux_abi64_sys_exec_common(
             rip,
             1u);
     }
-    g_linux_abi64_exec_path[path_byte_count] = 0;
     g_linux_abi64_execve_last_path_checksum =
-        linux_abi64_checksum_bytes((const u8 *)g_linux_abi64_exec_path, path_byte_count);
+        linux_abi64_checksum_bytes(user_path_bytes, path_byte_count);
+
+    if (linux_abi64_canonicalize_path(
+            pid,
+            LINUX_ABI64_AT_FDCWD,
+            user_path_bytes,
+            path_byte_count,
+            canonical_path,
+            (u32)sizeof(canonical_path),
+            &canonical_path_byte_count) == 0u)
+    {
+        return linux_abi64_execve_error_return(
+            pid,
+            syscall_number,
+            LINUX_ABI64_ENOENT,
+            rip,
+            0u);
+    }
+
+    for (path_index = 0u; path_index < canonical_path_byte_count; ++path_index)
+    {
+        g_linux_abi64_exec_path[path_index] = (char)canonical_path[path_index];
+    }
+    g_linux_abi64_exec_path[canonical_path_byte_count] = 0;
+    path_byte_count = canonical_path_byte_count;
 
     error = linux_abi64_copy_user_string_vector(
         pid,
