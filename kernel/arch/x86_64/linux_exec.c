@@ -123,6 +123,8 @@ typedef struct linux_exec64_telemetry
     u32 path_relative;
     u32 path_dot;
     u32 path_dotdot;
+    u32 path_trailing;
+    u32 path_trailing_denial;
     u32 path_fault;
     u32 chdir_calls;
     u32 fchdir_calls;
@@ -519,6 +521,10 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.path_dot);
     (void)linux_exec64_write_text(console_capability, owner_id, " path-dotdot ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.path_dotdot);
+    (void)linux_exec64_write_text(console_capability, owner_id, " path-trailing ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.path_trailing);
+    (void)linux_exec64_write_text(console_capability, owner_id, " path-trailing-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.path_trailing_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " path-fault ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.path_fault);
     (void)linux_exec64_write_text(console_capability, owner_id, " chdir ");
@@ -941,6 +947,10 @@ u32 linux_exec64_run_nvme(
     u32 path_dot_after;
     u32 path_dotdot_before;
     u32 path_dotdot_after;
+    u32 path_trailing_before;
+    u32 path_trailing_after;
+    u32 path_trailing_denial_before;
+    u32 path_trailing_denial_after;
     u32 path_fault_before;
     u32 path_fault_after;
     u32 chdir_before;
@@ -1403,6 +1413,8 @@ u32 linux_exec64_run_nvme(
     path_relative_before = linux_abi64_path_relative_count();
     path_dot_before = linux_abi64_path_dot_count();
     path_dotdot_before = linux_abi64_path_dotdot_count();
+    path_trailing_before = linux_abi64_path_trailing_count();
+    path_trailing_denial_before = linux_abi64_path_trailing_denial_count();
     path_fault_before = linux_abi64_path_fault_count();
     chdir_before = linux_abi64_chdir_count();
     fchdir_before = linux_abi64_fchdir_count();
@@ -1523,6 +1535,8 @@ u32 linux_exec64_run_nvme(
     path_relative_after = linux_abi64_path_relative_count();
     path_dot_after = linux_abi64_path_dot_count();
     path_dotdot_after = linux_abi64_path_dotdot_count();
+    path_trailing_after = linux_abi64_path_trailing_count();
+    path_trailing_denial_after = linux_abi64_path_trailing_denial_count();
     path_fault_after = linux_abi64_path_fault_count();
     chdir_after = linux_abi64_chdir_count();
     fchdir_after = linux_abi64_fchdir_count();
@@ -1692,6 +1706,14 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.path_dotdot =
         (path_dotdot_after >= path_dotdot_before)
             ? (path_dotdot_after - path_dotdot_before)
+            : 0u;
+    g_linux_exec64_telemetry.path_trailing =
+        (path_trailing_after >= path_trailing_before)
+            ? (path_trailing_after - path_trailing_before)
+            : 0u;
+    g_linux_exec64_telemetry.path_trailing_denial =
+        (path_trailing_denial_after >= path_trailing_denial_before)
+            ? (path_trailing_denial_after - path_trailing_denial_before)
             : 0u;
     g_linux_exec64_telemetry.path_fault =
         (path_fault_after >= path_fault_before)

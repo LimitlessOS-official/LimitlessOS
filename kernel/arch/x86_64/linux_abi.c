@@ -299,6 +299,8 @@ static u32 g_linux_abi64_getcwd_fault_count = 0u;
 static u32 g_linux_abi64_path_relative_count = 0u;
 static u32 g_linux_abi64_path_dot_count = 0u;
 static u32 g_linux_abi64_path_dotdot_count = 0u;
+static u32 g_linux_abi64_path_trailing_count = 0u;
+static u32 g_linux_abi64_path_trailing_denial_count = 0u;
 static u32 g_linux_abi64_path_fault_count = 0u;
 static u32 g_linux_abi64_chdir_count = 0u;
 static u32 g_linux_abi64_fchdir_count = 0u;
@@ -2172,6 +2174,8 @@ void linux_abi64_init(void)
     g_linux_abi64_path_relative_count = 0u;
     g_linux_abi64_path_dot_count = 0u;
     g_linux_abi64_path_dotdot_count = 0u;
+    g_linux_abi64_path_trailing_count = 0u;
+    g_linux_abi64_path_trailing_denial_count = 0u;
     g_linux_abi64_path_fault_count = 0u;
     g_linux_abi64_chdir_count = 0u;
     g_linux_abi64_fchdir_count = 0u;
@@ -2693,6 +2697,28 @@ static u32 linux_abi64_path_segment_is_dotdot(const u8 *segment, u32 segment_byt
         && (segment_bytes == 2u)
         && (segment[0] == (u8)'.')
         && (segment[1] == (u8)'.')) ? 1u : 0u;
+}
+
+static u32 linux_abi64_path_has_trailing_slash(const u8 *path, u32 path_bytes)
+{
+    u32 index;
+    u32 non_slash_seen = 0u;
+
+    if ((path == 0) || (path_bytes <= 1u) || (path[path_bytes - 1u] != (u8)'/'))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < path_bytes; ++index)
+    {
+        if (path[index] != (u8)'/')
+        {
+            non_slash_seen = 1u;
+            break;
+        }
+    }
+
+    return non_slash_seen;
 }
 
 static u32 linux_abi64_normalize_absolute_path(
@@ -8959,6 +8985,7 @@ static u64 linux_abi64_sys_exec_common(
     u32 path_byte_count = 0u;
     u32 canonical_path_byte_count = 0u;
     u32 path_index;
+    u32 path_trailing_slash = 0u;
     u32 binary_bytes = 0u;
     u32 argc = 0u;
     u32 envc = 0u;
@@ -9022,6 +9049,11 @@ static u64 linux_abi64_sys_exec_common(
     }
     g_linux_abi64_execve_last_path_checksum =
         linux_abi64_checksum_bytes(user_path_bytes, path_byte_count);
+    path_trailing_slash = linux_abi64_path_has_trailing_slash(user_path_bytes, path_byte_count);
+    if (path_trailing_slash != 0u)
+    {
+        ++g_linux_abi64_path_trailing_count;
+    }
 
     if (linux_abi64_canonicalize_path(
             pid,
@@ -9046,6 +9078,45 @@ static u64 linux_abi64_sys_exec_common(
     }
     g_linux_abi64_exec_path[canonical_path_byte_count] = 0;
     path_byte_count = canonical_path_byte_count;
+
+    if (path_trailing_slash != 0u)
+    {
+        fd64_stat_t path_stat;
+
+        if (linux_vfs64_stat(
+                pid,
+                (const u8 *)g_linux_abi64_exec_path,
+                path_byte_count,
+                &path_stat) == 0u)
+        {
+            ++g_linux_abi64_path_trailing_denial_count;
+            return linux_abi64_execve_error_return(
+                pid,
+                syscall_number,
+                LINUX_ABI64_ENOENT,
+                rip,
+                0u);
+        }
+
+        if (path_stat.node_type != FD64_STAT_NODE_DIRECTORY)
+        {
+            ++g_linux_abi64_path_trailing_denial_count;
+            return linux_abi64_execve_error_return(
+                pid,
+                syscall_number,
+                LINUX_ABI64_ENOTDIR,
+                rip,
+                0u);
+        }
+
+        ++g_linux_abi64_path_trailing_denial_count;
+        return linux_abi64_execve_error_return(
+            pid,
+            syscall_number,
+            LINUX_ABI64_EINVAL,
+            rip,
+            0u);
+    }
 
     error = linux_abi64_copy_user_string_vector(
         pid,
@@ -11642,6 +11713,16 @@ u32 linux_abi64_path_dot_count(void)
 u32 linux_abi64_path_dotdot_count(void)
 {
     return g_linux_abi64_path_dotdot_count;
+}
+
+u32 linux_abi64_path_trailing_count(void)
+{
+    return g_linux_abi64_path_trailing_count;
+}
+
+u32 linux_abi64_path_trailing_denial_count(void)
+{
+    return g_linux_abi64_path_trailing_denial_count;
 }
 
 u32 linux_abi64_path_fault_count(void)

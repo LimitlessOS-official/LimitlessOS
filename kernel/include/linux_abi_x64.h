@@ -609,6 +609,8 @@ u32 linux_abi64_getcwd_fault_count(void);
 u32 linux_abi64_path_relative_count(void);
 u32 linux_abi64_path_dot_count(void);
 u32 linux_abi64_path_dotdot_count(void);
+u32 linux_abi64_path_trailing_count(void);
+u32 linux_abi64_path_trailing_denial_count(void);
 u32 linux_abi64_path_fault_count(void);
 u32 linux_abi64_chdir_count(void);
 u32 linux_abi64_fchdir_count(void);
