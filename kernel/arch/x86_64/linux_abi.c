@@ -124,7 +124,7 @@ typedef struct linux_abi64_futex_waiter
     u32 expected_value;
     u32 timeout_ticks;
     u32 timeout_result;
-    u32 reserved;
+    u32 wake_pending;
     u64 address_space_key;
     u64 user_address;
     u64 rip;
@@ -1607,7 +1607,7 @@ static void linux_abi64_clear_futex_waiter(linux_abi64_futex_waiter_t *waiter)
     waiter->expected_value = 0u;
     waiter->timeout_ticks = 0u;
     waiter->timeout_result = 0u;
-    waiter->reserved = 0u;
+    waiter->wake_pending = 0u;
     waiter->address_space_key = 0ull;
     waiter->user_address = 0ull;
     waiter->rip = 0ull;
@@ -1663,6 +1663,7 @@ static u32 linux_abi64_futex_wake_key(
     u32 index;
     u32 wake_count = 0u;
     u32 wake_task_id;
+    u32 wake_task_state;
 
     for (index = 0u;
         (index < LINUX_ABI64_MAX_FUTEX_WAITERS) && (wake_count < wake_limit);
@@ -1681,12 +1682,23 @@ static u32 linux_abi64_futex_wake_key(
             if (scheduler64_runqueue_wake_task_with_result(wake_task_id, 0ull) != 0u)
             {
                 ++wake_count;
+                linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
             }
             else
             {
-                ++g_linux_abi64_futex_denial_count;
+                wake_task_state = scheduler64_runqueue_task_state(wake_task_id);
+                if ((wake_task_state == SCHEDULER64_TASK_RUNNING)
+                    || (wake_task_state == SCHEDULER64_TASK_READY))
+                {
+                    g_linux_abi64_futex_waiters[index].wake_pending = 1u;
+                    ++wake_count;
+                }
+                else
+                {
+                    ++g_linux_abi64_futex_denial_count;
+                    linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
+                }
             }
-            linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
         }
     }
 
@@ -8499,6 +8511,37 @@ u64 linux_abi64_sys_futex(
         waiter->address_space_key = address_space_key;
         waiter->user_address = user_address;
         waiter->rip = rip;
+
+        current_value = *user_word;
+        if (current_value != (u32)(value & 0xFFFFFFFFull))
+        {
+            linux_abi64_clear_futex_waiter(waiter);
+            ++g_linux_abi64_futex_eagain_count;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                LINUX_ABI64_EAGAIN,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EAGAIN);
+        }
+        if (waiter->wake_pending != 0u)
+        {
+            linux_abi64_clear_futex_waiter(waiter);
+            ++g_linux_abi64_futex_wait_count;
+            g_linux_abi64_futex_last_wait_pid = pid;
+            g_linux_abi64_futex_last_wait_address = user_address;
+            g_linux_abi64_futex_last_wait_value = current_value;
+            g_linux_abi64_futex_last_wait_task_id = task_id;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_FUTEX,
+                PERSONA_AUDIT64_RESULT_OK,
+                rip);
+            return 0ull;
+        }
+
         if (timed_wait != 0u)
         {
             if (scheduler64_sleep_current_task_for_ticks(
