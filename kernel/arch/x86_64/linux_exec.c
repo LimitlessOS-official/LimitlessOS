@@ -99,6 +99,18 @@ typedef struct linux_exec64_telemetry
     u32 signal_sigchld;
     u32 signal_rt_sigreturn;
     u32 signal_frame_fault;
+    u32 mmap_calls;
+    u32 mmap_bytes;
+    u32 mmap_denial;
+    u32 mmap_last_error;
+    u64 mmap_last_flags;
+    u64 mmap_last_length;
+    u32 futex_wait;
+    u32 futex_wake;
+    u32 futex_woken;
+    u32 futex_waiters_final;
+    u32 thread_exit_cleartid;
+    u32 thread_exit_cleartid_fault;
     u32 nvme_vfs_bind;
     u32 nvme_vfs_release;
     u32 nvme_vfs_reads;
@@ -207,6 +219,16 @@ typedef struct linux_exec64_telemetry
     u32 fork_child_slot;
     u32 fork_child_root_distinct;
     u64 fork_last_rip;
+    u32 clone_thread;
+    u32 clone_thread_success;
+    u32 clone_denial;
+    u32 clone_last_flags;
+    u32 clone_unsupported_flags;
+    u32 clone_shared_cr3;
+    u32 clone_shared_vma;
+    u32 clone_shared_fd;
+    u32 clone_last_task;
+    u64 clone_last_tls_base;
     u32 wait4_calls;
     u32 wait4_reap;
     u32 wait4_last_exit_code;
@@ -583,6 +605,48 @@ static void linux_exec64_emit_summary(
         console_capability,
         owner_id,
         g_linux_exec64_telemetry.signal_frame_fault);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmap_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-bytes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmap_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmap_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-last-error ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_last_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-last-flags ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_last_flags);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-last-length ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_last_length);
+    (void)linux_exec64_write_text(console_capability, owner_id, " futex-wait ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.futex_wait);
+    (void)linux_exec64_write_text(console_capability, owner_id, " futex-wake ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.futex_wake);
+    (void)linux_exec64_write_text(console_capability, owner_id, " futex-woken ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.futex_woken);
+    (void)linux_exec64_write_text(console_capability, owner_id, " futex-waiters-final ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.futex_waiters_final);
+    (void)linux_exec64_write_text(console_capability, owner_id, " thread-exit-cleartid ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.thread_exit_cleartid);
+    (void)linux_exec64_write_text(console_capability, owner_id, " thread-exit-cleartid-fault ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.thread_exit_cleartid_fault);
     (void)linux_exec64_write_text(console_capability, owner_id, " getdents64 ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.getdents64_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " getdents64-entries ");
@@ -779,6 +843,47 @@ static void linux_exec64_emit_summary(
         g_linux_exec64_telemetry.fork_child_root_distinct);
     (void)linux_exec64_write_text(console_capability, owner_id, " fork-last-rip ");
     linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.fork_last_rip);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-thread ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.clone_thread);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-thread-success ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_thread_success);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.clone_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-last-flags ");
+    linux_exec64_write_hex_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_last_flags);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-unsupported-flags ");
+    linux_exec64_write_hex_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_unsupported_flags);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-shared-cr3 ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_shared_cr3);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-shared-vma ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_shared_vma);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-shared-fd ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_shared_fd);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-last-task ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.clone_last_task);
+    (void)linux_exec64_write_text(console_capability, owner_id, " clone-last-tls ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.clone_last_tls_base);
     (void)linux_exec64_write_text(console_capability, owner_id, " wait4 ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.wait4_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " wait4-reap ");
@@ -1087,6 +1192,22 @@ u32 linux_exec64_run_nvme(
     u32 signal_rt_sigreturn_after;
     u32 signal_frame_fault_before;
     u32 signal_frame_fault_after;
+    u32 mmap_calls_before;
+    u32 mmap_calls_after;
+    u32 mmap_bytes_before;
+    u32 mmap_bytes_after;
+    u32 mmap_denial_before;
+    u32 mmap_denial_after;
+    u32 futex_wait_before;
+    u32 futex_wait_after;
+    u32 futex_wake_before;
+    u32 futex_wake_after;
+    u32 futex_woken_before;
+    u32 futex_woken_after;
+    u32 thread_exit_cleartid_before;
+    u32 thread_exit_cleartid_after;
+    u32 thread_exit_cleartid_fault_before;
+    u32 thread_exit_cleartid_fault_after;
     u32 pipe_calls_before;
     u32 pipe_calls_after;
     u32 pipe_denial_before;
@@ -1171,6 +1292,10 @@ u32 linux_exec64_run_nvme(
     u32 fork_enosys_after;
     u32 fork_denial_before;
     u32 fork_denial_after;
+    u32 clone_thread_before;
+    u32 clone_thread_after;
+    u32 clone_denial_before;
+    u32 clone_denial_after;
     u32 wait4_before;
     u32 wait4_after;
     u32 wait4_reap_before;
@@ -1573,6 +1698,14 @@ u32 linux_exec64_run_nvme(
     signal_rt_sigreturn_before = linux_abi64_rt_sigreturn_count();
     signal_frame_fault_before = linux_abi64_signal_delivery_fault_count()
         + linux_abi64_rt_sigreturn_fault_count();
+    mmap_calls_before = linux_abi64_mmap_count();
+    mmap_bytes_before = linux_abi64_mmap_byte_count();
+    mmap_denial_before = linux_abi64_mmap_denial_count();
+    futex_wait_before = linux_abi64_futex_wait_count();
+    futex_wake_before = linux_abi64_futex_wake_count();
+    futex_woken_before = linux_abi64_futex_woken_count();
+    thread_exit_cleartid_before = linux_abi64_thread_exit_cleartid_count();
+    thread_exit_cleartid_fault_before = linux_abi64_thread_exit_cleartid_fault_count();
     pipe_calls_before = linux_abi64_pipe_count();
     pipe_denial_before = linux_abi64_pipe_denial_count();
     pipe_fault_before = linux_abi64_pipe_fault_count();
@@ -1615,6 +1748,8 @@ u32 linux_exec64_run_nvme(
     fork_success_before = linux_abi64_fork_success_count();
     fork_enosys_before = linux_abi64_fork_enosys_count();
     fork_denial_before = linux_abi64_fork_denial_count();
+    clone_thread_before = linux_abi64_clone_thread_count();
+    clone_denial_before = linux_abi64_clone_denial_count();
     wait4_before = linux_abi64_wait4_count();
     wait4_reap_before = linux_abi64_wait4_reap_count();
     child_root_cleanup_before = linux_abi64_child_root_cleanup_count();
@@ -1700,6 +1835,14 @@ u32 linux_exec64_run_nvme(
     signal_rt_sigreturn_after = linux_abi64_rt_sigreturn_count();
     signal_frame_fault_after = linux_abi64_signal_delivery_fault_count()
         + linux_abi64_rt_sigreturn_fault_count();
+    mmap_calls_after = linux_abi64_mmap_count();
+    mmap_bytes_after = linux_abi64_mmap_byte_count();
+    mmap_denial_after = linux_abi64_mmap_denial_count();
+    futex_wait_after = linux_abi64_futex_wait_count();
+    futex_wake_after = linux_abi64_futex_wake_count();
+    futex_woken_after = linux_abi64_futex_woken_count();
+    thread_exit_cleartid_after = linux_abi64_thread_exit_cleartid_count();
+    thread_exit_cleartid_fault_after = linux_abi64_thread_exit_cleartid_fault_count();
     pipe_calls_after = linux_abi64_pipe_count();
     pipe_denial_after = linux_abi64_pipe_denial_count();
     pipe_fault_after = linux_abi64_pipe_fault_count();
@@ -1742,6 +1885,8 @@ u32 linux_exec64_run_nvme(
     fork_success_after = linux_abi64_fork_success_count();
     fork_enosys_after = linux_abi64_fork_enosys_count();
     fork_denial_after = linux_abi64_fork_denial_count();
+    clone_thread_after = linux_abi64_clone_thread_count();
+    clone_denial_after = linux_abi64_clone_denial_count();
     wait4_after = linux_abi64_wait4_count();
     wait4_reap_after = linux_abi64_wait4_reap_count();
     child_root_cleanup_after = linux_abi64_child_root_cleanup_count();
@@ -1777,6 +1922,42 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.signal_frame_fault =
         (signal_frame_fault_after >= signal_frame_fault_before)
             ? (signal_frame_fault_after - signal_frame_fault_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_calls =
+        (mmap_calls_after >= mmap_calls_before)
+            ? (mmap_calls_after - mmap_calls_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_bytes =
+        (mmap_bytes_after >= mmap_bytes_before)
+            ? (mmap_bytes_after - mmap_bytes_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_denial =
+        (mmap_denial_after >= mmap_denial_before)
+            ? (mmap_denial_after - mmap_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_last_error = linux_abi64_mmap_last_error();
+    g_linux_exec64_telemetry.mmap_last_flags = linux_abi64_mmap_last_flags();
+    g_linux_exec64_telemetry.mmap_last_length = linux_abi64_mmap_last_length();
+    g_linux_exec64_telemetry.futex_wait =
+        (futex_wait_after >= futex_wait_before)
+            ? (futex_wait_after - futex_wait_before)
+            : 0u;
+    g_linux_exec64_telemetry.futex_wake =
+        (futex_wake_after >= futex_wake_before)
+            ? (futex_wake_after - futex_wake_before)
+            : 0u;
+    g_linux_exec64_telemetry.futex_woken =
+        (futex_woken_after >= futex_woken_before)
+            ? (futex_woken_after - futex_woken_before)
+            : 0u;
+    g_linux_exec64_telemetry.futex_waiters_final = linux_abi64_futex_waiter_count();
+    g_linux_exec64_telemetry.thread_exit_cleartid =
+        (thread_exit_cleartid_after >= thread_exit_cleartid_before)
+            ? (thread_exit_cleartid_after - thread_exit_cleartid_before)
+            : 0u;
+    g_linux_exec64_telemetry.thread_exit_cleartid_fault =
+        (thread_exit_cleartid_fault_after >= thread_exit_cleartid_fault_before)
+            ? (thread_exit_cleartid_fault_after - thread_exit_cleartid_fault_before)
             : 0u;
     g_linux_exec64_telemetry.syscall_unimplemented_delta =
         (unimplemented_after >= unimplemented_before)
@@ -2109,6 +2290,23 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.fork_child_root_distinct =
         linux_abi64_fork_last_child_root_distinct();
     g_linux_exec64_telemetry.fork_last_rip = linux_abi64_fork_last_rip();
+    g_linux_exec64_telemetry.clone_thread =
+        (clone_thread_after >= clone_thread_before)
+            ? (clone_thread_after - clone_thread_before)
+            : 0u;
+    g_linux_exec64_telemetry.clone_thread_success = g_linux_exec64_telemetry.clone_thread;
+    g_linux_exec64_telemetry.clone_denial =
+        (clone_denial_after >= clone_denial_before)
+            ? (clone_denial_after - clone_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.clone_last_flags = linux_abi64_clone_last_flags();
+    g_linux_exec64_telemetry.clone_unsupported_flags =
+        linux_abi64_clone_last_unsupported_flags();
+    g_linux_exec64_telemetry.clone_shared_cr3 = linux_abi64_clone_last_shared_cr3();
+    g_linux_exec64_telemetry.clone_shared_vma = linux_abi64_clone_last_shared_vma();
+    g_linux_exec64_telemetry.clone_shared_fd = linux_abi64_clone_last_shared_fd();
+    g_linux_exec64_telemetry.clone_last_task = linux_abi64_clone_last_task_id();
+    g_linux_exec64_telemetry.clone_last_tls_base = linux_abi64_clone_last_tls_base();
     g_linux_exec64_telemetry.wait4_calls =
         (wait4_after >= wait4_before)
             ? (wait4_after - wait4_before)

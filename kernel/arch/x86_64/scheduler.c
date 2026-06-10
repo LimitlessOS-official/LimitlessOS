@@ -115,6 +115,7 @@ static u32 g_scheduler64_sleep_last_wake_tick = 0u;
 static u32 g_scheduler64_fs_save_count = 0u;
 static u32 g_scheduler64_fs_restore_count = 0u;
 static u32 g_scheduler64_fs_set_count = 0u;
+static u32 g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
 #endif
 
 static void scheduler64_cpu_pause(void)
@@ -181,6 +182,27 @@ static void scheduler64_clear_task(struct scheduler64_task *task)
     task->fs_base = 0ull;
 #endif
     scheduler64_clear_frame(&task->frame);
+}
+
+static u32 scheduler64_allocate_task_slot(void)
+{
+    u32 index;
+
+    for (index = 0u; index < g_runqueue.task_count; ++index)
+    {
+        if ((g_runqueue.tasks[index].state == SCHEDULER64_TASK_UNUSED)
+            || (g_runqueue.tasks[index].state == SCHEDULER64_TASK_EXITED))
+        {
+            return index;
+        }
+    }
+
+    if (g_runqueue.task_count >= SCHEDULER64_RUNQUEUE_TASKS)
+    {
+        return SCHEDULER64_INVALID_TASK;
+    }
+
+    return g_runqueue.task_count;
 }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
@@ -319,6 +341,20 @@ static u32 scheduler64_next_runnable(u32 current)
         return SCHEDULER64_INVALID_TASK;
     }
 
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+    if ((g_scheduler64_preferred_task < g_runqueue.task_count)
+        && (g_scheduler64_preferred_task != current)
+        && (g_runqueue.tasks[g_scheduler64_preferred_task].state == SCHEDULER64_TASK_READY)
+        && (g_runqueue.tasks[g_scheduler64_preferred_task].frame_valid != 0u))
+    {
+        u32 preferred = g_scheduler64_preferred_task;
+
+        g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
+        return preferred;
+    }
+    g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
+#endif
+
     for (offset = 1u; offset < g_runqueue.task_count; ++offset)
     {
         u32 candidate = (current + offset) % g_runqueue.task_count;
@@ -370,6 +406,7 @@ void scheduler64_init(void)
     g_scheduler64_fs_save_count = 0u;
     g_scheduler64_fs_restore_count = 0u;
     g_scheduler64_fs_set_count = 0u;
+    g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
 #endif
 }
 
@@ -389,6 +426,7 @@ void scheduler64_runqueue_reset(void)
     g_runqueue.blocks = 0u;
     g_runqueue.wakes = 0u;
     g_runqueue.block_denials = 0u;
+    g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
 #endif
     g_runqueue.cs = 0u;
     g_runqueue.ss = 0u;
@@ -400,15 +438,16 @@ void scheduler64_runqueue_reset(void)
     scheduler64_switch_cr3_to_kernel(SCHEDULER64_CR3_REASON_RESET);
     write_fs_base64(0ull);
     scheduler64_sleep_queue_reset();
+    g_scheduler64_preferred_task = SCHEDULER64_INVALID_TASK;
 #endif
 }
 
 u32 scheduler64_runqueue_register_user_task(u64 rip, u64 rsp, u64 selectors, u64 rflags)
 {
-    u32 task_id = g_runqueue.task_count;
+    u32 task_id = scheduler64_allocate_task_slot();
     struct scheduler64_task *task;
 
-    if (task_id >= SCHEDULER64_RUNQUEUE_TASKS)
+    if (task_id == SCHEDULER64_INVALID_TASK)
     {
         return SCHEDULER64_INVALID_TASK;
     }
@@ -420,7 +459,10 @@ u32 scheduler64_runqueue_register_user_task(u64 rip, u64 rsp, u64 selectors, u64
     task->initial_rip = rip;
     task->initial_rsp = rsp;
     scheduler64_prepare_user_frame(&task->frame, rip, rsp, selectors, rflags);
-    ++g_runqueue.task_count;
+    if (task_id == g_runqueue.task_count)
+    {
+        ++g_runqueue.task_count;
+    }
     return task_id;
 }
 
@@ -461,7 +503,7 @@ u32 scheduler64_runqueue_register_process_frame(
     u32 entry_token,
     const struct interrupt_frame64 *frame)
 {
-    u32 task_id = g_runqueue.task_count;
+    u32 task_id = scheduler64_allocate_task_slot();
     struct scheduler64_task *task;
 
     if ((pid == 0u)
@@ -472,7 +514,7 @@ u32 scheduler64_runqueue_register_process_frame(
         || (frame->rsp == 0ull)
         || ((frame->cs & 0x3ull) != 0x3ull)
         || ((frame->ss & 0x3ull) != 0x3ull)
-        || (task_id >= SCHEDULER64_RUNQUEUE_TASKS))
+        || (task_id == SCHEDULER64_INVALID_TASK))
     {
         return SCHEDULER64_INVALID_TASK;
     }
@@ -489,7 +531,10 @@ u32 scheduler64_runqueue_register_process_frame(
     task->saved_rip = frame->rip;
     task->saved_rsp = frame->rsp;
     task->frame = *frame;
-    ++g_runqueue.task_count;
+    if (task_id == g_runqueue.task_count)
+    {
+        ++g_runqueue.task_count;
+    }
     return task_id;
 }
 #endif
@@ -659,6 +704,7 @@ u32 scheduler64_runqueue_wake_task_with_result(u32 task_id, u64 result)
     task->frame.rax = result;
     task->state = SCHEDULER64_TASK_READY;
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+    g_scheduler64_preferred_task = task_id;
     ++g_runqueue.wakes;
 #endif
     return 1u;

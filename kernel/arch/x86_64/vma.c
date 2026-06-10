@@ -1124,7 +1124,6 @@ u64 vma64_map_anon(u32 pid, u64 hint_addr, u64 length, u32 prot_flags, u32 map_f
     if ((page_count == 0u)
         || (page_count > VMA64_MAX_ANON_PAGES)
         || ((map_flags & VMA64_MAP_ANONYMOUS) == 0u)
-        || (paging_prot == 0u)
         || (vma64_init_process(pid) == 0u))
     {
         return 0ull;
@@ -1197,6 +1196,12 @@ u64 vma64_map_anon(u32 pid, u64 hint_addr, u64 length, u32 prot_flags, u32 map_f
     }
 
     g_vma64_last_map_stage = 7u;
+    if (paging_prot == 0u)
+    {
+        g_vma64_last_map_stage = 8u;
+        return virtual_address;
+    }
+
     for (page_index = 0u; page_index < page_count; ++page_index)
     {
         if (vma64_paging_install_user_page_mapping(
@@ -1763,11 +1768,13 @@ u32 vma64_protect(u32 pid, u64 address, u64 length, u32 new_prot_flags)
     u32 paging_prot = vma64_paging_prot(new_prot_flags);
     u32 need_prefix;
     u32 need_suffix;
+    u32 old_paging_prot;
+    u64 page_address;
+    u64 page_physical;
 
     if ((page_count == 0u)
         || ((address & ((u64)VMA64_PAGE_BYTES - 1ull)) != 0ull)
-        || ((address + length) < address)
-        || (paging_prot == 0u))
+        || ((address + length) < address))
     {
         return 0u;
     }
@@ -1776,8 +1783,7 @@ u32 vma64_protect(u32 pid, u64 address, u64 length, u32 new_prot_flags)
     region = vma64_find(pid, address);
     if ((region == 0)
         || (end_address > region->virt_end)
-        || (region->backing_type != VMA64_BACKING_ANON)
-        || (vma64_user_pages_match_region(pid, region, address, page_count) == 0u))
+        || (region->backing_type != VMA64_BACKING_ANON))
     {
         return 0u;
     }
@@ -1790,6 +1796,13 @@ u32 vma64_protect(u32 pid, u64 address, u64 length, u32 new_prot_flags)
     old_backing_type = region->backing_type;
     old_backing_handle = region->backing_handle;
     old_token = region->vma_token;
+    old_paging_prot = vma64_paging_prot(old_prot);
+    if ((old_paging_prot != 0u)
+        && (vma64_user_pages_match_region(pid, region, address, page_count) == 0u))
+    {
+        return 0u;
+    }
+
     need_prefix = (address > old_base) ? 1u : 0u;
     need_suffix = (end_address < old_end) ? 1u : 0u;
 
@@ -1879,12 +1892,30 @@ u32 vma64_protect(u32 pid, u64 address, u64 length, u32 new_prot_flags)
 
     for (page_index = 0u; page_index < page_count; ++page_index)
     {
-        if (vma64_paging_update_user_page_protection(
-                pid,
-                address + ((u64)page_index * VMA64_PAGE_BYTES),
-                paging_prot) == 0u)
+        page_address = address + ((u64)page_index * VMA64_PAGE_BYTES);
+        if (paging_prot == 0u)
         {
-            return 0u;
+            (void)vma64_paging_clear_user_page_mapping(pid, page_address);
+        }
+        else if (vma64_paging_user_page_present(pid, page_address) != 0u)
+        {
+            if (vma64_paging_update_user_page_protection(pid, page_address, paging_prot) == 0u)
+            {
+                return 0u;
+            }
+        }
+        else
+        {
+            page_physical = vma64_region_physical_for_address(region, page_address);
+            if ((page_physical == 0ull)
+                || (vma64_paging_install_user_page_mapping(
+                        pid,
+                        page_address,
+                        page_physical,
+                        paging_prot) == 0u))
+            {
+                return 0u;
+            }
         }
     }
 

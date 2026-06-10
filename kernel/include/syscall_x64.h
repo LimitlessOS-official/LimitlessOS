@@ -3511,6 +3511,7 @@ u64 syscall64_native_saved_user_r12(void);
 u64 syscall64_native_saved_user_r13(void);
 u64 syscall64_native_saved_user_r14(void);
 u64 syscall64_native_saved_user_r15(void);
+u64 syscall64_native_saved_user_rflags(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 u32 syscall64_native_persona_dispatch_count(void);
 u32 syscall64_native_persona_linux_dispatch_count(void);

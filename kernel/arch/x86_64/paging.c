@@ -1,5 +1,8 @@
 #include "paging_x64.h"
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "process_x64.h"
+#endif
 #include "x64.h"
 
 #define PAGING64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
@@ -724,22 +727,31 @@ u32 paging64_process_root_release(u32 pid, u32 authority_token)
 u64 paging64_process_root_physical(u32 pid)
 {
     u32 slot = paging64_process_root_find_slot(pid);
+    u64 process_root;
 
-    return (slot != 0xFFFFFFFFu)
-        ? paging64_kernel_physical_alias(g_paging64_process_pml4[slot])
-        : 0ull;
+    if (slot != 0xFFFFFFFFu)
+    {
+        return paging64_kernel_physical_alias(g_paging64_process_pml4[slot]);
+    }
+
+    process_root = process64_page_root_physical(pid);
+    return (process_root != 0ull) ? (process_root & PAGING64_PAGE_MASK) : 0ull;
 }
 
 u32 paging64_process_root_slot(u32 pid)
 {
-    return paging64_process_root_find_slot(pid);
+    u32 slot = paging64_process_root_find_slot(pid);
+
+    return (slot != 0xFFFFFFFFu) ? slot : process64_page_root_index(pid);
 }
 
 u32 paging64_process_root_token(u32 pid)
 {
     u32 slot = paging64_process_root_find_slot(pid);
 
-    return (slot != 0xFFFFFFFFu) ? g_paging64_process_root_token[slot] : 0u;
+    return (slot != 0xFFFFFFFFu)
+        ? g_paging64_process_root_token[slot]
+        : process64_page_root_token(pid);
 }
 
 u32 paging64_switch_to_process_root(u32 pid, u32 reason)
@@ -1591,7 +1603,7 @@ static u32 paging64_process_vma_user_pt_acquire_slot(u32 root_slot, u32 pd_index
 
 static volatile u64 *paging64_process_user_page_entry_slot(u32 pid, u64 virtual_address)
 {
-    u32 root_slot = paging64_process_root_find_slot(pid);
+    u32 root_slot = paging64_process_root_slot(pid);
     u32 pml4_index = paging64_index64(virtual_address, 39u);
     u32 pdpt_index = paging64_index64(virtual_address, 30u);
     u32 pd_index = paging64_index64(virtual_address, 21u);

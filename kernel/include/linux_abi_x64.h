@@ -127,9 +127,11 @@ struct interrupt_frame64;
 #define LINUX_ABI64_CLONE_FILES 0x00000400u
 #define LINUX_ABI64_CLONE_SIGHAND 0x00000800u
 #define LINUX_ABI64_CLONE_THREAD 0x00010000u
+#define LINUX_ABI64_CLONE_SYSVSEM 0x00040000u
 #define LINUX_ABI64_CLONE_SETTLS 0x00080000u
 #define LINUX_ABI64_CLONE_PARENT_SETTID 0x00100000u
 #define LINUX_ABI64_CLONE_CHILD_CLEARTID 0x00200000u
+#define LINUX_ABI64_CLONE_DETACHED 0x00400000u
 #define LINUX_ABI64_CLONE_CHILD_SETTID 0x01000000u
 #define LINUX_ABI64_CLONE_THREAD_REQUIRED \
     (LINUX_ABI64_CLONE_VM \
@@ -140,8 +142,10 @@ struct interrupt_frame64;
 #define LINUX_ABI64_CLONE_SUPPORTED_MASK \
     (LINUX_ABI64_CLONE_THREAD_REQUIRED \
         | LINUX_ABI64_CLONE_SETTLS \
+        | LINUX_ABI64_CLONE_SYSVSEM \
         | LINUX_ABI64_CLONE_PARENT_SETTID \
         | LINUX_ABI64_CLONE_CHILD_CLEARTID \
+        | LINUX_ABI64_CLONE_DETACHED \
         | LINUX_ABI64_CLONE_CHILD_SETTID)
 #define LINUX_ABI64_WAIT_ANY 0xFFFFFFFFFFFFFFFFull
 #define LINUX_ABI64_WAIT_WNOHANG 0x00000001u
@@ -197,11 +201,13 @@ struct interrupt_frame64;
 #define LINUX_ABI64_MAP_PRIVATE 0x00000002u
 #define LINUX_ABI64_MAP_FIXED 0x00000010u
 #define LINUX_ABI64_MAP_ANONYMOUS 0x00000020u
+#define LINUX_ABI64_MAP_STACK 0x00020000u
 #define LINUX_ABI64_MAP_SUPPORTED_MASK \
     (LINUX_ABI64_MAP_SHARED \
         | LINUX_ABI64_MAP_PRIVATE \
         | LINUX_ABI64_MAP_FIXED \
-        | LINUX_ABI64_MAP_ANONYMOUS)
+        | LINUX_ABI64_MAP_ANONYMOUS \
+        | LINUX_ABI64_MAP_STACK)
 #define LINUX_ABI64_ENOENT 2u
 #define LINUX_ABI64_ESRCH 3u
 #define LINUX_ABI64_EINTR 4u
@@ -555,6 +561,9 @@ u32 linux_abi64_readlink_last_result(void);
 u32 linux_abi64_mmap_count(void);
 u32 linux_abi64_mmap_byte_count(void);
 u32 linux_abi64_mmap_denial_count(void);
+u32 linux_abi64_mmap_last_error(void);
+u64 linux_abi64_mmap_last_flags(void);
+u64 linux_abi64_mmap_last_length(void);
 u32 linux_abi64_mprotect_count(void);
 u32 linux_abi64_mprotect_byte_count(void);
 u32 linux_abi64_mprotect_denial_count(void);
@@ -639,6 +648,8 @@ u32 linux_abi64_futex_last_wake_count(void);
 u32 linux_abi64_futex_last_timeout_task_id(void);
 u32 linux_abi64_futex_last_timeout_ticks(void);
 u32 linux_abi64_futex_last_timeout_result(void);
+u32 linux_abi64_thread_exit_cleartid_count(void);
+u32 linux_abi64_thread_exit_cleartid_fault_count(void);
 u32 linux_abi64_clone_count(void);
 u32 linux_abi64_clone_thread_count(void);
 u32 linux_abi64_clone_denial_count(void);
@@ -657,7 +668,9 @@ u32 linux_abi64_child_root_cleanup_count(void);
 u32 linux_abi64_clone_last_parent_pid(void);
 u32 linux_abi64_clone_last_child_pid(void);
 u32 linux_abi64_clone_last_flags(void);
+u32 linux_abi64_clone_last_unsupported_flags(void);
 u32 linux_abi64_clone_last_task_id(void);
+u32 linux_abi64_clone_last_shared_cr3(void);
 u32 linux_abi64_clone_last_shared_vma(void);
 u32 linux_abi64_clone_last_shared_fd(void);
 u32 linux_abi64_clone_last_shared_audit(void);

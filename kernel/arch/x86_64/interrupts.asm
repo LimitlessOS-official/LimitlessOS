@@ -18,6 +18,7 @@ extern syscall64_native_user_r13
 extern syscall64_native_user_r14
 extern syscall64_native_user_r15
 extern syscall64_native_user_rip
+extern syscall64_native_user_rflags
 extern syscall64_native_return_to_user
 extern syscall64_native_switch_r15
 extern syscall64_native_switch_r14
@@ -188,6 +189,7 @@ syscall64_native_invoke_asm:
 global syscall64_native_entry
 syscall64_native_entry:
     mov [rel syscall64_native_user_rip], rcx
+    mov [rel syscall64_native_user_rflags], r11
     mov [rel syscall64_native_linux_rdi], rdi
     mov [rel syscall64_native_linux_rsi], rsi
     mov [rel syscall64_native_linux_rdx], rdx

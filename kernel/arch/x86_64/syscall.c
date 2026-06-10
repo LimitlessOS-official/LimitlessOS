@@ -72,6 +72,7 @@ volatile u64 syscall64_native_user_r13 = 0ull;
 volatile u64 syscall64_native_user_r14 = 0ull;
 volatile u64 syscall64_native_user_r15 = 0ull;
 volatile u64 syscall64_native_user_rip = 0ull;
+volatile u64 syscall64_native_user_rflags = 0ull;
 volatile u32 syscall64_native_return_to_user = 0u;
 volatile u64 syscall64_native_switch_r15 = 0ull;
 volatile u64 syscall64_native_switch_r14 = 0ull;
@@ -8971,6 +8972,7 @@ u64 syscall64_native_saved_user_r12(void) { return syscall64_native_user_r12; }
 u64 syscall64_native_saved_user_r13(void) { return syscall64_native_user_r13; }
 u64 syscall64_native_saved_user_r14(void) { return syscall64_native_user_r14; }
 u64 syscall64_native_saved_user_r15(void) { return syscall64_native_user_r15; }
+u64 syscall64_native_saved_user_rflags(void) { return syscall64_native_user_rflags; }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 static u32 syscall64_native_user_u64_readable(u32 pid, u64 user_address)
