@@ -99,6 +99,8 @@ $extraAppLastCluster = 0
 $extraAppFileLba = 0
 $extraAppSha256 = ""
 $extraAppShortName = ""
+$extraAppLongName = ""
+$extraAppEntrySpan = 1
 $extraApp2Content = $null
 $extraApp2ClusterCount = 0
 $extraApp2StartCluster = 0
@@ -118,13 +120,21 @@ if (-not [string]::IsNullOrWhiteSpace($ExtraAppPath)) {
         throw "Extra app staging source not found: $ExtraAppPath"
     }
     $normalizedExtraAppName = $ExtraAppName.Trim().ToUpperInvariant()
-    if (($normalizedExtraAppName.Length -lt 1) -or ($normalizedExtraAppName.Length -gt 8) -or ($normalizedExtraAppName -notmatch '^[A-Z0-9_]+$')) {
-        throw "Extra app name must be 1-8 uppercase FAT short-name characters: $ExtraAppName"
+    if (($normalizedExtraAppName.Length -lt 1) -or ($normalizedExtraAppName.Length -gt 32) -or ($normalizedExtraAppName -notmatch '^[A-Z0-9_]+$')) {
+        throw "Extra app name must be 1-32 uppercase FAT name characters: $ExtraAppName"
     }
     if (($busyBoxContent -ne $null) -and ($normalizedExtraAppName -eq "BUSYBOX")) {
         throw "Extra app name must be distinct from BusyBox: $ExtraAppName"
     }
-    $extraAppShortName = $normalizedExtraAppName.PadRight(11, ' ')
+    if ($normalizedExtraAppName.Length -le 8) {
+        $extraAppShortName = $normalizedExtraAppName.PadRight(11, ' ')
+        $extraAppEntrySpan = 1
+    }
+    else {
+        $extraAppLongName = $normalizedExtraAppName
+        $extraAppShortName = ($normalizedExtraAppName.Substring(0, 6) + "~1").PadRight(11, ' ')
+        $extraAppEntrySpan = [int]([Math]::Ceiling($normalizedExtraAppName.Length / 13.0) + 1)
+    }
     $extraAppContent = [System.IO.File]::ReadAllBytes((Resolve-Path $ExtraAppPath))
     if ($extraAppContent.Length -le 0) {
         throw "Extra app staging source is empty: $ExtraAppPath"
@@ -588,7 +598,12 @@ if ($busyBoxContent -ne $null) {
 }
 if ($extraAppContent -ne $null) {
     $extraAppEntryIndex = if ($busyBoxContent -ne $null) { 2 } else { 1 }
-    Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraAppEntryIndex -ShortName $extraAppShortName -Attributes 0x20 -StartCluster $extraAppStartCluster -Size $extraAppContent.Length
+    if (-not [string]::IsNullOrWhiteSpace($extraAppLongName)) {
+        Set-LongFileEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraAppEntryIndex -LongName $extraAppLongName -ShortName $extraAppShortName -StartCluster $extraAppStartCluster -Size $extraAppContent.Length
+    }
+    else {
+        Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraAppEntryIndex -ShortName $extraAppShortName -Attributes 0x20 -StartCluster $extraAppStartCluster -Size $extraAppContent.Length
+    }
 }
 if ($extraApp2Content -ne $null) {
     $extraApp2EntryIndex = 1
@@ -596,7 +611,7 @@ if ($extraApp2Content -ne $null) {
         $extraApp2EntryIndex++
     }
     if ($extraAppContent -ne $null) {
-        $extraApp2EntryIndex++
+        $extraApp2EntryIndex += $extraAppEntrySpan
     }
     Set-DirectoryEntry -DirectoryCluster $appsDirectoryCluster -EntryIndex $extraApp2EntryIndex -ShortName $extraApp2ShortName -Attributes 0x20 -StartCluster $extraApp2StartCluster -Size $extraApp2Content.Length
 }
@@ -606,7 +621,7 @@ if ($extraApp3Content -ne $null) {
         $extraApp3EntryIndex++
     }
     if ($extraAppContent -ne $null) {
-        $extraApp3EntryIndex++
+        $extraApp3EntryIndex += $extraAppEntrySpan
     }
     if ($extraApp2Content -ne $null) {
         $extraApp3EntryIndex++
