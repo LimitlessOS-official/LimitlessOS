@@ -1463,6 +1463,42 @@ u32 linux_dynamic64_symbol_supported(const char *name, u32 length)
     return 0u;
 }
 
+u32 linux_dynamic64_symbol_default_address(
+    const char *name,
+    u32 length,
+    u64 *out_address)
+{
+    u32 index;
+
+    if (out_address != 0)
+    {
+        *out_address = 0ull;
+    }
+    if ((name == 0)
+        || (length == 0u)
+        || (length > LINUX_DYNAMIC64_STRING_LIMIT)
+        || (out_address == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < LINUX_DYNAMIC64_SYMBOL_COUNT; ++index)
+    {
+        if (linux_dynamic64_name_matches(
+                name,
+                length,
+                g_linux_dynamic64_exports[index].name,
+                g_linux_dynamic64_exports[index].length) != 0u)
+        {
+            *out_address =
+                LINUX_DYNAMIC64_DEFAULT_BASE + (u64)g_linux_dynamic64_exports[index].rva;
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
 u32 linux_dynamic64_release_process(u32 pid)
 {
     persona_context_t *context;

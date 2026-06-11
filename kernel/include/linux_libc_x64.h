@@ -196,6 +196,11 @@ u32 linux_libc64_dependency_supported(const char *name, u32 length);
 u32 linux_libc64_pthread_dependency_supported(const char *name, u32 length);
 u32 linux_libc64_symbol_supported(const char *name, u32 length);
 u32 linux_libc64_symbol_unavailable(const char *name, u32 length);
+u32 linux_libc64_symbol_default_address(
+    const char *name,
+    u32 length,
+    u64 *out_address,
+    u32 *out_unavailable);
 u32 linux_libc64_load(
     u32 pid,
     u64 image_base,

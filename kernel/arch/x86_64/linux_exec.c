@@ -133,8 +133,23 @@ typedef struct linux_exec64_telemetry
     u32 dynamic_binding_jump_slot;
     u32 dynamic_binding_other;
     u32 dynamic_binding_error;
+    u32 dynamic_reloc_dry_run;
+    u32 dynamic_reloc_dry_total;
+    u32 dynamic_reloc_dry_target_valid;
+    u32 dynamic_reloc_dry_value;
+    u32 dynamic_reloc_dry_provider;
+    u32 dynamic_reloc_dry_weak_null;
+    u32 dynamic_reloc_dry_unavailable;
+    u32 dynamic_reloc_dry_apply_ready;
+    u32 dynamic_reloc_dry_blocked;
+    u32 dynamic_reloc_dry_error;
+    u32 dynamic_reloc_dry_first_set;
     u64 dynamic_reloc_first_target;
     u64 dynamic_jmprel_first_target;
+    u64 dynamic_reloc_dry_first_target;
+    u64 dynamic_reloc_dry_first_value;
+    u64 dynamic_reloc_dry_jmprel_target;
+    u64 dynamic_reloc_dry_jmprel_value;
     u32 elf_dynamic_count;
     u32 dynamic_needed;
     u32 dynamic_supported;
@@ -926,6 +941,84 @@ static u32 linux_exec64_symbol_binding_supported(const char *name, u32 length, u
     return 0u;
 }
 
+static u32 linux_exec64_vaddr_is_writable_load(
+    const elf64_program_header_t *phdrs,
+    u32 phdr_count,
+    u64 vaddr,
+    u64 bytes)
+{
+    u32 index;
+    u64 vaddr_end;
+
+    if ((phdrs == 0)
+        || (phdr_count > ELF64_MAX_PROGRAM_HEADERS)
+        || (bytes == 0ull))
+    {
+        return 0u;
+    }
+    vaddr_end = vaddr + bytes;
+    if (vaddr_end < vaddr)
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < phdr_count; ++index)
+    {
+        u64 load_end;
+
+        if ((phdrs[index].type != ELF64_PT_LOAD)
+            || ((phdrs[index].flags & ELF64_PF_W) == 0u))
+        {
+            continue;
+        }
+        load_end = phdrs[index].vaddr + phdrs[index].memsz;
+        if (load_end < phdrs[index].vaddr)
+        {
+            return 0u;
+        }
+        if ((vaddr >= phdrs[index].vaddr) && (vaddr_end <= load_end))
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 linux_exec64_symbol_binding_value(
+    const char *name,
+    u32 length,
+    u32 provider,
+    u64 *out_value,
+    u32 *out_unavailable)
+{
+    if (out_value != 0)
+    {
+        *out_value = 0ull;
+    }
+    if (out_unavailable != 0)
+    {
+        *out_unavailable = 0u;
+    }
+    if ((name == 0)
+        || (length == 0u)
+        || (out_value == 0)
+        || (out_unavailable == 0))
+    {
+        return 0u;
+    }
+    if (provider == 1u)
+    {
+        return linux_libc64_symbol_default_address(name, length, out_value, out_unavailable);
+    }
+    if (provider == 2u)
+    {
+        *out_unavailable = 0u;
+        return linux_dynamic64_symbol_default_address(name, length, out_value);
+    }
+    return 0u;
+}
+
 static u32 linux_exec64_walk_dynamic_bindings(
     const u8 *binary,
     u32 binary_bytes,
@@ -934,15 +1027,20 @@ static u32 linux_exec64_walk_dynamic_bindings(
     u64 symtab_offset,
     u64 syment,
     const u8 *strtab,
-    u32 strtab_bytes)
+    u32 strtab_bytes,
+    const elf64_program_header_t *phdrs,
+    u32 phdr_count,
+    u32 table_kind)
 {
     char symbol_name[LINUX_EXEC64_SYMBOL_TOKEN_BYTES];
     u32 index;
 
     if ((binary == 0)
         || (strtab == 0)
+        || (phdrs == 0)
         || (table_count == 0u)
-        || (syment != LINUX_EXEC64_SYMBOL_ENTRY_BYTES))
+        || (syment != LINUX_EXEC64_SYMBOL_ENTRY_BYTES)
+        || (phdr_count > ELF64_MAX_PROGRAM_HEADERS))
     {
         return 0u;
     }
@@ -950,13 +1048,17 @@ static u32 linux_exec64_walk_dynamic_bindings(
     for (index = 0u; index < table_count; ++index)
     {
         u64 entry_offset = table_offset + ((u64)index * LINUX_EXEC64_RELA_ENTRY_BYTES);
+        u64 target;
         u64 info;
+        u64 value = 0ull;
         u32 reloc_type;
         u32 symbol_index;
         u32 symbol_bytes = 0u;
         u32 symbol_checksum = 0u;
         u32 provider = 0u;
         u32 undefined_weak = 0u;
+        u32 unavailable = 0u;
+        u32 dry_value_ready = 0u;
 
         if ((entry_offset < table_offset)
             || (linux_exec64_range_available(
@@ -967,10 +1069,28 @@ static u32 linux_exec64_walk_dynamic_bindings(
             return 0u;
         }
 
+        target = linux_exec64_read_le64(binary + entry_offset);
         info = linux_exec64_read_le64(binary + entry_offset + 8ull);
         reloc_type = (u32)info;
         symbol_index = (u32)(info >> 32);
         ++g_linux_exec64_telemetry.dynamic_binding_total;
+        ++g_linux_exec64_telemetry.dynamic_reloc_dry_total;
+        if (linux_exec64_vaddr_is_writable_load(phdrs, phdr_count, target, 8ull) != 0u)
+        {
+            ++g_linux_exec64_telemetry.dynamic_reloc_dry_target_valid;
+        }
+        else
+        {
+            g_linux_exec64_telemetry.dynamic_reloc_dry_error = 3u;
+        }
+        if (g_linux_exec64_telemetry.dynamic_reloc_dry_first_target == 0ull)
+        {
+            g_linux_exec64_telemetry.dynamic_reloc_dry_first_target = target;
+        }
+        if ((table_kind == 2u) && (g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_target == 0ull))
+        {
+            g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_target = target;
+        }
         if (reloc_type == LINUX_EXEC64_RELOC_TYPE_GLOB_DAT)
         {
             ++g_linux_exec64_telemetry.dynamic_binding_glob_dat;
@@ -982,6 +1102,7 @@ static u32 linux_exec64_walk_dynamic_bindings(
         else
         {
             ++g_linux_exec64_telemetry.dynamic_binding_other;
+            g_linux_exec64_telemetry.dynamic_reloc_dry_error = 4u;
         }
 
         if (symbol_index == 0u)
@@ -1021,10 +1142,28 @@ static u32 linux_exec64_walk_dynamic_bindings(
         if (linux_exec64_symbol_binding_supported(symbol_name, symbol_bytes, &provider) != 0u)
         {
             ++g_linux_exec64_telemetry.dynamic_binding_supported;
+            if (linux_exec64_symbol_binding_value(
+                    symbol_name,
+                    symbol_bytes,
+                    provider,
+                    &value,
+                    &unavailable) != 0u)
+            {
+                dry_value_ready = 1u;
+                ++g_linux_exec64_telemetry.dynamic_reloc_dry_provider;
+                if (unavailable != 0u)
+                {
+                    ++g_linux_exec64_telemetry.dynamic_reloc_dry_unavailable;
+                }
+            }
+            else
+            {
+                g_linux_exec64_telemetry.dynamic_reloc_dry_error = 5u;
+            }
             if (provider == 1u)
             {
                 ++g_linux_exec64_telemetry.dynamic_binding_libc;
-                if (linux_libc64_symbol_unavailable(symbol_name, symbol_bytes) != 0u)
+                if (unavailable != 0u)
                 {
                     ++g_linux_exec64_telemetry.dynamic_binding_unavailable;
                 }
@@ -1039,10 +1178,38 @@ static u32 linux_exec64_walk_dynamic_bindings(
             if ((reloc_type == LINUX_EXEC64_RELOC_TYPE_GLOB_DAT) && (undefined_weak != 0u))
             {
                 ++g_linux_exec64_telemetry.dynamic_binding_weak_null;
+                ++g_linux_exec64_telemetry.dynamic_reloc_dry_weak_null;
+                value = 0ull;
+                dry_value_ready = 1u;
             }
             else
             {
                 ++g_linux_exec64_telemetry.dynamic_binding_missing;
+                g_linux_exec64_telemetry.dynamic_reloc_dry_error = 6u;
+            }
+        }
+        if (dry_value_ready != 0u)
+        {
+            ++g_linux_exec64_telemetry.dynamic_reloc_dry_value;
+            if (g_linux_exec64_telemetry.dynamic_reloc_dry_first_set == 0u)
+            {
+                g_linux_exec64_telemetry.dynamic_reloc_dry_first_value = value;
+                g_linux_exec64_telemetry.dynamic_reloc_dry_first_set = 1u;
+            }
+            if ((table_kind == 2u) && (g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_value == 0ull))
+            {
+                g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_value = value;
+            }
+            if ((unavailable == 0u)
+                && ((reloc_type == LINUX_EXEC64_RELOC_TYPE_GLOB_DAT)
+                    || (reloc_type == LINUX_EXEC64_RELOC_TYPE_JUMP_SLOT))
+                && (linux_exec64_vaddr_is_writable_load(phdrs, phdr_count, target, 8ull) != 0u))
+            {
+                ++g_linux_exec64_telemetry.dynamic_reloc_dry_apply_ready;
+            }
+            else
+            {
+                ++g_linux_exec64_telemetry.dynamic_reloc_dry_blocked;
             }
         }
     }
@@ -1567,6 +1734,7 @@ static void linux_exec64_record_dynamic_relocations(
             g_linux_exec64_telemetry.dynamic_symbol_error = 5u;
         }
         g_linux_exec64_telemetry.dynamic_binding_walk = 1u;
+        g_linux_exec64_telemetry.dynamic_reloc_dry_run = 1u;
         if ((g_linux_exec64_telemetry.dynamic_rela_count != 0u)
             && (linux_exec64_walk_dynamic_bindings(
                     binary,
@@ -1576,7 +1744,10 @@ static void linux_exec64_record_dynamic_relocations(
                     symtab_offset,
                     syment,
                     binary + strtab_offset,
-                    (u32)strtab_bytes) == 0u))
+                    (u32)strtab_bytes,
+                    phdrs,
+                    phdr_count,
+                    1u) == 0u))
         {
             g_linux_exec64_telemetry.dynamic_binding_error = 1u;
             return;
@@ -1590,7 +1761,10 @@ static void linux_exec64_record_dynamic_relocations(
                     symtab_offset,
                     syment,
                     binary + strtab_offset,
-                    (u32)strtab_bytes) == 0u))
+                    (u32)strtab_bytes,
+                    phdrs,
+                    phdr_count,
+                    2u) == 0u))
         {
             g_linux_exec64_telemetry.dynamic_binding_error = 2u;
         }
@@ -1835,6 +2009,46 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_other);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-run ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_run);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-total ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_total);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-target-valid ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_target_valid);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-value ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_value);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-provider ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_provider);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-weak-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_weak_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-unavailable ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_unavailable);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-apply-ready ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_apply_ready);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-blocked ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_blocked);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-first-target ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_first_target);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-first-value ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_first_value);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-jmprel-target ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_target);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-jmprel-value ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_value);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -2501,6 +2715,46 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_other);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-run ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_run);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-total ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_total);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-target-valid ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_target_valid);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-value ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_value);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-provider ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_provider);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-weak-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_weak_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-unavailable ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_unavailable);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-apply-ready ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_apply_ready);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-blocked ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_blocked);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_reloc_dry_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-first-target ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_first_target);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-first-value ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_first_value);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-jmprel-target ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_target);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-reloc-dry-jmprel-value ");
+    linux_exec64_write_hex_u64(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.dynamic_reloc_dry_jmprel_value);
     (void)linux_exec64_write_text(console_capability, owner_id, " root-cleanup ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.root_cleanup);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");

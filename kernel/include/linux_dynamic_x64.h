@@ -160,6 +160,10 @@ u32 linux_dynamic64_prepare(
     linux_dynamic64_launch_result_t *out_result);
 u64 linux_dynamic64_export(u32 pid, const char *name);
 u32 linux_dynamic64_symbol_supported(const char *name, u32 length);
+u32 linux_dynamic64_symbol_default_address(
+    const char *name,
+    u32 length,
+    u64 *out_address);
 u32 linux_dynamic64_analyze_needed(
     const u8 *binary_data,
     u32 binary_size,

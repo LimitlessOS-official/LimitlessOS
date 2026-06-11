@@ -1432,6 +1432,49 @@ u32 linux_libc64_symbol_unavailable(const char *name, u32 length)
     return 0u;
 }
 
+u32 linux_libc64_symbol_default_address(
+    const char *name,
+    u32 length,
+    u64 *out_address,
+    u32 *out_unavailable)
+{
+    u32 index;
+
+    if (out_address != 0)
+    {
+        *out_address = 0ull;
+    }
+    if (out_unavailable != 0)
+    {
+        *out_unavailable = 0u;
+    }
+    if ((name == 0)
+        || (length == 0u)
+        || (length > LINUX_LIBC64_STRING_LIMIT)
+        || (out_address == 0)
+        || (out_unavailable == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < LINUX_LIBC64_SYMBOL_COUNT; ++index)
+    {
+        if (linux_libc64_name_matches(
+                name,
+                length,
+                g_linux_libc64_exports[index].name,
+                g_linux_libc64_exports[index].length) != 0u)
+        {
+            *out_address = LINUX_LIBC64_DEFAULT_BASE + (u64)g_linux_libc64_exports[index].rva;
+            *out_unavailable =
+                (g_linux_libc64_exports[index].kind == LINUX_LIBC64_KIND_UNAVAILABLE) ? 1u : 0u;
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
 u32 linux_libc64_load(
     u32 pid,
     u64 image_base,
