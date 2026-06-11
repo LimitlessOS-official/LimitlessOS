@@ -74,6 +74,14 @@ typedef struct linux_exec64_telemetry
     u32 interp_file_dynamic_count;
     u32 interp_file_error;
     u32 interp_file_nvme_error;
+    u32 dynamic_map_attempt;
+    u32 dynamic_process;
+    u32 dynamic_app_mapped;
+    u32 dynamic_app_pages;
+    u32 dynamic_interp_mapped;
+    u32 dynamic_interp_pages;
+    u32 dynamic_map_cleanup;
+    u32 dynamic_map_error;
     u32 elf_dynamic_count;
     u32 dynamic_needed;
     u32 dynamic_supported;
@@ -743,7 +751,7 @@ static void linux_exec64_record_interpreter_file_metadata(u8 *binary, u32 binary
     g_linux_exec64_telemetry.interp_file_error = ELF64_ERROR_NONE;
 }
 
-static void linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_path, u32 interp_path_bytes)
+static u32 linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_path, u32 interp_path_bytes)
 {
     const u8 *backend_path;
     u32 backend_path_bytes;
@@ -756,7 +764,7 @@ static void linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_p
                 &backend_path,
                 &backend_path_bytes) == 0u))
     {
-        return;
+        return 0u;
     }
 
     g_linux_exec64_telemetry.interp_file_attempt = 1u;
@@ -770,12 +778,13 @@ static void linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_p
     {
         g_linux_exec64_telemetry.interp_file_nvme_error = mmio64_nvme_fat_shell_read_last_error();
         g_linux_exec64_telemetry.interp_file_error = g_linux_exec64_telemetry.interp_file_nvme_error;
-        return;
+        return 0u;
     }
 
     g_linux_exec64_telemetry.interp_file_read = 1u;
     g_linux_exec64_telemetry.interp_file_nvme_error = mmio64_nvme_fat_shell_read_last_error();
     linux_exec64_record_interpreter_file_metadata(g_linux_exec64_binary, bytes_read);
+    return (g_linux_exec64_telemetry.interp_file_elf != 0u) ? 1u : 0u;
 }
 
 static void linux_exec64_record_elf_metadata(
@@ -881,6 +890,20 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_file_interp_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " interp-file-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_file_dynamic_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-map-attempt ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_map_attempt);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-process ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_process);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-app-mapped ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_app_mapped);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-app-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_app_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-interp-mapped ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_interp_mapped);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-interp-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_interp_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-map-cleanup ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_map_cleanup);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -1410,6 +1433,26 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_file_error);
     (void)linux_exec64_write_text(console_capability, owner_id, " interp-file-nvme-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_file_nvme_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-map-attempt ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_map_attempt);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-process ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_process);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-app-mapped ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_app_mapped);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-app-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_app_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-interp-mapped ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_interp_mapped);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-interp-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_interp_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-map-cleanup ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_map_cleanup);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-map-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_map_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " root-cleanup ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.root_cleanup);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4_pool_used_final);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -1487,6 +1530,282 @@ static void linux_exec64_release_failed_process(u32 pid)
     (void)persona64_release(pid);
     (void)persona_audit64_release(pid);
     (void)process64_release_clone(pid);
+}
+
+static void linux_exec64_record_process_root_telemetry(u32 pid)
+{
+    g_linux_exec64_telemetry.pml4 = 1u;
+    g_linux_exec64_telemetry.pml4_pool = paging64_process_root_pool_limit();
+    g_linux_exec64_telemetry.pml4_slot = paging64_process_root_slot(pid);
+    g_linux_exec64_telemetry.root_physical = paging64_process_root_physical(pid);
+    g_linux_exec64_telemetry.kernel_root_physical = paging64_kernel_root_physical();
+    g_linux_exec64_telemetry.root_distinct =
+        (g_linux_exec64_telemetry.root_physical != g_linux_exec64_telemetry.kernel_root_physical)
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.high_copy = paging64_process_root_last_high_copy();
+    g_linux_exec64_telemetry.mmio_shared = paging64_process_root_last_mmio_shared();
+    g_linux_exec64_telemetry.pool_mapped = paging64_process_root_last_pool_mapped();
+    g_linux_exec64_telemetry.low_compat = paging64_process_root_last_low_compat();
+    g_linux_exec64_telemetry.low_pdpt_present =
+        paging64_process_root_last_low_pdpt_present();
+    g_linux_exec64_telemetry.syscall_entry_high = syscall64_native_lstar_high();
+    g_linux_exec64_telemetry.idt_high =
+        ((interrupts64_idt_high_targets() != 0u)
+            && (interrupts64_idt_high_base() != 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.descriptor_high =
+        ((descriptors64_gdt_high_base() != 0u)
+            && (descriptors64_tss_high_base() != 0u)
+            && (descriptors64_tss_rsp0_high() != 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.kernel_entry_high_ready =
+        ((g_linux_exec64_telemetry.syscall_entry_high != 0u)
+            && (g_linux_exec64_telemetry.idt_high != 0u)
+            && (g_linux_exec64_telemetry.descriptor_high != 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.user_pdpt_private =
+        paging64_process_root_last_user_pdpt_private();
+}
+
+static u32 linux_exec64_try_dynamic_mapping_preview(
+    u32 owner_id,
+    u32 nvme_fs_capability,
+    const elf64_header_t *header,
+    const elf64_program_header_t *phdrs,
+    const elf64_phdr_summary_t *summary,
+    u32 app_bytes)
+{
+    elf64_load_result_t app_load;
+    elf64_header_t interp_header;
+    elf64_program_header_t interp_phdrs[ELF64_MAX_PROGRAM_HEADERS];
+    elf64_phdr_summary_t interp_summary;
+    elf64_load_result_t interp_load;
+    u32 index;
+    u32 parent_pid;
+    u32 pid;
+    u32 process_owner;
+    u32 root_authority;
+    u32 process_root_token;
+    u32 app_switch;
+    u32 app_restore;
+    u32 interp_switch;
+    u32 interp_restore;
+    u32 vma_release;
+    u32 root_release = 0u;
+    u32 root_clear = 0u;
+    u32 clone_release;
+
+    if ((header == 0)
+        || (phdrs == 0)
+        || (summary == 0)
+        || (header->type != ELF64_TYPE_EXEC)
+        || (summary->load_count == 0u)
+        || (summary->interp_count != 1u)
+        || (summary->dynamic_count != 1u)
+        || (g_linux_exec64_telemetry.interp_supported == 0u))
+    {
+        return 0u;
+    }
+
+    g_linux_exec64_telemetry.dynamic_map_attempt = 1u;
+    parent_pid = linux_exec64_parent_pid_for_owner(owner_id);
+    pid = (parent_pid != PROCESS64_INVALID_PID) ? process64_spawn_clone(parent_pid) : PROCESS64_INVALID_PID;
+    g_linux_exec64_telemetry.pid = pid;
+    if (pid == PROCESS64_INVALID_PID)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 3u;
+        return 1u;
+    }
+
+    process_owner = process64_principal(pid);
+    root_authority = process64_runtime_token(pid);
+    if (root_authority == 0u)
+    {
+        root_authority = nvme_fs_capability;
+    }
+    if (paging64_process_root_alloc(pid, process_owner, root_authority) == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 11u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    process_root_token = paging64_process_root_token(pid);
+    if ((process_root_token == 0u)
+        || (process64_attach_page_root(
+                pid,
+                paging64_process_root_physical(pid),
+                paging64_process_root_slot(pid),
+                process_root_token,
+                root_authority) == 0u))
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 12u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    g_linux_exec64_telemetry.dynamic_process = 1u;
+    linux_exec64_record_process_root_telemetry(pid);
+
+    if (vma64_init_process(pid) == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 4u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    app_switch = paging64_switch_to_process_root(pid, 0x44594E41u);
+    if (app_switch == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 13u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    if (elf64_map_load_segments(
+            pid,
+            phdrs,
+            header->phnum,
+            g_linux_exec64_binary,
+            app_bytes,
+            0ull,
+            &app_load) == ELF64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_app_mapped = app_load.mapped_count;
+        g_linux_exec64_telemetry.dynamic_app_pages =
+            (u32)(app_load.total_map_bytes / VMA64_PAGE_BYTES);
+    }
+    else
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = app_load.error;
+    }
+    app_restore = paging64_switch_to_kernel_root(0x44594E4Bu);
+    if ((app_restore == 0u) || (g_linux_exec64_telemetry.dynamic_app_mapped == 0u))
+    {
+        if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
+        {
+            g_linux_exec64_telemetry.dynamic_map_error = 14u;
+        }
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    for (index = 0u; index < header->phnum; ++index)
+    {
+        if ((phdrs[index].type == ELF64_PT_INTERP)
+            && (phdrs[index].filesz != 0ull)
+            && (phdrs[index].filesz <= LINUX_DYNAMIC64_INTERP_PATH_MAX)
+            && (linux_exec64_range_available(app_bytes, phdrs[index].offset, phdrs[index].filesz) != 0u))
+        {
+            (void)linux_exec64_probe_interpreter_file(
+                owner_id,
+                g_linux_exec64_binary + phdrs[index].offset,
+                g_linux_exec64_telemetry.interp_path_bytes);
+            break;
+        }
+    }
+    if ((g_linux_exec64_telemetry.interp_file_read == 0u)
+        || (g_linux_exec64_telemetry.interp_file_elf == 0u))
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 15u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    if (elf64_parse_header(g_linux_exec64_binary, g_linux_exec64_telemetry.interp_file_bytes, &interp_header) != ELF64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = interp_header.error;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    for (index = 0u; index < ELF64_MAX_PROGRAM_HEADERS; ++index)
+    {
+        interp_phdrs[index].type = 0u;
+        interp_phdrs[index].flags = 0u;
+        interp_phdrs[index].offset = 0ull;
+        interp_phdrs[index].vaddr = 0ull;
+        interp_phdrs[index].paddr = 0ull;
+        interp_phdrs[index].filesz = 0ull;
+        interp_phdrs[index].memsz = 0ull;
+        interp_phdrs[index].align = 0ull;
+    }
+    if (elf64_parse_phdrs(
+            g_linux_exec64_binary,
+            g_linux_exec64_telemetry.interp_file_bytes,
+            &interp_header,
+            interp_phdrs,
+            ELF64_MAX_PROGRAM_HEADERS,
+            &interp_summary) != ELF64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = interp_summary.error;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    interp_switch = paging64_switch_to_process_root(pid, 0x44594E49u);
+    if (interp_switch == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 16u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    if (elf64_map_load_segments(
+            pid,
+            interp_phdrs,
+            interp_header.phnum,
+            g_linux_exec64_binary,
+            g_linux_exec64_telemetry.interp_file_bytes,
+            0ull,
+            &interp_load) == ELF64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_interp_mapped = interp_load.mapped_count;
+        g_linux_exec64_telemetry.dynamic_interp_pages =
+            (u32)(interp_load.total_map_bytes / VMA64_PAGE_BYTES);
+    }
+    else
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = interp_load.error;
+    }
+    interp_restore = paging64_switch_to_kernel_root(0x44594E4Cu);
+    if ((interp_restore == 0u) || (g_linux_exec64_telemetry.dynamic_interp_mapped == 0u))
+    {
+        if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
+        {
+            g_linux_exec64_telemetry.dynamic_map_error = 17u;
+        }
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    vma_release = vma64_release_process(pid);
+    process_root_token = process64_page_root_token(pid);
+    if (process_root_token != 0u)
+    {
+        root_release = paging64_process_root_release(pid, process_root_token);
+        root_clear = process64_clear_page_root(pid, process_root_token);
+    }
+    clone_release = process64_release_clone(pid);
+    g_linux_exec64_telemetry.root_cleanup =
+        ((root_release != 0u)
+            && (root_clear != 0u)
+            && (paging64_process_root_physical(pid) == 0ull)
+            && (process64_page_root_token(pid) == 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.pml4_pool_used_final = paging64_process_root_pool_used();
+    g_linux_exec64_telemetry.dynamic_map_cleanup =
+        ((vma_release
+                >= (g_linux_exec64_telemetry.dynamic_app_mapped
+                    + g_linux_exec64_telemetry.dynamic_interp_mapped))
+            && (g_linux_exec64_telemetry.root_cleanup != 0u)
+            && (clone_release != 0u)
+            && (g_linux_exec64_telemetry.pml4_pool_used_final == 0u))
+            ? 1u
+            : 0u;
+    g_linux_exec64_telemetry.dynamic_map_error =
+        (g_linux_exec64_telemetry.dynamic_map_cleanup != 0u) ? 0u : 18u;
+    return 1u;
 }
 
 static u32 linux_exec64_static_loads_overlap_low_kernel_window(
@@ -1922,25 +2241,20 @@ u32 linux_exec64_run_nvme(
     }
     linux_exec64_record_elf_metadata(&header, &phdr_summary, g_linux_exec64_binary, bytes_read, phdrs);
     g_linux_exec64_telemetry.elf = 1u;
-    if (g_linux_exec64_telemetry.interp_supported != 0u)
+    g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_STATIC;
+    if (linux_exec64_try_dynamic_mapping_preview(
+            owner_id,
+            nvme_fs_capability,
+            &header,
+            phdrs,
+            &phdr_summary,
+            bytes_read) != 0u)
     {
-        for (index = 0u; index < header.phnum; ++index)
-        {
-            if ((phdrs[index].type == ELF64_PT_INTERP)
-                && (phdrs[index].filesz != 0ull)
-                && (phdrs[index].filesz <= LINUX_DYNAMIC64_INTERP_PATH_MAX)
-                && (linux_exec64_range_available(bytes_read, phdrs[index].offset, phdrs[index].filesz) != 0u))
-            {
-                linux_exec64_probe_interpreter_file(
-                    owner_id,
-                    g_linux_exec64_binary + phdrs[index].offset,
-                    g_linux_exec64_telemetry.interp_path_bytes);
-                break;
-            }
-        }
+        g_linux_exec64_telemetry.failure_code = 8u;
+        linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
+        return LINUX_EXEC64_RESULT_FAILED;
     }
 
-    g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_STATIC;
     if ((header.type != ELF64_TYPE_EXEC)
         || (phdr_summary.load_count == 0u)
         || (phdr_summary.interp_count != 0u)

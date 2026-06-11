@@ -1020,7 +1020,26 @@ Final reserves remain UEFI 819,680 bytes and BIOS 101 sectors.
 
 M72 non-claims: interpreter `PT_LOAD` mapping, dynamic app mapping, relocation processing, dynamic symbol resolution, `DT_NEEDED` library loading, shared-library search paths, glibc compatibility, and dynamic execution remain unavailable.
 
-Proposed M73 scope: allocate a Linux persona for a supported dynamic input, map the dynamic app and staged interpreter `PT_LOAD` segments into the private process root, report app/interpreter mapped-page telemetry, then deny before relocations, symbol binding, or transfer of control.
+## M73 Bounded Dynamic App And Interpreter Mapping
+
+M73 is accepted on the UEFI Product path with `linux /APPS/DYNLDLIMIT`. The same M72 app/interpreter artifacts are used, but the supported dynamic input now allocates a bounded Linux persona, creates a private process root, maps the app `PT_LOAD` segments, reads the staged interpreter candidate, maps the interpreter `PT_LOAD` segments, and then denies before relocation processing, symbol binding, stack/auxv setup, task registration, or transfer of control.
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`, external musl-cross ET_EXEC linked at `0x52000000`, SHA-256 `9F6EB9C05B3065D39BC59D24DEFE9361267B34CEFD4DE78F568DDB00497238FA`
+- `/APPS/LDLIMIT`, static musl ET_EXEC linked at `0x47800000`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`
+
+M73 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNLDLIMIT stage static code 8 pid 8241 elf-type 2 elf-load 4 elf-interp 1 interp-bytes 18 interp-checksum 0x8F7B800D interp-supported 1 interp-file-attempt 1 interp-file-read 1 interp-file-bytes 16704 interp-file-elf 1 interp-file-type 2 interp-file-load 4 interp-file-interp 0 interp-file-dynamic 0 interp-file-error 0 interp-file-nvme-error 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-map-cleanup 1 dynamic-map-error 0 root-cleanup 1 pml4-pool-used-final 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 0 dynamic-missing 1 dynamic-libc 0 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 15680 nvme-read-capacity 4194304 nvme-read-size 15680 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves are UEFI 815,584 bytes and BIOS 101 sectors.
+
+M73 non-claims: relocation enumeration/application, GOT/PLT binding, `DT_NEEDED` library loading, dynamic-linker ABI handoff, dynamic stack/auxv construction, task registration, and dynamic execution remain unavailable.
+
+Proposed M74 scope: enumerate the dynamic app relocation tables (`DT_RELA`, `DT_RELASZ`, `DT_RELAENT`, `DT_JMPREL`, `DT_PLTRELSZ`, `DT_PLTREL`), report relocation counts/types/first target, and deny before applying relocations or transferring control.
 
 Later targets are:
 
