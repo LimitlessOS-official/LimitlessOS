@@ -999,7 +999,28 @@ Final reserves remain UEFI 819,680 bytes and BIOS 101 sectors.
 
 M71 non-claims: interpreter file resolution, interpreter ELF loading, relocation processing, dynamic symbol resolution, shared-library loading, glibc compatibility, and dynamic execution remain unavailable.
 
-Proposed M72 scope: stage a real or Limitless-owned interpreter file under a Linux-visible path, resolve and read that interpreter candidate through the existing NVMe VFS authority, and report interpreter file ELF metadata without executing relocations or transferring control.
+## M72 Bounded Interpreter File Staging
+
+M72 is accepted on the UEFI Product path with `linux /APPS/DYNLDLIMIT`. The dynamic app requests the Linux-visible interpreter path `/nvme/apps/ldlimit`, which the denial path maps to the staged NVMe FAT backend `/APPS/LDLIMIT`. The interpreter candidate is read through the same broker-scoped NVMe authority used by the real-binary launcher and parsed for ELF metadata, but it is not mapped, relocated, or executed.
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`, external musl-cross ET_EXEC linked at `0x52000000`, SHA-256 `9F6EB9C05B3065D39BC59D24DEFE9361267B34CEFD4DE78F568DDB00497238FA`
+- `/APPS/LDLIMIT`, static musl ET_EXEC linked at `0x47800000`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`
+
+`readelf -h -l -d` for `DYNLDLIMIT` reports `Type: EXEC`, entry `0x52001071`, four `PT_LOAD` segments, one `PT_INTERP` requesting `/nvme/apps/ldlimit`, one `PT_DYNAMIC`, and one `DT_NEEDED` entry for `libc-x64.so`. `readelf -h -l` for `LDLIMIT` reports `Type: EXEC`, entry `0x4780105f`, four `PT_LOAD` segments, no `PT_INTERP`, and no `PT_DYNAMIC`.
+
+M72 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNLDLIMIT stage static code 8 pid 4294967295 elf-type 2 elf-load 4 elf-interp 1 interp-bytes 18 interp-checksum 0x8F7B800D interp-supported 1 interp-file-attempt 1 interp-file-read 1 interp-file-bytes 16704 interp-file-elf 1 interp-file-type 2 interp-file-load 4 interp-file-interp 0 interp-file-dynamic 0 interp-file-error 0 interp-file-nvme-error 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 0 dynamic-missing 1 dynamic-libc 0 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 15680 nvme-read-capacity 4194304 nvme-read-size 15680 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves remain UEFI 819,680 bytes and BIOS 101 sectors.
+
+M72 non-claims: interpreter `PT_LOAD` mapping, dynamic app mapping, relocation processing, dynamic symbol resolution, `DT_NEEDED` library loading, shared-library search paths, glibc compatibility, and dynamic execution remain unavailable.
+
+Proposed M73 scope: allocate a Linux persona for a supported dynamic input, map the dynamic app and staged interpreter `PT_LOAD` segments into the private process root, report app/interpreter mapped-page telemetry, then deny before relocations, symbol binding, or transfer of control.
 
 Later targets are:
 
