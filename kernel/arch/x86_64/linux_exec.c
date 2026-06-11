@@ -9,6 +9,7 @@
 #include "fd_x64.h"
 #include "interrupts_x64.h"
 #include "linux_abi_x64.h"
+#include "linux_dynamic_x64.h"
 #include "mmio_x64.h"
 #include "linux_vfs_x64.h"
 #include "paging_x64.h"
@@ -57,6 +58,17 @@ typedef struct linux_exec64_telemetry
     u32 nvme_read;
     u32 elf;
     u32 static_elf;
+    u32 elf_type;
+    u32 elf_load_count;
+    u32 elf_interp_count;
+    u32 elf_dynamic_count;
+    u32 dynamic_needed;
+    u32 dynamic_supported;
+    u32 dynamic_missing;
+    u32 dynamic_libc;
+    u32 dynamic_pthread;
+    u32 dynamic_first_needed_checksum;
+    u32 dynamic_last_needed_checksum;
     u32 mapped_pages;
     u32 mapped_regions;
     u32 stack_pages;
@@ -496,6 +508,53 @@ static const char *linux_exec64_stage_name(linux_exec64_stage_t stage)
     }
 }
 
+static void linux_exec64_record_elf_metadata(
+    const elf64_header_t *header,
+    const elf64_phdr_summary_t *summary,
+    const u8 *binary,
+    u32 binary_bytes,
+    const elf64_program_header_t *phdrs)
+{
+    linux_dynamic64_needed_result_t needed;
+
+    if (header != 0)
+    {
+        g_linux_exec64_telemetry.elf_type = (u32)header->type;
+    }
+    if (summary != 0)
+    {
+        g_linux_exec64_telemetry.elf_load_count = summary->load_count;
+        g_linux_exec64_telemetry.elf_interp_count = summary->interp_count;
+        g_linux_exec64_telemetry.elf_dynamic_count = summary->dynamic_count;
+    }
+    if ((header == 0)
+        || (summary == 0)
+        || (binary == 0)
+        || (phdrs == 0)
+        || (binary_bytes == 0u)
+        || (summary->dynamic_count == 0u))
+    {
+        return;
+    }
+
+    if (linux_dynamic64_analyze_needed(
+            binary,
+            binary_bytes,
+            header,
+            phdrs,
+            header->phnum,
+            &needed) == LINUX_DYNAMIC64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_needed = needed.needed_count;
+        g_linux_exec64_telemetry.dynamic_supported = needed.supported_count;
+        g_linux_exec64_telemetry.dynamic_missing = needed.missing_count;
+        g_linux_exec64_telemetry.dynamic_libc = needed.libc_needed_count;
+        g_linux_exec64_telemetry.dynamic_pthread = needed.pthread_needed_count;
+        g_linux_exec64_telemetry.dynamic_first_needed_checksum = needed.first_needed_checksum;
+        g_linux_exec64_telemetry.dynamic_last_needed_checksum = needed.last_needed_checksum;
+    }
+}
+
 static void linux_exec64_emit_summary(
     u32 console_capability,
     u32 owner_id,
@@ -510,6 +569,24 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf);
     (void)linux_exec64_write_text(console_capability, owner_id, " static ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.static_elf);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-type ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_type);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-load ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_load_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-interp ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_interp_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_needed);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_supported);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-missing ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_missing);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-libc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_libc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-pthread ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_pthread);
     (void)linux_exec64_write_text(console_capability, owner_id, " mapped ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mapped_regions);
     (void)linux_exec64_write_text(console_capability, owner_id, " pages ");
@@ -995,6 +1072,28 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.failure_code);
     (void)linux_exec64_write_text(console_capability, owner_id, " pid ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pid);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-type ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_type);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-load ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_load_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-interp ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_interp_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_needed);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_supported);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-missing ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_missing);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-libc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_libc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-pthread ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_pthread);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-first ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_first_needed_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-last ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_last_needed_checksum);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_launch.error);
     (void)linux_exec64_write_text(console_capability, owner_id, " load-error ");
@@ -1489,6 +1588,7 @@ u32 linux_exec64_run_nvme(
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
+    linux_exec64_record_elf_metadata(&header, &phdr_summary, g_linux_exec64_binary, bytes_read, phdrs);
     g_linux_exec64_telemetry.elf = 1u;
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_STATIC;

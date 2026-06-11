@@ -957,7 +957,27 @@ M69 also reran the M68 two-map proof after the windowed-reader change. `linux /A
 
 M69 non-claims: population is still eager at mmap time, not page-fault-driven; mappings larger than 65536 bytes still fail; `MAP_SHARED`, writeback, a file-backed VMA object cache, dynamic linking, and BIOS file-backed mmap remain unavailable.
 
-Proposed M70 scope: use the windowed file mapper for bounded read-only ELF-style segment mapping, then trace the first `PT_INTERP` dynamic-linker boundary with a tiny dynamically linked musl binary.
+## M70 Real Dynamic ELF Boundary Telemetry
+
+M70 is accepted on the UEFI Product path with `linux /APPS/DYNSMOKE`. The launcher still denies dynamic ELF before process allocation, but the denial now records parsed ELF type, `PT_LOAD`, `PT_INTERP`, `PT_DYNAMIC`, and bounded `DT_NEEDED` analysis instead of reporting only `stage static code 8`.
+
+Staged artifact:
+
+- `/APPS/DYNSMOKE`, external musl-cross ET_EXEC linked at `0x52000000`, SHA-256 `1D9949F783D76F5CA6755D59B04C1E289C90ABF47DE55F5EA3E5E1883EC7A3E3`
+
+`readelf -h -l -d` reports `Type: EXEC`, entry `0x520010a1`, four `PT_LOAD` segments, one `PT_DYNAMIC`, no `PT_INTERP` from this musl-cross toolchain, and one `DT_NEEDED` entry for `libc-x64.so`. This milestone is telemetry only: no dynamic linker, relocation processing, interpreter handoff, process/PML4 allocation, or execution is added for denied dynamic inputs.
+
+M70 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNSMOKE stage static code 8 pid 4294967295 elf-type 2 elf-load 4 elf-interp 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 0 dynamic-missing 1 dynamic-libc 0 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 19600 nvme-read-capacity 4194304 nvme-read-size 19600 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves are UEFI 819,680 bytes and BIOS 101 sectors.
+
+M70 non-claims: dynamic execution, `PT_INTERP` handoff, relocation processing, dynamic symbol resolution, shared-library loading, and glibc compatibility remain unavailable.
+
+Proposed M71 scope: obtain or build a real `PT_INTERP` dynamic artifact, stage its interpreter metadata, and trace the first interpreter handoff boundary without executing relocations.
 
 Later targets are:
 
