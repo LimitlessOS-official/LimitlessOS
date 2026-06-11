@@ -153,6 +153,19 @@ typedef struct linux_exec64_telemetry
     u32 dynamic_reloc_apply_error;
     u32 dynamic_libc_start_main;
     u32 dynamic_libc_start_main_apply;
+    u32 dynamic_stack;
+    u32 dynamic_stack_pages;
+    u32 dynamic_stack_error;
+    u32 dynamic_stack_argc;
+    u32 dynamic_stack_envc;
+    u32 dynamic_stack_auxv;
+    u32 dynamic_stack_align;
+    u32 dynamic_stack_argv_null;
+    u32 dynamic_stack_envp_null;
+    u32 dynamic_stack_auxv_null;
+    u32 dynamic_stack_random_checksum;
+    u32 dynamic_stack_platform_checksum;
+    u32 dynamic_transfer_ready;
     u64 dynamic_reloc_first_target;
     u64 dynamic_jmprel_first_target;
     u64 dynamic_reloc_dry_first_target;
@@ -163,6 +176,13 @@ typedef struct linux_exec64_telemetry
     u64 dynamic_reloc_apply_jmprel_readback;
     u64 dynamic_libc_start_main_value;
     u64 dynamic_libc_start_main_readback;
+    u64 dynamic_stack_initial_rsp;
+    u64 dynamic_stack_auxv_address;
+    u64 dynamic_auxv_phdr;
+    u64 dynamic_auxv_base;
+    u64 dynamic_auxv_entry;
+    u64 dynamic_transfer_rip;
+    u64 dynamic_transfer_rsp;
     u32 elf_dynamic_count;
     u32 dynamic_needed;
     u32 dynamic_supported;
@@ -2216,6 +2236,46 @@ static void linux_exec64_emit_summary(
         console_capability,
         owner_id,
         g_linux_exec64_telemetry.dynamic_libc_start_main_readback);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-argc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_argc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-envc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_envc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-align ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_align);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-argv-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_argv_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-envp-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_envp_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-random ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_random_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-platform ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_platform_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-rsp ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_initial_rsp);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv-address ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv_address);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-phdr ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_phdr);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-base ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_base);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-entry ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_entry);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-ready ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_ready);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-rip ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_rip);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-rsp ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_rsp);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -2960,6 +3020,46 @@ static void linux_exec64_emit_failure(
         console_capability,
         owner_id,
         g_linux_exec64_telemetry.dynamic_libc_start_main_readback);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-pages ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_pages);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-argc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_argc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-envc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_envc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-align ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_align);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-argv-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_argv_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-envp-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_envp_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv-null ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-random ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_random_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-platform ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_platform_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-rsp ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_initial_rsp);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-stack-auxv-address ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_stack_auxv_address);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-phdr ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_phdr);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-base ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_base);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-auxv-entry ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_auxv_entry);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-ready ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_ready);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-rip ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_rip);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-transfer-rsp ");
+    linux_exec64_write_hex_u64(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_transfer_rsp);
     (void)linux_exec64_write_text(console_capability, owner_id, " root-cleanup ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.root_cleanup);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");
@@ -3082,13 +3182,196 @@ static void linux_exec64_record_process_root_telemetry(u32 pid)
         paging64_process_root_last_user_pdpt_private();
 }
 
+static u64 linux_exec64_program_header_vaddr(
+    const elf64_header_t *header,
+    const elf64_program_header_t *phdrs,
+    u32 phdr_count,
+    u64 load_bias)
+{
+    u32 index;
+
+    if ((header == 0) || (phdrs == 0) || (phdr_count > ELF64_MAX_PROGRAM_HEADERS))
+    {
+        return 0ull;
+    }
+
+    for (index = 0u; index < phdr_count; ++index)
+    {
+        const elf64_program_header_t *phdr = &phdrs[index];
+        if (phdr->type != ELF64_PT_LOAD)
+        {
+            continue;
+        }
+        if ((header->phoff >= phdr->offset)
+            && (header->phoff < (phdr->offset + phdr->filesz)))
+        {
+            return load_bias + phdr->vaddr + (header->phoff - phdr->offset);
+        }
+    }
+
+    return 0ull;
+}
+
+static u64 linux_exec64_first_load_vaddr(
+    const elf64_program_header_t *phdrs,
+    u32 phdr_count)
+{
+    u64 first = 0ull;
+    u32 index;
+
+    if ((phdrs == 0) || (phdr_count > ELF64_MAX_PROGRAM_HEADERS))
+    {
+        return 0ull;
+    }
+
+    for (index = 0u; index < phdr_count; ++index)
+    {
+        const elf64_program_header_t *phdr = &phdrs[index];
+        if ((phdr->type != ELF64_PT_LOAD) || (phdr->memsz == 0ull))
+        {
+            continue;
+        }
+        if ((first == 0ull) || (phdr->vaddr < first))
+        {
+            first = phdr->vaddr;
+        }
+    }
+
+    return first;
+}
+
+static u32 linux_exec64_build_dynamic_stack_preview(
+    u32 pid,
+    const elf64_header_t *app_header,
+    const elf64_program_header_t *app_phdrs,
+    const elf64_header_t *interp_header,
+    const elf64_program_header_t *interp_phdrs,
+    u32 interp_phdr_count,
+    u32 argc)
+{
+    elf64_auxv_t auxv;
+    elf64_stack_result_t stack_result;
+    u64 app_entry;
+    u64 app_phdr_vaddr;
+    u64 interp_base;
+    u64 transfer_rip;
+    u32 stack_ok;
+
+    if ((pid == PROCESS64_INVALID_PID)
+        || (app_header == 0)
+        || (app_phdrs == 0)
+        || (interp_header == 0)
+        || (interp_phdrs == 0)
+        || (argc == 0u))
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = ELF64_ERROR_LAUNCH_ARGUMENT;
+        return 0u;
+    }
+
+    app_entry = app_header->entry;
+    app_phdr_vaddr = linux_exec64_program_header_vaddr(
+        app_header,
+        app_phdrs,
+        app_header->phnum,
+        0ull);
+    interp_base = linux_exec64_first_load_vaddr(interp_phdrs, interp_phdr_count);
+    transfer_rip = interp_header->entry;
+
+    g_linux_exec64_telemetry.dynamic_auxv_phdr = app_phdr_vaddr;
+    g_linux_exec64_telemetry.dynamic_auxv_base = interp_base;
+    g_linux_exec64_telemetry.dynamic_auxv_entry = app_entry;
+    g_linux_exec64_telemetry.dynamic_transfer_rip = transfer_rip;
+
+    if ((app_entry == 0ull)
+        || (app_phdr_vaddr == 0ull)
+        || (interp_base == 0ull)
+        || (transfer_rip == 0ull))
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = ELF64_ERROR_AUX_ARGUMENT;
+        return 0u;
+    }
+
+    if (vma64_map_anon(
+            pid,
+            LINUX_EXEC64_REAL_STACK_BASE,
+            LINUX_EXEC64_REAL_STACK_BYTES,
+            VMA64_PROT_READ | VMA64_PROT_WRITE,
+            VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS) != LINUX_EXEC64_REAL_STACK_BASE)
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = ELF64_ERROR_LAUNCH_STACK_MAP;
+        return 0u;
+    }
+
+    if (elf64_build_auxv(
+            pid,
+            app_entry,
+            app_phdr_vaddr,
+            (u32)app_header->phnum,
+            interp_base,
+            &auxv) != ELF64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = auxv.error;
+        return 0u;
+    }
+
+    stack_ok = elf64_build_initial_stack(
+        pid,
+        LINUX_EXEC64_REAL_STACK_BASE,
+        LINUX_EXEC64_REAL_STACK_BASE + (u64)LINUX_EXEC64_REAL_STACK_BYTES,
+        argc,
+        g_linux_exec64_staged_argv_ptrs,
+        LINUX_EXEC64_DEFAULT_ENV_COUNT,
+        g_linux_exec64_staged_envp_ptrs,
+        &auxv,
+        &stack_result);
+    g_linux_exec64_telemetry.dynamic_stack_error = stack_result.error;
+    if (stack_ok != ELF64_OK)
+    {
+        return 0u;
+    }
+
+    g_linux_exec64_telemetry.dynamic_stack = 1u;
+    g_linux_exec64_telemetry.dynamic_stack_pages =
+        LINUX_EXEC64_REAL_STACK_BYTES / VMA64_PAGE_BYTES;
+    g_linux_exec64_telemetry.dynamic_stack_argc = stack_result.argc;
+    g_linux_exec64_telemetry.dynamic_stack_envc = stack_result.envc;
+    g_linux_exec64_telemetry.dynamic_stack_auxv = stack_result.auxv_entry_count;
+    g_linux_exec64_telemetry.dynamic_stack_align = stack_result.alignment_ok;
+    g_linux_exec64_telemetry.dynamic_stack_argv_null = stack_result.argv_null_ok;
+    g_linux_exec64_telemetry.dynamic_stack_envp_null = stack_result.envp_null_ok;
+    g_linux_exec64_telemetry.dynamic_stack_auxv_null = stack_result.auxv_null_ok;
+    g_linux_exec64_telemetry.dynamic_stack_random_checksum = stack_result.random_checksum;
+    g_linux_exec64_telemetry.dynamic_stack_platform_checksum = stack_result.platform_checksum;
+    g_linux_exec64_telemetry.dynamic_stack_initial_rsp = stack_result.initial_rsp;
+    g_linux_exec64_telemetry.dynamic_stack_auxv_address = stack_result.auxv_address;
+    g_linux_exec64_telemetry.dynamic_transfer_rsp = stack_result.initial_rsp;
+    g_linux_exec64_telemetry.dynamic_transfer_ready =
+        ((paging64_user_page_present_for_process(pid, transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull)) != 0u)
+            && ((paging64_user_page_protection_for_process(pid, transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull))
+                    & PAGING64_USER_PROT_EXECUTE) != 0u)
+            && (paging64_user_page_present_for_process(pid, LINUX_EXEC64_REAL_STACK_BASE) != 0u)
+            && ((paging64_user_page_protection_for_process(pid, LINUX_EXEC64_REAL_STACK_BASE)
+                    & PAGING64_USER_PROT_WRITE) != 0u))
+            ? 1u
+            : 0u;
+
+    if (g_linux_exec64_telemetry.dynamic_transfer_ready == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = ELF64_ERROR_LAUNCH_TRANSFER;
+        return 0u;
+    }
+
+    return 1u;
+}
+
 static u32 linux_exec64_try_dynamic_mapping_preview(
     u32 owner_id,
     u32 nvme_fs_capability,
     const elf64_header_t *header,
     const elf64_program_header_t *phdrs,
     const elf64_phdr_summary_t *summary,
-    u32 app_bytes)
+    u32 app_bytes,
+    u32 argc)
 {
     elf64_load_result_t app_load;
     elf64_header_t interp_header;
@@ -3291,6 +3574,35 @@ static u32 linux_exec64_try_dynamic_mapping_preview(
         if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
         {
             g_linux_exec64_telemetry.dynamic_map_error = 17u;
+        }
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+
+    interp_switch = paging64_switch_to_process_root(pid, 0x44594E53u);
+    if (interp_switch == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 19u;
+        linux_exec64_release_failed_process(pid);
+        return 1u;
+    }
+    if (linux_exec64_build_dynamic_stack_preview(
+            pid,
+            header,
+            phdrs,
+            &interp_header,
+            interp_phdrs,
+            interp_header.phnum,
+            argc) == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 20u;
+    }
+    interp_restore = paging64_switch_to_kernel_root(0x44594E54u);
+    if ((interp_restore == 0u) || (g_linux_exec64_telemetry.dynamic_stack == 0u))
+    {
+        if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
+        {
+            g_linux_exec64_telemetry.dynamic_map_error = 21u;
         }
         linux_exec64_release_failed_process(pid);
         return 1u;
@@ -3769,7 +4081,8 @@ u32 linux_exec64_run_nvme(
             &header,
             phdrs,
             &phdr_summary,
-            bytes_read) != 0u)
+            bytes_read,
+            argc) != 0u)
     {
         g_linux_exec64_telemetry.failure_code = 8u;
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
