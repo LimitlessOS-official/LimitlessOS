@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M80 dynamic ELF denial-path telemetry through safe relocation write/readback are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M81 dynamic ELF denial-path telemetry through bounded libc startup provider relocation are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -1186,7 +1186,28 @@ Final reserves are UEFI 807,392 bytes and BIOS 101 sectors. The M80 UEFI manifes
 
 M80 non-claims: real `__libc_start_main` behavior, dynamic stack/auxv construction, dynamic-linker ABI handoff, task registration, control transfer, and dynamic execution remain unavailable.
 
-Proposed M81 scope: add a bounded Limitless libc startup shim for `__libc_start_main` that can call a dynamic app's `main(argc, argv, envp)` and exit through `exit_group`, while continuing to deny general dynamic transfer until stack, auxv, and startup invariants are proven.
+## M81 Bounded Libc Startup Shim
+
+M81 is accepted on the UEFI Product path with `linux /APPS/DYNLDLIMIT`. It keeps dynamic execution denied, but replaces the unavailable `__libc_start_main` provider with a bounded in-tree Limitless libc startup shim. The generated shim routine calls `main(argc, argv, envp)` and exits through `exit_group`; M81 proves the dynamic relocation path can bind and write that provider address, not that the dynamic task is runnable yet.
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`, SHA-256 `9F6EB9C05B3065D39BC59D24DEFE9361267B34CEFD4DE78F568DDB00497238FA`, external musl-cross ET_EXEC linked at `0x52000000` with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The accepted run inspects six relocations, validates all six targets, computes all six values, writes and reads back all six entries, and records no unavailable startup binding. `__libc_start_main` resolves to `0x47811BF0`, is applied, and reads back exactly. Cleanup returns the temporary process root to the static pool.
+
+M81 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNLDLIMIT stage static code 8 pid 8241 elf-type 2 elf-load 4 elf-interp 1 interp-bytes 18 interp-checksum 0x8F7B800D interp-supported 1 interp-file-attempt 1 interp-file-read 1 interp-file-bytes 16704 interp-file-elf 1 interp-file-type 2 interp-file-load 4 interp-file-interp 0 interp-file-dynamic 0 interp-file-error 0 interp-file-nvme-error 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-map-cleanup 1 dynamic-map-error 0 dynamic-reloc 1 dynamic-rela 4 dynamic-jmprel 2 dynamic-relaent 24 dynamic-pltrel 7 dynamic-reloc-first 0x0000000052003FC8 dynamic-reloc-type 6 dynamic-jmprel-first 0x0000000052004000 dynamic-jmprel-type 7 dynamic-reloc-error 0 dynamic-symbol-trace 1 dynamic-symtab 1 dynamic-strtab 149 dynamic-syment 24 dynamic-needed-name libc-x64.so dynamic-needed-name-bytes 11 dynamic-needed-name-checksum 0xC92FC296 dynamic-reloc-symbol-index 2 dynamic-reloc-symbol __deregister_frame_info dynamic-reloc-symbol-bytes 23 dynamic-reloc-symbol-checksum 0x58F2B978 dynamic-jmprel-symbol-index 1 dynamic-jmprel-symbol write dynamic-jmprel-symbol-bytes 5 dynamic-jmprel-symbol-checksum 0xBE269F5C dynamic-symbol-error 0 dynamic-binding-walk 1 dynamic-binding-total 6 dynamic-binding-supported 2 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-unavailable 0 dynamic-binding-libc 2 dynamic-binding-interp 0 dynamic-binding-glob-dat 4 dynamic-binding-jump-slot 2 dynamic-binding-other 0 dynamic-binding-error 0 dynamic-reloc-dry-run 1 dynamic-reloc-dry-total 6 dynamic-reloc-dry-target-valid 6 dynamic-reloc-dry-value 6 dynamic-reloc-dry-provider 2 dynamic-reloc-dry-weak-null 4 dynamic-reloc-dry-unavailable 0 dynamic-reloc-dry-apply-ready 6 dynamic-reloc-dry-blocked 0 dynamic-reloc-dry-error 0 dynamic-reloc-dry-first-target 0x0000000052003FC8 dynamic-reloc-dry-first-value 0x0000000000000000 dynamic-reloc-dry-jmprel-target 0x0000000052004000 dynamic-reloc-dry-jmprel-value 0x0000000047811020 dynamic-reloc-apply 1 dynamic-reloc-apply-total 6 dynamic-reloc-apply-write 6 dynamic-reloc-apply-readback 6 dynamic-reloc-apply-blocked 0 dynamic-reloc-apply-unavailable 0 dynamic-reloc-apply-error 0 dynamic-reloc-apply-first-readback 0x0000000000000000 dynamic-reloc-apply-jmprel-readback 0x0000000047811020 dynamic-libc-start-main 1 dynamic-libc-start-main-apply 1 dynamic-libc-start-main-value 0x0000000047811BF0 dynamic-libc-start-main-readback 0x0000000047811BF0 root-cleanup 1 pml4-pool-used-final 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 1 dynamic-missing 0 dynamic-libc 1 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 15680 nvme-read-capacity 4194304 nvme-read-size 15680 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves are UEFI 803,296 bytes and BIOS 101 sectors. The M81 UEFI manifest reports kernel bytes 1,293,856, checksum `0xF3505722`, and SHA-256 `791a0e8c5ad45ddaac3096d7edb6bd2699f1985ce83a451fdd2e8754cb818e84`.
+
+M81 non-claims: dynamic stack/auxv construction, dynamic-linker ABI handoff, task registration, control transfer, and dynamic execution remain unavailable.
+
+Proposed M82 scope: construct and validate the initial dynamic launch stack and auxv for the mapped app/interpreter pair, then report the transfer RIP/RSP without registering or running the dynamic task.
 
 Later targets are:
 

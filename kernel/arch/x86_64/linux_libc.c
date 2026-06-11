@@ -53,6 +53,7 @@
 #define LINUX_LIBC64_KIND_PTHREAD_COND_WAIT 15u
 #define LINUX_LIBC64_KIND_PTHREAD_COND_INIT 16u
 #define LINUX_LIBC64_KIND_PTHREAD_TLS 17u
+#define LINUX_LIBC64_KIND_STARTUP 18u
 
 #define LINUX_LIBC64_RVA_HELPER_STRNCPY 0x00001500u
 #define LINUX_LIBC64_RVA_HELPER_STRCMP 0x00001530u
@@ -135,7 +136,7 @@ static const linux_libc64_export_t g_linux_libc64_exports[LINUX_LIBC64_SYMBOL_CO
     { "pthread_key_create", 18u, LINUX_LIBC64_RVA_PTHREAD_KEY_CREATE, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
     { "pthread_setspecific", 19u, LINUX_LIBC64_RVA_PTHREAD_SETSPECIFIC, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
     { "pthread_getspecific", 19u, LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
-    { "__libc_start_main", 17u, LINUX_LIBC64_RVA_LIBC_START_MAIN, LINUX_LIBC64_KIND_UNAVAILABLE, 0u }
+    { "__libc_start_main", 17u, LINUX_LIBC64_RVA_LIBC_START_MAIN, LINUX_LIBC64_KIND_STARTUP, 0u }
 };
 
 static u8 g_linux_libc64_image[LINUX_LIBC64_FILE_BYTES];
@@ -1006,6 +1007,25 @@ static void linux_libc64_write_pthread_getspecific_helper(void)
         (u32)sizeof(helper));
 }
 
+static void linux_libc64_write_libc_start_main_stub(u32 rva)
+{
+    static const u8 stub[] = {
+        0x57u,
+        0x48u, 0x89u, 0xF7u,
+        0x48u, 0x89u, 0xD6u,
+        0x48u, 0x8Du, 0x54u, 0xFEu, 0x08u,
+        0xFFu, 0x14u, 0x24u,
+        0x89u, 0xC7u,
+        0xB8u, 0xE7u, 0x00u, 0x00u, 0x00u,
+        0x0Fu, 0x05u,
+        0xF4u
+    };
+    linux_libc64_copy_bytes(
+        &g_linux_libc64_image[linux_libc64_rva_to_offset(rva)],
+        stub,
+        (u32)sizeof(stub));
+}
+
 static void linux_libc64_build_image(void)
 {
     static const u8 image_name[] = "libc.so";
@@ -1185,6 +1205,10 @@ static void linux_libc64_build_image(void)
         else if (export->rva == LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC)
         {
             linux_libc64_write_pthread_getspecific_helper();
+        }
+        else if (export->rva == LINUX_LIBC64_RVA_LIBC_START_MAIN)
+        {
+            linux_libc64_write_libc_start_main_stub(export->rva);
         }
         else if (export->rva == LINUX_LIBC64_RVA_ABORT)
         {
