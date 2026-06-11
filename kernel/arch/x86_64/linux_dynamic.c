@@ -1439,6 +1439,30 @@ u64 linux_dynamic64_export(u32 pid, const char *name)
     return 0ull;
 }
 
+u32 linux_dynamic64_symbol_supported(const char *name, u32 length)
+{
+    u32 index;
+
+    if ((name == 0) || (length == 0u) || (length > LINUX_DYNAMIC64_STRING_LIMIT))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < LINUX_DYNAMIC64_SYMBOL_COUNT; ++index)
+    {
+        if (linux_dynamic64_name_matches(
+                name,
+                length,
+                g_linux_dynamic64_exports[index].name,
+                g_linux_dynamic64_exports[index].length) != 0u)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
 u32 linux_dynamic64_release_process(u32 pid)
 {
     persona_context_t *context;

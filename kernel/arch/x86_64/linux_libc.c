@@ -1380,6 +1380,30 @@ u32 linux_libc64_pthread_dependency_supported(const char *name, u32 length)
         : 0u;
 }
 
+u32 linux_libc64_symbol_supported(const char *name, u32 length)
+{
+    u32 index;
+
+    if ((name == 0) || (length == 0u) || (length > LINUX_LIBC64_STRING_LIMIT))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < LINUX_LIBC64_SYMBOL_COUNT; ++index)
+    {
+        if (linux_libc64_name_matches(
+                name,
+                length,
+                g_linux_libc64_exports[index].name,
+                g_linux_libc64_exports[index].length) != 0u)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
 u32 linux_libc64_load(
     u32 pid,
     u64 image_base,

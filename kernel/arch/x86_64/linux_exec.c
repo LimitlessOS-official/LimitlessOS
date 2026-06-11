@@ -53,6 +53,8 @@ typedef enum linux_exec64_stage
 #define LINUX_EXEC64_DT_RELA_VALUE 7ull
 #define LINUX_EXEC64_RELA_ENTRY_BYTES 24ull
 #define LINUX_EXEC64_SYMBOL_TOKEN_BYTES 64u
+#define LINUX_EXEC64_RELOC_TYPE_GLOB_DAT 6u
+#define LINUX_EXEC64_RELOC_TYPE_JUMP_SLOT 7u
 
 static const char *const g_linux_exec64_default_envp[LINUX_EXEC64_DEFAULT_ENV_COUNT] = {
     "PATH=/usr/local/bin:/bin:/usr/bin",
@@ -116,6 +118,16 @@ typedef struct linux_exec64_telemetry
     u32 dynamic_jmprel_symbol_checksum;
     u32 dynamic_needed_name_checksum;
     u32 dynamic_symbol_error;
+    u32 dynamic_binding_walk;
+    u32 dynamic_binding_total;
+    u32 dynamic_binding_supported;
+    u32 dynamic_binding_missing;
+    u32 dynamic_binding_libc;
+    u32 dynamic_binding_interp;
+    u32 dynamic_binding_glob_dat;
+    u32 dynamic_binding_jump_slot;
+    u32 dynamic_binding_other;
+    u32 dynamic_binding_error;
     u64 dynamic_reloc_first_target;
     u64 dynamic_jmprel_first_target;
     u32 elf_dynamic_count;
@@ -824,6 +836,136 @@ static u32 linux_exec64_record_dynamic_symbol_name(
         out_checksum);
 }
 
+static u32 linux_exec64_symbol_binding_supported(const char *name, u32 length, u32 *out_provider)
+{
+    if (out_provider != 0)
+    {
+        *out_provider = 0u;
+    }
+    if ((name == 0) || (length == 0u))
+    {
+        return 0u;
+    }
+    if (linux_libc64_symbol_supported(name, length) != 0u)
+    {
+        if (out_provider != 0)
+        {
+            *out_provider = 1u;
+        }
+        return 1u;
+    }
+    if (linux_dynamic64_symbol_supported(name, length) != 0u)
+    {
+        if (out_provider != 0)
+        {
+            *out_provider = 2u;
+        }
+        return 1u;
+    }
+    return 0u;
+}
+
+static u32 linux_exec64_walk_dynamic_bindings(
+    const u8 *binary,
+    u32 binary_bytes,
+    u64 table_offset,
+    u32 table_count,
+    u64 symtab_offset,
+    u64 syment,
+    const u8 *strtab,
+    u32 strtab_bytes)
+{
+    char symbol_name[LINUX_EXEC64_SYMBOL_TOKEN_BYTES];
+    u32 index;
+
+    if ((binary == 0)
+        || (strtab == 0)
+        || (table_count == 0u)
+        || (syment != LINUX_EXEC64_RELA_ENTRY_BYTES))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < table_count; ++index)
+    {
+        u64 entry_offset = table_offset + ((u64)index * LINUX_EXEC64_RELA_ENTRY_BYTES);
+        u64 info;
+        u32 reloc_type;
+        u32 symbol_index;
+        u32 symbol_bytes = 0u;
+        u32 symbol_checksum = 0u;
+        u32 provider = 0u;
+
+        if ((entry_offset < table_offset)
+            || (linux_exec64_range_available(
+                    binary_bytes,
+                    entry_offset,
+                    LINUX_EXEC64_RELA_ENTRY_BYTES) == 0u))
+        {
+            return 0u;
+        }
+
+        info = linux_exec64_read_le64(binary + entry_offset + 8ull);
+        reloc_type = (u32)info;
+        symbol_index = (u32)(info >> 32);
+        ++g_linux_exec64_telemetry.dynamic_binding_total;
+        if (reloc_type == LINUX_EXEC64_RELOC_TYPE_GLOB_DAT)
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_glob_dat;
+        }
+        else if (reloc_type == LINUX_EXEC64_RELOC_TYPE_JUMP_SLOT)
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_jump_slot;
+        }
+        else
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_other;
+        }
+
+        if (symbol_index == 0u)
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_missing;
+            continue;
+        }
+        linux_exec64_zero(symbol_name, sizeof(symbol_name));
+        if (linux_exec64_record_dynamic_symbol_name(
+                binary,
+                binary_bytes,
+                symtab_offset,
+                syment,
+                strtab,
+                strtab_bytes,
+                symbol_index,
+                symbol_name,
+                sizeof(symbol_name),
+                &symbol_bytes,
+                &symbol_checksum) == 0u)
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_missing;
+            continue;
+        }
+        (void)symbol_checksum;
+        if (linux_exec64_symbol_binding_supported(symbol_name, symbol_bytes, &provider) != 0u)
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_supported;
+            if (provider == 1u)
+            {
+                ++g_linux_exec64_telemetry.dynamic_binding_libc;
+            }
+            else if (provider == 2u)
+            {
+                ++g_linux_exec64_telemetry.dynamic_binding_interp;
+            }
+        }
+        else
+        {
+            ++g_linux_exec64_telemetry.dynamic_binding_missing;
+        }
+    }
+
+    return 1u;
+}
+
 static u32 linux_exec64_name_matches(
     const char *left,
     u32 left_bytes,
@@ -1080,6 +1222,8 @@ static void linux_exec64_record_dynamic_relocations(
     u64 strtab_bytes = 0ull;
     u64 syment = 0ull;
     u64 first_needed_offset = 0ull;
+    u64 rela_table_offset = 0ull;
+    u64 jmprel_table_offset = 0ull;
     u32 first_needed_seen = 0u;
 
     g_linux_exec64_telemetry.dynamic_reloc = 1u;
@@ -1200,7 +1344,6 @@ static void linux_exec64_record_dynamic_relocations(
 
     if (rela_vaddr != 0ull)
     {
-        u64 rela_offset;
         u64 rela_info;
 
         if ((rela_bytes == 0ull)
@@ -1210,16 +1353,16 @@ static void linux_exec64_record_dynamic_relocations(
                     phdr_count,
                     rela_vaddr,
                     rela_bytes,
-                    &rela_offset) == 0u)
-            || (linux_exec64_range_available(binary_bytes, rela_offset, rela_bytes) == 0u))
+                    &rela_table_offset) == 0u)
+            || (linux_exec64_range_available(binary_bytes, rela_table_offset, rela_bytes) == 0u))
         {
             g_linux_exec64_telemetry.dynamic_reloc_error = 6u;
             return;
         }
         g_linux_exec64_telemetry.dynamic_rela_count = (u32)(rela_bytes / relaent);
         g_linux_exec64_telemetry.dynamic_reloc_first_target =
-            linux_exec64_read_le64(binary + rela_offset);
-        rela_info = linux_exec64_read_le64(binary + rela_offset + 8ull);
+            linux_exec64_read_le64(binary + rela_table_offset);
+        rela_info = linux_exec64_read_le64(binary + rela_table_offset + 8ull);
         g_linux_exec64_telemetry.dynamic_reloc_first_type =
             (u32)rela_info;
         g_linux_exec64_telemetry.dynamic_reloc_symbol_index = (u32)(rela_info >> 32);
@@ -1227,7 +1370,6 @@ static void linux_exec64_record_dynamic_relocations(
 
     if (jmprel_vaddr != 0ull)
     {
-        u64 jmprel_offset;
         u64 jmprel_info;
 
         if ((pltrel_bytes == 0ull)
@@ -1238,16 +1380,16 @@ static void linux_exec64_record_dynamic_relocations(
                     phdr_count,
                     jmprel_vaddr,
                     pltrel_bytes,
-                    &jmprel_offset) == 0u)
-            || (linux_exec64_range_available(binary_bytes, jmprel_offset, pltrel_bytes) == 0u))
+                    &jmprel_table_offset) == 0u)
+            || (linux_exec64_range_available(binary_bytes, jmprel_table_offset, pltrel_bytes) == 0u))
         {
             g_linux_exec64_telemetry.dynamic_reloc_error = 7u;
             return;
         }
         g_linux_exec64_telemetry.dynamic_jmprel_count = (u32)(pltrel_bytes / relaent);
         g_linux_exec64_telemetry.dynamic_jmprel_first_target =
-            linux_exec64_read_le64(binary + jmprel_offset);
-        jmprel_info = linux_exec64_read_le64(binary + jmprel_offset + 8ull);
+            linux_exec64_read_le64(binary + jmprel_table_offset);
+        jmprel_info = linux_exec64_read_le64(binary + jmprel_table_offset + 8ull);
         g_linux_exec64_telemetry.dynamic_jmprel_first_type =
             (u32)jmprel_info;
         g_linux_exec64_telemetry.dynamic_jmprel_symbol_index = (u32)(jmprel_info >> 32);
@@ -1339,6 +1481,34 @@ static void linux_exec64_record_dynamic_relocations(
                     &g_linux_exec64_telemetry.dynamic_jmprel_symbol_checksum) == 0u))
         {
             g_linux_exec64_telemetry.dynamic_symbol_error = 5u;
+        }
+        g_linux_exec64_telemetry.dynamic_binding_walk = 1u;
+        if ((g_linux_exec64_telemetry.dynamic_rela_count != 0u)
+            && (linux_exec64_walk_dynamic_bindings(
+                    binary,
+                    binary_bytes,
+                    rela_table_offset,
+                    g_linux_exec64_telemetry.dynamic_rela_count,
+                    symtab_offset,
+                    syment,
+                    binary + strtab_offset,
+                    (u32)strtab_bytes) == 0u))
+        {
+            g_linux_exec64_telemetry.dynamic_binding_error = 1u;
+            return;
+        }
+        if ((g_linux_exec64_telemetry.dynamic_jmprel_count != 0u)
+            && (linux_exec64_walk_dynamic_bindings(
+                    binary,
+                    binary_bytes,
+                    jmprel_table_offset,
+                    g_linux_exec64_telemetry.dynamic_jmprel_count,
+                    symtab_offset,
+                    syment,
+                    binary + strtab_offset,
+                    (u32)strtab_bytes) == 0u))
+        {
+            g_linux_exec64_telemetry.dynamic_binding_error = 2u;
         }
     }
 }
@@ -1557,6 +1727,26 @@ static void linux_exec64_emit_summary(
         g_linux_exec64_telemetry.dynamic_jmprel_symbol_checksum);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-symbol-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_symbol_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-walk ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_walk);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-total ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_total);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_supported);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-missing ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_missing);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-libc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_libc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-interp ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_interp);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-glob-dat ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_glob_dat);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-jump-slot ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_jump_slot);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-other ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_other);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_error);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -2199,6 +2389,26 @@ static void linux_exec64_emit_failure(
         g_linux_exec64_telemetry.dynamic_jmprel_symbol_checksum);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-symbol-error ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_symbol_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-walk ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_walk);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-total ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_total);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_supported);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-missing ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_missing);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-libc ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_libc);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-interp ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_interp);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-glob-dat ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_glob_dat);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-jump-slot ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_jump_slot);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-other ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_other);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_error);
     (void)linux_exec64_write_text(console_capability, owner_id, " root-cleanup ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.root_cleanup);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");
