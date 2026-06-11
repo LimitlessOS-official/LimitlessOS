@@ -113,6 +113,9 @@ struct interrupt_frame64;
 #define LINUX_ABI64_EXEC_ARG_MAX 8u
 #define LINUX_ABI64_EXEC_ENV_MAX 8u
 #define LINUX_ABI64_GETRANDOM_MAX_BYTES 256u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define LINUX_ABI64_MMAP_FILE_COPY_BYTES 4096u
+#endif
 #define LINUX_ABI64_FIXED_UID 1000u
 #define LINUX_ABI64_FIXED_PPID 1u
 #define LINUX_ABI64_PR_SET_NAME 15u
@@ -572,6 +575,9 @@ u32 linux_abi64_readlink_last_result(void);
 u32 linux_abi64_mmap_count(void);
 u32 linux_abi64_mmap_byte_count(void);
 u32 linux_abi64_mmap_denial_count(void);
+u32 linux_abi64_mmap_file_count(void);
+u32 linux_abi64_mmap_file_byte_count(void);
+u32 linux_abi64_mmap_file_denial_count(void);
 u32 linux_abi64_mmap_last_error(void);
 u64 linux_abi64_mmap_last_flags(void);
 u64 linux_abi64_mmap_last_length(void);

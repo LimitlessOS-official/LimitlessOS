@@ -103,6 +103,9 @@ typedef struct linux_exec64_telemetry
     u32 mmap_calls;
     u32 mmap_bytes;
     u32 mmap_denial;
+    u32 mmap_file_calls;
+    u32 mmap_file_bytes;
+    u32 mmap_file_denial;
     u32 mmap_last_error;
     u64 mmap_last_flags;
     u64 mmap_last_length;
@@ -616,6 +619,21 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmap_bytes);
     (void)linux_exec64_write_text(console_capability, owner_id, " mmap-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.mmap_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-file ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_file_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-file-bytes ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_file_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " mmap-file-denial ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.mmap_file_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " mmap-last-error ");
     linux_exec64_write_dec_u32(
         console_capability,
@@ -1208,6 +1226,12 @@ u32 linux_exec64_run_nvme(
     u32 mmap_bytes_after;
     u32 mmap_denial_before;
     u32 mmap_denial_after;
+    u32 mmap_file_before;
+    u32 mmap_file_after;
+    u32 mmap_file_bytes_before;
+    u32 mmap_file_bytes_after;
+    u32 mmap_file_denial_before;
+    u32 mmap_file_denial_after;
     u32 futex_wait_before;
     u32 futex_wait_after;
     u32 futex_wake_before;
@@ -1713,6 +1737,9 @@ u32 linux_exec64_run_nvme(
     mmap_calls_before = linux_abi64_mmap_count();
     mmap_bytes_before = linux_abi64_mmap_byte_count();
     mmap_denial_before = linux_abi64_mmap_denial_count();
+    mmap_file_before = linux_abi64_mmap_file_count();
+    mmap_file_bytes_before = linux_abi64_mmap_file_byte_count();
+    mmap_file_denial_before = linux_abi64_mmap_file_denial_count();
     futex_wait_before = linux_abi64_futex_wait_count();
     futex_wake_before = linux_abi64_futex_wake_count();
     futex_woken_before = linux_abi64_futex_woken_count();
@@ -1851,6 +1878,9 @@ u32 linux_exec64_run_nvme(
     mmap_calls_after = linux_abi64_mmap_count();
     mmap_bytes_after = linux_abi64_mmap_byte_count();
     mmap_denial_after = linux_abi64_mmap_denial_count();
+    mmap_file_after = linux_abi64_mmap_file_count();
+    mmap_file_bytes_after = linux_abi64_mmap_file_byte_count();
+    mmap_file_denial_after = linux_abi64_mmap_file_denial_count();
     futex_wait_after = linux_abi64_futex_wait_count();
     futex_wake_after = linux_abi64_futex_wake_count();
     futex_woken_after = linux_abi64_futex_woken_count();
@@ -1948,6 +1978,18 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.mmap_denial =
         (mmap_denial_after >= mmap_denial_before)
             ? (mmap_denial_after - mmap_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_file_calls =
+        (mmap_file_after >= mmap_file_before)
+            ? (mmap_file_after - mmap_file_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_file_bytes =
+        (mmap_file_bytes_after >= mmap_file_bytes_before)
+            ? (mmap_file_bytes_after - mmap_file_bytes_before)
+            : 0u;
+    g_linux_exec64_telemetry.mmap_file_denial =
+        (mmap_file_denial_after >= mmap_file_denial_before)
+            ? (mmap_file_denial_after - mmap_file_denial_before)
             : 0u;
     g_linux_exec64_telemetry.mmap_last_error = linux_abi64_mmap_last_error();
     g_linux_exec64_telemetry.mmap_last_flags = linux_abi64_mmap_last_flags();

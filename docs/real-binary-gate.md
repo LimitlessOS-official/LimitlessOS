@@ -903,7 +903,21 @@ drs-realbin path /APPS/BUSYBOX provenance 1 nvme-read 1 elf 1 static 1 mapped 4 
 drs-realbin-syscall-last number 231 result 0x00000000 unimplemented 0 unimplemented-last 511 unimplemented-rip 0x00000000F05001FF page-faults 0 page-fault-rip 0xFFFFFFFF8001016E
 ```
 
-Proposed M62 scope: `non-shell execvp repeated-slash directory executable denial proof`. M62 should exercise `/usr//local/bin` through third-party `sbenv` `execvp`, proving repeated-slash normalization still rejects a directory target before any backend binary read.
+## M67 Bounded File-Backed Mmap Proof
+
+M67 is accepted on the UEFI Product path with `linux /APPS/MMAPSMOKE`. `MMAPSMOKE` is a local static musl ET_EXEC proof binary linked at `0x52000000`, staged as `/APPS/MMAPSMOKE`, and verified with SHA-256 `595D27327DCC41A511F4170AD60909C8BBC62070AEEC581A365C27191C0EF3B2`.
+
+The proof opens `/nvme/apps/data/file.txt`, reads it once through the Linux VFS, then maps the same fd with `mmap(..., PROT_READ, MAP_PRIVATE, fd, 0)`. The kernel eagerly copies the bounded file content into a private anonymous VMA and restores the requested protection. This proves the first regular-file mmap path needed by small static utilities without claiming full lazy file-backed VM.
+
+M67 acceptance telemetry excerpt:
+
+```text
+drs-realbin path /APPS/MMAPSMOKE provenance 1 nvme-read 1 elf 1 static 1 mapped 4 pages 5 stack 16 envc 4 pml4 1 pml4-pool 8 root-pool-limit 8 root-distinct 1 high-copy 1 mmio-shared 1 pool-mapped 1 low-compat 0 low-pdpt-present 0 syscall-entry-high 1 idt-high 1 descriptor-high 1 kernel-entry-high-ready 1 syscall-root-repair 0 fs-restore 1 fs-set 1 user-pdpt-private 1 vma-pt-private 1 cr3-start 1 cr3-exit 1 cr3-syscall-entry 0 active-cr3-match 1 root-cleanup 1 task 0 started 1 scheduler-denial 0 console-bytes 109 exit 0 cleanup 1 mmap 1 mmap-bytes 4096 mmap-denial 0 mmap-file 1 mmap-file-bytes 27 mmap-file-denial 0 mmap-last-error 0 mmap-last-flags 0x0000000000000002 mmap-last-length 0x0000000000001000 read 1 read-bytes 27 write 25 write-bytes 109 pml4-pool-used-final 0 root-pool-used-final 0 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 2 vfs-nvme-bytes 27 page-faults 0
+```
+
+M67 non-claims: `MAP_SHARED`, writeback, mappings larger than `LINUX_ABI64_MMAP_FILE_COPY_BYTES` 4096 bytes, page-fault-driven file population, dynamic linking, and BIOS file-backed mmap remain unavailable. The accepted implementation is a UEFI-only, fixed-buffer, no-dynamic-allocation private copy path.
+
+Proposed M68 scope: widen file-backed memory mapping from the one-page eager-copy proof toward the first dynamic-linking prerequisite: bounded read-only executable file mappings for ELF segments, still UEFI-only and still backed by fixed static tables.
 
 Later targets are:
 

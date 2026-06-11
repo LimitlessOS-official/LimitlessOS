@@ -244,9 +244,15 @@ static u32 g_linux_abi64_readlink_last_result = 0u;
 static u32 g_linux_abi64_mmap_count = 0u;
 static u32 g_linux_abi64_mmap_byte_count = 0u;
 static u32 g_linux_abi64_mmap_denial_count = 0u;
+static u32 g_linux_abi64_mmap_file_count = 0u;
+static u32 g_linux_abi64_mmap_file_byte_count = 0u;
+static u32 g_linux_abi64_mmap_file_denial_count = 0u;
 static u32 g_linux_abi64_mmap_last_error = 0u;
 static u64 g_linux_abi64_mmap_last_flags = 0ull;
 static u64 g_linux_abi64_mmap_last_length = 0ull;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u8 g_linux_abi64_mmap_file_scratch[LINUX_ABI64_MMAP_FILE_COPY_BYTES];
+#endif
 static u32 g_linux_abi64_mprotect_count = 0u;
 static u32 g_linux_abi64_mprotect_byte_count = 0u;
 static u32 g_linux_abi64_mprotect_denial_count = 0u;
@@ -2175,6 +2181,9 @@ void linux_abi64_init(void)
     g_linux_abi64_mmap_count = 0u;
     g_linux_abi64_mmap_byte_count = 0u;
     g_linux_abi64_mmap_denial_count = 0u;
+    g_linux_abi64_mmap_file_count = 0u;
+    g_linux_abi64_mmap_file_byte_count = 0u;
+    g_linux_abi64_mmap_file_denial_count = 0u;
     g_linux_abi64_mmap_last_error = 0u;
     g_linux_abi64_mmap_last_flags = 0ull;
     g_linux_abi64_mmap_last_length = 0ull;
@@ -3402,6 +3411,151 @@ static u32 linux_abi64_mmap_flags_to_vma(u64 flags)
     return vma_flags;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 linux_abi64_mmap_file_flags_to_vma(u64 flags)
+{
+    u32 map_type = (u32)(flags & 0x3ull);
+    u32 vma_flags = 0u;
+
+    if ((flags & ~(u64)LINUX_ABI64_MAP_SUPPORTED_MASK) != 0ull)
+    {
+        return 0u;
+    }
+    if ((flags & (u64)LINUX_ABI64_MAP_ANONYMOUS) != 0ull)
+    {
+        return 0u;
+    }
+    if (map_type != LINUX_ABI64_MAP_PRIVATE)
+    {
+        return 0u;
+    }
+
+    vma_flags |= VMA64_MAP_PRIVATE;
+    if ((flags & (u64)LINUX_ABI64_MAP_FIXED) != 0ull)
+    {
+        vma_flags |= VMA64_MAP_FIXED;
+    }
+    return vma_flags;
+}
+
+static u64 linux_abi64_sys_mmap_file_private(
+    u32 pid,
+    u64 hint_address,
+    u64 rounded_length,
+    u32 vma_prot,
+    u32 vma_flags,
+    u64 fd_number,
+    u64 offset,
+    u64 rip)
+{
+    u8 path[LINUX_VFS64_MAX_PATH_BYTES];
+    u32 path_bytes = 0u;
+    u32 file_bytes = 0u;
+    u32 copy_bytes;
+    u32 index;
+    u64 mapped_address;
+    u32 load_prot;
+    volatile u8 *target;
+
+    if (((offset & ((u64)VMA64_PAGE_BYTES - 1ull)) != 0ull)
+        || (rounded_length > (u64)LINUX_ABI64_MMAP_FILE_COPY_BYTES)
+        || (fd_number >= (u64)FD64_TABLE_LIMIT)
+        || (vma_flags == 0u)
+        || (linux_vfs64_fd_path(
+                pid,
+                (u32)fd_number,
+                path,
+                LINUX_VFS64_MAX_PATH_BYTES,
+                &path_bytes) == 0u)
+        || (linux_vfs64_read_file_all(
+                pid,
+                path,
+                path_bytes,
+                g_linux_abi64_mmap_file_scratch,
+                LINUX_ABI64_MMAP_FILE_COPY_BYTES,
+                &file_bytes) == 0u)
+        || (offset >= (u64)file_bytes))
+    {
+        ++g_linux_abi64_mmap_denial_count;
+        ++g_linux_abi64_mmap_file_denial_count;
+        g_linux_abi64_mmap_last_error = LINUX_ABI64_EINVAL;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_MMAP,
+            LINUX_ABI64_EINVAL,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+    }
+
+    copy_bytes = file_bytes - (u32)offset;
+    if (copy_bytes > (u32)rounded_length)
+    {
+        copy_bytes = (u32)rounded_length;
+    }
+
+    load_prot = vma_prot | VMA64_PROT_WRITE;
+    mapped_address = vma64_map_anon(
+        pid,
+        hint_address,
+        rounded_length,
+        load_prot,
+        vma_flags | VMA64_MAP_ANONYMOUS);
+    if (mapped_address == 0ull)
+    {
+        ++g_linux_abi64_mmap_denial_count;
+        ++g_linux_abi64_mmap_file_denial_count;
+        g_linux_abi64_mmap_last_error = LINUX_ABI64_ENOMEM;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_MMAP,
+            LINUX_ABI64_ENOMEM,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    }
+
+    target = (volatile u8 *)(u64)mapped_address;
+    for (index = 0u; index < (u32)rounded_length; ++index)
+    {
+        target[index] = 0u;
+    }
+    linux_abi64_copy_to_user(
+        mapped_address,
+        &g_linux_abi64_mmap_file_scratch[(u32)offset],
+        copy_bytes);
+
+    if ((vma_prot != load_prot)
+        && (vma64_protect(pid, mapped_address, rounded_length, vma_prot) == 0u))
+    {
+        (void)vma64_unmap(pid, mapped_address, rounded_length);
+        ++g_linux_abi64_mmap_denial_count;
+        ++g_linux_abi64_mmap_file_denial_count;
+        g_linux_abi64_mmap_last_error = LINUX_ABI64_ENOMEM;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+            LINUX_ABI64_SYSCALL_MMAP,
+            LINUX_ABI64_ENOMEM,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ENOMEM);
+    }
+
+    ++g_linux_abi64_mmap_count;
+    ++g_linux_abi64_mmap_file_count;
+    g_linux_abi64_mmap_byte_count += (u32)rounded_length;
+    g_linux_abi64_mmap_file_byte_count += copy_bytes;
+    g_linux_abi64_mmap_last_error = 0u;
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        LINUX_ABI64_SYSCALL_MMAP,
+        PERSONA_AUDIT64_RESULT_OK,
+        rip);
+    return mapped_address;
+}
+#endif
+
 static u32 linux_abi64_open_flags_to_fd(u64 linux_flags, u32 *fd_flags_out)
 {
     u32 access_mode = (u32)(linux_flags & (u64)LINUX_ABI64_O_ACCMODE);
@@ -4533,6 +4687,41 @@ u64 linux_abi64_sys_mmap(
 
     rounded_length = linux_abi64_page_align_up(length);
     vma_prot = linux_abi64_mmap_prot_to_vma(prot);
+    if ((flags & (u64)LINUX_ABI64_MAP_ANONYMOUS) == 0ull)
+    {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        vma_flags = linux_abi64_mmap_file_flags_to_vma(flags);
+        if ((rounded_length == 0ull)
+            || (vma_flags == 0u)
+            || (((vma_flags & VMA64_MAP_FIXED) != 0u)
+                && ((hint_address == 0ull)
+                    || ((hint_address & ((u64)VMA64_PAGE_BYTES - 1ull)) != 0ull))))
+        {
+            ++g_linux_abi64_mmap_denial_count;
+            ++g_linux_abi64_mmap_file_denial_count;
+            g_linux_abi64_mmap_last_error = LINUX_ABI64_EINVAL;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+                LINUX_ABI64_SYSCALL_MMAP,
+                LINUX_ABI64_EINVAL,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EINVAL);
+        }
+        return linux_abi64_sys_mmap_file_private(
+            pid,
+            hint_address,
+            rounded_length,
+            vma_prot,
+            vma_flags,
+            fd_number,
+            offset,
+            rip);
+#else
+        (void)fd_number;
+#endif
+    }
+
     vma_flags = linux_abi64_mmap_flags_to_vma(flags);
     (void)fd_number;
     if ((rounded_length == 0ull)
@@ -11732,6 +11921,21 @@ u32 linux_abi64_mmap_byte_count(void)
 u32 linux_abi64_mmap_denial_count(void)
 {
     return g_linux_abi64_mmap_denial_count;
+}
+
+u32 linux_abi64_mmap_file_count(void)
+{
+    return g_linux_abi64_mmap_file_count;
+}
+
+u32 linux_abi64_mmap_file_byte_count(void)
+{
+    return g_linux_abi64_mmap_file_byte_count;
+}
+
+u32 linux_abi64_mmap_file_denial_count(void)
+{
+    return g_linux_abi64_mmap_file_denial_count;
 }
 
 u32 linux_abi64_mmap_last_error(void)
