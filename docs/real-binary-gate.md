@@ -977,7 +977,29 @@ Final reserves are UEFI 819,680 bytes and BIOS 101 sectors.
 
 M70 non-claims: dynamic execution, `PT_INTERP` handoff, relocation processing, dynamic symbol resolution, shared-library loading, and glibc compatibility remain unavailable.
 
-Proposed M71 scope: obtain or build a real `PT_INTERP` dynamic artifact, stage its interpreter metadata, and trace the first interpreter handoff boundary without executing relocations.
+## M71 PT_INTERP Dynamic ELF Boundary Trace
+
+M71 is accepted on the UEFI Product path with `linux /APPS/DYNINTERP`. The artifact is built by the local musl cross toolchain with `-fsys-dyn-linker`, producing a real `PT_INTERP` program header instead of the M70 toolchain-default `-no-dynamic-linker` output.
+
+Staged artifact:
+
+- `/APPS/DYNINTERP`, external musl-cross ET_EXEC linked at `0x52000000`, SHA-256 `50B977B354FE0E7F776D4A4D3FA475246176D5B6077B34216C39B1C4D3012787`
+
+`readelf -h -l -d` reports `Type: EXEC`, entry `0x52001071`, four `PT_LOAD` segments, one `PT_INTERP` requesting `/lib/ld-musl-x86_64.so.1`, one `PT_DYNAMIC`, and one `DT_NEEDED` entry for `libc-x64.so`.
+
+M71 adds denial-path telemetry for the requested interpreter path: bounded byte count, FNV-1a checksum, and whether the path matches the currently supported Limitless interpreter names. The accepted artifact reports `interp-supported 0`, which is correct because `/lib/ld-musl-x86_64.so.1` is not yet staged or loadable by the Product dynamic path.
+
+M71 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNINTERP stage static code 8 pid 4294967295 elf-type 2 elf-load 4 elf-interp 1 interp-bytes 24 interp-checksum 0x7E2FBF7B interp-supported 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 0 dynamic-missing 1 dynamic-libc 0 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 15680 nvme-read-capacity 4194304 nvme-read-size 15680 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves remain UEFI 819,680 bytes and BIOS 101 sectors.
+
+M71 non-claims: interpreter file resolution, interpreter ELF loading, relocation processing, dynamic symbol resolution, shared-library loading, glibc compatibility, and dynamic execution remain unavailable.
+
+Proposed M72 scope: stage a real or Limitless-owned interpreter file under a Linux-visible path, resolve and read that interpreter candidate through the existing NVMe VFS authority, and report interpreter file ELF metadata without executing relocations or transferring control.
 
 Later targets are:
 

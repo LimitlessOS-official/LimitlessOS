@@ -61,6 +61,9 @@ typedef struct linux_exec64_telemetry
     u32 elf_type;
     u32 elf_load_count;
     u32 elf_interp_count;
+    u32 interp_path_bytes;
+    u32 interp_path_checksum;
+    u32 interp_supported;
     u32 elf_dynamic_count;
     u32 dynamic_needed;
     u32 dynamic_supported;
@@ -508,6 +511,122 @@ static const char *linux_exec64_stage_name(linux_exec64_stage_t stage)
     }
 }
 
+static u32 linux_exec64_mix_checksum(u32 checksum, u8 value)
+{
+    checksum ^= (u32)value;
+    checksum *= 16777619u;
+    return checksum;
+}
+
+static u32 linux_exec64_range_available(u32 size, u64 offset, u64 bytes)
+{
+    if (bytes == 0ull)
+    {
+        return 1u;
+    }
+    if ((offset > (u64)size) || (bytes > ((u64)size - offset)))
+    {
+        return 0u;
+    }
+    return 1u;
+}
+
+static u32 linux_exec64_name_matches(
+    const char *left,
+    u32 left_bytes,
+    const char *right,
+    u32 right_bytes)
+{
+    u32 index;
+
+    if ((left == 0) || (right == 0) || (left_bytes != right_bytes))
+    {
+        return 0u;
+    }
+    for (index = 0u; index < left_bytes; ++index)
+    {
+        if ((u8)left[index] != (u8)right[index])
+        {
+            return 0u;
+        }
+    }
+    return 1u;
+}
+
+static u32 linux_exec64_interp_path_supported(const u8 *path, u32 path_bytes)
+{
+    static const char preferred_path[] = "/lib/ld-limitless.so";
+    static const char lib64_path[] = "/lib64/ld-limitless.so";
+
+    if (path == 0)
+    {
+        return 0u;
+    }
+    if (linux_exec64_name_matches(
+            (const char *)path,
+            path_bytes,
+            preferred_path,
+            (u32)sizeof(preferred_path) - 1u) != 0u)
+    {
+        return 1u;
+    }
+    return linux_exec64_name_matches(
+        (const char *)path,
+        path_bytes,
+        lib64_path,
+        (u32)sizeof(lib64_path) - 1u);
+}
+
+static u32 linux_exec64_record_interp_metadata(
+    const u8 *binary,
+    u32 binary_bytes,
+    const elf64_program_header_t *phdrs,
+    u32 phdr_count)
+{
+    u32 index;
+
+    if ((binary == 0) || (phdrs == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < phdr_count; ++index)
+    {
+        const elf64_program_header_t *phdr = &phdrs[index];
+        u32 checksum = 2166136261u;
+        u32 byte_index;
+
+        if (phdr->type != ELF64_PT_INTERP)
+        {
+            continue;
+        }
+        if ((phdr->filesz == 0ull)
+            || (phdr->filesz > LINUX_DYNAMIC64_INTERP_PATH_MAX)
+            || (linux_exec64_range_available(binary_bytes, phdr->offset, phdr->filesz) == 0u))
+        {
+            return 0u;
+        }
+
+        for (byte_index = 0u; byte_index < (u32)phdr->filesz; ++byte_index)
+        {
+            u8 value = binary[phdr->offset + byte_index];
+            if (value == 0u)
+            {
+                g_linux_exec64_telemetry.interp_path_bytes = byte_index;
+                g_linux_exec64_telemetry.interp_path_checksum = checksum;
+                g_linux_exec64_telemetry.interp_supported = linux_exec64_interp_path_supported(
+                    binary + phdr->offset,
+                    byte_index);
+                return 1u;
+            }
+            checksum = linux_exec64_mix_checksum(checksum, value);
+        }
+        return 0u;
+    }
+
+    return 0u;
+}
+
 static void linux_exec64_record_elf_metadata(
     const elf64_header_t *header,
     const elf64_phdr_summary_t *summary,
@@ -532,7 +651,21 @@ static void linux_exec64_record_elf_metadata(
         || (binary == 0)
         || (phdrs == 0)
         || (binary_bytes == 0u)
-        || (summary->dynamic_count == 0u))
+        || ((summary->interp_count == 0u) && (summary->dynamic_count == 0u)))
+    {
+        return;
+    }
+
+    if (summary->interp_count != 0u)
+    {
+        (void)linux_exec64_record_interp_metadata(
+            binary,
+            binary_bytes,
+            phdrs,
+            header->phnum);
+    }
+
+    if (summary->dynamic_count == 0u)
     {
         return;
     }
@@ -575,6 +708,12 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_load_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-interp ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_interp_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-bytes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_path_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-checksum ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_path_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_supported);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
@@ -1078,6 +1217,12 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_load_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-interp ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_interp_count);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-bytes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_path_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-checksum ");
+    linux_exec64_write_hex_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_path_checksum);
+    (void)linux_exec64_write_text(console_capability, owner_id, " interp-supported ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.interp_supported);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf-dynamic ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf_dynamic_count);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-needed ");
