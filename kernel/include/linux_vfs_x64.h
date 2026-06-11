@@ -128,6 +128,15 @@ u32 linux_vfs64_read_file_all(
     u8 *output,
     u32 output_capacity,
     u32 *bytes_out);
+u32 linux_vfs64_read_file_range(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u64 file_offset,
+    u8 *output,
+    u32 output_capacity,
+    u32 *bytes_out,
+    u32 *file_size_out);
 #endif
 u32 linux_vfs64_read_fd(u32 pid, u32 fd_number, u8 *output, u32 byte_count);
 u32 linux_vfs64_write_fd(u32 pid, u32 fd_number, const u8 *input, u32 byte_count);

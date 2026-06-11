@@ -7405,6 +7405,17 @@ u32 mmio64_nvme_fat_shell_read_file(
     u32 byte_capacity,
     u32 owner_id,
     u32 *bytes_read);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_fat_shell_read_file_range(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 file_offset,
+    u8 *destination,
+    u32 byte_capacity,
+    u32 owner_id,
+    u32 *bytes_read,
+    u32 *file_size_out);
+#endif
 u32 mmio64_nvme_m5_write_boot_marker(
     u32 scoped_write_capability,
     u32 owner_id,

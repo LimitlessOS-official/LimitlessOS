@@ -936,7 +936,28 @@ drs-realbin path /APPS/MMAP2 provenance 1 nvme-read 1 elf 1 static 1 mapped 4 pa
 
 M68 non-claims: `MAP_SHARED`, writeback, mappings larger than `LINUX_ABI64_MMAP_FILE_COPY_BYTES` 65536 bytes, page-fault-driven file population, dynamic linking, and BIOS file-backed mmap remain unavailable. M68 is still an eager private-copy bridge, not a general VM object cache.
 
-Proposed M69 scope: replace the eager full-file read requirement with bounded page-window file population so mapped length and file size are not forced to fit in the same static scratch buffer.
+## M69 Windowed File-Backed Mmap Proof
+
+M69 is accepted on the UEFI Product path with `linux /APPS/MMAPWIN`. The trace before the fix proved the M68 file-size coupling: mapping 4096 bytes from offset 65536 inside a 131072-byte file failed with `mmap-last-error 22` and `vfs-nvme-reads 0` because the old helper tried to read the entire file into the 65536-byte mmap scratch buffer before copying the requested window.
+
+Staged artifacts:
+
+- `/APPS/MMAPWIN`, static musl ET_EXEC at `0x52000000`, SHA-256 `8DBBA2981B7A9084C80556EB66193C4C35D59C4211F7F16588E4558A5884C28E`
+- `/APPS/BIGDATA`, deterministic 131072-byte payload, SHA-256 `37EF3D17D641BFF7C3F5F8A525E6B5EC7C04290E5A850B760F13F8AC6826C503`
+
+The accepted implementation adds a UEFI-only MMIO FAT range reader, a Linux VFS range wrapper, and mmap population through the fixed 4096-byte `LINUX_ABI64_MMAP_FILE_WINDOW_BYTES` scratch page. The mapping cap remains `LINUX_ABI64_MMAP_FILE_COPY_BYTES` 65536 bytes, but file size is no longer coupled to the scratch buffer size.
+
+M69 acceptance telemetry excerpt:
+
+```text
+drs-realbin path /APPS/MMAPWIN provenance 1 nvme-read 1 elf 1 static 1 mapped 4 pages 5 stack 16 envc 4 pml4 1 pml4-pool 8 root-pool-limit 8 root-distinct 1 high-copy 1 mmio-shared 1 pool-mapped 1 low-compat 0 low-pdpt-present 0 syscall-entry-high 1 idt-high 1 descriptor-high 1 kernel-entry-high-ready 1 syscall-root-repair 0 fs-restore 1 fs-set 1 user-pdpt-private 1 vma-pt-private 1 cr3-start 1 cr3-exit 1 cr3-syscall-entry 0 active-cr3-match 1 root-cleanup 1 task 0 started 1 scheduler-denial 0 console-bytes 54 exit 0 cleanup 1 mmap 1 mmap-bytes 4096 mmap-denial 0 mmap-file 1 mmap-file-bytes 4096 mmap-file-denial 0 mmap-last-error 0 mmap-last-flags 0x0000000000000002 mmap-last-length 0x0000000000001000 write 3 write-bytes 54 pml4-pool-used-final 0 root-pool-used-final 0 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 1 vfs-nvme-bytes 4096 page-faults 0
+```
+
+M69 also reran the M68 two-map proof after the windowed-reader change. `linux /APPS/MMAP2` still passes with `mmap 2 mmap-bytes 12288 mmap-file 2 mmap-file-bytes 12288 mmap-file-denial 0 vfs-nvme-reads 3 page-faults 0 exit 0`.
+
+M69 non-claims: population is still eager at mmap time, not page-fault-driven; mappings larger than 65536 bytes still fail; `MAP_SHARED`, writeback, a file-backed VMA object cache, dynamic linking, and BIOS file-backed mmap remain unavailable.
+
+Proposed M70 scope: use the windowed file mapper for bounded read-only ELF-style segment mapping, then trace the first `PT_INTERP` dynamic-linker boundary with a tiny dynamically linked musl binary.
 
 Later targets are:
 

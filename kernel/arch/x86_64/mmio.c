@@ -15692,6 +15692,131 @@ static u32 mmio64_fat32_read_file_bytes(
     return 1u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 mmio64_fat32_read_file_range_bytes(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    u32 start_cluster,
+    u32 file_size,
+    u32 file_offset,
+    u8 *destination,
+    u32 byte_capacity,
+    u32 *bytes_read,
+    u32 *checksum)
+{
+    u32 cluster = start_cluster;
+    u32 next_cluster;
+    u32 remaining = file_size;
+    u32 lba;
+    u32 lba_index;
+    u32 sector_start = 0u;
+    u32 sector_end;
+    u32 wanted_end;
+    u32 copy_start;
+    u32 copy_end;
+    u32 source_offset;
+    u32 take;
+    u32 sector_take;
+    u32 copied = 0u;
+    u32 copy_goal;
+    u32 visited;
+    u32 crc = 0xFFFFFFFFu;
+    u32 index;
+
+    *bytes_read = 0u;
+    *checksum = 0u;
+    if ((destination == (u8 *)0)
+        || (byte_capacity == 0u)
+        || ((file_size != 0u) && (start_cluster < 2u))
+        || (file_offset > file_size))
+    {
+        return 0u;
+    }
+
+    copy_goal = file_size - file_offset;
+    if (copy_goal > byte_capacity)
+    {
+        copy_goal = byte_capacity;
+    }
+    if (copy_goal == 0u)
+    {
+        *checksum = crc ^ 0xFFFFFFFFu;
+        return 1u;
+    }
+
+    wanted_end = file_offset + copy_goal;
+    if (wanted_end < file_offset)
+    {
+        return 0u;
+    }
+
+    for (visited = 0u;
+        (remaining != 0u) && (visited < MMIO64_FAT32_READ_CLUSTER_VISIT_LIMIT);
+        ++visited)
+    {
+        if (mmio64_fat32_cluster_lba(volume, cluster, &lba) == 0u)
+        {
+            return 0u;
+        }
+
+        for (lba_index = 0u;
+            (lba_index < volume->lbas_per_cluster) && (remaining != 0u);
+            ++lba_index)
+        {
+            if (mmio64_nvme_fat_read_lba(
+                    reader,
+                    lba + lba_index,
+                    MMIO64_NVME_FAT_READ_DATA_CID) == 0u)
+            {
+                return 0u;
+            }
+
+            sector_take = (remaining < 512u) ? remaining : 512u;
+            sector_end = sector_start + sector_take;
+            if ((sector_end > file_offset) && (sector_start < wanted_end))
+            {
+                copy_start = (file_offset > sector_start) ? file_offset : sector_start;
+                copy_end = (wanted_end < sector_end) ? wanted_end : sector_end;
+                source_offset = copy_start - sector_start;
+                take = copy_end - copy_start;
+                crc = mmio64_crc32_update(crc, &g_nvme_io_data_buffer[source_offset], take);
+                for (index = 0u; index < take; ++index)
+                {
+                    destination[copied + index] = g_nvme_io_data_buffer[source_offset + index];
+                }
+                copied += take;
+                if (copied == copy_goal)
+                {
+                    *bytes_read = copied;
+                    *checksum = crc ^ 0xFFFFFFFFu;
+                    return 1u;
+                }
+            }
+
+            sector_start = sector_end;
+            remaining -= sector_take;
+        }
+
+        if (remaining != 0u)
+        {
+            if (mmio64_fat32_next_cluster(reader, volume, cluster, &next_cluster) == 0u)
+            {
+                return 0u;
+            }
+            if (next_cluster >= 0x0FFFFFF8u)
+            {
+                return 0u;
+            }
+            cluster = next_cluster;
+        }
+    }
+
+    *bytes_read = copied;
+    *checksum = crc ^ 0xFFFFFFFFu;
+    return (copied == copy_goal) ? 1u : 0u;
+}
+#endif
+
 static u32 mmio64_nvme_fat_read_path_bytes_detailed(
     Mmio64NvmeFatReader *reader,
     const Mmio64Fat32Volume *volume,
@@ -15795,6 +15920,92 @@ static u32 mmio64_nvme_fat_read_path_bytes(
         (u32 *)0,
         (u32 *)0);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 mmio64_nvme_fat_read_path_range_detailed(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    const u8 *path,
+    u32 file_offset,
+    u8 *destination,
+    u32 byte_capacity,
+    u32 *bytes_read,
+    u32 *checksum,
+    u32 *size_out,
+    u32 *attr_out,
+    u32 *error_out)
+{
+    u32 cluster = 0u;
+    u32 size = 0u;
+    u32 attr = 0u;
+
+    if (size_out != (u32 *)0)
+    {
+        *size_out = 0u;
+    }
+    if (attr_out != (u32 *)0)
+    {
+        *attr_out = 0u;
+    }
+    if (error_out != (u32 *)0)
+    {
+        *error_out = MMIO64_NVME_FAT_SHELL_READ_ERROR_NONE;
+    }
+
+    if (mmio64_fat32_find_path(reader, volume, path, &cluster, &size, &attr) == 0u)
+    {
+        if (error_out != (u32 *)0)
+        {
+            *error_out = MMIO64_NVME_FAT_SHELL_READ_ERROR_NOT_FOUND;
+        }
+        return 0u;
+    }
+    if (size_out != (u32 *)0)
+    {
+        *size_out = size;
+    }
+    if (attr_out != (u32 *)0)
+    {
+        *attr_out = attr;
+    }
+    if ((attr & 0x10u) != 0u)
+    {
+        if (error_out != (u32 *)0)
+        {
+            *error_out = MMIO64_NVME_FAT_SHELL_READ_ERROR_DIRECTORY;
+        }
+        return 0u;
+    }
+    if (file_offset > size)
+    {
+        if (error_out != (u32 *)0)
+        {
+            *error_out = MMIO64_NVME_FAT_SHELL_READ_ERROR_TOO_LARGE;
+        }
+        return 0u;
+    }
+
+    if (mmio64_fat32_read_file_range_bytes(
+            reader,
+            volume,
+            cluster,
+            size,
+            file_offset,
+            destination,
+            byte_capacity,
+            bytes_read,
+            checksum) == 0u)
+    {
+        if (error_out != (u32 *)0)
+        {
+            *error_out = MMIO64_NVME_FAT_SHELL_READ_ERROR_READ_CHAIN;
+        }
+        return 0u;
+    }
+
+    return 1u;
+}
+#endif
 
 static u32 mmio64_fat32_cluster_limit(const Mmio64Fat32Volume *volume)
 {
@@ -17120,6 +17331,93 @@ u32 mmio64_nvme_fat_shell_read_file(
     (void)checksum;
     return ok;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_fat_shell_read_file_range(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 file_offset,
+    u8 *destination,
+    u32 byte_capacity,
+    u32 owner_id,
+    u32 *bytes_read,
+    u32 *file_size_out)
+{
+    u8 normalized[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    Mmio64NvmeFatReader reader;
+    Mmio64Fat32Volume volume;
+    u32 doorbell_page = 0u;
+    u32 checksum = 0u;
+    u32 file_size = 0u;
+    u32 attr = 0u;
+    u32 read_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_NONE;
+    u32 ok;
+
+    g_nvme_fat_shell_read_last_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_NONE;
+    g_nvme_fat_shell_read_last_bytes = 0u;
+    g_nvme_fat_shell_read_last_capacity = byte_capacity;
+    g_nvme_fat_shell_read_last_size = 0u;
+    g_nvme_fat_shell_read_last_attr = 0u;
+    if (bytes_read != (u32 *)0)
+    {
+        *bytes_read = 0u;
+    }
+    if (file_size_out != (u32 *)0)
+    {
+        *file_size_out = 0u;
+    }
+    if ((destination == (u8 *)0)
+        || (bytes_read == (u32 *)0)
+        || (file_size_out == (u32 *)0)
+        || (byte_capacity == 0u))
+    {
+        g_nvme_fat_shell_read_last_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_ARGUMENT;
+        return 0u;
+    }
+    if (mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
+    {
+        g_nvme_fat_shell_read_last_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_AUTHORITY;
+        return 0u;
+    }
+    if (mmio64_nvme_rw_normalize_path(
+                path,
+                path_byte_count,
+                normalized,
+                sizeof(normalized)) == 0u)
+    {
+        g_nvme_fat_shell_read_last_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_PATH;
+        return 0u;
+    }
+    if (mmio64_nvme_fat_open_runtime(&reader, &volume, &doorbell_page) == 0u)
+    {
+        g_nvme_fat_shell_read_last_error = MMIO64_NVME_FAT_SHELL_READ_ERROR_OPEN;
+        return 0u;
+    }
+
+    ok = mmio64_nvme_fat_read_path_range_detailed(
+        &reader,
+        &volume,
+        normalized,
+        file_offset,
+        destination,
+        byte_capacity,
+        bytes_read,
+        &checksum,
+        &file_size,
+        &attr,
+        &read_error);
+    mmio64_nvme_fat_close_runtime(&reader, &volume, doorbell_page);
+    g_nvme_fat_shell_read_last_error = (ok != 0u)
+        ? MMIO64_NVME_FAT_SHELL_READ_ERROR_NONE
+        : read_error;
+    g_nvme_fat_shell_read_last_bytes = *bytes_read;
+    g_nvme_fat_shell_read_last_size = file_size;
+    g_nvme_fat_shell_read_last_attr = attr;
+    *file_size_out = file_size;
+    (void)checksum;
+    return ok;
+}
+#endif
 
 u32 mmio64_nvme_fat_shell_write_file(
     const u8 *path,

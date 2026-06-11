@@ -515,6 +515,86 @@ static u32 linux_vfs64_nvme_read_all(
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 linux_vfs64_nvme_read_range(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u64 file_offset,
+    u8 *buffer,
+    u32 buffer_bytes,
+    u32 *bytes_out,
+    u32 *file_size_out)
+{
+    const u8 *fat_path;
+    u32 fat_path_bytes;
+    linux_vfs64_nvme_binding_t *binding;
+    const u8 *backend_path;
+    u32 backend_path_bytes;
+
+    if (bytes_out != 0)
+    {
+        *bytes_out = 0u;
+    }
+    if (file_size_out != 0)
+    {
+        *file_size_out = 0u;
+    }
+
+    if (linux_vfs64_bin_backend_path(
+            path,
+            path_byte_count,
+            &backend_path,
+            &backend_path_bytes) != 0u)
+    {
+        path = backend_path;
+        path_byte_count = backend_path_bytes;
+        ++g_linux_vfs64_bin_read_count;
+    }
+    else if (linux_vfs64_localbin_backend_path(
+            path,
+            path_byte_count,
+            &backend_path,
+            &backend_path_bytes) != 0u)
+    {
+        path = backend_path;
+        path_byte_count = backend_path_bytes;
+        ++g_linux_vfs64_localbin_read_count;
+    }
+
+    binding = linux_vfs64_find_nvme_binding(pid);
+    if ((binding == 0)
+        || (buffer == 0)
+        || (buffer_bytes == 0u)
+        || (bytes_out == 0)
+        || (file_size_out == 0)
+        || (file_offset > 0xFFFFFFFFull)
+        || (binding->capability != mmio64_nvme_rw_capability())
+        || (linux_vfs64_nvme_path_to_fat(
+                path,
+                path_byte_count,
+                &fat_path,
+                &fat_path_bytes) == 0u)
+        || (mmio64_nvme_fat_shell_read_file_range(
+                fat_path,
+                fat_path_bytes,
+                (u32)file_offset,
+                buffer,
+                buffer_bytes,
+                binding->owner_id,
+                bytes_out,
+                file_size_out) == 0u))
+    {
+        ++g_linux_vfs64_nvme_denial_count;
+        return 0u;
+    }
+
+    ++g_linux_vfs64_nvme_read_count;
+    g_linux_vfs64_nvme_last_bytes = *bytes_out;
+    return 1u;
+}
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 u32 linux_vfs64_read_file_all(
     u32 pid,
     const u8 *path,
@@ -557,6 +637,59 @@ u32 linux_vfs64_read_file_all(
         output,
         output_capacity,
         bytes_out);
+}
+
+u32 linux_vfs64_read_file_range(
+    u32 pid,
+    const u8 *path,
+    u32 path_byte_count,
+    u64 file_offset,
+    u8 *output,
+    u32 output_capacity,
+    u32 *bytes_out,
+    u32 *file_size_out)
+{
+    linux_vfs64_result_t result;
+
+    if (bytes_out != 0)
+    {
+        *bytes_out = 0u;
+    }
+    if (file_size_out != 0)
+    {
+        *file_size_out = 0u;
+    }
+
+    if ((path == 0)
+        || (path_byte_count == 0u)
+        || (output == 0)
+        || (output_capacity == 0u)
+        || (bytes_out == 0)
+        || (file_size_out == 0))
+    {
+        ++g_linux_vfs64_denial_count;
+        return 0u;
+    }
+
+    if ((linux_vfs64_resolve(pid, path, path_byte_count, LINUX_VFS64_OPEN_READ, &result) == 0u)
+        || (((result.provider != LINUX_VFS64_PROVIDER_NVME)
+                || (result.node_type != LINUX_VFS64_NODE_NVME_FILE))
+            && ((result.provider != LINUX_VFS64_PROVIDER_BIN)
+                || (result.node_type != LINUX_VFS64_NODE_BIN_APPLET))))
+    {
+        ++g_linux_vfs64_denial_count;
+        return 0u;
+    }
+
+    return linux_vfs64_nvme_read_range(
+        pid,
+        path,
+        path_byte_count,
+        file_offset,
+        output,
+        output_capacity,
+        bytes_out,
+        file_size_out);
 }
 #endif
 
