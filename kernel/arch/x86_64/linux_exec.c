@@ -126,6 +126,7 @@ typedef struct linux_exec64_telemetry
     u32 dynamic_binding_supported;
     u32 dynamic_binding_missing;
     u32 dynamic_binding_weak_null;
+    u32 dynamic_binding_unavailable;
     u32 dynamic_binding_libc;
     u32 dynamic_binding_interp;
     u32 dynamic_binding_glob_dat;
@@ -1023,6 +1024,10 @@ static u32 linux_exec64_walk_dynamic_bindings(
             if (provider == 1u)
             {
                 ++g_linux_exec64_telemetry.dynamic_binding_libc;
+                if (linux_libc64_symbol_unavailable(symbol_name, symbol_bytes) != 0u)
+                {
+                    ++g_linux_exec64_telemetry.dynamic_binding_unavailable;
+                }
             }
             else if (provider == 2u)
             {
@@ -1816,6 +1821,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_missing);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-weak-null ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_weak_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-unavailable ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_unavailable);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-libc ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_libc);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-interp ");
@@ -2480,6 +2487,8 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_missing);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-weak-null ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_weak_null);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-unavailable ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_unavailable);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-libc ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dynamic_binding_libc);
     (void)linux_exec64_write_text(console_capability, owner_id, " dynamic-binding-interp ");

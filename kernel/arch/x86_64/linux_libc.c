@@ -134,7 +134,8 @@ static const linux_libc64_export_t g_linux_libc64_exports[LINUX_LIBC64_SYMBOL_CO
     { "pthread_cond_broadcast", 22u, LINUX_LIBC64_RVA_PTHREAD_COND_BROADCAST, LINUX_LIBC64_KIND_PTHREAD_COND, 0u },
     { "pthread_key_create", 18u, LINUX_LIBC64_RVA_PTHREAD_KEY_CREATE, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
     { "pthread_setspecific", 19u, LINUX_LIBC64_RVA_PTHREAD_SETSPECIFIC, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
-    { "pthread_getspecific", 19u, LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u }
+    { "pthread_getspecific", 19u, LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC, LINUX_LIBC64_KIND_PTHREAD_TLS, 0u },
+    { "__libc_start_main", 17u, LINUX_LIBC64_RVA_LIBC_START_MAIN, LINUX_LIBC64_KIND_UNAVAILABLE, 0u }
 };
 
 static u8 g_linux_libc64_image[LINUX_LIBC64_FILE_BYTES];
@@ -1352,12 +1353,14 @@ u32 linux_libc64_dependency_supported(const char *name, u32 length)
 {
     static const char libc_so[] = "libc.so";
     static const char libc_so_6[] = "libc.so.6";
+    static const char libc_x64_so[] = "libc-x64.so";
     static const char musl_so[] = "libc.musl-x86_64.so.1";
     u32 supported;
 
     supported =
         ((linux_libc64_name_matches(name, length, libc_so, (u32)sizeof(libc_so) - 1u) != 0u)
             || (linux_libc64_name_matches(name, length, libc_so_6, (u32)sizeof(libc_so_6) - 1u) != 0u)
+            || (linux_libc64_name_matches(name, length, libc_x64_so, (u32)sizeof(libc_x64_so) - 1u) != 0u)
             || (linux_libc64_name_matches(name, length, musl_so, (u32)sizeof(musl_so) - 1u) != 0u)
             || (linux_libc64_pthread_dependency_supported(name, length) != 0u))
             ? 1u
@@ -1396,6 +1399,31 @@ u32 linux_libc64_symbol_supported(const char *name, u32 length)
                 length,
                 g_linux_libc64_exports[index].name,
                 g_linux_libc64_exports[index].length) != 0u)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+u32 linux_libc64_symbol_unavailable(const char *name, u32 length)
+{
+    u32 index;
+
+    if ((name == 0) || (length == 0u) || (length > LINUX_LIBC64_STRING_LIMIT))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < LINUX_LIBC64_SYMBOL_COUNT; ++index)
+    {
+        if ((g_linux_libc64_exports[index].kind == LINUX_LIBC64_KIND_UNAVAILABLE)
+            && (linux_libc64_name_matches(
+                    name,
+                    length,
+                    g_linux_libc64_exports[index].name,
+                    g_linux_libc64_exports[index].length) != 0u))
         {
             return 1u;
         }

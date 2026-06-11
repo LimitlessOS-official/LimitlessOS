@@ -27,7 +27,7 @@
 #define LINUX_LIBC64_TEXT_FILE_BYTES 0x00000C00u
 #define LINUX_LIBC64_RODATA_FILE_BYTES 0x00000080u
 #define LINUX_LIBC64_DYNAMIC_BYTES 0x00000040u
-#define LINUX_LIBC64_SYMBOL_COUNT 49u
+#define LINUX_LIBC64_SYMBOL_COUNT 50u
 #define LINUX_LIBC64_SYSCALL_SYMBOL_COUNT 16u
 #define LINUX_LIBC64_MEMORY_SYMBOL_COUNT 3u
 #define LINUX_LIBC64_STRING_SYMBOL_COUNT 5u
@@ -111,6 +111,7 @@
 #define LINUX_LIBC64_RVA_PTHREAD_KEY_CREATE 0x00001A00u
 #define LINUX_LIBC64_RVA_PTHREAD_SETSPECIFIC 0x00001A40u
 #define LINUX_LIBC64_RVA_PTHREAD_GETSPECIFIC 0x00001AD0u
+#define LINUX_LIBC64_RVA_LIBC_START_MAIN 0x00001BF0u
 
 #define LINUX_LIBC64_OK 1u
 #define LINUX_LIBC64_DENIED 0u
@@ -194,6 +195,7 @@ void linux_libc64_init(void);
 u32 linux_libc64_dependency_supported(const char *name, u32 length);
 u32 linux_libc64_pthread_dependency_supported(const char *name, u32 length);
 u32 linux_libc64_symbol_supported(const char *name, u32 length);
+u32 linux_libc64_symbol_unavailable(const char *name, u32 length);
 u32 linux_libc64_load(
     u32 pid,
     u64 image_base,
