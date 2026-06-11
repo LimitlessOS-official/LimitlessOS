@@ -12,8 +12,6 @@
 
 enum
 {
-    SCHEDULER64_RUNQUEUE_TASKS = 4u,
-    SCHEDULER64_SLEEP_QUEUE_TASKS = SCHEDULER64_RUNQUEUE_TASKS,
     SCHEDULER64_SLEEP_SPIN_BUDGET_PER_TICK = 50000u,
     SCHEDULER64_SLEEP_MAX_SPIN_BUDGET = 1000000u
 };
@@ -72,7 +70,7 @@ struct scheduler64_runqueue
 #endif
     u64 cs;
     u64 ss;
-    struct scheduler64_task tasks[SCHEDULER64_RUNQUEUE_TASKS];
+    struct scheduler64_task tasks[SCHEDULER64_RUNQUEUE_TASK_LIMIT];
 };
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
@@ -108,7 +106,7 @@ static u32 g_scheduler64_sleep_last_elapsed_ticks = 0u;
 static u32 g_scheduler64_sleep_last_start_ticks = 0u;
 static u32 g_scheduler64_sleep_last_end_ticks = 0u;
 #ifdef LIMITLESS_X64_UEFI_KERNEL
-static struct scheduler64_sleep_entry g_scheduler64_sleep_queue[SCHEDULER64_SLEEP_QUEUE_TASKS];
+static struct scheduler64_sleep_entry g_scheduler64_sleep_queue[SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT];
 static u32 g_scheduler64_sleep_wake_count = 0u;
 static u32 g_scheduler64_sleep_last_task_id = SCHEDULER64_INVALID_TASK;
 static u32 g_scheduler64_sleep_last_wake_tick = 0u;
@@ -197,7 +195,7 @@ static u32 scheduler64_allocate_task_slot(void)
         }
     }
 
-    if (g_runqueue.task_count >= SCHEDULER64_RUNQUEUE_TASKS)
+    if (g_runqueue.task_count >= SCHEDULER64_RUNQUEUE_TASK_LIMIT)
     {
         return SCHEDULER64_INVALID_TASK;
     }
@@ -245,7 +243,7 @@ static void scheduler64_sleep_queue_reset(void)
 {
     u32 index;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         scheduler64_clear_sleep_entry(&g_scheduler64_sleep_queue[index]);
     }
@@ -260,7 +258,7 @@ static struct scheduler64_sleep_entry *scheduler64_sleep_free_entry(void)
 {
     u32 index;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         if (g_scheduler64_sleep_queue[index].active == 0u)
         {
@@ -275,7 +273,7 @@ static u32 scheduler64_sleep_task_pending(u32 task_id)
 {
     u32 index;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         if ((g_scheduler64_sleep_queue[index].active != 0u)
             && (g_scheduler64_sleep_queue[index].task_id == task_id))
@@ -292,7 +290,7 @@ static u32 scheduler64_sleep_wake_expired(u32 now_tick)
     u32 index;
     u32 wake_count = 0u;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         struct scheduler64_sleep_entry *entry = &g_scheduler64_sleep_queue[index];
         u32 elapsed;
@@ -430,7 +428,7 @@ void scheduler64_runqueue_reset(void)
 #endif
     g_runqueue.cs = 0u;
     g_runqueue.ss = 0u;
-    for (index = 0u; index < SCHEDULER64_RUNQUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_RUNQUEUE_TASK_LIMIT; ++index)
     {
         scheduler64_clear_task(&g_runqueue.tasks[index]);
     }
@@ -1051,7 +1049,7 @@ u32 scheduler64_sleep_cancel_task(u32 task_id)
     u32 index;
     u32 cancelled = 0u;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         if ((g_scheduler64_sleep_queue[index].active != 0u)
             && (g_scheduler64_sleep_queue[index].task_id == task_id))
@@ -1340,7 +1338,7 @@ u32 scheduler64_sleep_pending_count(void)
     u32 index;
     u32 count = 0u;
 
-    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASKS; ++index)
+    for (index = 0u; index < SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT; ++index)
     {
         if (g_scheduler64_sleep_queue[index].active != 0u)
         {

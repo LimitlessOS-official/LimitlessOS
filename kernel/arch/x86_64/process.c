@@ -17,10 +17,6 @@ enum
 {
     PROCESS64_RECORD_COUNT = 7,
     PROCESS64_NAME_BYTES = 32
-#ifdef LIMITLESS_X64_UEFI_KERNEL
-    ,
-    PROCESS64_CLONE_RECORD_COUNT = 4
-#endif
 };
 
 struct process64_record
@@ -135,7 +131,7 @@ static const struct process64_seed_record g_process_seeds[PROCESS64_RECORD_COUNT
 
 static struct process64_record g_processes[PROCESS64_RECORD_COUNT];
 #ifdef LIMITLESS_X64_UEFI_KERNEL
-static struct process64_record g_process64_clone_records[PROCESS64_CLONE_RECORD_COUNT];
+static struct process64_record g_process64_clone_records[PROCESS64_CLONE_RECORD_LIMIT];
 static u32 g_process64_clone_count = 0u;
 static u32 g_process64_next_clone_pid = PROCESS64_CLONE_PID_BASE;
 static u32 g_process64_page_root_attach_count = 0u;
@@ -214,7 +210,7 @@ static void process64_clear_clone_records(void)
 {
     u32 index;
 
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         process64_clear_record(&g_process64_clone_records[index]);
     }
@@ -381,7 +377,7 @@ static const struct process64_record *process64_find(u32 pid)
     }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))
@@ -409,7 +405,7 @@ static struct process64_record *process64_find_mutable(u32 pid)
     }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))
@@ -475,7 +471,7 @@ u32 process64_pid_by_index(u32 index)
     {
 #ifdef LIMITLESS_X64_UEFI_KERNEL
         seen = PROCESS64_RECORD_COUNT;
-        for (clone_index = 0u; clone_index < PROCESS64_CLONE_RECORD_COUNT; ++clone_index)
+        for (clone_index = 0u; clone_index < PROCESS64_CLONE_RECORD_LIMIT; ++clone_index)
         {
             if (process64_clone_record_active(&g_process64_clone_records[clone_index]) != 0u)
             {
@@ -1233,7 +1229,7 @@ static u32 process64_spawn_child(u32 parent_pid, u32 child_kind, const char *chi
         return PROCESS64_INVALID_PID;
     }
 
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         if (process64_clone_record_active(&g_process64_clone_records[index]) == 0u)
         {
@@ -1347,7 +1343,7 @@ u32 process64_release_clone(u32 pid)
 
     process64_ensure_init();
 
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))
@@ -1376,7 +1372,7 @@ u32 process64_is_clone(u32 pid)
 
     process64_ensure_init();
 
-    for (index = 0u; index < PROCESS64_CLONE_RECORD_COUNT; ++index)
+    for (index = 0u; index < PROCESS64_CLONE_RECORD_LIMIT; ++index)
     {
         if ((process64_clone_record_active(&g_process64_clone_records[index]) != 0u)
             && (g_process64_clone_records[index].pid == pid))

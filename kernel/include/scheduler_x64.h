@@ -5,6 +5,12 @@
 #include "types.h"
 
 #define SCHEDULER64_INVALID_TASK 0xFFFFFFFFu
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define SCHEDULER64_RUNQUEUE_TASK_LIMIT 16u
+#else
+#define SCHEDULER64_RUNQUEUE_TASK_LIMIT 4u
+#endif
+#define SCHEDULER64_SLEEP_QUEUE_TASK_LIMIT SCHEDULER64_RUNQUEUE_TASK_LIMIT
 
 typedef void (*scheduler64_sleep_expiry_callback_t)(u32 task_id, u64 cookie);
 

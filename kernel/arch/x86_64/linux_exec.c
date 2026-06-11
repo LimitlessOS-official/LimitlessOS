@@ -64,6 +64,7 @@ typedef struct linux_exec64_telemetry
     u32 pml4;
     u32 pml4_pool;
     u32 pml4_slot;
+    u32 scheduler_denial;
     u64 root_physical;
     u64 kernel_root_physical;
     u32 root_distinct;
@@ -518,6 +519,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4_pool);
+    (void)linux_exec64_write_text(console_capability, owner_id, " root-pool-limit ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4_pool);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-slot ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pml4_slot);
     (void)linux_exec64_write_text(console_capability, owner_id, " root ");
@@ -585,6 +588,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.task);
     (void)linux_exec64_write_text(console_capability, owner_id, " started ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.started);
+    (void)linux_exec64_write_text(console_capability, owner_id, " scheduler-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.scheduler_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " console-bytes ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.console_bytes);
     (void)linux_exec64_write_text(console_capability, owner_id, " exit ");
@@ -899,6 +904,11 @@ static void linux_exec64_emit_summary(
         owner_id,
         g_linux_exec64_telemetry.child_root_cleanup);
     (void)linux_exec64_write_text(console_capability, owner_id, " pml4-pool-used-final ");
+    linux_exec64_write_dec_u32(
+        console_capability,
+        owner_id,
+        g_linux_exec64_telemetry.pml4_pool_used_final);
+    (void)linux_exec64_write_text(console_capability, owner_id, " root-pool-used-final ");
     linux_exec64_write_dec_u32(
         console_capability,
         owner_id,
@@ -1284,6 +1294,8 @@ u32 linux_exec64_run_nvme(
     u32 fs_restore_after;
     u32 fs_set_before;
     u32 fs_set_after;
+    u32 scheduler_denial_before;
+    u32 scheduler_denial_after;
     u32 fork_before;
     u32 fork_after;
     u32 fork_success_before;
@@ -1744,6 +1756,7 @@ u32 linux_exec64_run_nvme(
     fs_save_before = scheduler64_runqueue_fs_save_count();
     fs_restore_before = scheduler64_runqueue_fs_restore_count();
     fs_set_before = scheduler64_runqueue_fs_set_count();
+    scheduler_denial_before = scheduler64_runqueue_block_denial_count();
     fork_before = linux_abi64_fork_count();
     fork_success_before = linux_abi64_fork_success_count();
     fork_enosys_before = linux_abi64_fork_enosys_count();
@@ -1881,6 +1894,7 @@ u32 linux_exec64_run_nvme(
     fs_save_after = scheduler64_runqueue_fs_save_count();
     fs_restore_after = scheduler64_runqueue_fs_restore_count();
     fs_set_after = scheduler64_runqueue_fs_set_count();
+    scheduler_denial_after = scheduler64_runqueue_block_denial_count();
     fork_after = linux_abi64_fork_count();
     fork_success_after = linux_abi64_fork_success_count();
     fork_enosys_after = linux_abi64_fork_enosys_count();
@@ -2270,6 +2284,10 @@ u32 linux_exec64_run_nvme(
             : 0u;
     g_linux_exec64_telemetry.fs_set =
         (fs_set_after >= fs_set_before) ? (fs_set_after - fs_set_before) : 0u;
+    g_linux_exec64_telemetry.scheduler_denial =
+        (scheduler_denial_after >= scheduler_denial_before)
+            ? (scheduler_denial_after - scheduler_denial_before)
+            : 0u;
     g_linux_exec64_telemetry.fork_calls =
         (fork_after >= fork_before)
             ? (fork_after - fork_before)

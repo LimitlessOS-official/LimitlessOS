@@ -14,6 +14,11 @@
 #define PAGING64_USER_PROT_READ 0x00000001u
 #define PAGING64_USER_PROT_WRITE 0x00000002u
 #define PAGING64_USER_PROT_EXECUTE 0x00000004u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define PAGING64_PROCESS_ROOT_POOL_LIMIT 8u
+#else
+#define PAGING64_PROCESS_ROOT_POOL_LIMIT 0u
+#endif
 
 void paging64_configure_kernel_physical_base(u32 kernel_load_address);
 u64 paging64_kernel_physical_alias(const void *address);

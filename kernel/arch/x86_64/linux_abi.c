@@ -92,10 +92,6 @@
      * audits malformed or inaccessible return frames instead of resuming them.
      */
 
-#define LINUX_ABI64_MAX_EXIT_RECORDS 16u
-#define LINUX_ABI64_MAX_RLIMIT_RECORDS 16u
-#define LINUX_ABI64_MAX_FUTEX_WAITERS 4u
-#define LINUX_ABI64_MAX_CLONE_RECORDS 4u
 #define LINUX_ABI64_USER_CANONICAL_LIMIT 0x0000800000000000ull
 #define LINUX_ABI64_DEFAULT_TICK_HZ 100u
 #define LINUX_ABI64_MAX_PIT_TICK_HZ 1193182u
@@ -160,10 +156,10 @@ typedef struct linux_abi64_exec_validation
 
 static u32 g_linux_abi64_initialized = 0u;
 static linux_abi64_handler_t g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_LIMIT];
-static linux_abi64_exit_record_t g_linux_abi64_exit_records[LINUX_ABI64_MAX_EXIT_RECORDS];
-static linux_abi64_rlimit_record_t g_linux_abi64_rlimit_records[LINUX_ABI64_MAX_RLIMIT_RECORDS];
-static linux_abi64_futex_waiter_t g_linux_abi64_futex_waiters[LINUX_ABI64_MAX_FUTEX_WAITERS];
-static linux_abi64_clone_record_t g_linux_abi64_clone_records[LINUX_ABI64_MAX_CLONE_RECORDS];
+static linux_abi64_exit_record_t g_linux_abi64_exit_records[LINUX_ABI64_EXIT_RECORD_LIMIT];
+static linux_abi64_rlimit_record_t g_linux_abi64_rlimit_records[LINUX_ABI64_RLIMIT_RECORD_LIMIT];
+static linux_abi64_futex_waiter_t g_linux_abi64_futex_waiters[LINUX_ABI64_FUTEX_WAITER_LIMIT];
+static linux_abi64_clone_record_t g_linux_abi64_clone_records[LINUX_ABI64_CLONE_RECORD_LIMIT];
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #define LINUX_ABI64_EXEC_STAGING_BYTES LINUX_EXEC64_REAL_BINARY_MAX_BYTES
 #else
@@ -1618,7 +1614,7 @@ static u32 linux_abi64_futex_active_waiters(void)
     u32 index;
     u32 count = 0u;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_FUTEX_WAITERS; ++index)
+    for (index = 0u; index < LINUX_ABI64_FUTEX_WAITER_LIMIT; ++index)
     {
         if (g_linux_abi64_futex_waiters[index].active != 0u)
         {
@@ -1635,7 +1631,7 @@ static linux_abi64_futex_waiter_t *linux_abi64_futex_waiter_for(
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_FUTEX_WAITERS; ++index)
+    for (index = 0u; index < LINUX_ABI64_FUTEX_WAITER_LIMIT; ++index)
     {
         if ((g_linux_abi64_futex_waiters[index].active != 0u)
             && (g_linux_abi64_futex_waiters[index].address_space_key == address_space_key)
@@ -1666,7 +1662,7 @@ static u32 linux_abi64_futex_wake_key(
     u32 wake_task_state;
 
     for (index = 0u;
-        (index < LINUX_ABI64_MAX_FUTEX_WAITERS) && (wake_count < wake_limit);
+        (index < LINUX_ABI64_FUTEX_WAITER_LIMIT) && (wake_count < wake_limit);
         ++index)
     {
         if ((g_linux_abi64_futex_waiters[index].active != 0u)
@@ -1709,7 +1705,7 @@ static linux_abi64_futex_waiter_t *linux_abi64_futex_free_waiter(void)
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_FUTEX_WAITERS; ++index)
+    for (index = 0u; index < LINUX_ABI64_FUTEX_WAITER_LIMIT; ++index)
     {
         if (g_linux_abi64_futex_waiters[index].active == 0u)
         {
@@ -1725,7 +1721,7 @@ static u32 linux_abi64_release_futex_waiters(u32 pid)
     u32 index;
     u32 released = 0u;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_FUTEX_WAITERS; ++index)
+    for (index = 0u; index < LINUX_ABI64_FUTEX_WAITER_LIMIT; ++index)
     {
         if ((g_linux_abi64_futex_waiters[index].active != 0u)
             && (g_linux_abi64_futex_waiters[index].pid == pid))
@@ -1796,7 +1792,7 @@ static linux_abi64_clone_record_t *linux_abi64_clone_free_record(void)
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_CLONE_RECORD_LIMIT; ++index)
     {
         if (g_linux_abi64_clone_records[index].active == 0u)
         {
@@ -1811,7 +1807,7 @@ static linux_abi64_clone_record_t *linux_abi64_clone_record_for_child(u32 child_
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_CLONE_RECORD_LIMIT; ++index)
     {
         if ((g_linux_abi64_clone_records[index].active != 0u)
             && (g_linux_abi64_clone_records[index].child_pid == child_pid))
@@ -1835,7 +1831,7 @@ static linux_abi64_clone_record_t *linux_abi64_clone_record_for_parent_wait(
         *matched_child_count = 0u;
     }
 
-    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_CLONE_RECORD_LIMIT; ++index)
     {
         linux_abi64_clone_record_t *record = &g_linux_abi64_clone_records[index];
 
@@ -1868,7 +1864,7 @@ static linux_abi64_clone_record_t *linux_abi64_clone_record_for_parent_any(
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_CLONE_RECORD_LIMIT; ++index)
     {
         linux_abi64_clone_record_t *record = &g_linux_abi64_clone_records[index];
 
@@ -1957,7 +1953,7 @@ static linux_abi64_rlimit_record_t *linux_abi64_rlimit_record_for_pid(u32 pid)
     u32 index;
     linux_abi64_rlimit_record_t *free_record = 0;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_RLIMIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_RLIMIT_RECORD_LIMIT; ++index)
     {
         if ((g_linux_abi64_rlimit_records[index].initialized != 0u)
             && (g_linux_abi64_rlimit_records[index].pid == pid))
@@ -1983,7 +1979,7 @@ static void linux_abi64_release_rlimit_record(u32 pid)
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_RLIMIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_RLIMIT_RECORD_LIMIT; ++index)
     {
         if ((g_linux_abi64_rlimit_records[index].initialized != 0u)
             && (g_linux_abi64_rlimit_records[index].pid == pid))
@@ -2091,19 +2087,19 @@ void linux_abi64_init(void)
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETRANDOM] = linux_abi64_getrandom_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_EXECVEAT] = linux_abi64_execveat_dispatch;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_EXIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_EXIT_RECORD_LIMIT; ++index)
     {
         linux_abi64_clear_exit_record(&g_linux_abi64_exit_records[index]);
     }
-    for (index = 0u; index < LINUX_ABI64_MAX_RLIMIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_RLIMIT_RECORD_LIMIT; ++index)
     {
         linux_abi64_clear_rlimit_record(&g_linux_abi64_rlimit_records[index]);
     }
-    for (index = 0u; index < LINUX_ABI64_MAX_FUTEX_WAITERS; ++index)
+    for (index = 0u; index < LINUX_ABI64_FUTEX_WAITER_LIMIT; ++index)
     {
         linux_abi64_clear_futex_waiter(&g_linux_abi64_futex_waiters[index]);
     }
-    for (index = 0u; index < LINUX_ABI64_MAX_CLONE_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_CLONE_RECORD_LIMIT; ++index)
     {
         linux_abi64_clear_clone_record(&g_linux_abi64_clone_records[index]);
     }
@@ -9539,7 +9535,7 @@ static linux_abi64_exit_record_t *linux_abi64_exit_record_for_pid(u32 pid)
     u32 index;
     linux_abi64_exit_record_t *free_record = 0;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_EXIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_EXIT_RECORD_LIMIT; ++index)
     {
         if (g_linux_abi64_exit_records[index].pid == pid)
         {
@@ -9558,7 +9554,7 @@ static linux_abi64_exit_record_t *linux_abi64_exit_record_existing(u32 pid)
 {
     u32 index;
 
-    for (index = 0u; index < LINUX_ABI64_MAX_EXIT_RECORDS; ++index)
+    for (index = 0u; index < LINUX_ABI64_EXIT_RECORD_LIMIT; ++index)
     {
         if (g_linux_abi64_exit_records[index].pid == pid)
         {

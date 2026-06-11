@@ -85,7 +85,6 @@ static u64 g_paging64_kernel_physical_base = 0ull;
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
 #define PAGING64_VMA_USER_PT_COUNT 32u
-#define PAGING64_PROCESS_ROOT_POOL_LIMIT 4u
 #define PAGING64_PROCESS_ROOT_VMA_PT_COUNT 16u
 static u64 g_paging64_vma_user_pts[PAGING64_VMA_USER_PT_COUNT][PAGING64_ENTRY_COUNT]
     __attribute__((aligned(PAGING64_PAGE_BYTES)));
