@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M74 dynamic ELF denial-path telemetry through relocation-table tracing are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M75 dynamic ELF denial-path telemetry through relocation-symbol tracing are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -1060,7 +1060,28 @@ Final reserves remain UEFI 815,584 bytes and BIOS 101 sectors.
 
 M74 non-claims: relocation application, GOT/PLT writes, dynamic symbol lookup, `DT_NEEDED` library loading, dynamic-linker ABI handoff, dynamic stack/auxv construction, task registration, and dynamic execution remain unavailable.
 
-Proposed M75 scope: parse `DT_SYMTAB`, `DT_STRTAB`, and relocation symbol indexes for the first bounded `GLOB_DAT` and `JUMP_SLOT` relocation entries, report required symbol names and the source `DT_NEEDED` dependency, and deny before binding symbols or applying relocations.
+## M75 Dynamic Relocation Symbol Trace
+
+M75 is accepted on the UEFI Product path with `linux /APPS/DYNLDLIMIT`. It keeps the M74 relocation-table census and adds a bounded dynamic-symbol pass over `DT_SYMTAB`, `DT_STRTAB`, `DT_STRSZ`, and `DT_SYMENT`. The denial path now reports the first `DT_NEEDED` dependency name and the symbol names referenced by the first RELA and PLT relocation entries, while still denying before any binding or relocation write.
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`, SHA-256 `9F6EB9C05B3065D39BC59D24DEFE9361267B34CEFD4DE78F568DDB00497238FA`, external musl-cross ET_EXEC linked at `0x52000000` with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+`readelf -d -r --dyn-syms` for `DYNLDLIMIT` reports `DT_SYMTAB` at `0x52000388`, `DT_STRTAB` at `0x52000460`, `DT_STRSZ` 149, `DT_SYMENT` 24, first needed library `libc-x64.so`, first `.rela.dyn` symbol index 2 name `__deregister_frame_info`, and first `.rela.plt` symbol index 1 name `write`.
+
+M75 acceptance telemetry:
+
+```text
+drs-realbin-fail path /APPS/DYNLDLIMIT stage static code 8 pid 8241 elf-type 2 elf-load 4 elf-interp 1 interp-bytes 18 interp-checksum 0x8F7B800D interp-supported 1 interp-file-attempt 1 interp-file-read 1 interp-file-bytes 16704 interp-file-elf 1 interp-file-type 2 interp-file-load 4 interp-file-interp 0 interp-file-dynamic 0 interp-file-error 0 interp-file-nvme-error 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-map-cleanup 1 dynamic-map-error 0 dynamic-reloc 1 dynamic-rela 4 dynamic-jmprel 2 dynamic-relaent 24 dynamic-pltrel 7 dynamic-reloc-first 0x0000000052003FC8 dynamic-reloc-type 6 dynamic-jmprel-first 0x0000000052004000 dynamic-jmprel-type 7 dynamic-reloc-error 0 dynamic-symbol-trace 1 dynamic-symtab 1 dynamic-strtab 149 dynamic-syment 24 dynamic-needed-name libc-x64.so dynamic-needed-name-bytes 11 dynamic-needed-name-checksum 0xC92FC296 dynamic-reloc-symbol-index 2 dynamic-reloc-symbol __deregister_frame_info dynamic-reloc-symbol-bytes 23 dynamic-reloc-symbol-checksum 0x58F2B978 dynamic-jmprel-symbol-index 1 dynamic-jmprel-symbol write dynamic-jmprel-symbol-bytes 5 dynamic-jmprel-symbol-checksum 0xBE269F5C dynamic-symbol-error 0 root-cleanup 1 pml4-pool-used-final 0 elf-dynamic 1 dynamic-needed 1 dynamic-supported 0 dynamic-missing 1 dynamic-libc 0 dynamic-pthread 0 dynamic-first 0xC92FC296 dynamic-last 0xC92FC296 elf-error 0 load-error 0 stack-error 0 load-first 0x0000000000000000 load-end 0x0000000000000000 low-kernel-limit 0x0000000001000000 nvme-read-error 0 nvme-read-bytes 15680 nvme-read-capacity 4194304 nvme-read-size 15680 nvme-read-attr 0x0000000000000020
+```
+
+Final reserves are UEFI 811,488 bytes and BIOS 101 sectors.
+
+M75 non-claims: walking every relocation entry, symbol-provider classification, relocation application, GOT/PLT writes, dynamic symbol binding, `DT_NEEDED` library loading, dynamic-linker ABI handoff, dynamic stack/auxv construction, task registration, and dynamic execution remain unavailable.
+
+Proposed M76 scope: walk all bounded RELA and PLT relocation entries, count relocation types and referenced symbol names, classify which symbols are backed by the current Limitless libc/interpreter export surface, report supported/missing binding counts, and continue denying before applying relocations.
 
 Later targets are:
 
