@@ -350,6 +350,22 @@ static u32 shell64_write_decimal_line(
     return shell64_write_text(console_capability_handle, owner_id, "\n");
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void shell64_write_decimal_field(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 value)
+{
+    char buffer[10];
+    u32 length;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    length = shell64_format_decimal_u32(buffer, value);
+    (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
+}
+#endif
+
 static u32 shell64_write_hex32_line(
     u32 console_capability_handle,
     u32 owner_id,
@@ -707,6 +723,13 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     {
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer width: ", display64_width());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer height: ", display64_height());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer pitch pixels: ", display64_pixels_per_scanline());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer format: ", display64_framebuffer_format());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer base high: ", display64_framebuffer_base_high());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer base low: ", display64_framebuffer_base_low());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer bytes low: ", display64_framebuffer_bytes_low());
+#endif
     }
     else
     {
@@ -799,6 +822,22 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         "xHCI native; UHCI/OHCI/EHCI config-detected with PS/2 or firmware legacy fallback");
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme detected: ", mmio64_nvme_probe_found());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme ready: ", mmio64_nvme_probe_ready());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme probe unavailable: ", mmio64_nvme_probe_unavailable());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme probe error: ", mmio64_nvme_probe_error());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat located: ", mmio64_nvme_fat_located());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat unavailable: ", mmio64_nvme_fat_unavailable());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat error: ", mmio64_nvme_fat_error());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw delegated: ", mmio64_nvme_rw_delegated());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "nvme rw capability: ",
+        mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw error: ", mmio64_nvme_rw_error());
+#endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ahci detected: ", pci64_ecam_ahci_found());
     (void)shell64_write_yes_no_line(
         console_capability_handle,
@@ -1306,6 +1345,10 @@ static u32 shell64_linux_run(
     u32 argc = 0u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     u32 nvme_capability;
+    u32 nvme_available;
+    u32 nvme_capability_present;
+    u32 nvme_probe_found;
+    u32 nvme_probe_ready;
     u32 index;
     u32 arg_error = 0u;
     u32 arg_length = 0u;
@@ -1363,10 +1406,31 @@ static u32 shell64_linux_run(
     }
 
     nvme_capability = mmio64_nvme_rw_capability();
-    if ((nvme_capability == CAPABILITY64_INVALID_HANDLE) || (mmio64_nvme_probe_found() == 0u))
+    nvme_capability_present = (nvme_capability != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
+    nvme_probe_found = mmio64_nvme_probe_found();
+    nvme_probe_ready = mmio64_nvme_probe_ready();
+    nvme_available = ((nvme_capability_present != 0u) && (nvme_probe_found != 0u)) ? 1u : 0u;
+    if (nvme_available == 0u)
     {
-        (void)shell64_write_text(console_capability_handle, owner_id, "linux: NVMe FAT unavailable\n");
-        return shell64_write_text(console_capability_handle, owner_id, "drs-realbin-unavailable bios 0 nvme 0\n");
+        (void)shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "linux: NVMe FAT unavailable (UEFI storage probe did not expose the FAT source)\n");
+        (void)shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "linux: run hwval for framebuffer, I2C pointer, and NVMe hardware evidence\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "drs-realbin-unavailable bios 0 nvme ");
+        shell64_write_decimal_field(console_capability_handle, owner_id, "", nvme_available);
+        shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-probe ", nvme_probe_found);
+        shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", nvme_probe_ready);
+        shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-cap ", nvme_capability_present);
+        shell64_write_decimal_field(console_capability_handle, owner_id, " fat-located ", mmio64_nvme_fat_located());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " fat-unavailable ", mmio64_nvme_fat_unavailable());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " fat-error ", mmio64_nvme_fat_error());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " rw-delegated ", mmio64_nvme_rw_delegated());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " rw-error ", mmio64_nvme_rw_error());
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
     }
 
     return linux_exec64_run_nvme(

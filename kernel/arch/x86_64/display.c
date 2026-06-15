@@ -4534,6 +4534,33 @@ u32 display64_height(void)
     return display64_has_framebuffer() ? g_display_boot_info->framebuffer_height : 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_pixels_per_scanline(void)
+{
+    return display64_has_framebuffer() ? g_display_boot_info->framebuffer_pixels_per_scanline : 0u;
+}
+
+u32 display64_framebuffer_format(void)
+{
+    return display64_has_framebuffer() ? g_display_boot_info->framebuffer_format : DISPLAY64_INVALID_RESULT;
+}
+
+u32 display64_framebuffer_base_low(void)
+{
+    return display64_has_framebuffer() ? (u32)g_display_boot_info->framebuffer_base : 0u;
+}
+
+u32 display64_framebuffer_base_high(void)
+{
+    return display64_has_framebuffer() ? (u32)(g_display_boot_info->framebuffer_base >> 32) : 0u;
+}
+
+u32 display64_framebuffer_bytes_low(void)
+{
+    return display64_has_framebuffer() ? (u32)g_display_boot_info->framebuffer_bytes : 0u;
+}
+#endif
+
 u32 display64_compositor_init_done(void)
 {
     return g_display_compositor_active;

@@ -138,6 +138,13 @@ u32 display64_gui_fs_path_token(void);
 u32 display64_available(void);
 u32 display64_width(void);
 u32 display64_height(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_pixels_per_scanline(void);
+u32 display64_framebuffer_format(void);
+u32 display64_framebuffer_base_low(void);
+u32 display64_framebuffer_base_high(void);
+u32 display64_framebuffer_bytes_low(void);
+#endif
 u32 display64_draw_count(void);
 u32 display64_pixel_count(void);
 u32 display64_denial_count(void);
