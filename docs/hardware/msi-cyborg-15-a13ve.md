@@ -1,10 +1,37 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M18.1 physical validation pending user evidence.
+Status: M18.1 physical validation in progress; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
 Post-M21 hardware progress must be based on real device output. Synthetic process tests and QEMU-only driver evidence do not count as MSI laptop network, storage, or daily-driver validation.
+
+## June 2026 Hardware Snapshot
+
+User-provided laptop photos from a real boot show the kernel reaches the persistent `[x64] $` shell and accepts keyboard input. The observed `linux /APPS/DYNLDLIMIT` result is:
+
+```text
+linux: NVMe FAT unavailable
+drs-realbin-unavailable bios 0 nvme 0
+```
+
+Interpretation: this is the UEFI kernel branch (`bios 0`), not the BIOS checksum fallback. The real-binary launcher refuses before ELF parsing because the UEFI storage path did not expose the NVMe FAT source/capability used by the QEMU real-binary gate. Dynamic linker state is not being exercised on this hardware run yet.
+
+Known open hardware gaps from the photos:
+
+- Display reaches GOP framebuffer output, but console/window layout is visibly mis-scaled or overlapped on the laptop panel. New UEFI-only `hwval` fields now report framebuffer pitch, format, base, and byte size to diagnose this.
+- Keyboard input works through the brokered shell. The shell waiting for a key is expected; seeded startup command replay is intentionally gone.
+- Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
+- `linux /APPS/DYNLDLIMIT` cannot run until a real hardware-accessible Linux-binary source exists. Current QEMU gates stage Linux binaries in the separate NVMe GPT/FAT fixture; the physical USB/ISO boot-media `/APPS` descriptor path is a different read-only route and is not yet a large ELF source for `linux`.
+
+Next hardware evidence to capture with a build containing commit `179a5b34` or later:
+
+```text
+hwval
+linux /APPS/DYNLDLIMIT
+```
+
+Record the full `drs-realbin-unavailable` line, especially `nvme-probe`, `nvme-ready`, `nvme-cap`, `fat-located`, `fat-unavailable`, `fat-error`, `rw-delegated`, and `rw-error`.
 
 ## Safety Rules
 
