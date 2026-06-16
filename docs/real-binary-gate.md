@@ -1226,7 +1226,34 @@ Final reserves are UEFI 803,296 bytes and BIOS 101 sectors. The M82 UEFI manifes
 
 M82 non-claims: dynamic-linker ABI handoff, task registration, control transfer into the interpreter, and dynamic execution remain unavailable.
 
-Proposed M83 scope: register a bounded dynamic task with the proven interpreter RIP/RSP frame, transfer control through the normal scheduler/CR3/syscall boundary, and trace the first real runtime fault or bounded console output without broadening the dynamic linker surface.
+## M83 Dynamic Task Registration And First Execution
+
+M83 is accepted on the UEFI Product path with `linux /APPS/DYNLDLIMIT`. It removes the final dynamic-execution denial for the exact supported M80-M82 path, keeps the dynamic app/interpreter mappings and 64 KiB initial stack live in the process root, registers the process with the normal scheduler at interpreter RIP `0x000000004780105F` and RSP `0x000000005300FE30`, transfers control through the standard CR3/syscall boundary, prints visible brokered console output, exits through `exit_group(231)`, and returns the process root to the pool.
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`, SHA-256 `9F6EB9C05B3065D39BC59D24DEFE9361267B34CEFD4DE78F568DDB00497238FA`, external musl-cross ET_EXEC linked at `0x52000000` with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+M83 also fixes the UEFI boot-media staging alias used on real hardware: low pages containing staged app/interpreter payloads are now identity-mapped before the linked-kernel fallback alias is applied. This resolves the hardware path where boot-media read reported the correct byte count but ELF parsing saw the wrong magic at `stage elf code 3`.
+
+M83 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNLDLIMIT provenance 1 source 2 nvme-read 0 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-map-cleanup 1 dynamic-map-error 0 dynamic-reloc 1 dynamic-rela 4 dynamic-jmprel 2 dynamic-reloc-apply 1 dynamic-reloc-apply-total 6 dynamic-reloc-apply-write 6 dynamic-reloc-apply-readback 6 dynamic-reloc-apply-blocked 0 dynamic-reloc-apply-unavailable 0 dynamic-reloc-apply-error 0 dynamic-libc-start-main 1 dynamic-libc-start-main-apply 1 dynamic-libc-start-main-value 0x0000000047811BF0 dynamic-libc-start-main-readback 0x0000000047811BF0 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-error 0 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-stack-auxv 18 dynamic-stack-align 1 dynamic-transfer-ready 1 dynamic-transfer-rip 0x000000004780105F dynamic-transfer-rsp 0x000000005300FE30 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 15 dynamic-exit-code 0x00000000 mapped 8 pages 10 stack 16 pml4 1 pml4-pool 8 root-pool-limit 8 root-distinct 1 high-copy 1 mmio-shared 1 pool-mapped 1 low-compat 0 low-pdpt-present 0 syscall-entry-high 1 idt-high 1 kernel-entry-high-ready 1 syscall-root-repair 0 cr3-start 1 cr3-exit 1 task 0 started 1 console-bytes 15 exit 0 cleanup 1 write 1 write-bytes 15 page-faults 0 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynsmoke-start
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M83 UEFI manifest reports kernel bytes 1,298,656, checksum `0x85822D9F`, and SHA-256 `66a1620e401afd42d6ce90678bf0c5fab1a132d6d1fba347edb1d0170ff6bdb5`.
+
+M83 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, TLS for dynamically linked libraries, and general dynamic linker parity remain unavailable. The accepted claim is intentionally narrow: one bounded dynamic ET_EXEC path with fixed supported interpreter, fixed relocation set, fixed startup shim, normal task registration, visible output, and clean exit.
+
+Proposed M84 scope: run a second dynamic ET_EXEC that exercises one new runtime surface beyond `write` plus `exit_group`, then either accept visible output with `exit 0` or capture the first precise failure stage/syscall/RIP as the next bounded implementation target.
 
 Later targets are:
 

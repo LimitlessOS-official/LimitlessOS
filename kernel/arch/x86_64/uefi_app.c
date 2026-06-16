@@ -291,6 +291,47 @@ struct uefi_framebuffer_handoff
     u64 map_bytes;
 };
 
+static u32 boot_linux_file_contains_low_page(
+    const struct uefi_boot_linux_file *file,
+    u32 page_index)
+{
+    u64 start_page;
+    u64 end_page;
+
+    if ((file == NULL)
+        || (file->copied == 0u)
+        || (file->base == 0ull)
+        || (file->bytes == 0u))
+    {
+        return 0u;
+    }
+
+    start_page = file->base / LIMITLESS_UEFI_PAGE_BYTES;
+    end_page = (file->base + (u64)file->bytes + LIMITLESS_UEFI_PAGE_BYTES - 1ull)
+        / LIMITLESS_UEFI_PAGE_BYTES;
+    return (((u64)page_index >= start_page) && ((u64)page_index < end_page)) ? 1u : 0u;
+}
+
+static u64 boot_low_alias_physical(
+    u32 page_index,
+    u64 kernel_window_base,
+    const struct uefi_boot_linux_stage *boot_linux_stage)
+{
+    u64 low_virtual_page = (u64)page_index * LIMITLESS_UEFI_PAGE_BYTES;
+
+    if (page_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES)
+    {
+        return low_virtual_page;
+    }
+    if ((boot_linux_stage != NULL)
+        && ((boot_linux_file_contains_low_page(&boot_linux_stage->app, page_index) != 0u)
+            || (boot_linux_file_contains_low_page(&boot_linux_stage->interp, page_index) != 0u)))
+    {
+        return low_virtual_page;
+    }
+    return kernel_window_base + low_virtual_page;
+}
+
 struct uefi_acpi_handoff
 {
     u32 rsdp_found;
@@ -2987,11 +3028,10 @@ static void write_boot_handoff_line(
                             LIMITLESS_UEFI_PAGE_WRITABLE;
                         for (kernel_pt_index = 0u; kernel_pt_index < LIMITLESS_UEFI_PAGE_ENTRIES; ++kernel_pt_index)
                         {
-                            u64 low_virtual_page = (u64)kernel_pt_index * LIMITLESS_UEFI_PAGE_BYTES;
-                            u64 low_alias_physical =
-                                (kernel_pt_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES) ?
-                                    low_virtual_page :
-                                    (kernel_window_base + low_virtual_page);
+                            u64 low_alias_physical = boot_low_alias_physical(
+                                kernel_pt_index,
+                                kernel_window_base,
+                                boot_linux_stage);
                             kernel_pt[kernel_pt_index] = low_alias_physical |
                                 LIMITLESS_UEFI_PAGE_PRESENT |
                                 LIMITLESS_UEFI_PAGE_WRITABLE;
@@ -3119,11 +3159,10 @@ static void write_boot_handoff_line(
                      kernel_pt_index < LIMITLESS_UEFI_PAGE_ENTRIES && identity_ready != 0u;
                      ++kernel_pt_index)
                 {
-                    u64 low_virtual_page = (u64)kernel_pt_index * LIMITLESS_UEFI_PAGE_BYTES;
-                    u64 expected_low_alias =
-                        (kernel_pt_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES) ?
-                            low_virtual_page :
-                            (kernel_window_base + low_virtual_page);
+                    u64 expected_low_alias = boot_low_alias_physical(
+                        kernel_pt_index,
+                        kernel_window_base,
+                        boot_linux_stage);
                     expected_low_alias |= LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE;
                     if (kernel_pt[kernel_pt_index] != expected_low_alias)
                     {
