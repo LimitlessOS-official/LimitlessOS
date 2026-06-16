@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M81 dynamic ELF denial-path telemetry through bounded libc startup provider relocation are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M84 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution and second dynamic ET_EXEC runtime breadth are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -35,6 +35,7 @@ Passing artifacts:
 - `external\build\busybox-1.35.0-x86_64-linux-musl-0x52000000-standalone-sh`: BusyBox 1.35.0 static musl ET_EXEC linked at `0x52000000`, configured with `echo`, `cat`, `ls`, `true`, `sh`, `FEATURE_PREFER_APPLETS`, `FEATURE_SH_STANDALONE`, `FEATURE_SH_NOFORK`, and a gate-local `cat` NOEXEC applet patch, SHA-256 `15ACD328B182BB8CA23133AFA36DD9BB0ECBD607E551EBFE2F7E13DB3A8283F2`, verified with the default real-binary gate including `echo`, `cat`, `ls`, the bounded `sh` builtin loop, the M22 CR3 isolation command, the M23 fork/wait external-command shell path, the M24 pipeline path, the M25 PATH-search command, the M25 Linux-visible `/usr/bin` applet directory, and the M26 forked-child exec inheritance pipeline.
 - `external\build\zig-musl-smoke-imagebase`: locally built ignored static ET_EXEC linked at `0x52000000`, SHA-256 `F9F1BD81B69B6C8C13A7E9CAE3DA9C24E45B76124195F7D945F97A7B9BE0F50B`, staged at `/APPS/SMOKE` by the optional extra-app path and verified by M27 with `linux /APPS/BUSYBOX sh -c '/nvme/apps/smoke | /bin/cat'`. This is a generic staging/VFS/exec proof, not a third-party package proof.
 - `external\build\sbase-0.1-echo-x86_64-musl-0x52000000`: suckless sbase 0.1 `echo` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `35DA6DB9DCF1C7E76AE605EAE175318831BCD10BBBF406D5A30A600D2AE4B667`, staged at `/APPS/SBECHO`, verified directly with `linux /APPS/SBECHO m28-sbase-direct`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m28-sbase-pipeline | /bin/cat'`.
+- `external\build\DYNGETPID`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001060`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `7BC91398FC2CABE11FB067376D417E5DF8057DACF21214E454A4D9AFA62223CB`, staged through the boot-media Linux app path as `/APPS/DYNGETPID`, and verified by M84 with `linux /APPS/DYNGETPID`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -1253,7 +1254,34 @@ Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M83 UEFI manifes
 
 M83 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, TLS for dynamically linked libraries, and general dynamic linker parity remain unavailable. The accepted claim is intentionally narrow: one bounded dynamic ET_EXEC path with fixed supported interpreter, fixed relocation set, fixed startup shim, normal task registration, visible output, and clean exit.
 
-Proposed M84 scope: run a second dynamic ET_EXEC that exercises one new runtime surface beyond `write` plus `exit_group`, then either accept visible output with `exit 0` or capture the first precise failure stage/syscall/RIP as the next bounded implementation target.
+## M84 Dynamic Getpid Breadth Proof
+
+M84 is accepted on the UEFI Product path with `linux /APPS/DYNGETPID`. It runs a second dynamic ET_EXEC artifact through the same supported interpreter and proves one new dynamic runtime surface: the app has three PLT relocations, including `getpid`, and the relocation walker binds all three supported libc providers before normal dynamic execution. The app calls `getpid()`, writes `dyngetpid-pass`, exits through `exit_group(231)`, and leaves no process-root or page-fault residue.
+
+Staged artifacts:
+
+- `/APPS/DYNGETPID`, SHA-256 `7BC91398FC2CABE11FB067376D417E5DF8057DACF21214E454A4D9AFA62223CB`, external musl-cross ET_EXEC linked at `0x52000000`, entry `0x52001060`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+M84 also generalizes the UEFI boot-media Linux staging path. `tools/build.ps1` now writes the selected staged app/interpreter filenames into `arch_build.h`, the UEFI loader records normalized lowercase slash paths in `boot_info`, and `boot_media.c` matches boot-media reads against those recorded paths while keeping the legacy `/apps/dynldlimit` and `/apps/ldlimit` compatibility fallback. This fixes the earlier hard-coded boot-media fallback that recognized only `DYNLDLIMIT`.
+
+M84 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNGETPID provenance 1 source 2 nvme-read 0 boot-media-read 1 elf 1 static 0 elf-type 2 elf-load 4 elf-interp 1 interp-supported 1 interp-file-read 1 interp-file-elf 1 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 3 dynamic-binding-total 7 dynamic-binding-supported 3 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 3 dynamic-jmprel-symbol getpid dynamic-jmprel-symbol-checksum 0x7CC21180 dynamic-reloc-dry-apply-ready 7 dynamic-reloc-apply 1 dynamic-reloc-apply-total 7 dynamic-reloc-apply-write 7 dynamic-reloc-apply-readback 7 dynamic-reloc-apply-jmprel-readback 0x0000000047811180 dynamic-libc-start-main 1 dynamic-libc-start-main-readback 0x0000000047811BF0 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-error 0 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-stack-auxv 18 dynamic-transfer-ready 1 dynamic-transfer-rip 0x000000004780105F dynamic-transfer-rsp 0x000000005300FE30 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 15 dynamic-exit-code 0x00000000 mapped 8 pages 10 stack 16 pml4 1 pml4-pool 8 root-pool-limit 8 root-distinct 1 high-copy 1 mmio-shared 1 pool-mapped 1 low-compat 0 low-pdpt-present 0 syscall-entry-high 1 idt-high 1 kernel-entry-high-ready 1 syscall-root-repair 0 syscall-root-reload 4 cr3-start 1 cr3-exit 1 task 0 started 1 console-bytes 15 exit 0 cleanup 1 write 1 write-bytes 15 page-faults 0 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dyngetpid-pass
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M84 UEFI manifest reports kernel bytes 1,298,656, checksum `0x1B965DF5`, and SHA-256 `94c3b5d21af2f87a8d2518abc25b3c793db2ddeae53e1dee8cc2992ce95bb8e5`.
+
+M84 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic TLS, and general dynamic linker parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can now run more than one app artifact and bind a broader libc provider set including `getpid`.
+
+Proposed M85 scope: run another dynamic ET_EXEC that exercises a non-syscall libc helper surface, such as `puts`/`strlen`/`memcpy` or a small environment read, then either accept visible output with `exit 0` or capture the first precise failure stage/symbol/syscall/RIP as the next bounded implementation target.
 
 Later targets are:
 

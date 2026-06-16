@@ -40,6 +40,68 @@ static u32 boot_media64_path_equals(const u8 *path, u32 path_bytes, const char *
     return (expected[path_bytes] == '\0') ? 1u : 0u;
 }
 
+static u32 boot_media64_path_equals_bytes(
+    const u8 *path,
+    u32 path_bytes,
+    const u8 *expected,
+    u32 expected_bytes)
+{
+    u32 index;
+
+    if ((path == 0) || (expected == 0) || (path_bytes == 0u) || (path_bytes != expected_bytes))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < path_bytes; ++index)
+    {
+        if (boot_media64_lower(path[index]) != expected[index])
+        {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+static u32 boot_media64_path_matches_app(const u8 *path, u32 path_bytes)
+{
+    if (g_boot_media64_boot_info == 0)
+    {
+        return 0u;
+    }
+    if (boot_media64_path_equals_bytes(
+            path,
+            path_bytes,
+            g_boot_media64_boot_info->boot_media_app_path,
+            g_boot_media64_boot_info->boot_media_app_path_bytes) != 0u)
+    {
+        return 1u;
+    }
+    return (g_boot_media64_boot_info->boot_media_app_path_bytes == 0u)
+        ? boot_media64_path_equals(path, path_bytes, "/apps/dynldlimit")
+        : 0u;
+}
+
+static u32 boot_media64_path_matches_interp(const u8 *path, u32 path_bytes)
+{
+    if (g_boot_media64_boot_info == 0)
+    {
+        return 0u;
+    }
+    if (boot_media64_path_equals_bytes(
+            path,
+            path_bytes,
+            g_boot_media64_boot_info->boot_media_interp_path,
+            g_boot_media64_boot_info->boot_media_interp_path_bytes) != 0u)
+    {
+        return 1u;
+    }
+    return (g_boot_media64_boot_info->boot_media_interp_path_bytes == 0u)
+        ? boot_media64_path_equals(path, path_bytes, "/apps/ldlimit")
+        : 0u;
+}
+
 static void boot_media64_copy(u8 *destination, const u8 *source, u32 bytes)
 {
     u32 index;
@@ -75,13 +137,13 @@ u32 boot_media64_has_file(const u8 *path, u32 path_bytes)
     {
         return 0u;
     }
-    if (boot_media64_path_equals(path, path_bytes, "/apps/dynldlimit") != 0u)
+    if (boot_media64_path_matches_app(path, path_bytes) != 0u)
     {
         return 1u;
     }
     if (g_boot_media64_boot_info->boot_media_interp_base != 0ull
         && g_boot_media64_boot_info->boot_media_interp_bytes != 0u
-        && boot_media64_path_equals(path, path_bytes, "/apps/ldlimit") != 0u)
+        && boot_media64_path_matches_interp(path, path_bytes) != 0u)
     {
         return 1u;
     }
@@ -112,12 +174,12 @@ u32 boot_media64_read_file(const u8 *path, u32 path_bytes, u8 *buffer, u32 capac
         return 0u;
     }
 
-    if (boot_media64_path_equals(path, path_bytes, "/apps/dynldlimit") != 0u)
+    if (boot_media64_path_matches_app(path, path_bytes) != 0u)
     {
         source = (const u8 *)(u64)g_boot_media64_boot_info->boot_media_app_base;
         source_bytes = g_boot_media64_boot_info->boot_media_app_bytes;
     }
-    else if (boot_media64_path_equals(path, path_bytes, "/apps/ldlimit") != 0u)
+    else if (boot_media64_path_matches_interp(path, path_bytes) != 0u)
     {
         source = (const u8 *)(u64)g_boot_media64_boot_info->boot_media_interp_base;
         source_bytes = g_boot_media64_boot_info->boot_media_interp_bytes;

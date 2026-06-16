@@ -123,13 +123,9 @@ static efi_char16_t g_boot_kernel_path[] = {
     'K', 'E', 'R', 'N', 'E', 'L', '6', '4', '.', 'B', 'I', 'N', 0
 };
 
-static efi_char16_t g_boot_linux_app_path[] = {
-    'A', 'P', 'P', 'S', '\\', 'D', 'Y', 'N', 'L', 'D', 'L', 'I', 'M', 'I', 'T', 0
-};
+static efi_char16_t g_boot_linux_app_path[] = LIMITLESS_BOOT_LINUX_APP_PATH_INITIALIZER;
 
-static efi_char16_t g_boot_linux_interp_path[] = {
-    'A', 'P', 'P', 'S', '\\', 'L', 'D', 'L', 'I', 'M', 'I', 'T', 0
-};
+static efi_char16_t g_boot_linux_interp_path[] = LIMITLESS_BOOT_LINUX_INTERP_PATH_INITIALIZER;
 
 struct uefi_boot_manifest
 {
@@ -1172,6 +1168,40 @@ static void zero_bytes(u8 *destination, u64 length)
     {
         destination[index] = 0u;
     }
+}
+
+static u8 lower_ascii_u8(u8 value)
+{
+    if (value >= (u8)'A' && value <= (u8)'Z')
+    {
+        return (u8)(value + ((u8)'a' - (u8)'A'));
+    }
+    return value;
+}
+
+static u32 copy_boot_linux_path_to_boot_info(
+    u8 *destination,
+    u32 capacity,
+    efi_char16_t *source)
+{
+    u32 written = 0u;
+    u32 index = 0u;
+
+    if ((destination == NULL) || (capacity == 0u) || (source == NULL))
+    {
+        return 0u;
+    }
+
+    zero_bytes(destination, capacity);
+    destination[written++] = (u8)'/';
+    while ((source[index] != 0u) && (written < capacity))
+    {
+        u8 value = (u8)(source[index] & 0xFFu);
+        destination[written++] = (value == (u8)'\\') ? (u8)'/' : lower_ascii_u8(value);
+        ++index;
+    }
+
+    return (source[index] == 0u) ? written : 0u;
 }
 
 static u32 guid_equal(const struct efi_guid *left, const struct efi_guid *right)
@@ -3117,6 +3147,14 @@ static void write_boot_handoff_line(
                 (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? 1u : 0u;
             boot_info->boot_media_status =
                 (boot_linux_stage != NULL) ? (u32)boot_linux_stage->app.status : (u32)LIMITLESS_EFI_LOCAL_ERROR;
+            boot_info->boot_media_app_path_bytes = copy_boot_linux_path_to_boot_info(
+                boot_info->boot_media_app_path,
+                LIMITLESS_BOOT_MEDIA_PATH_BYTES,
+                g_boot_linux_app_path);
+            boot_info->boot_media_interp_path_bytes = copy_boot_linux_path_to_boot_info(
+                boot_info->boot_media_interp_path,
+                LIMITLESS_BOOT_MEDIA_PATH_BYTES,
+                g_boot_linux_interp_path);
             if (boot_info->boot_media_flags != 0u)
             {
                 boot_info->bootstrap_flags |= LIMITLESS_BOOT_FLAG_BOOT_MEDIA_APPS;

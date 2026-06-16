@@ -65,7 +65,9 @@ function Write-ArchBuildHeader
     param(
         [string]$OutputPath,
         [string]$TargetArchitecture,
-        [string]$TargetBuildProfile
+        [string]$TargetBuildProfile,
+        [string]$TargetBootLinuxAppName,
+        [string]$TargetBootLinuxInterpName
     )
 
     $bits = if ($TargetArchitecture -eq "x86") { 32 } else { 64 }
@@ -75,6 +77,10 @@ function Write-ArchBuildHeader
     $isProduct = if ($TargetBuildProfile -eq "Product") { 1 } else { 0 }
     $isExperimental = if ($TargetBuildProfile -eq "Experimental") { 1 } else { 0 }
     $experimentalRuntime = $isExperimental
+    $bootLinuxAppPath = "APPS\$TargetBootLinuxAppName"
+    $bootLinuxInterpPath = "APPS\$TargetBootLinuxInterpName"
+    $bootLinuxAppInitializer = ConvertTo-CChar16Initializer -Text $bootLinuxAppPath
+    $bootLinuxInterpInitializer = ConvertTo-CChar16Initializer -Text $bootLinuxInterpPath
 
     $header = @"
 #ifndef LIMITLESS_ARCH_BUILD_H
@@ -89,11 +95,25 @@ function Write-ArchBuildHeader
 #define LIMITLESS_BUILD_PROFILE_PRODUCT $isProduct
 #define LIMITLESS_BUILD_PROFILE_EXPERIMENTAL $isExperimental
 #define LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED $experimentalRuntime
+#define LIMITLESS_BOOT_LINUX_APP_PATH_INITIALIZER $bootLinuxAppInitializer
+#define LIMITLESS_BOOT_LINUX_INTERP_PATH_INITIALIZER $bootLinuxInterpInitializer
 
 #endif
 "@
 
     Set-Content -Path $OutputPath -Value $header -Encoding Ascii
+}
+
+function ConvertTo-CChar16Initializer
+{
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $values = New-Object System.Collections.Generic.List[string]
+    for ($index = 0; $index -lt $Text.Length; $index++) {
+        $values.Add(("{0}u" -f ([uint32][char]$Text[$index])))
+    }
+    $values.Add("0u")
+    return "{ " + ($values -join ", ") + " }"
 }
 
 function Get-Fnv1aDataChecksum
@@ -1290,7 +1310,12 @@ if (-not $?) {
 }
 
 Write-Host "Generating architecture build header"
-Write-ArchBuildHeader -OutputPath $archBuildHeader -TargetArchitecture $Architecture -TargetBuildProfile $BuildProfile
+Write-ArchBuildHeader `
+    -OutputPath $archBuildHeader `
+    -TargetArchitecture $Architecture `
+    -TargetBuildProfile $BuildProfile `
+    -TargetBootLinuxAppName $BootLinuxAppName `
+    -TargetBootLinuxInterpName $BootLinuxInterpName
 
 if ($Architecture -eq "x86") {
     Build-X86

@@ -22,6 +22,7 @@
 
 #define LIMITLESS_BOOT_FRAMEBUFFER_FORMAT_RGB 0u
 #define LIMITLESS_BOOT_FRAMEBUFFER_FORMAT_BGR 1u
+#define LIMITLESS_BOOT_MEDIA_PATH_BYTES 64u
 
 struct boot_info
 {
@@ -72,6 +73,10 @@ struct boot_info
     u32 boot_media_interp_token;
     u32 boot_media_flags;
     u32 boot_media_status;
+    u32 boot_media_app_path_bytes;
+    u8 boot_media_app_path[LIMITLESS_BOOT_MEDIA_PATH_BYTES];
+    u32 boot_media_interp_path_bytes;
+    u8 boot_media_interp_path[LIMITLESS_BOOT_MEDIA_PATH_BYTES];
 };
 
 #endif
