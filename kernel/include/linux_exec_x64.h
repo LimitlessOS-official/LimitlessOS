@@ -27,6 +27,13 @@ u32 linux_exec64_run_nvme(
     u32 owner_id,
     u32 nvme_fs_capability,
     u32 console_capability);
+u32 linux_exec64_run_boot_media(
+    const u8 *path,
+    u32 path_bytes,
+    const char *const *argv,
+    u32 argc,
+    u32 owner_id,
+    u32 console_capability);
 #else
 static inline u32 linux_exec64_run_nvme(
     const u8 *path,
@@ -43,6 +50,22 @@ static inline u32 linux_exec64_run_nvme(
     (void)argc;
     (void)owner_id;
     (void)nvme_fs_capability;
+    (void)console_capability;
+    return LINUX_EXEC64_RESULT_FAILED;
+}
+static inline u32 linux_exec64_run_boot_media(
+    const u8 *path,
+    u32 path_bytes,
+    const char *const *argv,
+    u32 argc,
+    u32 owner_id,
+    u32 console_capability)
+{
+    (void)path;
+    (void)path_bytes;
+    (void)argv;
+    (void)argc;
+    (void)owner_id;
     (void)console_capability;
     return LINUX_EXEC64_RESULT_FAILED;
 }

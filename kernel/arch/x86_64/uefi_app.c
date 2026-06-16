@@ -13,6 +13,7 @@
 #define LIMITLESS_EFI_LOCAL_ERROR 0xFFFFFFFFFFFFFFFEull
 #define LIMITLESS_UEFI_LOADER_BUFFER_BYTES (2u * 1024u * 1024u)
 #define LIMITLESS_UEFI_MEMORY_MAP_BYTES (32u * 1024u)
+#define LIMITLESS_UEFI_BOOT_LINUX_FILE_MAX_BYTES (128u * 1024u)
 #define LIMITLESS_UEFI_KERNEL_PLACEMENT_ALIGNMENT 0x0000000000200000ull
 #define LIMITLESS_UEFI_KERNEL_LINKED_BASE 0x0000000000010000ull
 #define LIMITLESS_UEFI_KERNEL_LINKED_ENTRY 0xFFFFFFFF80010000ull
@@ -122,6 +123,14 @@ static efi_char16_t g_boot_kernel_path[] = {
     'K', 'E', 'R', 'N', 'E', 'L', '6', '4', '.', 'B', 'I', 'N', 0
 };
 
+static efi_char16_t g_boot_linux_app_path[] = {
+    'A', 'P', 'P', 'S', '\\', 'D', 'Y', 'N', 'L', 'D', 'L', 'I', 'M', 'I', 'T', 0
+};
+
+static efi_char16_t g_boot_linux_interp_path[] = {
+    'A', 'P', 'P', 'S', '\\', 'L', 'D', 'L', 'I', 'M', 'I', 'T', 0
+};
+
 struct uefi_boot_manifest
 {
     u32 valid;
@@ -139,6 +148,25 @@ struct uefi_loader_payload
     efi_status_t status;
     u64 base;
     u64 capacity;
+};
+
+struct uefi_boot_linux_file
+{
+    u32 attempted;
+    u32 loaded;
+    u32 allocated;
+    u32 copied;
+    u32 bytes;
+    u32 pages;
+    u32 checksum;
+    u64 base;
+    efi_status_t status;
+};
+
+struct uefi_boot_linux_stage
+{
+    struct uefi_boot_linux_file app;
+    struct uefi_boot_linux_file interp;
 };
 
 struct uefi_memory_map_summary
@@ -1746,6 +1774,184 @@ static void init_loader_payload(struct uefi_loader_payload *payload)
     payload->capacity = 0u;
 }
 
+static u32 uefi_select_conventional_range(
+    struct efi_system_table *system_table,
+    u32 pages,
+    u64 minimum_base,
+    u64 maximum_end,
+    u64 alignment,
+    u64 avoid_base,
+    u32 avoid_pages,
+    u64 *selected_base);
+
+static void init_boot_linux_file(struct uefi_boot_linux_file *file)
+{
+    if (file == NULL)
+    {
+        return;
+    }
+
+    file->attempted = 0u;
+    file->loaded = 0u;
+    file->allocated = 0u;
+    file->copied = 0u;
+    file->bytes = 0u;
+    file->pages = 0u;
+    file->checksum = 0u;
+    file->base = 0ull;
+    file->status = LIMITLESS_EFI_LOCAL_ERROR;
+}
+
+static void init_boot_linux_stage(struct uefi_boot_linux_stage *stage)
+{
+    if (stage == NULL)
+    {
+        return;
+    }
+
+    init_boot_linux_file(&stage->app);
+    init_boot_linux_file(&stage->interp);
+}
+
+static void load_boot_linux_file_to_low_pages(
+    struct efi_system_table *system_table,
+    struct efi_file_protocol *root,
+    efi_char16_t *path,
+    struct uefi_boot_linux_file *file)
+{
+    u64 bytes_read = 0ull;
+    u32 token = 0u;
+    efi_physical_address_t physical_base = 0ull;
+
+    if (file == NULL)
+    {
+        return;
+    }
+
+    init_boot_linux_file(file);
+    file->attempted = 1u;
+    file->status = load_boot_file_into_buffer(
+        root,
+        path,
+        g_loader_kernel_buffer,
+        LIMITLESS_UEFI_BOOT_LINUX_FILE_MAX_BYTES,
+        &bytes_read,
+        &token);
+    file->bytes = (u32)bytes_read;
+    file->checksum = token;
+    file->pages = (u32)((bytes_read + 4095u) / 4096u);
+    file->loaded = (file->status == EFI_SUCCESS && bytes_read > 0ull) ? 1u : 0u;
+    if (file->loaded == 0u ||
+        file->pages == 0u ||
+        system_table == NULL ||
+        system_table->boot_services == NULL ||
+        system_table->boot_services->allocate_pages == NULL)
+    {
+        return;
+    }
+
+    if (uefi_select_conventional_range(
+            system_table,
+            file->pages,
+            0x0000000000100000ull,
+            LIMITLESS_UEFI_LOW_ALLOCATION_LIMIT,
+            LIMITLESS_UEFI_PAGE_BYTES,
+            0ull,
+            0u,
+            &file->base) == 0u)
+    {
+        file->status = LIMITLESS_EFI_LOCAL_ERROR;
+        file->base = 0ull;
+        return;
+    }
+
+    physical_base = file->base;
+    file->status = system_table->boot_services->allocate_pages(
+        EFI_ALLOCATE_ADDRESS,
+        EFI_MEMORY_TYPE_LOADER_DATA,
+        file->pages,
+        &physical_base);
+    file->base = physical_base;
+    if (file->status == EFI_SUCCESS && physical_base != 0ull)
+    {
+        u64 page_bytes = ((u64)file->pages) * LIMITLESS_UEFI_PAGE_BYTES;
+        u8 *target = (u8 *)(void *)file->base;
+
+        file->allocated = 1u;
+        copy_bytes(target, g_loader_kernel_buffer, bytes_read);
+        if (page_bytes > bytes_read)
+        {
+            zero_bytes(target + bytes_read, page_bytes - bytes_read);
+        }
+        file->checksum = checksum_bytes(target, bytes_read);
+        file->copied = 1u;
+    }
+}
+
+static void write_boot_linux_stage_file_line(
+    struct efi_system_table *system_table,
+    const char *name,
+    const struct uefi_boot_linux_file *file)
+{
+    char line[256];
+    u32 length = 0u;
+
+    append_string(line, sizeof(line), &length, "[uefi] boot linux stage ");
+    append_string(line, sizeof(line), &length, name);
+    append_string(line, sizeof(line), &length, " attempted ");
+    append_dec_u32(line, sizeof(line), &length, (file != NULL) ? file->attempted : 0u);
+    append_string(line, sizeof(line), &length, " loaded ");
+    append_dec_u32(line, sizeof(line), &length, (file != NULL) ? file->loaded : 0u);
+    append_string(line, sizeof(line), &length, " bytes ");
+    append_dec_u32(line, sizeof(line), &length, (file != NULL) ? file->bytes : 0u);
+    append_string(line, sizeof(line), &length, " pages ");
+    append_dec_u32(line, sizeof(line), &length, (file != NULL) ? file->pages : 0u);
+    append_string(line, sizeof(line), &length, " base ");
+    append_hex_u64(line, sizeof(line), &length, (file != NULL) ? file->base : 0u);
+    append_string(line, sizeof(line), &length, " copied ");
+    append_dec_u32(line, sizeof(line), &length, (file != NULL) ? file->copied : 0u);
+    append_string(line, sizeof(line), &length, " token ");
+    append_hex_u32(line, sizeof(line), &length, (file != NULL) ? file->checksum : 0u);
+    append_string(line, sizeof(line), &length, " status ");
+    append_hex_u64(line, sizeof(line), &length, (file != NULL) ? file->status : LIMITLESS_EFI_LOCAL_ERROR);
+    append_char(line, sizeof(line), &length, '\n');
+    write_line(system_table, line);
+}
+
+static void write_boot_linux_stage_lines(
+    efi_handle_t image_handle,
+    struct efi_system_table *system_table,
+    struct uefi_boot_linux_stage *stage)
+{
+    struct efi_file_protocol *root = NULL;
+    const char *open_stage = "unknown";
+    efi_status_t status;
+
+    init_boot_linux_stage(stage);
+
+    status = open_boot_root(image_handle, system_table, &root, &open_stage);
+    if (status != EFI_SUCCESS || root == NULL)
+    {
+        char line[192];
+        u32 length = 0u;
+
+        append_string(line, sizeof(line), &length, "[uefi] boot linux stage unavailable ");
+        append_string(line, sizeof(line), &length, open_stage);
+        append_char(line, sizeof(line), &length, ' ');
+        append_hex_u64(line, sizeof(line), &length, status);
+        append_char(line, sizeof(line), &length, '\n');
+        write_line(system_table, line);
+        close_file_if_present(root);
+        return;
+    }
+
+    load_boot_linux_file_to_low_pages(system_table, root, g_boot_linux_app_path, &stage->app);
+    write_boot_linux_stage_file_line(system_table, "DYNLDLIMIT", &stage->app);
+    load_boot_linux_file_to_low_pages(system_table, root, g_boot_linux_interp_path, &stage->interp);
+    write_boot_linux_stage_file_line(system_table, "LDLIMIT", &stage->interp);
+    close_file_if_present(root);
+}
+
 static void write_boot_media_lines(
     efi_handle_t image_handle,
     struct efi_system_table *system_table,
@@ -2594,6 +2800,7 @@ static void write_boot_handoff_line(
     const struct uefi_linked_kernel_placement *linked_placement,
     const struct uefi_acpi_handoff *acpi,
     struct uefi_framebuffer_handoff *framebuffer,
+    const struct uefi_boot_linux_stage *boot_linux_stage,
     struct uefi_boot_handoff *handoff)
 {
     efi_physical_address_t physical_base = LIMITLESS_UEFI_BOOT_HANDOFF_BASE;
@@ -2854,6 +3061,26 @@ static void write_boot_handoff_line(
                 boot_info->apic_interrupt_override_flags[identity_index] =
                     (acpi != NULL && acpi->madt_found != 0u) ? acpi->interrupt_override_flags[identity_index] : 0u;
             }
+            boot_info->boot_media_app_base =
+                (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? boot_linux_stage->app.base : 0ull;
+            boot_info->boot_media_app_bytes =
+                (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? boot_linux_stage->app.bytes : 0u;
+            boot_info->boot_media_app_token =
+                (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? boot_linux_stage->app.checksum : 0u;
+            boot_info->boot_media_interp_base =
+                (boot_linux_stage != NULL && boot_linux_stage->interp.copied != 0u) ? boot_linux_stage->interp.base : 0ull;
+            boot_info->boot_media_interp_bytes =
+                (boot_linux_stage != NULL && boot_linux_stage->interp.copied != 0u) ? boot_linux_stage->interp.bytes : 0u;
+            boot_info->boot_media_interp_token =
+                (boot_linux_stage != NULL && boot_linux_stage->interp.copied != 0u) ? boot_linux_stage->interp.checksum : 0u;
+            boot_info->boot_media_flags =
+                (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? 1u : 0u;
+            boot_info->boot_media_status =
+                (boot_linux_stage != NULL) ? (u32)boot_linux_stage->app.status : (u32)LIMITLESS_EFI_LOCAL_ERROR;
+            if (boot_info->boot_media_flags != 0u)
+            {
+                boot_info->bootstrap_flags |= LIMITLESS_BOOT_FLAG_BOOT_MEDIA_APPS;
+            }
 
             copy_bytes(trampoline, g_kernel_entry_trampoline, sizeof(g_kernel_entry_trampoline));
             uefi_write_u64_le(trampoline + 32u, handoff->pml4);
@@ -2944,7 +3171,9 @@ static void write_boot_handoff_line(
                 kernel_map_ready != 0u &&
                 boot_info->magic == LIMITLESS_BOOT_INFO_MAGIC &&
                 boot_info->architecture_bits == 64u &&
-                boot_info->bootstrap_flags == uefi_boot_flags(framebuffer) &&
+                boot_info->bootstrap_flags ==
+                    (uefi_boot_flags(framebuffer) |
+                        ((boot_info->boot_media_flags != 0u) ? LIMITLESS_BOOT_FLAG_BOOT_MEDIA_APPS : 0u)) &&
                 boot_info->page_table_root == (u32)handoff->pml4 &&
                 ((framebuffer == NULL) || (framebuffer->available == 0u) || (framebuffer->mapped != 0u)) &&
                 handoff->trampoline_ready != 0u)
@@ -3308,6 +3537,7 @@ efi_status_t efi_main(efi_handle_t image_handle, struct efi_system_table *system
     struct uefi_linked_kernel_placement linked_placement;
     struct uefi_boot_handoff boot_handoff;
     struct uefi_framebuffer_handoff framebuffer;
+    struct uefi_boot_linux_stage boot_linux_stage;
     struct uefi_acpi_handoff acpi;
 
     services64_init();
@@ -3327,7 +3557,16 @@ efi_status_t efi_main(efi_handle_t image_handle, struct efi_system_table *system
     write_memory_map_line(system_table, "[uefi] memory map descriptors ", &memory_map);
     write_kernel_placement_line(system_table, &payload, &memory_map, &placement);
     write_linked_kernel_placement_line(system_table, &payload, &linked_placement);
-    write_boot_handoff_line(system_table, &payload, &memory_map, &linked_placement, &acpi, &framebuffer, &boot_handoff);
+    write_boot_linux_stage_lines(image_handle, system_table, &boot_linux_stage);
+    write_boot_handoff_line(
+        system_table,
+        &payload,
+        &memory_map,
+        &linked_placement,
+        &acpi,
+        &framebuffer,
+        &boot_linux_stage,
+        &boot_handoff);
     write_memory_map_line(system_table, "[uefi] handoff memory map descriptors ", &handoff_memory_map);
     exit_boot_services_for_handoff(image_handle, system_table, &placement, &linked_placement, &boot_handoff);
 

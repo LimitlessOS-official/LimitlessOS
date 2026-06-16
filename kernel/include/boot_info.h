@@ -10,6 +10,7 @@
 #define LIMITLESS_BOOT_FLAG_IDENTITY_MAP 0x00000008u
 #define LIMITLESS_BOOT_FLAG_HIGH_HALF_ALIAS 0x00000010u
 #define LIMITLESS_BOOT_FLAG_FRAMEBUFFER 0x00000020u
+#define LIMITLESS_BOOT_FLAG_BOOT_MEDIA_APPS 0x00000040u
 
 #define LIMITLESS_BOOT_ACPI_FLAG_RSDP 0x00000001u
 #define LIMITLESS_BOOT_ACPI_FLAG_XSDT 0x00000002u
@@ -63,6 +64,14 @@ struct boot_info
     u32 apic_interrupt_override_source[16];
     u32 apic_interrupt_override_gsi[16];
     u32 apic_interrupt_override_flags[16];
+    u64 boot_media_app_base;
+    u32 boot_media_app_bytes;
+    u32 boot_media_app_token;
+    u64 boot_media_interp_base;
+    u32 boot_media_interp_bytes;
+    u32 boot_media_interp_token;
+    u32 boot_media_flags;
+    u32 boot_media_status;
 };
 
 #endif

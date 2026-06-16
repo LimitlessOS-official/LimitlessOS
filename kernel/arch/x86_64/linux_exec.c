@@ -2,6 +2,7 @@
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 
+#include "boot_media_x64.h"
 #include "capability_x64.h"
 #include "console_x64.h"
 #include "descriptors_x64.h"
@@ -58,6 +59,8 @@ typedef enum linux_exec64_stage
 #define LINUX_EXEC64_RELOC_TYPE_JUMP_SLOT 7u
 #define LINUX_EXEC64_SYMBOL_BIND_WEAK 2u
 #define LINUX_EXEC64_SYMBOL_SECTION_UNDEF 0u
+#define LINUX_EXEC64_SOURCE_NVME 1u
+#define LINUX_EXEC64_SOURCE_BOOT_MEDIA 2u
 
 static const char *const g_linux_exec64_default_envp[LINUX_EXEC64_DEFAULT_ENV_COUNT] = {
     "PATH=/usr/local/bin:/bin:/usr/bin",
@@ -73,7 +76,12 @@ static const char *g_linux_exec64_staged_envp_ptrs[LINUX_EXEC64_DEFAULT_ENV_COUN
 typedef struct linux_exec64_telemetry
 {
     linux_exec64_stage_t stage;
+    u32 source;
     u32 nvme_read;
+    u32 boot_media_read;
+    u32 boot_media_read_error;
+    u32 boot_media_read_bytes;
+    u32 boot_media_read_capacity;
     u32 elf;
     u32 static_elf;
     u32 elf_type;
@@ -492,6 +500,55 @@ static u32 linux_exec64_stage_launch_strings(const char *const *argv, u32 argc)
     }
 
     return 1u;
+}
+
+static u32 linux_exec64_read_nvme_source(
+    const u8 *path,
+    u32 path_bytes,
+    u8 *buffer,
+    u32 capacity,
+    u32 owner_id,
+    u32 *bytes_read)
+{
+    u32 result = mmio64_nvme_fat_shell_read_file(path, path_bytes, buffer, capacity, owner_id, bytes_read);
+
+    g_linux_exec64_telemetry.nvme_read_error = mmio64_nvme_fat_shell_read_last_error();
+    g_linux_exec64_telemetry.nvme_read_bytes = mmio64_nvme_fat_shell_read_last_bytes();
+    g_linux_exec64_telemetry.nvme_read_capacity = mmio64_nvme_fat_shell_read_last_capacity();
+    g_linux_exec64_telemetry.nvme_read_size = mmio64_nvme_fat_shell_read_last_size();
+    g_linux_exec64_telemetry.nvme_read_attr = mmio64_nvme_fat_shell_read_last_attr();
+    if (result != 0u)
+    {
+        g_linux_exec64_telemetry.nvme_read = 1u;
+    }
+    return result;
+}
+
+static u32 linux_exec64_read_source(
+    u32 source,
+    const u8 *path,
+    u32 path_bytes,
+    u8 *buffer,
+    u32 capacity,
+    u32 owner_id,
+    u32 *bytes_read)
+{
+    if (source == LINUX_EXEC64_SOURCE_BOOT_MEDIA)
+    {
+        u32 result = boot_media64_read_file(path, path_bytes, buffer, capacity, bytes_read);
+
+        g_linux_exec64_telemetry.boot_media_read_error = boot_media64_last_error();
+        g_linux_exec64_telemetry.boot_media_read_bytes = boot_media64_last_bytes();
+        g_linux_exec64_telemetry.boot_media_read_capacity = boot_media64_last_capacity();
+        if (result != 0u)
+        {
+            g_linux_exec64_telemetry.boot_media_read = 1u;
+        }
+        (void)owner_id;
+        return result;
+    }
+
+    return linux_exec64_read_nvme_source(path, path_bytes, buffer, capacity, owner_id, bytes_read);
 }
 
 static u32 linux_exec64_write(
@@ -1558,7 +1615,11 @@ static void linux_exec64_record_interpreter_file_metadata(u8 *binary, u32 binary
     g_linux_exec64_telemetry.interp_file_error = ELF64_ERROR_NONE;
 }
 
-static u32 linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_path, u32 interp_path_bytes)
+static u32 linux_exec64_probe_interpreter_file(
+    u32 owner_id,
+    const u8 *interp_path,
+    u32 interp_path_bytes,
+    u32 source)
 {
     const u8 *backend_path;
     u32 backend_path_bytes;
@@ -1575,7 +1636,8 @@ static u32 linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_pa
     }
 
     g_linux_exec64_telemetry.interp_file_attempt = 1u;
-    if (mmio64_nvme_fat_shell_read_file(
+    if (linux_exec64_read_source(
+            source,
             backend_path,
             backend_path_bytes,
             g_linux_exec64_binary,
@@ -1583,13 +1645,15 @@ static u32 linux_exec64_probe_interpreter_file(u32 owner_id, const u8 *interp_pa
             owner_id,
             &bytes_read) == 0u)
     {
-        g_linux_exec64_telemetry.interp_file_nvme_error = mmio64_nvme_fat_shell_read_last_error();
+        g_linux_exec64_telemetry.interp_file_nvme_error =
+            (source == LINUX_EXEC64_SOURCE_NVME) ? mmio64_nvme_fat_shell_read_last_error() : boot_media64_last_error();
         g_linux_exec64_telemetry.interp_file_error = g_linux_exec64_telemetry.interp_file_nvme_error;
         return 0u;
     }
 
     g_linux_exec64_telemetry.interp_file_read = 1u;
-    g_linux_exec64_telemetry.interp_file_nvme_error = mmio64_nvme_fat_shell_read_last_error();
+    g_linux_exec64_telemetry.interp_file_nvme_error =
+        (source == LINUX_EXEC64_SOURCE_NVME) ? mmio64_nvme_fat_shell_read_last_error() : boot_media64_last_error();
     linux_exec64_record_interpreter_file_metadata(g_linux_exec64_binary, bytes_read);
     return (g_linux_exec64_telemetry.interp_file_elf != 0u) ? 1u : 0u;
 }
@@ -1989,8 +2053,12 @@ static void linux_exec64_emit_summary(
 {
     (void)linux_exec64_write_text(console_capability, owner_id, "drs-realbin path ");
     linux_exec64_write_path_canonical(console_capability, owner_id, path, path_bytes);
-    (void)linux_exec64_write_text(console_capability, owner_id, " provenance 1 nvme-read ");
+    (void)linux_exec64_write_text(console_capability, owner_id, " provenance 1 source ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.source);
+    (void)linux_exec64_write_text(console_capability, owner_id, " nvme-read ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.nvme_read);
+    (void)linux_exec64_write_text(console_capability, owner_id, " boot-media-read ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.boot_media_read);
     (void)linux_exec64_write_text(console_capability, owner_id, " elf ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.elf);
     (void)linux_exec64_write_text(console_capability, owner_id, " static ");
@@ -2764,6 +2832,8 @@ static void linux_exec64_emit_failure(
 {
     (void)linux_exec64_write_text(console_capability, owner_id, "drs-realbin-fail path ");
     linux_exec64_write_path_canonical(console_capability, owner_id, path, path_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " source ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.source);
     (void)linux_exec64_write_text(console_capability, owner_id, " stage ");
     (void)linux_exec64_write_text(
         console_capability,
@@ -3102,6 +3172,12 @@ static void linux_exec64_emit_failure(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.nvme_read_size);
     (void)linux_exec64_write_text(console_capability, owner_id, " nvme-read-attr ");
     linux_exec64_write_hex_u64(console_capability, owner_id, (u64)g_linux_exec64_telemetry.nvme_read_attr);
+    (void)linux_exec64_write_text(console_capability, owner_id, " boot-media-read-error ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.boot_media_read_error);
+    (void)linux_exec64_write_text(console_capability, owner_id, " boot-media-read-bytes ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.boot_media_read_bytes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " boot-media-read-capacity ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.boot_media_read_capacity);
     (void)linux_exec64_write_text(console_capability, owner_id, "\n");
 }
 
@@ -3367,6 +3443,8 @@ static u32 linux_exec64_build_dynamic_stack_preview(
 static u32 linux_exec64_try_dynamic_mapping_preview(
     u32 owner_id,
     u32 nvme_fs_capability,
+    u32 source_authority,
+    u32 source,
     const elf64_header_t *header,
     const elf64_program_header_t *phdrs,
     const elf64_phdr_summary_t *summary,
@@ -3419,7 +3497,8 @@ static u32 linux_exec64_try_dynamic_mapping_preview(
     root_authority = process64_runtime_token(pid);
     if (root_authority == 0u)
     {
-        root_authority = nvme_fs_capability;
+        root_authority =
+            (source == LINUX_EXEC64_SOURCE_BOOT_MEDIA) ? source_authority : nvme_fs_capability;
     }
     if (paging64_process_root_alloc(pid, process_owner, root_authority) == 0u)
     {
@@ -3502,7 +3581,8 @@ static u32 linux_exec64_try_dynamic_mapping_preview(
             (void)linux_exec64_probe_interpreter_file(
                 owner_id,
                 g_linux_exec64_binary + phdrs[index].offset,
-                g_linux_exec64_telemetry.interp_path_bytes);
+                g_linux_exec64_telemetry.interp_path_bytes,
+                source);
             break;
         }
     }
@@ -3691,14 +3771,15 @@ static u32 linux_exec64_static_loads_overlap_low_kernel_window(
         : 0u;
 }
 
-u32 linux_exec64_run_nvme(
+static u32 linux_exec64_run_source(
     const u8 *path,
     u32 path_bytes,
     const char *const *argv,
     u32 argc,
     u32 owner_id,
     u32 nvme_fs_capability,
-    u32 console_capability)
+    u32 console_capability,
+    u32 source)
 {
     elf64_header_t header;
     elf64_program_header_t phdrs[ELF64_MAX_PROGRAM_HEADERS];
@@ -3980,6 +4061,7 @@ u32 linux_exec64_run_nvme(
     g_linux_exec64_telemetry.syscall_last = 0xFFFFFFFFu;
     g_linux_exec64_telemetry.syscall_last_result = 0u;
     g_linux_exec64_telemetry.low_kernel_vma_limit = LINUX_EXEC64_LOW_KERNEL_VMA_LIMIT;
+    g_linux_exec64_telemetry.source = source;
     g_linux_exec64_telemetry.kernel_cr3_entry =
         ((entry_cr3_restore != 0u)
             && (paging64_current_root_physical() == (entry_kernel_root & 0xFFFFFFFFFFFFF000ull)))
@@ -4006,9 +4088,7 @@ u32 linux_exec64_run_nvme(
     }
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_CAPABILITY;
-    if ((nvme_fs_capability == CAPABILITY64_INVALID_HANDLE)
-        || (nvme_fs_capability != mmio64_nvme_rw_capability())
-        || (console_capability == CAPABILITY64_INVALID_HANDLE)
+    if ((console_capability == CAPABILITY64_INVALID_HANDLE)
         || (capability64_route(console_capability, CAPABILITY64_RIGHT_SEND, owner_id)
             != services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_CONSOLE)))
     {
@@ -4016,9 +4096,26 @@ u32 linux_exec64_run_nvme(
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
+    if (source == LINUX_EXEC64_SOURCE_NVME)
+    {
+        if ((nvme_fs_capability == CAPABILITY64_INVALID_HANDLE)
+            || (nvme_fs_capability != mmio64_nvme_rw_capability()))
+        {
+            g_linux_exec64_telemetry.failure_code = 1u;
+            linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
+            return LINUX_EXEC64_RESULT_FAILED;
+        }
+    }
+    else if ((source != LINUX_EXEC64_SOURCE_BOOT_MEDIA) || (boot_media64_has_file(path, path_bytes) == 0u))
+    {
+        g_linux_exec64_telemetry.failure_code = 1u;
+        linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
+        return LINUX_EXEC64_RESULT_FAILED;
+    }
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_READ;
-    if (mmio64_nvme_fat_shell_read_file(
+    if (linux_exec64_read_source(
+            source,
             path,
             path_bytes,
             g_linux_exec64_binary,
@@ -4026,21 +4123,13 @@ u32 linux_exec64_run_nvme(
             owner_id,
             &bytes_read) == 0u)
     {
-        g_linux_exec64_telemetry.nvme_read_error = mmio64_nvme_fat_shell_read_last_error();
-        g_linux_exec64_telemetry.nvme_read_bytes = mmio64_nvme_fat_shell_read_last_bytes();
-        g_linux_exec64_telemetry.nvme_read_capacity = mmio64_nvme_fat_shell_read_last_capacity();
-        g_linux_exec64_telemetry.nvme_read_size = mmio64_nvme_fat_shell_read_last_size();
-        g_linux_exec64_telemetry.nvme_read_attr = mmio64_nvme_fat_shell_read_last_attr();
-        g_linux_exec64_telemetry.failure_code = g_linux_exec64_telemetry.nvme_read_error;
+        g_linux_exec64_telemetry.failure_code =
+            (source == LINUX_EXEC64_SOURCE_BOOT_MEDIA)
+                ? g_linux_exec64_telemetry.boot_media_read_error
+                : g_linux_exec64_telemetry.nvme_read_error;
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
-    g_linux_exec64_telemetry.nvme_read_error = mmio64_nvme_fat_shell_read_last_error();
-    g_linux_exec64_telemetry.nvme_read_bytes = mmio64_nvme_fat_shell_read_last_bytes();
-    g_linux_exec64_telemetry.nvme_read_capacity = mmio64_nvme_fat_shell_read_last_capacity();
-    g_linux_exec64_telemetry.nvme_read_size = mmio64_nvme_fat_shell_read_last_size();
-    g_linux_exec64_telemetry.nvme_read_attr = mmio64_nvme_fat_shell_read_last_attr();
-    g_linux_exec64_telemetry.nvme_read = 1u;
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_ELF;
     if (elf64_parse_header(g_linux_exec64_binary, bytes_read, &header) != ELF64_OK)
@@ -4078,6 +4167,8 @@ u32 linux_exec64_run_nvme(
     if (linux_exec64_try_dynamic_mapping_preview(
             owner_id,
             nvme_fs_capability,
+            console_capability,
+            source,
             &header,
             phdrs,
             &phdr_summary,
@@ -4125,7 +4216,8 @@ u32 linux_exec64_run_nvme(
     root_authority = process64_runtime_token(pid);
     if (root_authority == 0u)
     {
-        root_authority = nvme_fs_capability;
+        root_authority =
+            (source == LINUX_EXEC64_SOURCE_BOOT_MEDIA) ? console_capability : nvme_fs_capability;
     }
     if (paging64_process_root_alloc(pid, process_owner, root_authority) == 0u)
     {
@@ -4213,14 +4305,15 @@ u32 linux_exec64_run_nvme(
                 stdout_capability,
                 stderr_capability) == 0u)
         || (persona64_init_linux_elf(pid, linux_abi64_dispatch_table()) != PERSONA64_ATTACH_OK)
-        || (linux_vfs64_bind_nvme_read(pid, owner_id, nvme_fs_capability) == 0u))
+        || ((source == LINUX_EXEC64_SOURCE_NVME)
+            && (linux_vfs64_bind_nvme_read(pid, owner_id, nvme_fs_capability) == 0u)))
     {
         g_linux_exec64_telemetry.failure_code = 4u;
         linux_exec64_release_failed_process(pid);
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
-    g_linux_exec64_telemetry.nvme_vfs_bind = 1u;
+    g_linux_exec64_telemetry.nvme_vfs_bind = (source == LINUX_EXEC64_SOURCE_NVME) ? 1u : 0u;
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_LAUNCH;
     load_cr3_switch = paging64_switch_to_process_root(pid, 0x4C4F4144u);
@@ -5116,7 +5209,7 @@ u32 linux_exec64_run_nvme(
 
     g_linux_exec64_telemetry.cleanup =
         ((exit_probe_clear != 0u)
-            && (nvme_vfs_release != 0u)
+            && ((source != LINUX_EXEC64_SOURCE_NVME) || (nvme_vfs_release != 0u))
             && ((vma_release + exit_vma_release)
                 >= (g_linux_exec64_telemetry.mapped_regions + 1u))
             && (g_linux_exec64_telemetry.root_cleanup != 0u)
@@ -5137,6 +5230,45 @@ u32 linux_exec64_run_nvme(
 
     linux_exec64_emit_summary(console_capability, owner_id, path, path_bytes);
     return LINUX_EXEC64_RESULT_OK;
+}
+
+u32 linux_exec64_run_nvme(
+    const u8 *path,
+    u32 path_bytes,
+    const char *const *argv,
+    u32 argc,
+    u32 owner_id,
+    u32 nvme_fs_capability,
+    u32 console_capability)
+{
+    return linux_exec64_run_source(
+        path,
+        path_bytes,
+        argv,
+        argc,
+        owner_id,
+        nvme_fs_capability,
+        console_capability,
+        LINUX_EXEC64_SOURCE_NVME);
+}
+
+u32 linux_exec64_run_boot_media(
+    const u8 *path,
+    u32 path_bytes,
+    const char *const *argv,
+    u32 argc,
+    u32 owner_id,
+    u32 console_capability)
+{
+    return linux_exec64_run_source(
+        path,
+        path_bytes,
+        argv,
+        argc,
+        owner_id,
+        CAPABILITY64_INVALID_HANDLE,
+        console_capability,
+        LINUX_EXEC64_SOURCE_BOOT_MEDIA);
 }
 
 #endif

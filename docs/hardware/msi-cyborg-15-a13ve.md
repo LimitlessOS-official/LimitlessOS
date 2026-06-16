@@ -41,7 +41,7 @@ For hardware builds that need dynamic-linker artifacts available on the USB boot
   -BootLinuxInterpPath <path-to-LDLIMIT> -BootLinuxInterpName LDLIMIT
 ```
 
-This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. It is staging groundwork only: `linux /APPS/DYNLDLIMIT` on hardware still requires a kernel boot-media read source or loader handoff path, because the current `linux` command reads from the QEMU NVMe FAT fixture.
+This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader now reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and the kernel `linux` command can fall back to this boot-media source when the QEMU NVMe FAT fixture is unavailable. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, and `boot media status`. In `linux /APPS/DYNLDLIMIT` telemetry, `source 2 boot-media-read 1` proves the hardware boot-media route was used.
 
 ## Safety Rules
 

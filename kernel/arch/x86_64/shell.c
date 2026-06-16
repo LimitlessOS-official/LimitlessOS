@@ -4,6 +4,7 @@
 #include "ai_policy_x64.h"
 #include "apic_x64.h"
 #include "auth_x64.h"
+#include "boot_media_x64.h"
 #include "console_x64.h"
 #include "cloud_storage_x64.h"
 #include "display_x64.h"
@@ -837,6 +838,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         "nvme rw capability: ",
         mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw error: ", mmio64_nvme_rw_error());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "boot media linux staged: ", boot_media64_available());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media app bytes: ", boot_media64_app_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media interp bytes: ", boot_media64_interp_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media flags: ", boot_media64_flags());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media status: ", boot_media64_status());
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ahci detected: ", pci64_ecam_ahci_found());
     (void)shell64_write_yes_no_line(
@@ -1412,6 +1418,20 @@ static u32 shell64_linux_run(
     nvme_available = ((nvme_capability_present != 0u) && (nvme_probe_found != 0u)) ? 1u : 0u;
     if (nvme_available == 0u)
     {
+        if (boot_media64_has_file(g_shell64_line + path_start, path_length) != 0u)
+        {
+            (void)shell64_write_text(
+                console_capability_handle,
+                owner_id,
+                "linux: using UEFI boot-media staged file\n");
+            return linux_exec64_run_boot_media(
+                g_shell64_line + path_start,
+                path_length,
+                argv,
+                argc,
+                owner_id,
+                console_capability_handle);
+        }
         (void)shell64_write_text(
             console_capability_handle,
             owner_id,

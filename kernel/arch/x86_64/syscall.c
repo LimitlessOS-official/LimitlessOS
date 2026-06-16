@@ -2,6 +2,7 @@
 
 #include "app_model_x64.h"
 #include "block_x64.h"
+#include "boot_media_x64.h"
 #include "capability_x64.h"
 #include "console_x64.h"
 #include "descriptors_x64.h"
@@ -241,6 +242,7 @@ void syscall64_init(const struct boot_info *boot_info)
     launch64_init();
     process64_init();
     capability64_init();
+    boot_media64_init(boot_info);
     mmio64_init();
     pci64_init(boot_info);
     block64_init();
