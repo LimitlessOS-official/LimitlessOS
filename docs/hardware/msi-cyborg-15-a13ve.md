@@ -33,6 +33,16 @@ linux /APPS/DYNLDLIMIT
 
 Record the full `drs-realbin-unavailable` line, especially `nvme-probe`, `nvme-ready`, `nvme-cap`, `fat-located`, `fat-unavailable`, `fat-error`, `rw-delegated`, and `rw-error`.
 
+For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product `
+  -BootLinuxAppPath <path-to-DYNLDLIMIT> -BootLinuxAppName DYNLDLIMIT `
+  -BootLinuxInterpPath <path-to-LDLIMIT> -BootLinuxInterpName LDLIMIT
+```
+
+This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. It is staging groundwork only: `linux /APPS/DYNLDLIMIT` on hardware still requires a kernel boot-media read source or loader handoff path, because the current `linux` command reads from the QEMU NVMe FAT fixture.
+
 ## Safety Rules
 
 - Boot through the UEFI USB entry only.

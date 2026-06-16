@@ -3,7 +3,15 @@ param(
     [string]$Architecture = "x86",
 
     [ValidateSet("Product", "Experimental")]
-    [string]$BuildProfile = "Product"
+    [string]$BuildProfile = "Product",
+
+    [string]$BootLinuxAppPath = "",
+
+    [string]$BootLinuxAppName = "DYNLDLIMIT",
+
+    [string]$BootLinuxInterpPath = "",
+
+    [string]$BootLinuxInterpName = "LDLIMIT"
 )
 
 Set-StrictMode -Version Latest
@@ -1003,7 +1011,11 @@ non-product-package-registry-stubs=ASK,ECHO
         -InputEfiPath $uefiArtifact `
         -OutputImagePath $uefiImage `
         -BootManifestPath $uefiManifestPath `
-        -KernelPayloadPath $uefiKernelPath
+        -KernelPayloadPath $uefiKernelPath `
+        -BootLinuxAppPath $BootLinuxAppPath `
+        -BootLinuxAppName $BootLinuxAppName `
+        -BootLinuxInterpPath $BootLinuxInterpPath `
+        -BootLinuxInterpName $BootLinuxInterpName
     if (-not $?) {
         throw "Failed to generate x86_64 UEFI FAT image."
     }
