@@ -1411,6 +1411,21 @@ static u32 shell64_linux_run(
         return shell64_write_text(console_capability_handle, owner_id, "linux: too many args\n");
     }
 
+    if (boot_media64_has_file(g_shell64_line + path_start, path_length) != 0u)
+    {
+        (void)shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "linux: using UEFI boot-media staged file\n");
+        return linux_exec64_run_boot_media(
+            g_shell64_line + path_start,
+            path_length,
+            argv,
+            argc,
+            owner_id,
+            console_capability_handle);
+    }
+
     nvme_capability = mmio64_nvme_rw_capability();
     nvme_capability_present = (nvme_capability != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
     nvme_probe_found = mmio64_nvme_probe_found();
@@ -1418,20 +1433,6 @@ static u32 shell64_linux_run(
     nvme_available = ((nvme_capability_present != 0u) && (nvme_probe_found != 0u)) ? 1u : 0u;
     if (nvme_available == 0u)
     {
-        if (boot_media64_has_file(g_shell64_line + path_start, path_length) != 0u)
-        {
-            (void)shell64_write_text(
-                console_capability_handle,
-                owner_id,
-                "linux: using UEFI boot-media staged file\n");
-            return linux_exec64_run_boot_media(
-                g_shell64_line + path_start,
-                path_length,
-                argv,
-                argc,
-                owner_id,
-                console_capability_handle);
-        }
         (void)shell64_write_text(
             console_capability_handle,
             owner_id,
