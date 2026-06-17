@@ -1486,7 +1486,34 @@ Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M91 UEFI manifes
 
 M91 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic writes to NVMe files, directory enumeration from dynamic libc, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use generated libc metadata, offset, and file-I/O stubs against one real FAT-backed file cleanly.
 
-Proposed M92 scope: run a dynamic ET_EXEC that opens `/nvme/apps`, enumerates entries with `getdents64`, stats at least one returned entry, and prints the discovered names. If the generated libc shim still lacks a public `getdents64` export, M92 should add only that syscall binding before the proof.
+## M92 Dynamic Directory Enumeration Breadth
+
+M92 is accepted on the UEFI Product path with `linux /APPS/DYNDIR`. It runs a tenth dynamic ET_EXEC artifact through the same supported interpreter and proves the boot-media dynamic path can bind scoped NVMe VFS read authority, resolve a generated libc `getdents64` syscall stub, open `/nvme/apps`, enumerate raw Linux `dirent64` records from the FAT-backed VFS, stat the returned `data` directory entry, write `dyndir:data`, exit through `exit_group(231)`, and release the Linux VFS binding cleanly.
+
+Staged artifacts:
+
+- `/APPS/DYNDIR`, SHA-256 `A54BE4145223AC87CA1E1C3ECF8926FEE6F5CC79CD27463C8D68812A6D30E802`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+Implementation scope: add only the generated libc syscall export for `getdents64` at reserved RVA `0x000011F0`. The kernel ABI syscall implementation, VFS directory cursor path, and real-binary telemetry already existed; M92 exposes that existing syscall to dynamic ET_EXEC programs through the in-tree libc shim. No new Linux syscall behavior, arbitrary shared-library loading, lazy binding, glibc compatibility, or BIOS path expansion is claimed.
+
+M92 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNDIR provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol write dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 12 dynamic-exit-code 0x00000000 getdents64 1 getdents64-entries 3 getdents64-bytes 88 stat 1 stat-denial 0 stat-fault 0 write 1 write-bytes 12 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-readdirs 4 vfs-nvme-dirents 3 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 12 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dyndir:data
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M92 UEFI manifest reports kernel bytes 1,298,656, checksum `0xAD882A99`, and SHA-256 `ee1b5157188b5b4a489f996c58c70f98423cebc7d79ef57789443d3ca806ce51`.
+
+M92 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic writes to NVMe files, libc `opendir`/`readdir` wrappers, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use a generated libc `getdents64` syscall stub to enumerate a real FAT-backed directory and stat one returned entry cleanly.
+
+Proposed M93 scope: add only the needed generated libc exports for existing cwd/path syscalls, then run a dynamic ET_EXEC that calls `getcwd`, `chdir("/nvme/apps")`, opens `data/file.txt` by relative path, and optionally reads `/proc/self/exe` with `readlink`, proving dynamic programs can use process cwd and proc path metadata instead of only absolute paths.
 
 Later targets are:
 

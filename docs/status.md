@@ -16,7 +16,7 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M91 is `dynamic file metadata and seek breadth`. The UEFI Product Linux persona launcher now runs a ninth dynamic ET_EXEC artifact, `/APPS/DYNSEEK`, through the same bounded supported-interpreter path proven by M83-M90. The run proves a boot-media-staged dynamic app can receive scoped NVMe VFS read authority, call generated libc `stat`, `fstat`, `lseek`, `read`, `write`, and `close` bindings against `/nvme/apps/data/file.txt`, seek to deterministic offsets in a FAT-backed file, read the expected slices, print them through the brokered console, and release the VFS binding cleanly. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
+M92 is `dynamic directory enumeration breadth`. The UEFI Product Linux persona launcher now runs a tenth dynamic ET_EXEC artifact, `/APPS/DYNDIR`, through the same bounded supported-interpreter path proven by M83-M91. The run proves a boot-media-staged dynamic app can receive scoped NVMe VFS read authority, bind a generated libc `getdents64` syscall stub, open `/nvme/apps`, enumerate raw Linux `dirent64` records from the FAT-backed VFS, stat the returned `data` directory entry, print `dyndir:data` through the brokered console, and release the VFS binding cleanly. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
 
 M62 through M66 are also accepted after the older M61 path-normalization chain: M62 removed the low-identity compatibility mapping from Linux persona roots, M63 added the signal foundation for SIGPIPE/SIGCHLD and `rt_sigreturn`, M64 added musl pthread-style `clone(56)` threading, M65 fixed contended futex wakeups, and M66 expanded static thread/process pools while proving per-thread TLS with eight worker threads.
 
@@ -284,7 +284,18 @@ M91 acceptance evidence:
 - visible output: `dynseek:FAT32 pa:fixture`
 - proof telemetry excerpt: `path /APPS/DYNSEEK source 2 boot-media-read 1 elf 1 static 0 dynamic-rela 4 dynamic-jmprel 8 dynamic-binding-total 12 dynamic-binding-supported 8 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 8 dynamic-jmprel-symbol lseek dynamic-reloc-apply 1 dynamic-reloc-apply-total 12 dynamic-reloc-apply-write 12 dynamic-reloc-apply-readback 12 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x00000000520010B0 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 24 dynamic-exit-code 0x00000000 stat 1 stat-denial 0 stat-fault 0 fstat 1 fstat-denial 0 fstat-fault 0 lseek 2 lseek-denial 0 read 2 read-bytes 15 write 1 write-bytes 24 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 2 vfs-nvme-bytes 27 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 24 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0`
 
-Proposed next milestone: M92 `dynamic directory enumeration breadth`. M92 should run a dynamic ET_EXEC that opens `/nvme/apps`, calls `getdents64` through a generated libc/syscall binding or a minimal direct syscall wrapper if the libc shim does not yet expose it, stats at least one returned entry, and prints the discovered names. That will prove the dynamic path can enumerate directories rather than only operate on a known file path.
+M92 acceptance evidence:
+
+- command: `linux /APPS/DYNDIR`
+- staged app artifact: `/APPS/DYNDIR`, SHA-256 `A54BE4145223AC87CA1E1C3ECF8926FEE6F5CC79CD27463C8D68812A6D30E802`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, with `PT_INTERP` requesting `/nvme/apps/ldlimit` and `DT_NEEDED` `libc-x64.so`
+- staged interpreter candidate: `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+- implementation scope: add only a generated libc syscall export for `getdents64` at the reserved `0x11F0` stub slot, increasing libc symbol count from 50 to 51 and syscall-backed symbols from 16 to 17; no new Linux ABI syscall implementation was needed because kernel `getdents64(217)` already existed
+- final reserves after the M92 build: UEFI reserve 798,496 bytes; BIOS reserve 101 sectors
+- UEFI manifest: kernel bytes 1,298,656; checksum `0xAD882A99`; SHA-256 `ee1b5157188b5b4a489f996c58c70f98423cebc7d79ef57789443d3ca806ce51`
+- visible output: `dyndir:data`
+- proof telemetry excerpt: `path /APPS/DYNDIR source 2 boot-media-read 1 elf 1 static 0 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol write dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 12 dynamic-exit-code 0x00000000 getdents64 1 getdents64-entries 3 getdents64-bytes 88 stat 1 stat-denial 0 stat-fault 0 write 1 write-bytes 12 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-readdirs 4 vfs-nvme-dirents 3 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 12 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0`
+
+Proposed next milestone: M93 `dynamic cwd and relative path breadth`. M93 should add only the needed generated libc exports for existing cwd/path syscalls, then run a dynamic ET_EXEC that calls `getcwd`, `chdir("/nvme/apps")`, opens `data/file.txt` by relative path, and optionally reads `/proc/self/exe` with `readlink`, proving dynamic programs can use process cwd and proc path metadata instead of only absolute paths.
 
 ## Product Profile
 
@@ -305,8 +316,8 @@ Current Product artifacts:
 - UEFI kernel bytes: 1,298,656
 - UEFI kernel byte limit: 2,097,152 bytes
 - UEFI byte reserve: 798,496
-- UEFI checksum: `0xF1D59AE7`
-- UEFI SHA-256: `60cab95f91c2e0e7ca003358bb294daadac24778574a1f3d95c02517a65a073e`
+- UEFI checksum: `0xAD882A99`
+- UEFI SHA-256: `ee1b5157188b5b4a489f996c58c70f98423cebc7d79ef57789443d3ca806ce51`
 - BIOS sector budget status: warning threshold below 128 reserve sectors, hard 1024-sector loader limit still satisfied
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and `fnv1a-32` loader checksum, with no UEFI sector arithmetic. `BOOTMAN.TXT` also records `kernel-sha256` for external artifact verification.
 - UEFI handoff: fixed low pages are preferences only. The loader verifies/allocates through the UEFI memory map, supports dynamic linked-kernel and handoff-table fallback, and reports allocation name/status/conflict/fallback diagnostics instead of silently freezing.
