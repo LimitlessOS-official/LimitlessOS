@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M97 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, and dynamic openat dirfd-relative lookup behavior are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M98 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, and dynamic fchdir cwd handoff behavior are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -47,6 +47,7 @@ Passing artifacts:
 - `external\build\DYNFSTATAT`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001070`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `35504B625F60B8C4DAAF464B57219466AA49CABCCDC0082F6907505C1C1DE8A0`, staged through the boot-media Linux app path as `/APPS/DYNFSTATAT`, and verified by M95 with `linux /APPS/DYNFSTATAT`.
 - `external\build\DYNOPENAT`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `C28EC4FA1D26912A31B36591F9FCE73E07D086FC3F80CB3C4514C1AC374AD7BB`, staged through the boot-media Linux app path as `/APPS/DYNOPENAT`, and verified by M96 with `linux /APPS/DYNOPENAT`.
 - `external\build\DYNODIR`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001080`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `43B960D929BC6E15B573E65166FEB2EDFFDBBC2573BE19372697056CDACA0E23`, staged through the NVMe FAT extra-app path as `/APPS/DYNODIR`, and verified by M97 with `linux /APPS/DYNODIR`.
+- `external\build\DYNFCHDIR`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `0F4B1A7B2D001568C801B7930D8BD4F9F9ED6BE4EA239AB022AE59D4CEA48E08`, staged through the NVMe FAT extra-app path as `/APPS/DYNFCHDIR`, and verified by M98 with `linux /APPS/DYNFCHDIR`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -1659,7 +1660,36 @@ Final reserves remain UEFI 798,496 bytes and BIOS 101 sectors. The M97 UEFI mani
 
 M97 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, filesystem mutation, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can use a generated libc `openat` wrapper to resolve a file relative to a real VFS-backed directory fd.
 
-Proposed M98 scope: expose the existing `fchdir(81)` ABI through the generated libc shim, then run a dynamic ET_EXEC that opens `/nvme/apps/data` as a directory fd, calls `fchdir(datafd)`, opens `file.txt` through the cwd-relative `open` or `openat(AT_FDCWD, ...)` path, reads the FAT-backed content, and exits cleanly without adding filesystem mutation or arbitrary dynamic linker search/loading.
+## M98 Dynamic Fchdir Directory-Fd Cwd Handoff
+
+M98 is accepted on the UEFI Product path with `linux /APPS/DYNFCHDIR`. It runs a sixteenth dynamic ET_EXEC artifact through the same supported interpreter and proves the dynamic path can bind scoped NVMe VFS read authority, resolve a generated libc `fchdir` wrapper, open `/nvme/apps/data` as a VFS-backed directory fd, call `fchdir(datafd)` to update the Linux persona cwd, resolve `file.txt` relative to that new cwd through `openat(AT_FDCWD, "file.txt", O_RDONLY, 0)`, read the file content, write `dynfchdir:Nested:FAT32`, exit through `exit_group(231)`, and release the Linux VFS binding cleanly.
+
+Staged artifacts:
+
+- `/APPS/DYNFCHDIR`, SHA-256 `0F4B1A7B2D001568C801B7930D8BD4F9F9ED6BE4EA239AB022AE59D4CEA48E08`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The first M98 trace proved the dynamic binding but faulted at `rip 0x0000000047811D60 cr2 0x0000000000000003` because the first chosen `fchdir` RVA was outside the executable syscall-stub area and generic syscall-stub emission correctly refused to write it. The accepted fix places `fchdir` at `0x11F8`, the 8-byte executable text gap between `getdents64` and `memcpy`.
+
+Implementation scope: add only the generated libc wrapper/export for existing kernel ABI syscall `fchdir(81)`. The kernel ABI syscall implementation, cwd state, VFS-backed fd path lookup, path canonicalization, open/read path, fd close path, and cleanup path already existed. No new Linux ABI syscall implementation, arbitrary shared-library loading, lazy binding, glibc compatibility, file mutation, or BIOS path expansion is claimed.
+
+M98 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNFCHDIR provenance 1 source 1 nvme-read 1 boot-media-read 0 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol fchdir dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-reloc-apply-jmprel-readback 0x00000000478111F8 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 23 dynamic-exit-code 0x00000000 path-relative 1 path-fault 0 chdir 0 fchdir 1 chdir-denial 0 chdir-fault 0 openat 2 read 1 read-bytes 27 write 1 write-bytes 23 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 1 vfs-nvme-bytes 27 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 23 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynfchdir:Nested:FAT32
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M98 UEFI manifest reports kernel bytes 1,298,656, checksum `0x28E88BAA`, and SHA-256 `3f782d4294c6966d152b46b7fad10be282108c6ed4ba4244eab48dc3cef9a64c`.
+
+M98 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, filesystem mutation, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can use a generated libc `fchdir` wrapper to update cwd from a real VFS-backed directory fd, then read a cwd-relative file cleanly.
+
+Proposed M99 scope: expose the existing `fcntl(72)` ABI through the generated libc shim and run a dynamic ET_EXEC that uses `F_GETFD`, `F_SETFD`, `F_GETFL`, and the currently supported `F_SETFL` subset on a real VFS fd, proving descriptor/status flag translation without adding filesystem mutation or arbitrary dynamic linker search/loading.
 
 Later targets are:
 
