@@ -16,7 +16,7 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M92 is `dynamic directory enumeration breadth`. The UEFI Product Linux persona launcher now runs a tenth dynamic ET_EXEC artifact, `/APPS/DYNDIR`, through the same bounded supported-interpreter path proven by M83-M91. The run proves a boot-media-staged dynamic app can receive scoped NVMe VFS read authority, bind a generated libc `getdents64` syscall stub, open `/nvme/apps`, enumerate raw Linux `dirent64` records from the FAT-backed VFS, stat the returned `data` directory entry, print `dyndir:data` through the brokered console, and release the VFS binding cleanly. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
+M93 is `dynamic cwd and relative path breadth`. The UEFI Product Linux persona launcher now runs an eleventh dynamic ET_EXEC artifact, `/APPS/DYNCWD`, through the same bounded supported-interpreter path proven by M83-M92. The run proves a boot-media-staged dynamic app can receive scoped NVMe VFS read authority, bind generated libc `getcwd`, `chdir`, and `readlink` syscall stubs, update its cwd to `/nvme/apps`, open `data/file.txt` by relative path, read the FAT-backed file content, read `/proc/self/exe` symlink metadata, print `dyncwd:/nvme/apps:Nested FAT32 path fixture:/proc/self/exe` through the brokered console, and release the VFS binding cleanly. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
 
 M62 through M66 are also accepted after the older M61 path-normalization chain: M62 removed the low-identity compatibility mapping from Linux persona roots, M63 added the signal foundation for SIGPIPE/SIGCHLD and `rt_sigreturn`, M64 added musl pthread-style `clone(56)` threading, M65 fixed contended futex wakeups, and M66 expanded static thread/process pools while proving per-thread TLS with eight worker threads.
 
@@ -295,7 +295,19 @@ M92 acceptance evidence:
 - visible output: `dyndir:data`
 - proof telemetry excerpt: `path /APPS/DYNDIR source 2 boot-media-read 1 elf 1 static 0 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol write dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 12 dynamic-exit-code 0x00000000 getdents64 1 getdents64-entries 3 getdents64-bytes 88 stat 1 stat-denial 0 stat-fault 0 write 1 write-bytes 12 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-readdirs 4 vfs-nvme-dirents 3 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 12 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0`
 
-Proposed next milestone: M93 `dynamic cwd and relative path breadth`. M93 should add only the needed generated libc exports for existing cwd/path syscalls, then run a dynamic ET_EXEC that calls `getcwd`, `chdir("/nvme/apps")`, opens `data/file.txt` by relative path, and optionally reads `/proc/self/exe` with `readlink`, proving dynamic programs can use process cwd and proc path metadata instead of only absolute paths.
+M93 acceptance evidence:
+
+- command: `linux /APPS/DYNCWD`
+- staged app artifact: `/APPS/DYNCWD`, SHA-256 `B36DEFEEEFD22F0E050A20210D7F24575A0ABC3C0ED8F20F73386AEBC1B471D4`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010B0`, with `PT_INTERP` requesting `/nvme/apps/ldlimit` and `DT_NEEDED` `libc-x64.so`
+- staged interpreter candidate: `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+- first trace before fix: `linux /APPS/DYNCWD` faulted before telemetry with a user page fault at RIP `0x0000000047811012`, CR2 `0x0000000052001000`, error `0x7`; root cause was placing new generated libc syscall stubs in the `0x1010`/`0x1018` low gaps, which overlapped the longer `pthread_cond_init` helper beginning at `0x1008`
+- implementation scope: expose existing kernel ABI syscalls `getcwd(79)`, `chdir(80)`, and `readlink(89)` through generated libc syscall stubs placed in non-overlapping helper gaps at `0x1410`, `0x1430`, and `0x1450`; no new Linux ABI syscall implementation was needed
+- final reserves after the M93 build: UEFI reserve 798,496 bytes; BIOS reserve 101 sectors
+- UEFI manifest: kernel bytes 1,298,656; checksum `0x5C6B2453`; SHA-256 `b3516c247c55c182e93673e86b58e4545d1ff4bd57493446e9a6bd08e9b0b88c`
+- visible output: `dyncwd:/nvme/apps:Nested FAT32 path fixture:/proc/self/exe`
+- proof telemetry excerpt: `path /APPS/DYNCWD source 2 boot-media-read 1 elf 1 static 0 dynamic-rela 4 dynamic-jmprel 8 dynamic-binding-total 12 dynamic-binding-supported 8 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 8 dynamic-jmprel-symbol readlink dynamic-reloc-apply 1 dynamic-reloc-apply-total 12 dynamic-reloc-apply-write 12 dynamic-reloc-apply-readback 12 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x00000000520010B0 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 59 dynamic-exit-code 0x00000000 readlink 1 readlink-bytes 14 readlink-denial 0 readlink-fault 0 readlink-last-result 14 getcwd 2 getcwd-bytes 13 getcwd-denial 0 getcwd-fault 0 path-relative 1 path-dot 0 path-dotdot 0 path-trailing 0 path-fault 0 chdir 1 chdir-denial 0 chdir-fault 0 read 1 read-bytes 27 write 7 write-bytes 59 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 1 vfs-nvme-bytes 27 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 59 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0`
+
+Proposed next milestone: M94 `dynamic vectored I/O and readiness breadth`. M94 should run a dynamic ET_EXEC that binds existing generated libc or newly exposed minimal syscall stubs for `readv`, `writev`, and `poll`, then proves multi-buffer console/file I/O and readiness reporting without expanding into sockets, epoll, or broad terminal ioctl behavior.
 
 ## Product Profile
 
@@ -316,8 +328,8 @@ Current Product artifacts:
 - UEFI kernel bytes: 1,298,656
 - UEFI kernel byte limit: 2,097,152 bytes
 - UEFI byte reserve: 798,496
-- UEFI checksum: `0xAD882A99`
-- UEFI SHA-256: `ee1b5157188b5b4a489f996c58c70f98423cebc7d79ef57789443d3ca806ce51`
+- UEFI checksum: `0x5C6B2453`
+- UEFI SHA-256: `b3516c247c55c182e93673e86b58e4545d1ff4bd57493446e9a6bd08e9b0b88c`
 - BIOS sector budget status: warning threshold below 128 reserve sectors, hard 1024-sector loader limit still satisfied
 - boot contract: split path. BIOS keeps the 1024-sector hard limit and 128-sector warning. UEFI Product uses a 2 MiB `KERNEL64.BIN` file-size contract verified against `BOOTMAN.TXT` byte count and `fnv1a-32` loader checksum, with no UEFI sector arithmetic. `BOOTMAN.TXT` also records `kernel-sha256` for external artifact verification.
 - UEFI handoff: fixed low pages are preferences only. The loader verifies/allocates through the UEFI memory map, supports dynamic linked-kernel and handoff-table fallback, and reports allocation name/status/conflict/fallback diagnostics instead of silently freezing.

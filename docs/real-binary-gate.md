@@ -1513,7 +1513,36 @@ Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M92 UEFI manifes
 
 M92 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic writes to NVMe files, libc `opendir`/`readdir` wrappers, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use a generated libc `getdents64` syscall stub to enumerate a real FAT-backed directory and stat one returned entry cleanly.
 
-Proposed M93 scope: add only the needed generated libc exports for existing cwd/path syscalls, then run a dynamic ET_EXEC that calls `getcwd`, `chdir("/nvme/apps")`, opens `data/file.txt` by relative path, and optionally reads `/proc/self/exe` with `readlink`, proving dynamic programs can use process cwd and proc path metadata instead of only absolute paths.
+## M93 Dynamic Cwd And Relative Path Breadth
+
+M93 is accepted on the UEFI Product path with `linux /APPS/DYNCWD`. It runs an eleventh dynamic ET_EXEC artifact through the same supported interpreter and proves the boot-media dynamic path can bind scoped NVMe VFS read authority, resolve generated libc `getcwd`, `chdir`, and `readlink` syscall stubs, update cwd to `/nvme/apps`, open `data/file.txt` by relative path, read FAT-backed file content, read `/proc/self/exe` symlink metadata, write `dyncwd:/nvme/apps:Nested FAT32 path fixture:/proc/self/exe`, exit through `exit_group(231)`, and release the Linux VFS binding cleanly.
+
+Staged artifacts:
+
+- `/APPS/DYNCWD`, SHA-256 `B36DEFEEEFD22F0E050A20210D7F24575A0ABC3C0ED8F20F73386AEBC1B471D4`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010B0`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The first M93 trace faulted before real-binary telemetry with RIP `0x0000000047811012`, CR2 `0x0000000052001000`, and page-fault error `0x7`. The root cause was a generated libc layout mistake: the new syscall stubs were initially placed at `0x1010` and `0x1018`, overlapping the longer `pthread_cond_init` helper that begins at `0x1008`. The accepted fix moves the new stubs into non-overlapping helper gaps at `0x1410`, `0x1430`, and `0x1450`.
+
+Implementation scope: add only generated libc syscall exports for existing kernel ABI syscalls `getcwd(79)`, `chdir(80)`, and `readlink(89)`. The kernel ABI syscall implementations, cwd state, path canonicalization, proc symlink provider, VFS read path, and telemetry already existed. No new Linux syscall behavior, arbitrary shared-library loading, lazy binding, glibc compatibility, or BIOS path expansion is claimed.
+
+M93 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNCWD provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 8 dynamic-binding-total 12 dynamic-binding-supported 8 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 8 dynamic-jmprel-symbol readlink dynamic-reloc-apply 1 dynamic-reloc-apply-total 12 dynamic-reloc-apply-write 12 dynamic-reloc-apply-readback 12 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x00000000520010B0 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 59 dynamic-exit-code 0x00000000 readlink 1 readlink-bytes 14 readlink-denial 0 readlink-fault 0 readlink-last-result 14 getcwd 2 getcwd-bytes 13 getcwd-denial 0 getcwd-fault 0 path-relative 1 path-dot 0 path-dotdot 0 path-trailing 0 path-fault 0 chdir 1 chdir-denial 0 chdir-fault 0 read 1 read-bytes 27 write 7 write-bytes 59 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 1 vfs-nvme-bytes 27 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 59 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dyncwd:/nvme/apps:Nested FAT32 path fixture:/proc/self/exe
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M93 UEFI manifest reports kernel bytes 1,298,656, checksum `0x5C6B2453`, and SHA-256 `b3516c247c55c182e93673e86b58e4545d1ff4bd57493446e9a6bd08e9b0b88c`.
+
+M93 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, `readlinkat`, dynamic writes to NVMe files, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use generated libc cwd/path syscall stubs to resolve relative paths and proc symlink metadata cleanly.
+
+Proposed M94 scope: run a dynamic ET_EXEC that binds existing generated libc or newly exposed minimal syscall stubs for `readv`, `writev`, and `poll`, then proves multi-buffer console/file I/O and readiness reporting without expanding into sockets, epoll, or broad terminal ioctl behavior.
 
 Later targets are:
 
