@@ -115,6 +115,8 @@ static const linux_libc64_export_t g_linux_libc64_exports[LINUX_LIBC64_SYMBOL_CO
     { "dup2", 4u, LINUX_LIBC64_RVA_DUP2, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_DUP2 },
     { "dup3", 4u, LINUX_LIBC64_RVA_DUP3, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_DUP3 },
     { "pipe", 4u, LINUX_LIBC64_RVA_PIPE, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_PIPE },
+    { "fork", 4u, LINUX_LIBC64_RVA_FORK, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_FORK },
+    { "wait4", 5u, LINUX_LIBC64_RVA_WAIT4, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_WAIT4 },
     { "fchdir", 6u, LINUX_LIBC64_RVA_FCHDIR, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_FCHDIR },
     { "readv", 5u, LINUX_LIBC64_RVA_READV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_READV },
     { "writev", 6u, LINUX_LIBC64_RVA_WRITEV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_WRITEV },
@@ -1132,7 +1134,8 @@ static void linux_libc64_build_image(void)
     {
         const linux_libc64_export_t *export = &g_linux_libc64_exports[index];
         if ((export->rva == LINUX_LIBC64_RVA_NEWFSTATAT)
-            || (export->rva == LINUX_LIBC64_RVA_OPENAT))
+            || (export->rva == LINUX_LIBC64_RVA_OPENAT)
+            || (export->rva == LINUX_LIBC64_RVA_WAIT4))
         {
             linux_libc64_write_syscall4_stub(export->rva, export->syscall_number);
         }
