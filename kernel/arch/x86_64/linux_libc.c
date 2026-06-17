@@ -109,6 +109,7 @@ static const linux_libc64_export_t g_linux_libc64_exports[LINUX_LIBC64_SYMBOL_CO
     { "futex", 5u, LINUX_LIBC64_RVA_FUTEX, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_FUTEX },
     { "getdents64", 10u, LINUX_LIBC64_RVA_GETDENTS64, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_GETDENTS64 },
     { "newfstatat", 10u, LINUX_LIBC64_RVA_NEWFSTATAT, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_NEWFSTATAT },
+    { "openat", 6u, LINUX_LIBC64_RVA_OPENAT, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_OPENAT },
     { "readv", 5u, LINUX_LIBC64_RVA_READV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_READV },
     { "writev", 6u, LINUX_LIBC64_RVA_WRITEV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_WRITEV },
     { "poll", 4u, LINUX_LIBC64_RVA_POLL, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_POLL },
@@ -1124,7 +1125,8 @@ static void linux_libc64_build_image(void)
     for (index = 0u; index < LINUX_LIBC64_SYMBOL_COUNT; ++index)
     {
         const linux_libc64_export_t *export = &g_linux_libc64_exports[index];
-        if (export->rva == LINUX_LIBC64_RVA_NEWFSTATAT)
+        if ((export->rva == LINUX_LIBC64_RVA_NEWFSTATAT)
+            || (export->rva == LINUX_LIBC64_RVA_OPENAT))
         {
             linux_libc64_write_syscall4_stub(export->rva, export->syscall_number);
         }

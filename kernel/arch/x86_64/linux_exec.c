@@ -313,6 +313,7 @@ typedef struct linux_exec64_telemetry
     u32 fchdir_calls;
     u32 chdir_denial;
     u32 chdir_fault;
+    u32 openat_calls;
     u32 read_calls;
     u32 read_bytes;
     u32 write_calls;
@@ -2620,6 +2621,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.chdir_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " chdir-fault ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.chdir_fault);
+    (void)linux_exec64_write_text(console_capability, owner_id, " openat ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.openat_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " read ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.read_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " read-bytes ");
@@ -4014,6 +4017,8 @@ static u32 linux_exec64_run_source(
     u32 chdir_denial_after;
     u32 chdir_fault_before;
     u32 chdir_fault_after;
+    u32 openat_before;
+    u32 openat_after;
     u32 read_calls_before;
     u32 read_calls_after;
     u32 read_bytes_before;
@@ -4563,6 +4568,7 @@ static u32 linux_exec64_run_source(
     fchdir_before = linux_abi64_fchdir_count();
     chdir_denial_before = linux_abi64_chdir_denial_count();
     chdir_fault_before = linux_abi64_chdir_fault_count();
+    openat_before = linux_abi64_openat_count();
     read_calls_before = linux_abi64_read_count();
     read_bytes_before = linux_abi64_read_byte_count();
     write_calls_before = linux_abi64_write_count();
@@ -4708,6 +4714,7 @@ static u32 linux_exec64_run_source(
     fchdir_after = linux_abi64_fchdir_count();
     chdir_denial_after = linux_abi64_chdir_denial_count();
     chdir_fault_after = linux_abi64_chdir_fault_count();
+    openat_after = linux_abi64_openat_count();
     read_calls_after = linux_abi64_read_count();
     read_bytes_after = linux_abi64_read_byte_count();
     write_calls_after = linux_abi64_write_count();
@@ -4992,6 +4999,8 @@ static u32 linux_exec64_run_source(
         (chdir_fault_after >= chdir_fault_before)
             ? (chdir_fault_after - chdir_fault_before)
             : 0u;
+    g_linux_exec64_telemetry.openat_calls =
+        (openat_after >= openat_before) ? (openat_after - openat_before) : 0u;
     g_linux_exec64_telemetry.read_calls =
         (read_calls_after >= read_calls_before)
             ? (read_calls_after - read_calls_before)
