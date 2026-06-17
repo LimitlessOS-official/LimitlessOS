@@ -5139,6 +5139,10 @@ u64 linux_abi64_sys_read(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_count
         bytes_read = fd64_read(pid, fd_index, read_scratch, read_count);
         if (bytes_read == FD64_IO_BLOCKED)
         {
+            if (linux_abi64_unmasked_signal_pending(pid) == 0u)
+            {
+                syscall64_native_arm_blocked_replay(LINUX_ABI64_SYSCALL_READ);
+            }
             (void)persona_audit64_record(
                 pid,
                 PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
@@ -5248,6 +5252,10 @@ u64 linux_abi64_sys_write(u32 pid, u64 fd_number, u64 user_buffer, u64 byte_coun
     }
     if (bytes_written == FD64_IO_BLOCKED)
     {
+        if (linux_abi64_unmasked_signal_pending(pid) == 0u)
+        {
+            syscall64_native_arm_blocked_replay(LINUX_ABI64_SYSCALL_WRITE);
+        }
         (void)persona_audit64_record(
             pid,
             PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
@@ -5726,6 +5734,10 @@ u64 linux_abi64_sys_readv(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, u
     }
     if (bytes_read == FD64_IO_BLOCKED)
     {
+        if (linux_abi64_unmasked_signal_pending(pid) == 0u)
+        {
+            syscall64_native_arm_blocked_replay(LINUX_ABI64_SYSCALL_READV);
+        }
         g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
         (void)persona_audit64_record(
             pid,
@@ -5949,6 +5961,10 @@ u64 linux_abi64_sys_writev(u32 pid, u64 fd_number, u64 user_iov, u64 iov_count, 
     }
     if (bytes_written == FD64_IO_BLOCKED)
     {
+        if (linux_abi64_unmasked_signal_pending(pid) == 0u)
+        {
+            syscall64_native_arm_blocked_replay(LINUX_ABI64_SYSCALL_WRITEV);
+        }
         g_linux_abi64_vector_last_result = LINUX_ABI64_EAGAIN;
         (void)persona_audit64_record(
             pid,

@@ -59,6 +59,9 @@ u32 scheduler64_runqueue_block_task(u32 task_id);
 u32 scheduler64_runqueue_wake_task(u32 task_id);
 u32 scheduler64_runqueue_wake_task_with_result(u32 task_id, u64 result);
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_wake_task_replay(u32 task_id);
+#endif
+#ifdef LIMITLESS_X64_UEFI_KERNEL
 u32 scheduler64_runqueue_on_blocked_syscall(struct interrupt_frame64 *frame);
 #endif
 u32 scheduler64_runqueue_on_timer(struct interrupt_frame64 *frame);

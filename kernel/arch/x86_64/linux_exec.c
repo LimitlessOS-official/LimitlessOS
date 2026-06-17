@@ -333,6 +333,7 @@ typedef struct linux_exec64_telemetry
     u32 pipe_live_final;
     u32 pipe_blocks;
     u32 pipe_wakes;
+    u32 pipe_replays;
     u32 pipe_provider_denial;
     u32 fd_fork_pipe_copy;
     u32 fd_fork_pipe_denial;
@@ -2669,6 +2670,8 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_blocks);
     (void)linux_exec64_write_text(console_capability, owner_id, " pipe-wakes ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_wakes);
+    (void)linux_exec64_write_text(console_capability, owner_id, " pipe-replays ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.pipe_replays);
     (void)linux_exec64_write_text(console_capability, owner_id, " pipe-provider-denials ");
     linux_exec64_write_dec_u32(
         console_capability,
@@ -4103,6 +4106,8 @@ static u32 linux_exec64_run_source(
     u32 pipe_blocks_after;
     u32 pipe_wakes_before;
     u32 pipe_wakes_after;
+    u32 pipe_replays_before;
+    u32 pipe_replays_after;
     u32 pipe_provider_denial_before;
     u32 pipe_provider_denial_after;
     u32 fd_fork_pipe_copy_before;
@@ -4633,6 +4638,7 @@ static u32 linux_exec64_run_source(
     pipe2_fault_before = linux_abi64_pipe2_fault_count();
     pipe_blocks_before = pipe64_block_count();
     pipe_wakes_before = pipe64_wake_count();
+    pipe_replays_before = pipe64_replay_wake_count();
     pipe_provider_denial_before = pipe64_denial_count();
     fd_fork_pipe_copy_before = fd64_fork_pipe_copy_count();
     fd_fork_pipe_denial_before = fd64_fork_pipe_denial_count();
@@ -4785,6 +4791,7 @@ static u32 linux_exec64_run_source(
     pipe2_fault_after = linux_abi64_pipe2_fault_count();
     pipe_blocks_after = pipe64_block_count();
     pipe_wakes_after = pipe64_wake_count();
+    pipe_replays_after = pipe64_replay_wake_count();
     pipe_provider_denial_after = pipe64_denial_count();
     fd_fork_pipe_copy_after = fd64_fork_pipe_copy_count();
     fd_fork_pipe_denial_after = fd64_fork_pipe_denial_count();
@@ -5107,6 +5114,10 @@ static u32 linux_exec64_run_source(
     g_linux_exec64_telemetry.pipe_wakes =
         (pipe_wakes_after >= pipe_wakes_before)
             ? (pipe_wakes_after - pipe_wakes_before)
+            : 0u;
+    g_linux_exec64_telemetry.pipe_replays =
+        (pipe_replays_after >= pipe_replays_before)
+            ? (pipe_replays_after - pipe_replays_before)
             : 0u;
     g_linux_exec64_telemetry.pipe_provider_denial =
         (pipe_provider_denial_after >= pipe_provider_denial_before)

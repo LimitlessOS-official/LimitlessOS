@@ -67,6 +67,7 @@ u32 pipe64_blocked_reader_task(u32 pipe_handle, u32 owner_id);
 u32 pipe64_blocked_writer_task(u32 pipe_handle, u32 owner_id);
 u32 pipe64_block_count(void);
 u32 pipe64_wake_count(void);
+u32 pipe64_replay_wake_count(void);
 u32 pipe64_denial_count(void);
 
 #endif

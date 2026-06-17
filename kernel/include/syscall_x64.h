@@ -3522,6 +3522,9 @@ u32 syscall64_native_persona_last_type(void);
 u64 syscall64_native_persona_last_result(void);
 u32 syscall64_native_arm_linux_exit_probe(u32 pid, u32 result);
 u32 syscall64_native_clear_linux_exit_probe(u32 pid);
+void syscall64_native_arm_blocked_replay(u64 syscall_number);
+u32 syscall64_native_blocked_replay_count(void);
+u32 syscall64_native_blocked_replay_denial_count(void);
 #endif
 u64 syscall64_native_invoke_asm(u64 number, u64 arg0, u64 arg1, u64 arg2);
 

@@ -45,6 +45,7 @@ enum
     FMASK_MSR = 0xC0000084u,
     EFER_SCE = 0x00000001u,
     RFLAGS_INTERRUPT_FLAG = 0x00000200u,
+    SYSCALL64_NATIVE_INSTRUCTION_BYTES = 2u,
     SYSCALL64_KERNEL_HIGH_HALF_BASE = 0xFFFFFFFF80000000ull
 };
 
@@ -105,6 +106,10 @@ static volatile u32 g_native_persona_last_type = PERSONA64_TYPE_COUNT;
 static volatile u64 g_native_persona_last_result = 0ull;
 static volatile u32 g_native_linux_exit_probe_pid = PROCESS64_INVALID_PID;
 static volatile u32 g_native_linux_exit_probe_result = SYSCALL64_LINUX_EXIT_PROBE_RESULT;
+static volatile u32 g_native_blocked_replay_armed = 0u;
+static volatile u64 g_native_blocked_replay_syscall = 0ull;
+static volatile u32 g_native_blocked_replay_count = 0u;
+static volatile u32 g_native_blocked_replay_denial_count = 0u;
 #endif
 static u32 g_input_diag_scancodes = 0xFFFFFFFFu;
 static u32 g_input_diag_pending = 0xFFFFFFFFu;
@@ -236,6 +241,10 @@ void syscall64_init(const struct boot_info *boot_info)
     g_native_persona_last_pid = 0u;
     g_native_persona_last_type = PERSONA64_TYPE_COUNT;
     g_native_persona_last_result = 0ull;
+    g_native_blocked_replay_armed = 0u;
+    g_native_blocked_replay_syscall = 0ull;
+    g_native_blocked_replay_count = 0u;
+    g_native_blocked_replay_denial_count = 0u;
 #endif
     principal64_init();
     services64_init();
@@ -8889,6 +8898,23 @@ u32 syscall64_native_complete_persona_return(
         frame.cs = selectors & 0xFFFFull;
         frame.ss = (selectors >> 16) & 0xFFFFull;
     }
+    if (g_native_blocked_replay_armed != 0u)
+    {
+        if ((g_native_blocked_replay_syscall == g_native_last_syscall_code)
+            && (user_rip >= (u64)SYSCALL64_NATIVE_INSTRUCTION_BYTES))
+        {
+            frame.rax = g_native_blocked_replay_syscall;
+            frame.rip = user_rip - (u64)SYSCALL64_NATIVE_INSTRUCTION_BYTES;
+            frame.rcx = frame.rip;
+            ++g_native_blocked_replay_count;
+        }
+        else
+        {
+            ++g_native_blocked_replay_denial_count;
+        }
+        g_native_blocked_replay_armed = 0u;
+        g_native_blocked_replay_syscall = 0ull;
+    }
 
     if (scheduler64_runqueue_on_blocked_syscall(&frame) == 0u)
     {
@@ -8939,6 +8965,22 @@ u32 syscall64_native_clear_linux_exit_probe(u32 pid)
     g_native_linux_exit_probe_pid = PROCESS64_INVALID_PID;
     g_native_linux_exit_probe_result = SYSCALL64_LINUX_EXIT_PROBE_RESULT;
     return 1u;
+}
+
+void syscall64_native_arm_blocked_replay(u64 syscall_number)
+{
+    g_native_blocked_replay_armed = 1u;
+    g_native_blocked_replay_syscall = syscall_number;
+}
+
+u32 syscall64_native_blocked_replay_count(void)
+{
+    return g_native_blocked_replay_count;
+}
+
+u32 syscall64_native_blocked_replay_denial_count(void)
+{
+    return g_native_blocked_replay_denial_count;
 }
 #endif
 

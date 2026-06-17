@@ -710,6 +710,27 @@ u32 scheduler64_runqueue_wake_task_with_result(u32 task_id, u64 result)
 }
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
+u32 scheduler64_runqueue_wake_task_replay(u32 task_id)
+{
+    struct scheduler64_task *task;
+
+    if ((task_id >= g_runqueue.task_count)
+        || (g_runqueue.tasks[task_id].frame_valid == 0u)
+        || (g_runqueue.tasks[task_id].state != SCHEDULER64_TASK_BLOCKED))
+    {
+        ++g_runqueue.block_denials;
+        return 0u;
+    }
+
+    task = &g_runqueue.tasks[task_id];
+    task->state = SCHEDULER64_TASK_READY;
+    g_scheduler64_preferred_task = task_id;
+    ++g_runqueue.wakes;
+    return 1u;
+}
+#endif
+
+#ifdef LIMITLESS_X64_UEFI_KERNEL
 static u32 scheduler64_sleep_start_current_task(
     u32 requested_ticks,
     u64 resume_rax,

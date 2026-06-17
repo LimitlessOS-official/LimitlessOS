@@ -18,6 +18,7 @@ static u32 g_pipe64_initialized = 0u;
 static u32 g_pipe64_denials = 0u;
 static u32 g_pipe64_block_count = 0u;
 static u32 g_pipe64_wake_count = 0u;
+static u32 g_pipe64_replay_wake_count = 0u;
 
 static void pipe64_zero_bytes(u8 *bytes, u32 byte_count)
 {
@@ -173,13 +174,14 @@ static u32 pipe64_wake_blocked_task(u32 *blocked_task_slot)
 
     task_id = *blocked_task_slot;
     *blocked_task_slot = SCHEDULER64_INVALID_TASK;
-    if (scheduler64_runqueue_wake_task(task_id) == 0u)
+    if (scheduler64_runqueue_wake_task_replay(task_id) == 0u)
     {
         ++g_pipe64_denials;
         return 0u;
     }
 
     ++g_pipe64_wake_count;
+    ++g_pipe64_replay_wake_count;
     return 1u;
 #endif
 }
@@ -783,6 +785,12 @@ u32 pipe64_wake_count(void)
 {
     pipe64_init();
     return g_pipe64_wake_count;
+}
+
+u32 pipe64_replay_wake_count(void)
+{
+    pipe64_init();
+    return g_pipe64_replay_wake_count;
 }
 
 u32 pipe64_denial_count(void)
