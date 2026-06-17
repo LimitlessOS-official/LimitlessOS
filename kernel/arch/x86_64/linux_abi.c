@@ -10034,6 +10034,10 @@ static u64 linux_abi64_sys_exit_common(u32 pid, u64 exit_code, u64 rip, u32 sysc
         (void)process64_mark_child_exited(pid, code32);
         linux_abi64_wait4_complete_blocked_child(pid, record);
     }
+    else if (clone_record != 0)
+    {
+        linux_abi64_wait4_complete_blocked_child(pid, record);
+    }
 
     return 0ull;
 }

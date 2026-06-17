@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M87 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio-helper output, bounded heap helpers, and environment mutation are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M88 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio-helper output, bounded heap helpers, environment mutation, and first dynamic pthread helper execution are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -39,6 +39,7 @@ Passing artifacts:
 - `external\build\DYNHELPER`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001080`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `B30ABD53CF32C9C9E6BEB77FF89DE02C57E1442D15A13EB944D514B794B8A9C8`, staged through the boot-media Linux app path as `/APPS/DYNHELPER`, and verified by M85 with `linux /APPS/DYNHELPER`.
 - `external\build\DYNENVSTDIO`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `7713DA42475439C1020A7AF932B9C53983CAF0FC8DB41BFD78BF3F701DFBEBFA`, staged through the boot-media Linux app path as `/APPS/DYNENVSTDIO`, and verified by M86 with `linux /APPS/DYNENVSTDIO`.
 - `external\build\DYNHEAPENV`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010D0`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `5482AF5167968986BE620CD86AE88385C49D0FCF0F435DF987727C1530AAA463`, staged through the boot-media Linux app path as `/APPS/DYNHEAPENV`, and verified by M87 with `linux /APPS/DYNHEAPENV`.
+- `external\build\DYNTHREAD`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `749582EF277B19EE11795928199A941E4BD5E81D502B7F2B60104A30115B894A`, staged through the boot-media Linux app path as `/APPS/DYNTHREAD`, and verified by M88 with `linux /APPS/DYNTHREAD`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -1374,7 +1375,34 @@ M87 regression: `linux /APPS/DYNENVSTDIO` still prints `dynprintf-pass`, `dynfpu
 
 M87 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic TLS, general dynamic linker parity, and a real general-purpose allocator remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can use the generated libc shim's existing bounded page-backed heap helpers and mutate an existing inherited environment entry.
 
-Proposed M88 scope: run a dynamic ET_EXEC that exercises dynamic pthread helper breadth on top of the existing M64-M66 thread/futex/TLS foundation, starting with `pthread_create`, `pthread_join`, `pthread_mutex_lock`, and `pthread_mutex_unlock`, then either accept visible output with `exit 0` or capture the first precise helper/syscall/RIP failure.
+## M88 Dynamic Pthread Helper Smoke
+
+M88 is accepted on the UEFI Product path with `linux /APPS/DYNTHREAD`. It runs a sixth dynamic ET_EXEC artifact through the same supported interpreter and proves the app-entry dynamic path can bind and execute generated libc shim pthread helpers on top of the existing M64-M66 clone/thread/wait/futex foundation. The program locks a mutex in the main thread, creates one pthread, lets the worker lock the same mutex, mutates shared process memory, joins the worker, verifies the final shared value, writes `dynpthread-pass`, exits through `exit_group(231)`, and leaves no process-root, waiter, futex, or page-fault residue.
+
+Staged artifacts:
+
+- `/APPS/DYNTHREAD`, SHA-256 `749582EF277B19EE11795928199A941E4BD5E81D502B7F2B60104A30115B894A`, external musl-cross ET_EXEC linked at `0x52000000`, entry `0x52001090`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The first M88 trace exposed a helper layout bug: the generated `pthread_join` helper at RVA `0x1940` overlapped the tail of the `pthread_create` helper/trampoline slot, causing an invalid opcode at `RIP 0x0000000047811944` when the child returned through the trampoline. The fix moves `pthread_join` to RVA `0x1950`. The second trace exposed the real scheduler/ABI edge: the child reached `exit(60)`, but clone-thread exits recorded exit state without waking the parent blocked in `wait4`/`pthread_join`, leaving no runnable task and falling through toward a user return on the kernel root CR3. The fix completes blocked waiters for clone-thread exits the same way fork-child exits already complete blocked `wait4`.
+
+M88 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNTHREAD provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol pthread_create dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-stack-auxv 19 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 16 dynamic-exit-code 0x00000000 mmap 1 mmap-bytes 16384 write 2 write-bytes 16 futex-wake 4 futex-waiters-final 0 thread-exit-cleartid 1 clone-thread 1 clone-thread-success 1 clone-denial 0 clone-last-flags 0x01310F00 clone-shared-cr3 1 clone-shared-vma 1 clone-shared-fd 1 wait4 1 wait4-reap 1 wait4-last-exit-code 0 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 16 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynpthread-pass
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M88 UEFI manifest reports kernel bytes 1,298,656, checksum `0x4F4DFCB5`, and SHA-256 `71568191efe2874375f5c2eef376dcd460fc80e3b1476bfde9d7626a2d448a40`.
+
+M88 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic TLS relocation models, pthread condition variables, contended dynamic pthread mutexes, and general dynamic linker parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind the generated pthread helpers and execute one joined dynamic pthread with shared address-space state and clean clone-thread exit/wait cleanup.
+
+Proposed M89 scope: run a dynamic ET_EXEC that creates multiple pthreads, gives each thread a distinct TLS value, uses a contended mutex or condition-style handoff, and proves `clone`, `FS` restore, futex wait/wake, and generated libc pthread helpers compose under real dynamic execution rather than only in a single non-contended helper smoke.
 
 Later targets are:
 
