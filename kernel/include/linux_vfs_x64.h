@@ -157,6 +157,7 @@ u32 linux_vfs64_stat(u32 pid, const u8 *path, u32 path_byte_count, fd64_stat_t *
 u32 linux_vfs64_lstat(u32 pid, const u8 *path, u32 path_byte_count, fd64_stat_t *stat_out);
 u32 linux_vfs64_fstat(u32 pid, u32 fd_number, fd64_stat_t *stat_out);
 u32 linux_vfs64_path_is_directory(u32 pid, const u8 *path, u32 path_byte_count);
+u32 linux_vfs64_dup_fd_path(u32 pid, u32 old_fd_number, u32 new_fd_number);
 u32 linux_vfs64_fd_path(u32 pid, u32 fd_number, u8 *path_out, u32 max_path_bytes, u32 *path_byte_count);
 u32 linux_vfs64_forget_fd_path(u32 pid, u32 fd_number);
 u32 linux_vfs64_fd_dir_cursor(u32 pid, u32 fd_number, u32 *cursor_out);

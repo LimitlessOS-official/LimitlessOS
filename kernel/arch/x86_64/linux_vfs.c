@@ -1374,6 +1374,61 @@ static u32 linux_vfs64_record_fd_path(
     return 1u;
 }
 
+u32 linux_vfs64_dup_fd_path(u32 pid, u32 old_fd_number, u32 new_fd_number)
+{
+    linux_vfs64_fd_path_record_t *source = 0;
+    u32 index;
+
+    if (g_linux_vfs64_initialized == 0u)
+    {
+        linux_vfs64_init();
+    }
+
+    if ((old_fd_number >= FD64_TABLE_LIMIT)
+        || (new_fd_number >= FD64_TABLE_LIMIT))
+    {
+        return 0u;
+    }
+
+    if (old_fd_number == new_fd_number)
+    {
+        return 1u;
+    }
+
+    for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
+    {
+        if ((g_linux_vfs64_fd_paths[index].active != 0u)
+            && (g_linux_vfs64_fd_paths[index].pid == pid)
+            && (g_linux_vfs64_fd_paths[index].fd_number == old_fd_number))
+        {
+            source = &g_linux_vfs64_fd_paths[index];
+            break;
+        }
+    }
+
+    for (index = 0u; index < LINUX_VFS64_MAX_FD_PATH_RECORDS; ++index)
+    {
+        if ((g_linux_vfs64_fd_paths[index].active != 0u)
+            && (g_linux_vfs64_fd_paths[index].pid == pid)
+            && (g_linux_vfs64_fd_paths[index].fd_number == new_fd_number))
+        {
+            linux_vfs64_clear_fd_path_record(&g_linux_vfs64_fd_paths[index]);
+            break;
+        }
+    }
+
+    if (source == 0)
+    {
+        return 1u;
+    }
+
+    return linux_vfs64_record_fd_path(
+        pid,
+        new_fd_number,
+        source->path,
+        source->path_byte_count);
+}
+
 static u32 linux_vfs64_copy_bounded(u8 *target, u32 target_bytes, const u8 *source, u32 source_bytes)
 {
     u32 index;

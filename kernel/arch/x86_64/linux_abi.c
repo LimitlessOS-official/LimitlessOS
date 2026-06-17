@@ -7694,6 +7694,19 @@ u64 linux_abi64_sys_dup(u32 pid, u64 old_fd_number, u64 rip)
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
     }
+    if (linux_vfs64_dup_fd_path(pid, (u32)old_fd_number, new_fd) == 0u)
+    {
+        (void)linux_vfs64_forget_fd_path(pid, new_fd);
+        (void)fd64_close(pid, new_fd);
+        ++g_linux_abi64_dup_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_DUP,
+            LINUX_ABI64_EMFILE,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
+    }
 
     ++g_linux_abi64_dup_count;
     (void)persona_audit64_record(
@@ -7751,6 +7764,19 @@ u64 linux_abi64_sys_dup2(u32 pid, u64 old_fd_number, u64 new_fd_number, u64 rip)
             LINUX_ABI64_EBADF,
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EBADF);
+    }
+    if (linux_vfs64_dup_fd_path(pid, (u32)old_fd_number, duplicated_fd) == 0u)
+    {
+        (void)linux_vfs64_forget_fd_path(pid, duplicated_fd);
+        (void)fd64_close(pid, duplicated_fd);
+        ++g_linux_abi64_dup_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_DUP2,
+            LINUX_ABI64_EMFILE,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
     }
 
     ++g_linux_abi64_dup2_count;
@@ -7828,6 +7854,19 @@ u64 linux_abi64_sys_dup3(
             LINUX_ABI64_EBADF,
             rip);
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EBADF);
+    }
+    if (linux_vfs64_dup_fd_path(pid, (u32)old_fd_number, duplicated_fd) == 0u)
+    {
+        (void)linux_vfs64_forget_fd_path(pid, duplicated_fd);
+        (void)fd64_close(pid, duplicated_fd);
+        ++g_linux_abi64_dup_denial_count;
+        (void)persona_audit64_record(
+            pid,
+            PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+            LINUX_ABI64_SYSCALL_DUP3,
+            LINUX_ABI64_EMFILE,
+            rip);
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
     }
 
     ++g_linux_abi64_dup3_count;
@@ -7908,9 +7947,24 @@ u64 linux_abi64_sys_fcntl(u32 pid, u64 fd_number, u64 command, u64 argument, u64
             return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
         }
 
+        if (linux_vfs64_dup_fd_path(pid, fd, duplicated_fd) == 0u)
+        {
+            (void)linux_vfs64_forget_fd_path(pid, duplicated_fd);
+            (void)fd64_close(pid, duplicated_fd);
+            ++g_linux_abi64_fcntl_denial_count;
+            (void)persona_audit64_record(
+                pid,
+                PERSONA_AUDIT64_EVENT_CAPABILITY_DENIED,
+                LINUX_ABI64_SYSCALL_FCNTL,
+                LINUX_ABI64_EMFILE,
+                rip);
+            return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EMFILE);
+        }
+
         new_flags = fd64_entry_flags(pid, duplicated_fd) & ~((u32)FD64_FLAG_O_CLOEXEC);
         if (fd64_set_entry_flags(pid, duplicated_fd, new_flags) == 0u)
         {
+            (void)linux_vfs64_forget_fd_path(pid, duplicated_fd);
             (void)fd64_close(pid, duplicated_fd);
             ++g_linux_abi64_fcntl_denial_count;
             (void)persona_audit64_record(
