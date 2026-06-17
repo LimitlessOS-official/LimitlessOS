@@ -3482,6 +3482,17 @@ static u32 linux_exec64_build_dynamic_stack_preview(
     g_linux_exec64_telemetry.dynamic_stack_initial_rsp = stack_result.initial_rsp;
     g_linux_exec64_telemetry.dynamic_stack_auxv_address = stack_result.auxv_address;
     g_linux_exec64_telemetry.dynamic_transfer_rsp = stack_result.initial_rsp;
+
+    if (linux_libc64_bind_environment(
+            pid,
+            stack_result.envp_address,
+            stack_result.envc,
+            g_linux_exec64_staged_envp_ptrs) != LINUX_LIBC64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_stack_error = LINUX_LIBC64_ERROR_ENVIRONMENT;
+        return 0u;
+    }
+
     g_linux_exec64_telemetry.dynamic_transfer_ready =
         ((paging64_user_page_present_for_process(pid, transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull)) != 0u)
             && ((paging64_user_page_protection_for_process(pid, transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull))

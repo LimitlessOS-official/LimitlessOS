@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M85 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, second dynamic ET_EXEC runtime breadth, and third dynamic ET_EXEC libc-helper breadth are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M86 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, and stdio-helper output are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -37,6 +37,7 @@ Passing artifacts:
 - `external\build\sbase-0.1-echo-x86_64-musl-0x52000000`: suckless sbase 0.1 `echo` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `35DA6DB9DCF1C7E76AE605EAE175318831BCD10BBBF406D5A30A600D2AE4B667`, staged at `/APPS/SBECHO`, verified directly with `linux /APPS/SBECHO m28-sbase-direct`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m28-sbase-pipeline | /bin/cat'`.
 - `external\build\DYNGETPID`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001060`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `7BC91398FC2CABE11FB067376D417E5DF8057DACF21214E454A4D9AFA62223CB`, staged through the boot-media Linux app path as `/APPS/DYNGETPID`, and verified by M84 with `linux /APPS/DYNGETPID`.
 - `external\build\DYNHELPER`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001080`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `B30ABD53CF32C9C9E6BEB77FF89DE02C57E1442D15A13EB944D514B794B8A9C8`, staged through the boot-media Linux app path as `/APPS/DYNHELPER`, and verified by M85 with `linux /APPS/DYNHELPER`.
+- `external\build\DYNENVSTDIO`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `7713DA42475439C1020A7AF932B9C53983CAF0FC8DB41BFD78BF3F701DFBEBFA`, staged through the boot-media Linux app path as `/APPS/DYNENVSTDIO`, and verified by M86 with `linux /APPS/DYNENVSTDIO`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -1311,7 +1312,38 @@ M85 regression: `linux /APPS/DYNGETPID` still prints `dyngetpid-pass` with `dyna
 
 M85 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic TLS, and general dynamic linker parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can now run multiple app artifacts and bind a broader libc provider set including non-syscall helpers.
 
-Proposed M86 scope: run a dynamic ET_EXEC that exercises environment and stdio breadth, such as `getenv`, `printf`, `fputs`, `fwrite`, and inherited `argc`/`argv`/`envp`, then either accept visible output with `exit 0` or capture the first precise failure stage/symbol/syscall/RIP as the next bounded implementation target.
+## M86 Dynamic Environment And Stdio Breadth
+
+M86 is accepted on the UEFI Product path with `linux /APPS/DYNENVSTDIO`. It runs a fourth dynamic ET_EXEC artifact through the same supported interpreter and proves the app-entry dynamic path can bind the inherited four-entry launch environment into the generated libc shim, then use `getenv`, `strcmp`, `printf`, `fputs`, and `fwrite` from dynamic `main`. The program verifies `argc`, `argv`, `envp`, `PATH`, `USER`, `HOME`, and `PWD`, writes three visible output lines, exits through `exit_group(231)`, and leaves no process-root or page-fault residue.
+
+Staged artifacts:
+
+- `/APPS/DYNENVSTDIO`, SHA-256 `7713DA42475439C1020A7AF932B9C53983CAF0FC8DB41BFD78BF3F701DFBEBFA`, external musl-cross ET_EXEC linked at `0x52000000`, entry `0x52001090`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+M86 expands the generated libc shim's environment snapshot from one entry to four entries, stores up to 256 bytes of environment text, and binds the live dynamic stack's `envp` content after stack construction. The shim environment binder now validates writable data and text protection against the target process root with pid-aware page protection lookup, which matters after dynamic launch bounces between the kernel root and process root. The supported path remains bounded: no new Linux syscalls, arbitrary shared-library loading, lazy binding, glibc compatibility, or general dynamic linker behavior are introduced.
+
+M86 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNENVSTDIO provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 6 dynamic-binding-total 10 dynamic-binding-supported 6 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 6 dynamic-jmprel-symbol printf dynamic-reloc-apply 1 dynamic-reloc-apply-total 10 dynamic-reloc-apply-write 10 dynamic-reloc-apply-readback 10 dynamic-libc-start-main 1 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-stack-auxv 19 dynamic-stack-error 0 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001090 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 44 dynamic-exit-code 0x00000000 mapped 8 pages 10 stack 16 envc 4 root-distinct 1 low-compat 0 syscall-root-repair 0 console-bytes 44 exit 0 cleanup 1 write 3 write-bytes 44 page-faults 0 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynprintf-pass
+dynfputs-pass
+dynfwrite-pass
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M86 UEFI manifest reports kernel bytes 1,298,656, checksum `0x8A8429E7`, and SHA-256 `5de4a798cb2c768eaa447a992d8e13862f74cc50fa5bf6afa10835af4f93d2d9`.
+
+M86 regression: `linux /APPS/DYNHELPER` still prints `dynhelper-pass` with `dynamic-stack-envc 4`, `dynamic-binding-supported 5`, `dynamic-transfer-rip 0x0000000052001080`, `dynamic-console-bytes 15`, `exit 0`, and `page-faults 0`.
+
+M86 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic TLS, general dynamic linker parity, and unbounded environment mutation remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind the bounded inherited launch environment and exercise a wider generated-libc stdio/helper surface.
+
+Proposed M87 scope: run a dynamic ET_EXEC that exercises bounded heap and environment mutation helpers, such as `malloc`, `calloc`, `realloc`, `free`, `setenv`, `getenv`, and visible stdio output, then either accept visible output with `exit 0` or capture the first precise failure stage/symbol/syscall/RIP as the next bounded implementation target.
 
 Later targets are:
 

@@ -1697,6 +1697,8 @@ u32 linux_libc64_bind_environment(
     u32 count_readback;
     u32 setenv_count_readback;
     u32 snapshot_count;
+    u32 snapshot_offset;
+    u32 vector_bytes;
     u32 restore_result;
     u32 index;
 
@@ -1704,13 +1706,7 @@ u32 linux_libc64_bind_environment(
     {
         return linux_libc64_record_denial(pid, LINUX_LIBC64_ERROR_ENVIRONMENT, 0ull);
     }
-    if ((envc != 0u)
-        && ((envp_address == 0ull)
-            || (envp_source == 0)
-            || (envp_source[0] == 0)
-            || (linux_libc64_env_string_valid(
-                    envp_source[0],
-                    LINUX_LIBC64_ENV_SNAPSHOT_BYTES) == 0u)))
+    if ((envc != 0u) && ((envp_address == 0ull) || (envp_source == 0)))
     {
         return linux_libc64_record_denial(pid, LINUX_LIBC64_ERROR_ENVIRONMENT, 0ull);
     }
@@ -1724,7 +1720,11 @@ u32 linux_libc64_bind_environment(
     text_page = context->linux_libc_base + LINUX_LIBC64_TEXT_RVA;
     snapshot_envp = context->linux_libc_base + LINUX_LIBC64_RVA_ENV_VECTOR;
     snapshot_string = context->linux_libc_base + LINUX_LIBC64_RVA_ENV_STRING;
-    snapshot_count = (envc != 0u) ? LINUX_LIBC64_ENV_SNAPSHOT_COUNT : 0u;
+    snapshot_count =
+        (envc > LINUX_LIBC64_ENV_SNAPSHOT_COUNT)
+            ? LINUX_LIBC64_ENV_SNAPSHOT_COUNT
+            : envc;
+    vector_bytes = (LINUX_LIBC64_ENV_SNAPSHOT_COUNT + 1u) * 8u;
     patch_address =
         context->linux_libc_base
         + LINUX_LIBC64_RVA_HELPER_GETENV
@@ -1755,7 +1755,7 @@ u32 linux_libc64_bind_environment(
     snapshot_vector = (volatile u8 *)(u64)snapshot_envp;
     snapshot_bytes = (volatile u8 *)(u64)snapshot_string;
 
-    for (index = 0u; index < 16u; ++index)
+    for (index = 0u; index < vector_bytes; ++index)
     {
         snapshot_vector[index] = 0u;
     }
@@ -1763,24 +1763,39 @@ u32 linux_libc64_bind_environment(
     {
         snapshot_bytes[index] = 0u;
     }
-    if ((snapshot_count != 0u)
-        && (linux_libc64_copy_env_string(
-                snapshot_bytes,
-                envp_source[0],
-                LINUX_LIBC64_ENV_SNAPSHOT_BYTES) == 0u))
+    snapshot_offset = 0u;
+    for (index = 0u; index < snapshot_count; ++index)
     {
-        restore_result = vma64_protect(
-            pid,
-            text_page,
-            VMA64_PAGE_BYTES,
-            VMA64_PROT_READ | VMA64_PROT_EXECUTE);
-        return linux_libc64_record_denial(pid, LINUX_LIBC64_ERROR_ENVIRONMENT, 0ull);
+        u32 remaining = LINUX_LIBC64_ENV_SNAPSHOT_BYTES - snapshot_offset;
+        u32 length;
+
+        if ((snapshot_offset >= LINUX_LIBC64_ENV_SNAPSHOT_BYTES)
+            || (envp_source[index] == 0)
+            || (linux_libc64_env_string_valid(envp_source[index], remaining) == 0u)
+            || (linux_libc64_copy_env_string(
+                    snapshot_bytes + snapshot_offset,
+                    envp_source[index],
+                    remaining) == 0u))
+        {
+            restore_result = vma64_protect(
+                pid,
+                text_page,
+                VMA64_PAGE_BYTES,
+                VMA64_PROT_READ | VMA64_PROT_EXECUTE);
+            return linux_libc64_record_denial(
+                pid,
+                LINUX_LIBC64_ERROR_ENVIRONMENT,
+                0ull);
+        }
+
+        linux_libc64_write_le64_volatile(
+            snapshot_vector + (index * 8u),
+            snapshot_string + (u64)snapshot_offset);
+        length = linux_libc64_cstring_length(envp_source[index], remaining);
+        snapshot_offset += length + 1u;
     }
 
-    linux_libc64_write_le64_volatile(
-        snapshot_vector,
-        (snapshot_count != 0u) ? snapshot_string : 0ull);
-    linux_libc64_write_le64_volatile(snapshot_vector + 8u, 0ull);
+    linux_libc64_write_le64_volatile(snapshot_vector + (snapshot_count * 8u), 0ull);
     linux_libc64_write_le64_volatile(patch, snapshot_envp);
     linux_libc64_write_le32_volatile(count_patch, snapshot_count);
     linux_libc64_write_le64_volatile(setenv_patch, snapshot_envp);
@@ -1791,7 +1806,8 @@ u32 linux_libc64_bind_environment(
     setenv_readback = linux_libc64_read_le64_volatile(setenv_patch);
     setenv_count_readback = linux_libc64_read_le32_volatile(setenv_count_patch);
     vector_readback = linux_libc64_read_le64_volatile(snapshot_vector);
-    vector_terminator = linux_libc64_read_le64_volatile(snapshot_vector + 8u);
+    vector_terminator =
+        linux_libc64_read_le64_volatile(snapshot_vector + (snapshot_count * 8u));
     restore_result = vma64_protect(
         pid,
         text_page,
@@ -1804,7 +1820,7 @@ u32 linux_libc64_bind_environment(
         || (setenv_count_readback != snapshot_count)
         || (vector_readback != ((snapshot_count != 0u) ? snapshot_string : 0ull))
         || (vector_terminator != 0ull)
-        || (paging64_user_page_protection(text_page)
+        || (paging64_user_page_protection_for_process(pid, text_page)
             != (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE)))
     {
         return linux_libc64_record_denial(pid, LINUX_LIBC64_ERROR_ENVIRONMENT, 0ull);
