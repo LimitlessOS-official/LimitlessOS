@@ -1406,6 +1406,7 @@ u64 fd64_seek(u32 pid, u32 fd_number, s32 offset, u32 whence)
 {
     fd_table_t *table = fd64_table_for_process(pid);
     fd_entry_t *entry;
+    fd64_stat_t stat_buf;
     u64 base;
     u64 new_offset;
 
@@ -1425,10 +1426,24 @@ u64 fd64_seek(u32 pid, u32 fd_number, s32 offset, u32 whence)
         return FD64_SEEK_ERROR;
     }
 
-    if (entry->fd_type != FD64_TYPE_RAMFS_NODE)
+    if ((entry->fd_type != FD64_TYPE_RAMFS_NODE)
+        && (entry->fd_type != FD64_TYPE_DEVICE))
     {
         ++table->denial_count;
         return FD64_SEEK_ERROR;
+    }
+
+    if (entry->fd_type == FD64_TYPE_DEVICE)
+    {
+        if ((linux_vfs64_device_type_from_handle(entry->capability_handle)
+                == LINUX_VFS64_DEVICE_UNKNOWN)
+            || (linux_vfs64_fstat(pid, fd_number, &stat_buf) == 0u)
+            || ((stat_buf.node_type != FD64_STAT_NODE_FILE)
+                && (stat_buf.node_type != FD64_STAT_NODE_SYMLINK)))
+        {
+            ++table->denial_count;
+            return FD64_SEEK_ERROR;
+        }
     }
 
     if (whence == FD64_SEEK_SET)
@@ -1441,7 +1456,11 @@ u64 fd64_seek(u32 pid, u32 fd_number, s32 offset, u32 whence)
     }
     else if (whence == FD64_SEEK_END)
     {
-        if (fd64_ramfs_file_size(table, entry, &base) == 0u)
+        if (entry->fd_type == FD64_TYPE_DEVICE)
+        {
+            base = stat_buf.size;
+        }
+        else if (fd64_ramfs_file_size(table, entry, &base) == 0u)
         {
             ++table->denial_count;
             return FD64_SEEK_ERROR;

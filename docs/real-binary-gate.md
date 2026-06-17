@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M90 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio-helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, and dynamic NVMe VFS file open/read/write/close are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M91 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio-helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, and dynamic file metadata/seek behavior are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -42,6 +42,7 @@ Passing artifacts:
 - `external\build\DYNTHREAD`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `749582EF277B19EE11795928199A941E4BD5E81D502B7F2B60104A30115B894A`, staged through the boot-media Linux app path as `/APPS/DYNTHREAD`, and verified by M88 with `linux /APPS/DYNTHREAD`.
 - `external\build\DYNPTLS`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010E0`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `47D6FCCA829DE00FE42814155DF06C5EE925FCACC00A20CEF49C95067E6D8A6F`, staged through the boot-media Linux app path as `/APPS/DYNPTLS`, and verified by M89 with `linux /APPS/DYNPTLS`.
 - `external\build\DYNFILEIO`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001080`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `42B199D95374ADC5F8F349405423E2F6976394AD8FD4DC04F88DD3E56F56354F`, staged through the boot-media Linux app path as `/APPS/DYNFILEIO`, and verified by M90 with `linux /APPS/DYNFILEIO`.
+- `external\build\DYNSEEK`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010B0`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `22F4206B5DFA3A9048A08F2FF31E9931AC969DFC404EA684F2E7B0D0013AEE62`, staged through the boot-media Linux app path as `/APPS/DYNSEEK`, and verified by M91 with `linux /APPS/DYNSEEK`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -49,7 +50,7 @@ Proven syscall surface for those artifacts:
 
 - Linux process startup: `brk`, `mmap`, `mprotect`, `munmap`, `arch_prctl`, `set_tid_address`, `rt_sigaction`, and `rt_sigprocmask`.
 - Console and file I/O: `read`, `write`, `readv`, `writev`, `openat`, and `close`; `open`, `openat`, stat-family paths, and `chdir` now canonicalize relative paths against the Linux persona cwd before VFS resolution.
-- Metadata: `stat`, `newfstatat`, including `AT_EMPTY_PATH`, and `lstat`.
+- Metadata and offsets: `stat`, `fstat`, `newfstatat`, including `AT_EMPTY_PATH`, `lstat`, and `lseek` on seekable file-like fds.
 - Proc symlink readback: `readlink`, with passing `/proc/self/exe` telemetry `readlink 1 readlink-bytes 14 readlink-denial 0 readlink-fault 0 readlink-last-result 14`, visible output `lrwxrwxrwx    1        14 /proc/self/exe -> /proc/self/exe`, and `unimplemented 0`; passing `/proc/self/fd` telemetry `getdents64 2 getdents64-entries 3 getdents64-bytes 72 stat 4 stat-denial 0 stat-fault 0 readlink 3 readlink-bytes 33 readlink-denial 0 readlink-fault 0 readlink-last-result 11`, with visible links for `0 -> anon:[fd 0]`, `1 -> anon:[fd 1]`, and `2 -> anon:[fd 2]`; and passing mixed `/proc/self` telemetry `getdents64 2 getdents64-entries 6 getdents64-bytes 168 stat 7 stat-denial 0 stat-fault 0 readlink 1 readlink-bytes 14 readlink-denial 0 readlink-fault 0 readlink-last-result 14 writev 6 writev-bytes 209`, with visible entries for `environ`, `cmdline`, `status`, `fd`, `exe -> /proc/self/exe`, and `maps`.
 - Directory enumeration: `getdents64`, with passing telemetry `getdents64 2 getdents64-entries 2 getdents64-bytes 56`, and visible output `busybox` plus `data`.
 - Current working directory: `getcwd` and `chdir`, with passing shell-loop telemetry `getcwd 1 getcwd-bytes 2 getcwd-denial 0 getcwd-fault 0 chdir 2 fchdir 0 chdir-denial 0 chdir-fault 0`, and visible output `/`, `/nvme/apps`, and `/`.
@@ -1458,7 +1459,34 @@ Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M90 UEFI manifes
 
 M90 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic writes to NVMe files, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use generated libc file-I/O stubs to open, read, write to stdout, and close one real FAT-backed file cleanly.
 
-Proposed M91 scope: run a dynamic ET_EXEC that exercises Linux file metadata and offset control through generated libc `stat`/`fstat`/`lseek`/`read`/`close` bindings against a real NVMe VFS file. This should prove the dynamic path can consume file size/mode metadata and perform deterministic seeked reads before expanding toward directory traversal, writes, or broader dynamic linker behavior.
+## M91 Dynamic File Metadata And Seek Breadth
+
+M91 is accepted on the UEFI Product path with `linux /APPS/DYNSEEK`. It runs a ninth dynamic ET_EXEC artifact through the same supported interpreter and proves the boot-media dynamic path can bind scoped NVMe VFS read authority, call generated libc `stat`, `fstat`, `lseek`, `read`, `write`, and `close` bindings against `/nvme/apps/data/file.txt`, seek to deterministic offsets in a FAT-backed file, read the expected file slices, print them through the brokered console, and release the Linux VFS binding cleanly.
+
+Staged artifacts:
+
+- `/APPS/DYNSEEK`, SHA-256 `22F4206B5DFA3A9048A08F2FF31E9931AC969DFC404EA684F2E7B0D0013AEE62`, external musl-cross ET_EXEC linked at `0x52000000`, entry `0x520010B0`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The first M91 trace proved dynamic `stat` and `fstat` immediately but exited 6 before any read because `lseek(fd, 7, SEEK_SET)` was denied on the NVMe VFS fd. The root cause was that `fd64_seek` only accepted `FD64_TYPE_RAMFS_NODE`; Linux VFS files are represented as `FD64_TYPE_DEVICE` handles even though their reads already honor `entry->file_offset`. The fix allows seek on Linux VFS device fds only when `linux_vfs64_fstat` proves a file-like node, preserving denial for terminals, pipes, sockets, directories, and unknown devices. The real-binary telemetry now also emits `lseek` and `lseek-denial` counters so this path is directly auditable.
+
+M91 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNSEEK provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 8 dynamic-binding-total 12 dynamic-binding-supported 8 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 8 dynamic-jmprel-symbol lseek dynamic-reloc-apply 1 dynamic-reloc-apply-total 12 dynamic-reloc-apply-write 12 dynamic-reloc-apply-readback 12 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-stack-auxv 19 dynamic-transfer-ready 1 dynamic-transfer-rip 0x00000000520010B0 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 24 dynamic-exit-code 0x00000000 stat 1 stat-denial 0 stat-fault 0 fstat 1 fstat-denial 0 fstat-fault 0 lseek 2 lseek-denial 0 read 2 read-bytes 15 write 1 write-bytes 24 vfs-nvme-bind 1 vfs-nvme-release 1 vfs-nvme-reads 2 vfs-nvme-bytes 27 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 24 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynseek:FAT32 pa:fixture
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M91 UEFI manifest reports kernel bytes 1,298,656, checksum `0xF1D59AE7`, and SHA-256 `60cab95f91c2e0e7ca003358bb294daadac24778574a1f3d95c02517a65a073e`.
+
+M91 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, dynamic writes to NVMe files, directory enumeration from dynamic libc, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use generated libc metadata, offset, and file-I/O stubs against one real FAT-backed file cleanly.
+
+Proposed M92 scope: run a dynamic ET_EXEC that opens `/nvme/apps`, enumerates entries with `getdents64`, stats at least one returned entry, and prints the discovered names. If the generated libc shim still lacks a public `getdents64` export, M92 should add only that syscall binding before the proof.
 
 Later targets are:
 
