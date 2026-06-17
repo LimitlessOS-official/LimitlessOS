@@ -294,6 +294,8 @@ typedef struct linux_exec64_telemetry
     u32 newfstatat_fault;
     u32 lseek_calls;
     u32 lseek_denial;
+    u32 fcntl_calls;
+    u32 fcntl_denial;
     u32 readlink_calls;
     u32 readlink_bytes;
     u32 readlink_denial;
@@ -2583,6 +2585,10 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.lseek_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " lseek-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.lseek_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fcntl ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fcntl_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " fcntl-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fcntl_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " readlink ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.readlink_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " readlink-bytes ");
@@ -3981,6 +3987,10 @@ static u32 linux_exec64_run_source(
     u32 lseek_after;
     u32 lseek_denial_before;
     u32 lseek_denial_after;
+    u32 fcntl_before;
+    u32 fcntl_after;
+    u32 fcntl_denial_before;
+    u32 fcntl_denial_after;
     u32 readlink_before;
     u32 readlink_after;
     u32 readlink_bytes_before;
@@ -4550,6 +4560,8 @@ static u32 linux_exec64_run_source(
     newfstatat_fault_before = linux_abi64_newfstatat_fault_count();
     lseek_before = linux_abi64_lseek_count();
     lseek_denial_before = linux_abi64_lseek_denial_count();
+    fcntl_before = linux_abi64_fcntl_count();
+    fcntl_denial_before = linux_abi64_fcntl_denial_count();
     readlink_before = linux_abi64_readlink_count();
     readlink_bytes_before = linux_abi64_readlink_byte_count();
     readlink_denial_before = linux_abi64_readlink_denial_count();
@@ -4696,6 +4708,8 @@ static u32 linux_exec64_run_source(
     newfstatat_fault_after = linux_abi64_newfstatat_fault_count();
     lseek_after = linux_abi64_lseek_count();
     lseek_denial_after = linux_abi64_lseek_denial_count();
+    fcntl_after = linux_abi64_fcntl_count();
+    fcntl_denial_after = linux_abi64_fcntl_denial_count();
     readlink_after = linux_abi64_readlink_count();
     readlink_bytes_after = linux_abi64_readlink_byte_count();
     readlink_denial_after = linux_abi64_readlink_denial_count();
@@ -4925,6 +4939,12 @@ static u32 linux_exec64_run_source(
     g_linux_exec64_telemetry.lseek_denial =
         (lseek_denial_after >= lseek_denial_before)
             ? (lseek_denial_after - lseek_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.fcntl_calls =
+        (fcntl_after >= fcntl_before) ? (fcntl_after - fcntl_before) : 0u;
+    g_linux_exec64_telemetry.fcntl_denial =
+        (fcntl_denial_after >= fcntl_denial_before)
+            ? (fcntl_denial_after - fcntl_denial_before)
             : 0u;
     g_linux_exec64_telemetry.readlink_calls =
         (readlink_after >= readlink_before)
