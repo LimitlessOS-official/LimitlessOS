@@ -4428,7 +4428,7 @@ static u32 linux_exec64_run_source(
                 stderr_capability) == 0u)
         || ((dynamic_launch == 0u)
             && (persona64_init_linux_elf(pid, linux_abi64_dispatch_table()) != PERSONA64_ATTACH_OK))
-        || ((source == LINUX_EXEC64_SOURCE_NVME)
+        || ((nvme_fs_capability != CAPABILITY64_INVALID_HANDLE)
             && (linux_vfs64_bind_nvme_read(pid, owner_id, nvme_fs_capability) == 0u)))
     {
         g_linux_exec64_telemetry.failure_code = 4u;
@@ -4436,7 +4436,8 @@ static u32 linux_exec64_run_source(
         linux_exec64_emit_failure(console_capability, owner_id, path, path_bytes);
         return LINUX_EXEC64_RESULT_FAILED;
     }
-    g_linux_exec64_telemetry.nvme_vfs_bind = (source == LINUX_EXEC64_SOURCE_NVME) ? 1u : 0u;
+    g_linux_exec64_telemetry.nvme_vfs_bind =
+        (nvme_fs_capability != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
 
     g_linux_exec64_telemetry.stage = LINUX_EXEC64_STAGE_LAUNCH;
     if (dynamic_launch == 0u)
@@ -5367,7 +5368,7 @@ static u32 linux_exec64_run_source(
 
     g_linux_exec64_telemetry.cleanup =
         ((exit_probe_clear != 0u)
-            && ((source != LINUX_EXEC64_SOURCE_NVME) || (nvme_vfs_release != 0u))
+            && ((g_linux_exec64_telemetry.nvme_vfs_bind == 0u) || (nvme_vfs_release != 0u))
             && ((vma_release + exit_vma_release)
                 >= (g_linux_exec64_telemetry.mapped_regions + 1u))
             && (g_linux_exec64_telemetry.root_cleanup != 0u)
@@ -5416,6 +5417,7 @@ u32 linux_exec64_run_boot_media(
     const char *const *argv,
     u32 argc,
     u32 owner_id,
+    u32 nvme_fs_capability,
     u32 console_capability)
 {
     return linux_exec64_run_source(
@@ -5424,7 +5426,7 @@ u32 linux_exec64_run_boot_media(
         argv,
         argc,
         owner_id,
-        CAPABILITY64_INVALID_HANDLE,
+        nvme_fs_capability,
         console_capability,
         LINUX_EXEC64_SOURCE_BOOT_MEDIA);
 }

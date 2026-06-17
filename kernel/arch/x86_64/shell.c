@@ -1411,6 +1411,7 @@ static u32 shell64_linux_run(
         return shell64_write_text(console_capability_handle, owner_id, "linux: too many args\n");
     }
 
+    nvme_capability = mmio64_nvme_rw_capability();
     if (boot_media64_has_file(g_shell64_line + path_start, path_length) != 0u)
     {
         (void)shell64_write_text(
@@ -1423,10 +1424,10 @@ static u32 shell64_linux_run(
             argv,
             argc,
             owner_id,
+            nvme_capability,
             console_capability_handle);
     }
 
-    nvme_capability = mmio64_nvme_rw_capability();
     nvme_capability_present = (nvme_capability != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
     nvme_probe_found = mmio64_nvme_probe_found();
     nvme_probe_ready = mmio64_nvme_probe_ready();
