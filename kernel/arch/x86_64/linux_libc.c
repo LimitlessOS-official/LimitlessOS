@@ -108,6 +108,7 @@ static const linux_libc64_export_t g_linux_libc64_exports[LINUX_LIBC64_SYMBOL_CO
     { "getrandom", 9u, LINUX_LIBC64_RVA_GETRANDOM, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_GETRANDOM },
     { "futex", 5u, LINUX_LIBC64_RVA_FUTEX, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_FUTEX },
     { "getdents64", 10u, LINUX_LIBC64_RVA_GETDENTS64, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_GETDENTS64 },
+    { "newfstatat", 10u, LINUX_LIBC64_RVA_NEWFSTATAT, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_NEWFSTATAT },
     { "readv", 5u, LINUX_LIBC64_RVA_READV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_READV },
     { "writev", 6u, LINUX_LIBC64_RVA_WRITEV, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_WRITEV },
     { "poll", 4u, LINUX_LIBC64_RVA_POLL, LINUX_LIBC64_KIND_SYSCALL, LINUX_ABI64_SYSCALL_POLL },
@@ -402,6 +403,29 @@ static void linux_libc64_write_syscall_stub(u32 rva, u32 syscall_number)
     g_linux_libc64_image[offset + 5u] = 0x0Fu;
     g_linux_libc64_image[offset + 6u] = 0x05u;
     g_linux_libc64_image[offset + 7u] = 0xC3u;
+}
+
+static void linux_libc64_write_syscall4_stub(u32 rva, u32 syscall_number)
+{
+    u32 offset = linux_libc64_rva_to_offset(rva);
+
+    if ((rva < LINUX_LIBC64_TEXT_RVA)
+        || ((offset + 14u) > (LINUX_LIBC64_TEXT_FILE_OFFSET + LINUX_LIBC64_TEXT_FILE_BYTES + LINUX_LIBC64_RODATA_FILE_BYTES)))
+    {
+        return;
+    }
+
+    g_linux_libc64_image[offset] = 0x48u;
+    g_linux_libc64_image[offset + 1u] = 0x63u;
+    g_linux_libc64_image[offset + 2u] = 0xFFu;
+    g_linux_libc64_image[offset + 3u] = 0x49u;
+    g_linux_libc64_image[offset + 4u] = 0x89u;
+    g_linux_libc64_image[offset + 5u] = 0xCAu;
+    g_linux_libc64_image[offset + 6u] = 0xB8u;
+    linux_libc64_write_le32(g_linux_libc64_image, offset + 7u, syscall_number);
+    g_linux_libc64_image[offset + 11u] = 0x0Fu;
+    g_linux_libc64_image[offset + 12u] = 0x05u;
+    g_linux_libc64_image[offset + 13u] = 0xC3u;
 }
 
 static void linux_libc64_write_abort_stub(u32 rva)
@@ -1100,7 +1124,11 @@ static void linux_libc64_build_image(void)
     for (index = 0u; index < LINUX_LIBC64_SYMBOL_COUNT; ++index)
     {
         const linux_libc64_export_t *export = &g_linux_libc64_exports[index];
-        if (export->kind == LINUX_LIBC64_KIND_SYSCALL)
+        if (export->rva == LINUX_LIBC64_RVA_NEWFSTATAT)
+        {
+            linux_libc64_write_syscall4_stub(export->rva, export->syscall_number);
+        }
+        else if (export->kind == LINUX_LIBC64_KIND_SYSCALL)
         {
             linux_libc64_write_syscall_stub(export->rva, export->syscall_number);
         }

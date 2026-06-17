@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M94 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio-helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, and dynamic vectored I/O/readiness behavior are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M95 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, and dynamic fstatat metadata behavior are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -44,6 +44,7 @@ Passing artifacts:
 - `external\build\DYNFILEIO`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001080`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `42B199D95374ADC5F8F349405423E2F6976394AD8FD4DC04F88DD3E56F56354F`, staged through the boot-media Linux app path as `/APPS/DYNFILEIO`, and verified by M90 with `linux /APPS/DYNFILEIO`.
 - `external\build\DYNSEEK`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x520010B0`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `22F4206B5DFA3A9048A08F2FF31E9931AC969DFC404EA684F2E7B0D0013AEE62`, staged through the boot-media Linux app path as `/APPS/DYNSEEK`, and verified by M91 with `linux /APPS/DYNSEEK`.
 - `external\build\DYNVEC`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001090`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `2F4CB3560E98FF4585731F48673C5B86C2D2B82CD8D8B2D4284E9F5E6BD49915`, staged through the boot-media Linux app path as `/APPS/DYNVEC`, and verified by M94 with `linux /APPS/DYNVEC`.
+- `external\build\DYNFSTATAT`: external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001070`, `PT_INTERP` `/nvme/apps/ldlimit`, `DT_NEEDED` `libc-x64.so`, SHA-256 `35504B625F60B8C4DAAF464B57219466AA49CABCCDC0082F6907505C1C1DE8A0`, staged through the boot-media Linux app path as `/APPS/DYNFSTATAT`, and verified by M95 with `linux /APPS/DYNFSTATAT`.
 - `external\build\sbase-0.1-cat-x86_64-musl-0x52000000`: suckless sbase 0.1 `cat` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `FDC39F6D97F7E7492DAE5983732B2E23FD063CC7EAC99C5F0114FD93E6A95662`, staged at `/APPS/SBCAT`, verified directly with `linux /APPS/SBCAT /nvme/apps/data/file.txt`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c '/nvme/apps/sbecho m29-sbase-pipe | /nvme/apps/sbcat'`.
 - `external\build\sbase-0.1-env-x86_64-musl-0x52000000`: suckless sbase 0.1 `env` built from upstream source package `https://dl.suckless.org/sbase/sbase-0.1.tar.gz` with tarball SHA-256 `86F6BB67BCC7DF3BA7A3F11DA72EAEB2CF58C23E9A35A7DBCD316395D934C634`, static musl ET_EXEC linked at `0x52000000`, SHA-256 `A678597A247CCEAEDE00641B88497BD51F684FA29072A3192ADCAABB4ABA54F4`, staged at `/APPS/SBENV`, and verified through forked BusyBox ash child exec with `linux /APPS/BUSYBOX sh -c 'USER=operator; export USER; /nvme/apps/sbenv | /nvme/apps/sbcat'`.
 
@@ -1573,7 +1574,36 @@ Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M94 UEFI manifes
 
 M94 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, file-descriptor readiness beyond brokered stdout `POLLOUT`, sockets, epoll, dynamic writes to NVMe files, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use generated libc vectored I/O and readiness syscall stubs against one real FAT-backed file and brokered stdout cleanly.
 
-Proposed M95 scope: expose the existing `newfstatat(262)` ABI through generated libc and run a dynamic ET_EXEC that uses `AT_FDCWD` plus relative paths after `chdir` to verify file and directory metadata without adding `readlinkat`, write-side filesystem mutation, or arbitrary dynamic linker search/loading.
+## M95 Dynamic Fstatat Metadata Breadth
+
+M95 is accepted on the UEFI Product path with `linux /APPS/DYNFSTATAT`. It runs a thirteenth dynamic ET_EXEC artifact through the same supported interpreter and proves the boot-media dynamic path can bind scoped NVMe VFS read authority, resolve a generated libc `newfstatat` wrapper, update cwd to `/nvme/apps`, stat relative file and directory paths through `newfstatat(AT_FDCWD, ...)`, validate the FAT-backed file size and regular-file/directory mode bits, write `dynfstatat:27:file-dir`, exit through `exit_group(231)`, and release the Linux VFS binding cleanly.
+
+Staged artifacts:
+
+- `/APPS/DYNFSTATAT`, SHA-256 `35504B625F60B8C4DAAF464B57219466AA49CABCCDC0082F6907505C1C1DE8A0`, external musl-cross dynamic ET_EXEC linked at `0x52000000`, entry `0x52001070`, with `PT_INTERP` requesting `/nvme/apps/ldlimit`
+- `/APPS/LDLIMIT`, SHA-256 `6F713105878C30D817B7ADD4A7ED5D4EE8E01FB6EAB2C80BA10ACEE059C72238`, static musl ET_EXEC linked at `0x47800000`
+
+The first M95 trace proved symbol binding but failed with `newfstatat-denial 1` because the generic 8-byte syscall stub did not move the fourth C ABI argument from `rcx` to Linux syscall ABI `r10`. The second trace moved `rcx` to `r10` but still failed with `path-fault 1` because a C `int dirfd` zero-extended `AT_FDCWD`. The accepted fix gives `newfstatat` a dedicated wrapper at `0x1D40` that sign-extends `edi` into `rdi`, moves `rcx` into `r10`, then issues syscall 262.
+
+Implementation scope: add only the generated libc wrapper/export for existing kernel ABI syscall `newfstatat(262)`. The kernel ABI syscall implementation, cwd state, path canonicalization, VFS stat path, stat telemetry, and cleanup path already existed. No new Linux ABI syscall implementation, arbitrary shared-library loading, lazy binding, glibc compatibility, `readlinkat`, file mutation, or BIOS path expansion is claimed.
+
+M95 acceptance telemetry:
+
+```text
+drs-realbin path /APPS/DYNFSTATAT provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-map-attempt 1 dynamic-process 1 dynamic-app-mapped 4 dynamic-app-pages 5 dynamic-interp-mapped 4 dynamic-interp-pages 5 dynamic-rela 4 dynamic-jmprel 4 dynamic-binding-total 8 dynamic-binding-supported 4 dynamic-binding-missing 0 dynamic-binding-weak-null 4 dynamic-binding-libc 4 dynamic-jmprel-symbol write dynamic-reloc-apply 1 dynamic-reloc-apply-total 8 dynamic-reloc-apply-write 8 dynamic-reloc-apply-readback 8 dynamic-stack 1 dynamic-stack-pages 16 dynamic-stack-argc 1 dynamic-stack-envc 4 dynamic-transfer-ready 1 dynamic-transfer-rip 0x0000000052001070 dynamic-transfer-rsp 0x000000005300FE20 dynamic-task-registered 1 dynamic-transfer-started 1 dynamic-first-syscall 231 dynamic-console-bytes 23 dynamic-exit-code 0x00000000 newfstatat 2 newfstatat-denial 0 newfstatat-fault 0 path-relative 2 path-fault 0 chdir 1 chdir-denial 0 chdir-fault 0 write 1 write-bytes 23 vfs-nvme-bind 1 vfs-nvme-release 1 low-compat 0 syscall-root-repair 0 page-faults 0 console-bytes 23 exit 0 cleanup 1 root-cleanup 1 pml4-pool-used-final 0
+```
+
+Visible output:
+
+```text
+dynfstatat:27:file-dir
+```
+
+Final reserves are UEFI 798,496 bytes and BIOS 101 sectors. The M95 UEFI manifest reports kernel bytes 1,298,656, checksum `0xF3DB573B`, and SHA-256 `01bae43f4fce2c6dc65e754e768420fe801786aa23df81a4192543e2eb21849b`.
+
+M95 non-claims: arbitrary `PT_INTERP`, arbitrary shared-library search/loading, glibc compatibility, broad relocation families, lazy binding, `readlinkat`, filesystem mutation, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: the fixed supported-interpreter dynamic path can bind scoped NVMe VFS read authority and use a generated libc `newfstatat` wrapper against relative file and directory paths cleanly.
+
+Proposed M96 scope: expose the existing `openat(257)` ABI through a generated libc wrapper that handles the same C ABI to Linux syscall ABI details, then run a dynamic ET_EXEC that uses `openat(AT_FDCWD, "data/file.txt", O_RDONLY, 0)` after `chdir`, reads the FAT-backed content, and closes the fd without adding filesystem mutation or arbitrary dynamic linker search/loading.
 
 Later targets are:
 
