@@ -294,6 +294,10 @@ typedef struct linux_exec64_telemetry
     u32 newfstatat_fault;
     u32 lseek_calls;
     u32 lseek_denial;
+    u32 dup_calls;
+    u32 dup2_calls;
+    u32 dup3_calls;
+    u32 dup_denial;
     u32 fcntl_calls;
     u32 fcntl_denial;
     u32 readlink_calls;
@@ -2585,6 +2589,14 @@ static void linux_exec64_emit_summary(
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.lseek_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " lseek-denial ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.lseek_denial);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dup ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dup_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dup2 ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dup2_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dup3 ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dup3_calls);
+    (void)linux_exec64_write_text(console_capability, owner_id, " dup-denial ");
+    linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.dup_denial);
     (void)linux_exec64_write_text(console_capability, owner_id, " fcntl ");
     linux_exec64_write_dec_u32(console_capability, owner_id, g_linux_exec64_telemetry.fcntl_calls);
     (void)linux_exec64_write_text(console_capability, owner_id, " fcntl-denial ");
@@ -3987,6 +3999,14 @@ static u32 linux_exec64_run_source(
     u32 lseek_after;
     u32 lseek_denial_before;
     u32 lseek_denial_after;
+    u32 dup_before;
+    u32 dup_after;
+    u32 dup2_before;
+    u32 dup2_after;
+    u32 dup3_before;
+    u32 dup3_after;
+    u32 dup_denial_before;
+    u32 dup_denial_after;
     u32 fcntl_before;
     u32 fcntl_after;
     u32 fcntl_denial_before;
@@ -4560,6 +4580,10 @@ static u32 linux_exec64_run_source(
     newfstatat_fault_before = linux_abi64_newfstatat_fault_count();
     lseek_before = linux_abi64_lseek_count();
     lseek_denial_before = linux_abi64_lseek_denial_count();
+    dup_before = linux_abi64_dup_count();
+    dup2_before = linux_abi64_dup2_count();
+    dup3_before = linux_abi64_dup3_count();
+    dup_denial_before = linux_abi64_dup_denial_count();
     fcntl_before = linux_abi64_fcntl_count();
     fcntl_denial_before = linux_abi64_fcntl_denial_count();
     readlink_before = linux_abi64_readlink_count();
@@ -4708,6 +4732,10 @@ static u32 linux_exec64_run_source(
     newfstatat_fault_after = linux_abi64_newfstatat_fault_count();
     lseek_after = linux_abi64_lseek_count();
     lseek_denial_after = linux_abi64_lseek_denial_count();
+    dup_after = linux_abi64_dup_count();
+    dup2_after = linux_abi64_dup2_count();
+    dup3_after = linux_abi64_dup3_count();
+    dup_denial_after = linux_abi64_dup_denial_count();
     fcntl_after = linux_abi64_fcntl_count();
     fcntl_denial_after = linux_abi64_fcntl_denial_count();
     readlink_after = linux_abi64_readlink_count();
@@ -4939,6 +4967,16 @@ static u32 linux_exec64_run_source(
     g_linux_exec64_telemetry.lseek_denial =
         (lseek_denial_after >= lseek_denial_before)
             ? (lseek_denial_after - lseek_denial_before)
+            : 0u;
+    g_linux_exec64_telemetry.dup_calls =
+        (dup_after >= dup_before) ? (dup_after - dup_before) : 0u;
+    g_linux_exec64_telemetry.dup2_calls =
+        (dup2_after >= dup2_before) ? (dup2_after - dup2_before) : 0u;
+    g_linux_exec64_telemetry.dup3_calls =
+        (dup3_after >= dup3_before) ? (dup3_after - dup3_before) : 0u;
+    g_linux_exec64_telemetry.dup_denial =
+        (dup_denial_after >= dup_denial_before)
+            ? (dup_denial_after - dup_denial_before)
             : 0u;
     g_linux_exec64_telemetry.fcntl_calls =
         (fcntl_after >= fcntl_before) ? (fcntl_after - fcntl_before) : 0u;
