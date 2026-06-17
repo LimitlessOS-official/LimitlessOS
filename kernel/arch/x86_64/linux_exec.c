@@ -3412,7 +3412,7 @@ static u32 linux_exec64_build_dynamic_stack_preview(
         app_header->phnum,
         0ull);
     interp_base = linux_exec64_first_load_vaddr(interp_phdrs, interp_phdr_count);
-    transfer_rip = interp_header->entry;
+    transfer_rip = app_entry;
 
     g_linux_exec64_telemetry.dynamic_auxv_phdr = app_phdr_vaddr;
     g_linux_exec64_telemetry.dynamic_auxv_base = interp_base;
@@ -3519,6 +3519,7 @@ static u32 linux_exec64_try_dynamic_mapping(
     elf64_program_header_t interp_phdrs[ELF64_MAX_PROGRAM_HEADERS];
     elf64_phdr_summary_t interp_summary;
     elf64_load_result_t interp_load;
+    linux_libc64_load_result_t libc_load;
     u32 index;
     u32 parent_pid;
     u32 pid;
@@ -3593,6 +3594,12 @@ static u32 linux_exec64_try_dynamic_mapping(
     if (vma64_init_process(pid) == 0u)
     {
         g_linux_exec64_telemetry.dynamic_map_error = 4u;
+        linux_exec64_release_failed_process(pid);
+        return LINUX_EXEC64_DYNAMIC_FAILED;
+    }
+    if (persona64_init_linux_elf(pid, linux_abi64_dispatch_table()) != PERSONA64_ATTACH_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 22u;
         linux_exec64_release_failed_process(pid);
         return LINUX_EXEC64_DYNAMIC_FAILED;
     }
@@ -3722,6 +3729,29 @@ static u32 linux_exec64_try_dynamic_mapping(
         if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
         {
             g_linux_exec64_telemetry.dynamic_map_error = 17u;
+        }
+        linux_exec64_release_failed_process(pid);
+        return LINUX_EXEC64_DYNAMIC_FAILED;
+    }
+
+    interp_switch = paging64_switch_to_process_root(pid, 0x44594E43u);
+    if (interp_switch == 0u)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error = 18u;
+        linux_exec64_release_failed_process(pid);
+        return LINUX_EXEC64_DYNAMIC_FAILED;
+    }
+    if (linux_libc64_load(pid, LINUX_LIBC64_DEFAULT_BASE, &libc_load) != LINUX_LIBC64_OK)
+    {
+        g_linux_exec64_telemetry.dynamic_map_error =
+            (libc_load.error != 0u) ? libc_load.error : 18u;
+    }
+    interp_restore = paging64_switch_to_kernel_root(0x44594E55u);
+    if ((interp_restore == 0u) || (g_linux_exec64_telemetry.dynamic_map_error != 0u))
+    {
+        if (g_linux_exec64_telemetry.dynamic_map_error == 0u)
+        {
+            g_linux_exec64_telemetry.dynamic_map_error = 18u;
         }
         linux_exec64_release_failed_process(pid);
         return LINUX_EXEC64_DYNAMIC_FAILED;
@@ -4385,7 +4415,8 @@ static u32 linux_exec64_run_source(
                 stdin_capability,
                 stdout_capability,
                 stderr_capability) == 0u)
-        || (persona64_init_linux_elf(pid, linux_abi64_dispatch_table()) != PERSONA64_ATTACH_OK)
+        || ((dynamic_launch == 0u)
+            && (persona64_init_linux_elf(pid, linux_abi64_dispatch_table()) != PERSONA64_ATTACH_OK))
         || ((source == LINUX_EXEC64_SOURCE_NVME)
             && (linux_vfs64_bind_nvme_read(pid, owner_id, nvme_fs_capability) == 0u)))
     {

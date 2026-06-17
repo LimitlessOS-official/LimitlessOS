@@ -1372,7 +1372,7 @@ u32 linux_dynamic64_prepare(
     }
 
     out_result->initial_rsp = out_result->stack_result.initial_rsp;
-    out_result->transfer_rip = out_result->interpreter_result.dl_start;
+    out_result->transfer_rip = out_result->app_entry;
     out_result->transfer_rsp = out_result->initial_rsp;
     out_result->transfer_ready =
         ((paging64_user_page_present(out_result->transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull)) != 0u)

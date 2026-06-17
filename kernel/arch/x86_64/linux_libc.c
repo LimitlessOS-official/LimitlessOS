@@ -1657,9 +1657,9 @@ u32 linux_libc64_load(
         out_result->context_stored = 1u;
     }
 
-    if ((linux_libc64_export(pid, "write") == 0ull)
-        || (linux_libc64_export(pid, "strlen") == 0ull)
-        || (linux_libc64_export(pid, "printf") == 0ull))
+    if ((out_result->write_fn == 0ull)
+        || (out_result->strlen_fn == 0ull)
+        || (out_result->printf_fn == 0ull))
     {
         out_result->error = LINUX_LIBC64_ERROR_SYMBOL;
         (void)linux_libc64_release_process(pid);
