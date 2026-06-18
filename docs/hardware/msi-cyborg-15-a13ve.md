@@ -43,17 +43,17 @@ For hardware builds that need dynamic-linker artifacts available on the USB boot
 
 This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader now reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and `BOOTMAN.TXT` records expected paths, byte counts, and SHA-256 hashes. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, `boot media status`, and the full `drs-nvme-triage` line.
 
-Parse the captured transcript from Windows/PowerShell with:
+Verify the evidence bundle and captured transcript from Windows/PowerShell with:
 
 ```powershell
-.\tools\analyze-hardware-storage-capture.ps1 `
-  -InputPath .\dist\msi-hwval-storage.txt `
+.\tools\verify-hardware-storage-evidence.ps1 `
+  -EvidenceDir .\dist\m113-hardware-storage-<timestamp> `
+  -CapturePath .\dist\msi-hwval-storage.txt `
   -OutputDir .\dist\msi-hwval-storage-analysis `
-  -EvidenceManifestPath .\dist\m113-hardware-storage-<timestamp>\hardware-storage-evidence-manifest.json `
   -RequireStagedDynamicArtifacts
 ```
 
-The analyzer writes JSON/text/Markdown reports and names the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch. Use the `next-target` line as the next kernel/driver implementation target.
+The verifier checks the evidence bundle hashes/reserves first, then runs the analyzer and names the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch. Use `capture-stage` and the nested analyzer `next-target` line as the next kernel/driver implementation target.
 
 M113 packages this handoff into a timestamped evidence directory:
 
@@ -67,7 +67,7 @@ The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDL
 dist\m113-hardware-storage-20260617-221334
 ```
 
-For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then analyze it with `tools\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then verify it with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 
@@ -110,7 +110,7 @@ For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that 
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
 - [ ] Save the complete `hwval` transcript.
-- [ ] Analyze the transcript with `tools\analyze-hardware-storage-capture.ps1`.
+- [ ] Verify the evidence bundle and transcript with `tools\verify-hardware-storage-evidence.ps1`.
 - [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
 - [ ] Record the exact shell prompt text.

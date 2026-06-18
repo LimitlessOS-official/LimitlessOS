@@ -170,7 +170,8 @@ $manifestObject = [PSCustomObject]@{
     expected_hwval = [PSCustomObject]@{
         command = "hwval"
         required_line = "drs-nvme-triage"
-        parser = "tools\\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts"
+        analyzer = "tools\\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts"
+        verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
         required_pass_stage = "storage-ready"
     }
 }
@@ -209,13 +210,15 @@ LimitlessOS M113 Hardware Storage Runbook
    hwval
 
 4. Capture the full hwval transcript to a text file named msi-hwval-storage.txt.
-5. Back on Windows/PowerShell, parse it from the repository root:
+5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
 
-   .\tools\parse-hardware-storage-capture.ps1 -InputPath <path-to-msi-hwval-storage.txt> -OutputPath .\dist\msi-hwval-storage.json -RequireStagedDynamicArtifacts
+   .\tools\verify-hardware-storage-evidence.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
 
-Pass means the parser reports:
+Pass means the verifier reports:
 
-   hardware-storage-capture: storage-ready
+   hardware-storage-evidence: verified
+   capture pass: True
+   capture stage: storage-ready
 
 If it fails, use the reported stage as the next kernel/driver target. Do not run installer writes, formatting, or NVRAM boot-entry actions during this evidence pass.
 "@ | Set-Content -Path $runbookPath -Encoding Ascii
