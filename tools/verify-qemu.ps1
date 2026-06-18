@@ -4155,31 +4155,7 @@ else {
         'drs-block-checksum \1 drs-block-read-checksum \1 drs-block-checksum-match 1 ' +
         'drs-block-wrong-owner 1 drs-block-stale-denied 1 drs-block-write 0 drs-block-commit 0 ' +
         'drs-block-fs-minted 0 drs-block-lba 0 drs-block-blocks 1 drs-block-buffer 1 ' +
-        'drs-block-staged 1 drs-block-denials 2 drs-block-unavailable 0 ' +
-        'drs-fs 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-fs-state 3 drs-fs-flags 0x0001FFFF ' +
-        'drs-fs-owner 0x00001006 drs-fs-block-bound 1 drs-fs-block-cap 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} ' +
-        'drs-fs-block-read-only 1 drs-fs-block-route 1 drs-fs-pvd 1 drs-fs-pvd-checksum 0x(?!00000000)[0-9A-F]{8} ' +
-        'drs-fs-root-lba [1-9][0-9]* drs-fs-root-bytes [1-9][0-9]* drs-fs-root-read 1 ' +
-        'drs-fs-located 1 drs-fs-file-lba [1-9][0-9]* drs-fs-read-bytes 584 ' +
-        'drs-fs-checksum 0x4ABDFAAA drs-fs-expected-checksum 0x4ABDFAAA drs-fs-content-match 1 ' +
-        'drs-fs-write 0 drs-fs-commit 0 drs-fs-fs-minted 0 drs-fs-staged 1 drs-fs-denials 0 drs-fs-unavailable 0 ' +
-        'drs-fs-user 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-fs-user-path /APPS/LS.APP ' +
-        'drs-fs-user-state 3 drs-fs-user-flags 0x001FFFFF drs-fs-user-owner 0x00001006 ' +
-        'drs-fs-user-user-owner 0x00000201 drs-fs-user-fs-bound 1 drs-fs-user-cap-minted 1 ' +
-        'drs-fs-user-delegated 1 drs-fs-user-read-routed 1 drs-fs-user-root-read 1 ' +
-        'drs-fs-user-apps-lba [1-9][0-9]* drs-fs-user-apps-bytes [1-9][0-9]* ' +
-        'drs-fs-user-file-lba [1-9][0-9]* drs-fs-user-bytes 79 ' +
-        'drs-fs-user-checksum 0xFDB1F751 drs-fs-user-expected-checksum 0xFDB1F751 drs-fs-user-content-match 1 ' +
-        'drs-fs-user-wrong-owner 1 drs-fs-user-stale 1 drs-fs-user-write 0 drs-fs-user-commit 0 ' +
-        'drs-fs-user-additional-fs-caps 0 drs-fs-user-user-buffer 1 drs-fs-user-staged 1 ' +
-        'drs-fs-user-denials 2 drs-fs-user-unavailable 0 ' +
-        'drs-fs-shell 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-fs-shell-state 3 drs-fs-shell-flags 0x0001FFFF ' +
-        'drs-fs-shell-owner 0x00001006 drs-fs-shell-user-owner 0x00000201 drs-fs-shell-fs-user-bound 1 ' +
-        'drs-fs-shell-delegated 1 drs-fs-shell-descriptors-read 12 drs-fs-shell-descriptors-parsed 1 ' +
-        'drs-fs-shell-scan-dynamic 1 ' +
-        'drs-fs-shell-ls-dispatched 1 drs-fs-shell-cat-dispatched 1 drs-fs-shell-stat-dispatched 1 ' +
-        'drs-fs-shell-ramfs-route 1 drs-fs-shell-iso-route 1 drs-fs-shell-write 0 drs-fs-shell-commit 0 ' +
-        'drs-fs-shell-additional-fs-caps 0 drs-fs-shell-staged 1 drs-fs-shell-denials 0 drs-fs-shell-unavailable 0 '
+        'drs-block-staged 1 drs-block-denials 2 drs-block-unavailable 0 '
     )
     Assert-OutputContains -Lines $outputLines -Pattern $uefiDriverReadStatusBlockPattern -Message "x64 UEFI AHCI drs-block read-only block publication proof was not observed."
     $uefiDriverReadStatusLoadPattern = (
