@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M113 is `physical hardware storage evidence bundle`. The repo now has `tools\prepare-hardware-storage-evidence.ps1`, a host-side packager that prepares a staged UEFI/ISO evidence directory for the MSI laptop storage run. It validates the M111 boot/NVMe dynamic artifact contract in `BOOTMAN.TXT`, optionally reruns the QEMU staged storage gate, copies the ISO, UEFI image, `BOOTMAN.TXT`, size map, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT` into a timestamped ignored `dist\m113-hardware-storage-*` bundle, and writes both JSON/text manifests plus a runbook. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+M114 is `physical hardware storage capture analysis`. The repo now has `tools\analyze-hardware-storage-capture.ps1`, a host-side intake wrapper that runs the M112 parser, preserves failing classifications as useful diagnostics, and writes JSON/text/Markdown reports with the first failing storage stage, key triage fields, and the next kernel/driver target. It can read expected dynamic artifact sizes from an M113 evidence manifest. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
+M113 is `physical hardware storage evidence bundle`. The repo now has `tools\prepare-hardware-storage-evidence.ps1`, a host-side packager that prepares a staged UEFI/ISO evidence directory for the MSI laptop storage run. It validates the M111 boot/NVMe dynamic artifact contract in `BOOTMAN.TXT`, optionally reruns the QEMU staged storage gate, copies the ISO, UEFI image, `BOOTMAN.TXT`, size map, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT` into a timestamped ignored `dist\m113-hardware-storage-*` bundle, and writes both JSON/text manifests plus a runbook.
 
 M112 is `physical hardware storage capture parser`. The repo now has `tools\parse-hardware-storage-capture.ps1`, a host-side parser for real laptop `hwval` transcripts. It reads the `drs-nvme-triage` line, emits JSON, and classifies the first failing stage across NVMe discovery/readiness/Identify/IO queue/read status, GPT, FAT32 VBR/BPB/mount, scoped capability delegation, `/APPS` visibility, and M111 staged dynamic artifact match. It also recognizes the older `drs-realbin-unavailable` photo-era line as legacy/insufficient evidence and tells the tester to rerun `hwval` on an M111-staged image.
 
@@ -2122,7 +2124,7 @@ The bundled QEMU staged gate re-proved the M111 storage contract:
 [x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 1 dynldlimit-bytes 15680 ldlimit-stat 1 ldlimit-bytes 16704 boot-staged 1 boot-app-bytes 15680 boot-interp-bytes 16704 boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x75BC2409
 ```
 
-M113 non-claims: this does not certify the MSI laptop, add a storage driver, alter kernel behavior, or prove physical NVMe access. It makes the next real laptop run reproducible: boot the bundled ISO, run `hwval`, parse the transcript with `tools\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`, and target the first reported failing stage.
+M113 non-claims: this does not certify the MSI laptop, add a storage driver, alter kernel behavior, or prove physical NVMe access. It makes the next real laptop run reproducible: boot the bundled ISO, run `hwval`, analyze the transcript with `tools\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`, and target the first reported failing stage.
 
 Final reserves are unchanged from M111 because no kernel code changed:
 
@@ -2130,7 +2132,56 @@ Final reserves are unchanged from M111 because no kernel code changed:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum: `0x6714FC97`
 
-Proposed M114 scope: physical laptop storage evidence run. Boot the M113 staged ISO/USB on the MSI laptop, capture `hwval`, parse it with `tools\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`, and implement the first kernel/driver fix only after the parser identifies the exact failing stage.
+## M114 Physical Hardware Storage Capture Analysis
+
+M114 is accepted as the host-side intake layer for the next real laptop storage capture. It adds:
+
+```powershell
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath <captured-hwval-transcript> [-OutputDir <dir>] [-EvidenceManifestPath <manifest.json>] [-RequireStagedDynamicArtifacts]
+```
+
+The analyzer wraps `tools\parse-hardware-storage-capture.ps1`, treats parser exit code `2` as a valid failing diagnosis instead of a script crash, and writes:
+
+- `hardware-storage-capture.json`
+- `parse-hardware-storage-capture.txt`
+- `hardware-storage-analysis.json`
+- `hardware-storage-analysis.txt`
+- `hardware-storage-analysis.md`
+
+Validation performed:
+
+```powershell
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m114-analysis-qemu -RequireStagedDynamicArtifacts
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\docs\hardware\msi-cyborg-15-a13ve.md -OutputDir .\build\m114-analysis-legacy -RequireStagedDynamicArtifacts
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m114-analysis-manifest -EvidenceManifestPath .\dist\m113-hardware-storage-20260617-221334\hardware-storage-evidence-manifest.json -RequireStagedDynamicArtifacts
+.\tools\parse-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputPath .\build\m114-parser-regression.json -RequireStagedDynamicArtifacts
+```
+
+Observed analyzer outcomes:
+
+```text
+hardware-storage-analysis: storage-ready
+pass: True
+detail: NVMe, GPT, FAT, /APPS, capability delegation, and requested staged artifacts are all visible.
+next-target: Storage is healthy. Next target: run linux /APPS/DYNLDLIMIT on hardware and capture drs-realbin telemetry.
+
+hardware-storage-analysis: nvme-controller-discovery
+pass: False
+detail: NVMe controller was not discovered.
+next-target: Driver target: PCI/NVMe enumeration, class-code match, BAR mapping, and controller register visibility.
+```
+
+M114 also tightens `tools\parse-hardware-storage-capture.ps1` so `raw_line` and `legacy_line` are plain strings in JSON output rather than PowerShell provider-decorated string objects.
+
+M114 non-claims: this does not certify the MSI laptop, add a storage driver, alter kernel behavior, or prove physical NVMe access. It ensures that the next physical `hwval` transcript immediately becomes a clean report with a concrete next implementation target.
+
+Final reserves are unchanged from M111 because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M115 scope: run the M113 staged ISO on the MSI laptop, capture `hwval`, analyze it with `tools\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`, then implement only the first failing storage stage reported by M114.
 
 ## Persistence
 

@@ -206,7 +206,7 @@ if ($triageLine.Count -eq 0) {
         require_staged_dynamic_artifacts = [bool]$RequireStagedDynamicArtifacts
         classification = $classification
         raw_line = ""
-        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { $legacyUnavailableLine[0] } else { "" }
+        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { [string]$legacyUnavailableLine[0] } else { "" }
         fields = [PSCustomObject]@{}
     }
 }
@@ -225,8 +225,8 @@ else {
         expected_dynamic_app_bytes = $ExpectedDynamicAppBytes
         expected_dynamic_interp_bytes = $ExpectedDynamicInterpBytes
         classification = $classification
-        raw_line = $triageLine[0]
-        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { $legacyUnavailableLine[0] } else { "" }
+        raw_line = [string]$triageLine[0]
+        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { [string]$legacyUnavailableLine[0] } else { "" }
         fields = [PSCustomObject]$fields
     }
 }

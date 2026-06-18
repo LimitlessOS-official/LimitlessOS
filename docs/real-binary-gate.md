@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, and M113 physical hardware storage evidence bundling are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, and M114 physical hardware storage capture analysis are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -2078,6 +2078,39 @@ Bundled QEMU staged gate proof:
 ```
 
 M113 non-claims: this does not certify the MSI laptop or add a storage driver. It packages the exact staged media, hashes, and runbook needed for the next real hardware `hwval` capture. Proposed M114 scope is to boot this bundle on the MSI laptop, parse the captured transcript with `-RequireStagedDynamicArtifacts`, and implement only the first failing stage reported by the parser.
+
+## M114 Physical Hardware Storage Capture Analysis
+
+M114 adds `tools\analyze-hardware-storage-capture.ps1`, a host-side report generator for raw physical `hwval` transcripts. It invokes the M112 parser, treats failing parse classifications as expected diagnostic output, and writes JSON/text/Markdown analysis with the first failing stage, important storage fields, and the next implementation target. It can also read expected artifact byte counts from the M113 evidence manifest.
+
+Accepted commands:
+
+```powershell
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m114-analysis-qemu -RequireStagedDynamicArtifacts
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\docs\hardware\msi-cyborg-15-a13ve.md -OutputDir .\build\m114-analysis-legacy -RequireStagedDynamicArtifacts
+.\tools\analyze-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m114-analysis-manifest -EvidenceManifestPath .\dist\m113-hardware-storage-20260617-221334\hardware-storage-evidence-manifest.json -RequireStagedDynamicArtifacts
+.\tools\parse-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputPath .\build\m114-parser-regression.json -RequireStagedDynamicArtifacts
+```
+
+Positive staged capture result:
+
+```text
+hardware-storage-analysis: storage-ready
+pass: True
+detail: NVMe, GPT, FAT, /APPS, capability delegation, and requested staged artifacts are all visible.
+next-target: Storage is healthy. Next target: run linux /APPS/DYNLDLIMIT on hardware and capture drs-realbin telemetry.
+```
+
+Legacy hardware-note result:
+
+```text
+hardware-storage-analysis: nvme-controller-discovery
+pass: False
+detail: NVMe controller was not discovered.
+next-target: Driver target: PCI/NVMe enumeration, class-code match, BAR mapping, and controller register visibility.
+```
+
+M114 also fixes `tools\parse-hardware-storage-capture.ps1` to serialize `raw_line` and `legacy_line` as plain strings, so downstream JSON reports no longer inherit PowerShell provider metadata. M114 non-claims: no hardware driver or physical certification is claimed. It makes the next real `hwval` transcript actionable without manual interpretation.
 
 Later targets are:
 

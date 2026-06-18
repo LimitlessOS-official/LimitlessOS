@@ -1,0 +1,270 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$InputPath,
+
+    [string]$OutputDir = "",
+
+    [string]$EvidenceManifestPath = "",
+
+    [switch]$RequireStagedDynamicArtifacts,
+
+    [uint32]$ExpectedDynamicAppBytes = 15680,
+
+    [uint32]$ExpectedDynamicInterpBytes = 16704
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $OutputDir = Join-Path $root "dist\m114-hardware-storage-analysis-$stamp"
+}
+
+function Assert-FileExists
+{
+    param(
+        [string]$Path,
+        [string]$Message
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw $Message
+    }
+}
+
+function Get-Field
+{
+    param(
+        [object]$Fields,
+        [string]$Name,
+        [string]$Default = "0"
+    )
+
+    if ($null -eq $Fields) {
+        return $Default
+    }
+    $property = $Fields.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+    return [string]$property.Value
+}
+
+function Get-NextTarget
+{
+    param([string]$Stage)
+
+    switch ($Stage) {
+        "storage-ready" { return "Storage is healthy. Next target: run linux /APPS/DYNLDLIMIT on hardware and capture drs-realbin telemetry." }
+        "legacy-realbin-unavailable" { return "Capture is from an older image. Next target: boot the M113 staged ISO and run hwval before linux /APPS/DYNLDLIMIT." }
+        "missing-storage-triage" { return "No storage triage line was captured. Next target: run hwval on an M110-or-newer Product UEFI image and capture the full output." }
+        "nvme-controller-discovery" { return "Driver target: PCI/NVMe enumeration, class-code match, BAR mapping, and controller register visibility." }
+        "nvme-controller-ready" { return "Driver target: NVMe reset/enable sequence and CSTS.RDY timeout handling on the physical controller." }
+        "nvme-identify" { return "Driver target: admin queue setup, Identify command submission, PRP buffer mapping, and completion status." }
+        "nvme-io-queue" { return "Driver target: IO submission/completion queue creation and queue doorbell programming." }
+        "nvme-read-issue" { return "Driver target: first namespace read command construction before submission." }
+        "nvme-read-completion" { return "Driver target: completion polling/MSI path for the first namespace read." }
+        "nvme-read-status" { return "Driver target: decode NVMe read completion status and namespace/LBA/PRP assumptions." }
+        "gpt-signature" { return "Storage target: first sector content or GPT probing; verify the image written to USB/NVMe and LBA reads." }
+        "gpt-partition-table" { return "Storage target: GPT partition entry scan and partition type filtering." }
+        "fat32-partition" { return "Storage target: locate the FAT32 partition geometry from GPT entries." }
+        "fat32-vbr" { return "Filesystem target: FAT32 VBR read and signature/sector-size validation." }
+        "fat32-bpb" { return "Filesystem target: FAT32 BPB interpretation, cluster size, FAT/root-cluster fields." }
+        "fat32-mount" { return "Filesystem target: FAT mount construction after VBR/BPB acceptance." }
+        "fat32-unavailable" { return "Filesystem target: source-availability propagation from FAT mount to shell/Linux launcher." }
+        "fat32-error" { return "Filesystem target: decode fat-error and inspect the exact FAT parser rejection." }
+        "storage-capability" { return "Authority target: shell must hold scoped NVMe read/write capability before hwval and linux commands." }
+        "storage-capability-delegation" { return "Authority target: capability delegation from shell to NVMe FAT reader." }
+        "storage-capability-error" { return "Authority target: capability setup error path and owner/token mismatch." }
+        "apps-directory-stat" { return "VFS target: /APPS lookup through FAT directory traversal." }
+        "apps-directory-type" { return "VFS target: FAT directory entry attribute/type translation for /APPS." }
+        "apps-directory-read" { return "VFS target: FAT directory iterator and first dirent read." }
+        "boot-media-staging" { return "Boot target: UEFI loader did not stage dynamic artifacts into boot_info; verify the ISO was built with BootLinuxApp/Interp paths." }
+        "boot-media-app-size" { return "Boot target: staged DYNLDLIMIT byte count differs from manifest; rebuild evidence bundle from current artifacts." }
+        "boot-media-interp-size" { return "Boot target: staged LDLIMIT byte count differs from manifest; rebuild evidence bundle from current artifacts." }
+        "nvme-dynldlimit-stat" { return "Staging target: /APPS/DYNLDLIMIT is missing from the NVMe FAT image visible to the kernel." }
+        "nvme-dynldlimit-size" { return "Staging target: /APPS/DYNLDLIMIT size mismatch between expected artifact and NVMe FAT." }
+        "nvme-ldlimit-stat" { return "Staging target: /APPS/LDLIMIT is missing from the NVMe FAT image visible to the kernel." }
+        "nvme-ldlimit-size" { return "Staging target: /APPS/LDLIMIT size mismatch between expected artifact and NVMe FAT." }
+        "stage-expected-flag" { return "Telemetry target: kernel did not mark staged artifacts as expected despite manifest inputs." }
+        "dynldlimit-match" { return "Staging target: DYNLDLIMIT boot-media and NVMe byte counts disagree." }
+        "ldlimit-match" { return "Staging target: LDLIMIT boot-media and NVMe byte counts disagree." }
+        "stage-match" { return "Staging target: overall boot-media/NVMe artifact agreement failed." }
+        default { return "Unknown stage. Next target: inspect the JSON fields and raw telemetry line." }
+    }
+}
+
+function Get-ManifestValue
+{
+    param(
+        [object]$Manifest,
+        [string]$ObjectName,
+        [string]$PropertyName,
+        [string]$Default = ""
+    )
+
+    if ($null -eq $Manifest) {
+        return $Default
+    }
+    $objectProperty = $Manifest.PSObject.Properties[$ObjectName]
+    if ($null -eq $objectProperty) {
+        return $Default
+    }
+    $valueProperty = $objectProperty.Value.PSObject.Properties[$PropertyName]
+    if ($null -eq $valueProperty) {
+        return $Default
+    }
+    return [string]$valueProperty.Value
+}
+
+Assert-FileExists -Path $InputPath -Message "Hardware storage analyzer: input file not found: $InputPath"
+
+$manifest = $null
+if (-not [string]::IsNullOrWhiteSpace($EvidenceManifestPath)) {
+    Assert-FileExists -Path $EvidenceManifestPath -Message "Hardware storage analyzer: evidence manifest not found: $EvidenceManifestPath"
+    $manifest = Get-Content -Raw -Path $EvidenceManifestPath | ConvertFrom-Json
+    $appBytesText = Get-ManifestValue -Manifest $manifest -ObjectName "dynamic_app" -PropertyName "bytes"
+    $interpBytesText = Get-ManifestValue -Manifest $manifest -ObjectName "dynamic_interpreter" -PropertyName "bytes"
+    if (-not [string]::IsNullOrWhiteSpace($appBytesText)) {
+        $ExpectedDynamicAppBytes = [uint32]$appBytesText
+    }
+    if (-not [string]::IsNullOrWhiteSpace($interpBytesText)) {
+        $ExpectedDynamicInterpBytes = [uint32]$interpBytesText
+    }
+}
+
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+$parserJsonPath = Join-Path $OutputDir "hardware-storage-capture.json"
+$parserOutputPath = Join-Path $OutputDir "parse-hardware-storage-capture.txt"
+$parserArgs = @{
+    InputPath = (Resolve-Path $InputPath).Path
+    OutputPath = $parserJsonPath
+    ExpectedDynamicAppBytes = $ExpectedDynamicAppBytes
+    ExpectedDynamicInterpBytes = $ExpectedDynamicInterpBytes
+}
+if ($RequireStagedDynamicArtifacts.IsPresent) {
+    $parserArgs["RequireStagedDynamicArtifacts"] = $true
+}
+
+$global:LASTEXITCODE = 0
+$parserOutput = & (Join-Path $root "tools\parse-hardware-storage-capture.ps1") @parserArgs 2>&1
+$parserExitCode = $LASTEXITCODE
+$parserOutput | Set-Content -Path $parserOutputPath -Encoding Ascii
+if (($parserExitCode -ne 0) -and ($parserExitCode -ne 2)) {
+    throw "Hardware storage analyzer: parser failed unexpectedly with exit code $parserExitCode. See $parserOutputPath"
+}
+Assert-FileExists -Path $parserJsonPath -Message "Hardware storage analyzer: parser did not produce JSON output."
+
+$parsed = Get-Content -Raw -Path $parserJsonPath | ConvertFrom-Json
+$stage = [string]$parsed.classification.stage
+$pass = [bool]$parsed.classification.pass
+$detail = [string]$parsed.classification.detail
+$nextTarget = Get-NextTarget -Stage $stage
+
+$analysis = [PSCustomObject]@{
+    tool = "analyze-hardware-storage-capture"
+    input = (Resolve-Path $InputPath).Path
+    parser_exit_code = $parserExitCode
+    require_staged_dynamic_artifacts = [bool]$RequireStagedDynamicArtifacts
+    expected_dynamic_app_bytes = $ExpectedDynamicAppBytes
+    expected_dynamic_interp_bytes = $ExpectedDynamicInterpBytes
+    evidence_manifest = if ([string]::IsNullOrWhiteSpace($EvidenceManifestPath)) { "" } else { (Resolve-Path $EvidenceManifestPath).Path }
+    pass = $pass
+    stage = $stage
+    detail = $detail
+    next_target = $nextTarget
+    key_fields = [PSCustomObject]@{
+        nvme_found = Get-Field -Fields $parsed.fields -Name "nvme-found"
+        nvme_ready = Get-Field -Fields $parsed.fields -Name "nvme-ready"
+        nvme_identify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
+        ioq = Get-Field -Fields $parsed.fields -Name "ioq"
+        read_completed = Get-Field -Fields $parsed.fields -Name "read-completed"
+        read_status = Get-Field -Fields $parsed.fields -Name "read-status"
+        gpt_signature = Get-Field -Fields $parsed.fields -Name "gpt-signature"
+        fat_located = Get-Field -Fields $parsed.fields -Name "fat-located"
+        apps_stat = Get-Field -Fields $parsed.fields -Name "apps-stat"
+        dynldlimit_stat = Get-Field -Fields $parsed.fields -Name "dynldlimit-stat"
+        ldlimit_stat = Get-Field -Fields $parsed.fields -Name "ldlimit-stat"
+        stage_match = Get-Field -Fields $parsed.fields -Name "stage-match"
+    }
+    raw_line = [string]$parsed.raw_line
+}
+
+$analysisJsonPath = Join-Path $OutputDir "hardware-storage-analysis.json"
+$analysisTextPath = Join-Path $OutputDir "hardware-storage-analysis.txt"
+$analysisMarkdownPath = Join-Path $OutputDir "hardware-storage-analysis.md"
+
+$fieldNvmeFound = Get-Field -Fields $parsed.fields -Name "nvme-found"
+$fieldNvmeReady = Get-Field -Fields $parsed.fields -Name "nvme-ready"
+$fieldNvmeIdentify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
+$fieldIoQueue = Get-Field -Fields $parsed.fields -Name "ioq"
+$fieldReadCompleted = Get-Field -Fields $parsed.fields -Name "read-completed"
+$fieldReadStatus = Get-Field -Fields $parsed.fields -Name "read-status"
+$fieldGptSignature = Get-Field -Fields $parsed.fields -Name "gpt-signature"
+$fieldFatLocated = Get-Field -Fields $parsed.fields -Name "fat-located"
+$fieldAppsStat = Get-Field -Fields $parsed.fields -Name "apps-stat"
+$fieldDynldlimitStat = Get-Field -Fields $parsed.fields -Name "dynldlimit-stat"
+$fieldLdlimitStat = Get-Field -Fields $parsed.fields -Name "ldlimit-stat"
+$fieldStageMatch = Get-Field -Fields $parsed.fields -Name "stage-match"
+
+$analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encoding Ascii
+
+@(
+    "hardware-storage-analysis: $stage",
+    "pass: $pass",
+    "detail: $detail",
+    "next-target: $nextTarget",
+    "parser-exit-code: $parserExitCode",
+    "require-staged-dynamic-artifacts: $([bool]$RequireStagedDynamicArtifacts)",
+    "expected-dynamic-app-bytes: $ExpectedDynamicAppBytes",
+    "expected-dynamic-interp-bytes: $ExpectedDynamicInterpBytes",
+    "output-json: $analysisJsonPath",
+    "output-report: $analysisMarkdownPath"
+) | Set-Content -Path $analysisTextPath -Encoding Ascii
+
+@(
+    "# LimitlessOS M114 Hardware Storage Analysis",
+    "",
+    "- Pass: $pass",
+    "- Stage: $stage",
+    "- Detail: $detail",
+    "- Next target: $nextTarget",
+    "- Parser exit code: $parserExitCode",
+    "- Staged dynamic artifacts required: $([bool]$RequireStagedDynamicArtifacts)",
+    "",
+    "## Key Fields",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    "| nvme-found | $fieldNvmeFound |",
+    "| nvme-ready | $fieldNvmeReady |",
+    "| nvme-identify | $fieldNvmeIdentify |",
+    "| ioq | $fieldIoQueue |",
+    "| read-completed | $fieldReadCompleted |",
+    "| read-status | $fieldReadStatus |",
+    "| gpt-signature | $fieldGptSignature |",
+    "| fat-located | $fieldFatLocated |",
+    "| apps-stat | $fieldAppsStat |",
+    "| dynldlimit-stat | $fieldDynldlimitStat |",
+    "| ldlimit-stat | $fieldLdlimitStat |",
+    "| stage-match | $fieldStageMatch |",
+    "",
+    "## Raw Triage Line",
+    "",
+    '```text',
+    "$($parsed.raw_line)",
+    '```'
+) | Set-Content -Path $analysisMarkdownPath -Encoding Ascii
+
+Write-Host "hardware-storage-analysis: $stage"
+Write-Host "  pass: $pass"
+Write-Host "  detail: $detail"
+Write-Host "  next target: $nextTarget"
+Write-Host "  output: $analysisJsonPath"
+
+if (-not $pass) {
+    exit 2
+}

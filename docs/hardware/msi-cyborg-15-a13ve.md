@@ -46,13 +46,14 @@ This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot ima
 Parse the captured transcript from Windows/PowerShell with:
 
 ```powershell
-.\tools\parse-hardware-storage-capture.ps1 `
+.\tools\analyze-hardware-storage-capture.ps1 `
   -InputPath .\dist\msi-hwval-storage.txt `
-  -OutputPath .\dist\msi-hwval-storage.json `
+  -OutputDir .\dist\msi-hwval-storage-analysis `
+  -EvidenceManifestPath .\dist\m113-hardware-storage-<timestamp>\hardware-storage-evidence-manifest.json `
   -RequireStagedDynamicArtifacts
 ```
 
-The parser reports the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch.
+The analyzer writes JSON/text/Markdown reports and names the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch. Use the `next-target` line as the next kernel/driver implementation target.
 
 M113 packages this handoff into a timestamped evidence directory:
 
@@ -66,7 +67,7 @@ The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDL
 dist\m113-hardware-storage-20260617-221334
 ```
 
-For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then parse it with `tools\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then analyze it with `tools\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 
@@ -109,7 +110,7 @@ For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that 
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
 - [ ] Save the complete `hwval` transcript.
-- [ ] Parse the transcript with `tools\parse-hardware-storage-capture.ps1`.
+- [ ] Analyze the transcript with `tools\analyze-hardware-storage-capture.ps1`.
 - [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
 - [ ] Record the exact shell prompt text.
