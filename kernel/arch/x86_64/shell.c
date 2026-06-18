@@ -736,6 +736,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 ldlimit_stat_ok;
     u32 apps_dir_result;
     u32 apps_dirent_ok;
+    u32 dynldlimit_expected;
+    u32 ldlimit_expected;
+    u32 dynldlimit_match;
+    u32 ldlimit_match;
+    u32 stage_match;
     u32 token = 2166136261u;
 
     rw_cap_present = (mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
@@ -766,6 +771,16 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
         owner_id,
         &apps_dirent);
     apps_dirent_ok = (apps_dir_result == MMIO64_NVME_FAT_READDIR_OK) ? 1u : 0u;
+    dynldlimit_expected = (boot_media64_app_bytes() != 0u) ? 1u : 0u;
+    ldlimit_expected = (boot_media64_interp_bytes() != 0u) ? 1u : 0u;
+    dynldlimit_match = ((dynldlimit_expected != 0u)
+        && (dynldlimit_stat_ok != 0u)
+        && (dynldlimit_stat.byte_count == boot_media64_app_bytes())) ? 1u : 0u;
+    ldlimit_match = ((ldlimit_expected != 0u)
+        && (ldlimit_stat_ok != 0u)
+        && (ldlimit_stat.byte_count == boot_media64_interp_bytes())) ? 1u : 0u;
+    stage_match = (((dynldlimit_expected == 0u) || (dynldlimit_match != 0u))
+        && ((ldlimit_expected == 0u) || (ldlimit_match != 0u))) ? 1u : 0u;
 
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_found());
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
@@ -783,6 +798,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, busybox_stat_ok);
     token = shell64_storage_triage_mix(token, dynldlimit_stat_ok);
     token = shell64_storage_triage_mix(token, ldlimit_stat_ok);
+    token = shell64_storage_triage_mix(token, dynldlimit_expected);
+    token = shell64_storage_triage_mix(token, ldlimit_expected);
+    token = shell64_storage_triage_mix(token, dynldlimit_match);
+    token = shell64_storage_triage_mix(token, ldlimit_match);
+    token = shell64_storage_triage_mix(token, stage_match);
     token = shell64_storage_triage_mix(token, boot_media64_status());
 
     (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-triage storage-triage 1");
@@ -819,6 +839,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " boot-app-bytes ", boot_media64_app_bytes());
     shell64_write_decimal_field(console_capability_handle, owner_id, " boot-interp-bytes ", boot_media64_interp_bytes());
     shell64_write_decimal_field(console_capability_handle, owner_id, " boot-status ", boot_media64_status());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " stage-expected ", ((dynldlimit_expected != 0u) || (ldlimit_expected != 0u)) ? 1u : 0u);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " dynldlimit-expected ", dynldlimit_expected);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " ldlimit-expected ", ldlimit_expected);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " dynldlimit-match ", dynldlimit_match);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " ldlimit-match ", ldlimit_match);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " stage-match ", stage_match);
     return shell64_write_hex32_line(console_capability_handle, owner_id, " token ", token);
 }
 #endif

@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M110 is `NVMe/FAT hardware storage triage`. The UEFI Product `hwval` path now emits a compact `drs-nvme-triage` line that separates NVMe controller discovery, controller readiness, Identify, IO queue creation, read completion/status, GPT/VBR discovery, FAT BPB/location, shell read-write capability, `/APPS` directory visibility, first `/APPS` dirent visibility, and staged artifact presence for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`. This is the hardware-facing diagnostic needed for the real laptop symptom where `linux /apps/dynldlimit` returned `NVME FAT UNAVAILABLE`: the next physical run can now tell whether the failure is controller discovery, namespace/IO, GPT/VBR, FAT mount, scoped shell authority, `/APPS` absence, or missing staged dynamic artifacts. BIOS remains at 101 reserve sectors.
+M111 is `boot/NVMe staged dynamic artifact verification`. The UEFI Product build can now be produced with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged into the UEFI boot FAT image and recorded in `BOOTMAN.TXT` with expected paths, byte counts, and SHA-256s. The M111 verifier stages the same two files into the NVMe GPT FAT `/APPS` directory, boots the system, and requires `hwval` to prove the loader-copied boot-media byte counts match the NVMe FAT stat results with `stage-match 1`, `dynldlimit-match 1`, and `ldlimit-match 1`. This closes the ambiguity behind the physical-laptop `linux /apps/dynldlimit` symptom: the next hardware run can prove whether the artifact was staged correctly before diagnosing controller or FAT availability. BIOS remains at 101 reserve sectors.
+
+M110 is `NVMe/FAT hardware storage triage`. The UEFI Product `hwval` path now emits a compact `drs-nvme-triage` line that separates NVMe controller discovery, controller readiness, Identify, IO queue creation, read completion/status, GPT/VBR discovery, FAT BPB/location, shell read-write capability, `/APPS` directory visibility, first `/APPS` dirent visibility, and staged artifact presence for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`. This is the hardware-facing diagnostic needed for the real laptop symptom where `linux /apps/dynldlimit` returned `NVME FAT UNAVAILABLE`: hardware runs can now tell whether the failure is controller discovery, namespace/IO, GPT/VBR, FAT mount, scoped shell authority, `/APPS` absence, or missing staged dynamic artifacts.
 
 M109 is `Product visual polish direct compositor foundation`. The UEFI Product display path keeps the compositor logically active in a direct framebuffer mode when the full back buffer cannot be allocated inside the current handoff window. That lets the existing font, window manager, desktop, taskbar, launcher, and visible cursor paths draw on QEMU/VirtualBox-style GOP framebuffers instead of falling back to emergency text-only presentation. The hardware display gate records `drs-ui-polish` with compositor mode, font/window/desktop/taskbar/window counts, cursor visibility, and a style token. BIOS remains at 101 reserve sectors.
 
@@ -1958,7 +1960,53 @@ Final reserves after the implementation build:
 
 M110 non-claims: this does not add a new NVMe driver, broaden hardware support, fix a physical laptop controller quirk by itself, add arbitrary filesystem mounting, or stage missing dynamic artifacts automatically. It makes the real-hardware storage failure falsifiable at the shell.
 
-Proposed M111 scope: real-hardware boot-media staging verification. Add a host/verifier path that produces a physical USB/ISO artifact with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged and records a manifest-visible expected presence list, then have `hwval` compare expected boot-media/NVMe artifact presence against actual `/APPS` stat results on hardware.
+## M111 Boot/NVMe Staged Dynamic Artifact Verification
+
+M111 is accepted on the UEFI Product path with:
+
+```powershell
+.\tools\verify-hardware-storage-staging.ps1 -SkipBuild
+```
+
+The full staged-build command used before the verifier was:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product -BootLinuxAppPath .\external\build\DYNLDLIMIT -BootLinuxAppName DYNLDLIMIT -BootLinuxInterpPath .\external\build\LDLIMIT -BootLinuxInterpName LDLIMIT
+```
+
+Staged artifacts:
+
+- `/APPS/DYNLDLIMIT`: 15,680 bytes, SHA-256 `9f6eb9c05b3065d39bc59d24defe9361267b34cefd4de78f568ddb00497238fa`
+- `/APPS/LDLIMIT`: 16,704 bytes, SHA-256 `6f713105878c30d817b7add4a7ed5d4ee8e01fb6eab2c80ba10acee059c72238`
+
+`BOOTMAN.TXT` now records the expected boot-Linux staging contract when those paths are supplied:
+
+```text
+boot-linux-expected=1
+boot-linux-app=/APPS/DYNLDLIMIT
+boot-linux-app-bytes=15680
+boot-linux-app-sha256=9f6eb9c05b3065d39bc59d24defe9361267b34cefd4de78f568ddb00497238fa
+boot-linux-interp=/APPS/LDLIMIT
+boot-linux-interp-bytes=16704
+boot-linux-interp-sha256=6f713105878c30d817b7add4a7ed5d4ee8e01fb6eab2c80ba10acee059c72238
+```
+
+Acceptance telemetry:
+
+```text
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 1 dynldlimit-bytes 15680 ldlimit-stat 1 ldlimit-bytes 16704 boot-staged 1 boot-app-bytes 15680 boot-interp-bytes 16704 boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x75BC2409
+```
+
+Final reserves after the staged build:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+- UEFI manifest SHA-256: `824902bd0a384e02ea18193a6468f95a0842984f41c18cc06969c11a722df196`
+
+M111 non-claims: this does not make physical NVMe universally work by itself, does not add a new storage driver, does not launch the dynamic binary, and does not change the Linux execution path. It proves that the generated UEFI/ISO artifact can carry the dynamic app/interpreter pair, that the loader stages both into boot-info, and that the runtime can compare those expected staged artifacts against the NVMe `/APPS` directory from `hwval`.
+
+Proposed M112 scope: physical-hardware storage capture. Boot the M111-staged ISO/USB on the laptop, run `hwval`, and use the `drs-nvme-triage` fields to classify the remaining hardware failure as controller discovery, controller readiness, Identify/IO queue setup, read status, GPT/VBR/FAT parsing, scoped capability delegation, `/APPS` visibility, or artifact mismatch.
 
 ## Persistence
 

@@ -30,7 +30,8 @@ param(
     [string[]]$ExtraShellLine = @(),
     [switch]$HardwareRegistryGate,
     [switch]$HardwareDisplayGate,
-    [switch]$HardwareStorageGate
+    [switch]$HardwareStorageGate,
+    [switch]$HardwareStorageStageGate
 )
 
 Set-StrictMode -Version Latest
@@ -1060,7 +1061,8 @@ if ($Architecture -eq "x86_64") {
 
 if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
     $firmwarePath = Get-QemuEdk2CodePath
-    $nvmeGptPath = Ensure-NvmeGptImage -Root $root -StageRealBinary:$($RealBinaryGate.IsPresent) -StageBusyBoxPath $BusyBoxPath -StageBusyBoxSource $BusyBoxSource -StageBusyBoxVersion $BusyBoxVersion -StageExtraAppPath $ExtraAppPath -StageExtraAppName $ExtraAppName -StageExtraAppSource $ExtraAppSource -StageExtraAppVersion $ExtraAppVersion -StageExtraApp2Path $ExtraApp2Path -StageExtraApp2Name $ExtraApp2Name -StageExtraApp2Source $ExtraApp2Source -StageExtraApp2Version $ExtraApp2Version -StageExtraApp3Path $ExtraApp3Path -StageExtraApp3Name $ExtraApp3Name -StageExtraApp3Source $ExtraApp3Source -StageExtraApp3Version $ExtraApp3Version
+    $stageNvmeArtifacts = ($RealBinaryGate.IsPresent -or $HardwareStorageStageGate.IsPresent)
+    $nvmeGptPath = Ensure-NvmeGptImage -Root $root -StageRealBinary:$stageNvmeArtifacts -StageBusyBoxPath $BusyBoxPath -StageBusyBoxSource $BusyBoxSource -StageBusyBoxVersion $BusyBoxVersion -StageExtraAppPath $ExtraAppPath -StageExtraAppName $ExtraAppName -StageExtraAppSource $ExtraAppSource -StageExtraAppVersion $ExtraAppVersion -StageExtraApp2Path $ExtraApp2Path -StageExtraApp2Name $ExtraApp2Name -StageExtraApp2Source $ExtraApp2Source -StageExtraApp2Version $ExtraApp2Version -StageExtraApp3Path $ExtraApp3Path -StageExtraApp3Name $ExtraApp3Name -StageExtraApp3Source $ExtraApp3Source -StageExtraApp3Version $ExtraApp3Version
     $networkDeviceArgument = if ($NetworkDevice -eq "e1000e") {
         "e1000e,netdev=net0,mac=52:54:00:12:34:56"
     }
@@ -1146,9 +1148,10 @@ try {
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $HardwareStorageGate.IsPresent))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$($HardwareStorageGate.IsPresent) -ExtraTextLines $extraTextLines
-        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $HardwareStorageGate.IsPresent)) {
+        $hardwareStorageProbe = ($HardwareStorageGate.IsPresent -or $HardwareStorageStageGate.IsPresent)
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -ExtraTextLines $extraTextLines
+        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
     }
@@ -1238,7 +1241,14 @@ if ($HardwareDisplayGate.IsPresent) {
 if ($HardwareStorageGate.IsPresent) {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M110 hwval command."
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M110 hwval did not report read-only Product mode."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions [1-9][0-9]* fat32-start [1-9][0-9]* fat32-sectors [1-9][0-9]* gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat [01] busybox-bytes [0-9]+ dynldlimit-stat [01] dynldlimit-bytes [0-9]+ ldlimit-stat [01] ldlimit-bytes [0-9]+ boot-staged [01] boot-app-bytes [0-9]+ boot-interp-bytes [0-9]+ boot-status [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M110 NVMe/FAT storage triage proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions [1-9][0-9]* fat32-start [1-9][0-9]* fat32-sectors [1-9][0-9]* gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat [01] busybox-bytes [0-9]+ dynldlimit-stat [01] dynldlimit-bytes [0-9]+ ldlimit-stat [01] ldlimit-bytes [0-9]+ boot-staged [01] boot-app-bytes [0-9]+ boot-interp-bytes [0-9]+ boot-status [0-9]+ stage-expected [01] dynldlimit-expected [01] ldlimit-expected [01] dynldlimit-match [01] ldlimit-match [01] stage-match [01] token 0x[0-9A-F]{8}' -Message "x64 M110 NVMe/FAT storage triage proof was not observed."
+    $outputLines
+    return
+}
+if ($HardwareStorageStageGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M111 hwval command."
+    Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M111 hwval did not report read-only Product mode."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions [1-9][0-9]* fat32-start [1-9][0-9]* fat32-sectors [1-9][0-9]* gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat [01] busybox-bytes [0-9]+ dynldlimit-stat 1 dynldlimit-bytes [1-9][0-9]+ ldlimit-stat 1 ldlimit-bytes [1-9][0-9]+ boot-staged 1 boot-app-bytes [1-9][0-9]+ boot-interp-bytes [1-9][0-9]+ boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x[0-9A-F]{8}' -Message "x64 M111 staged boot/NVMe artifact proof was not observed."
     $outputLines
     return
 }

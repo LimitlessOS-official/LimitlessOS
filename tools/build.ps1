@@ -945,6 +945,36 @@ function Build-X64Scaffold
     $kernelChecksum = Get-Fnv1aDataChecksum -Bytes $uefiKernelBytes
     $kernelChecksumHex = "0x{0:X8}" -f $kernelChecksum
     $kernelSha256Hex = Get-Sha256Hex -Bytes $uefiKernelBytes
+    $bootLinuxManifestLines = @("boot-linux-expected=0")
+    if (-not [string]::IsNullOrWhiteSpace($BootLinuxAppPath)) {
+        if (-not (Test-Path $BootLinuxAppPath)) {
+            throw "Boot Linux app path not found: $BootLinuxAppPath"
+        }
+        $bootLinuxAppItem = Get-Item $BootLinuxAppPath
+        $bootLinuxAppSha256 = (Get-FileHash -Algorithm SHA256 -Path $bootLinuxAppItem.FullName).Hash.ToLowerInvariant()
+        $bootLinuxManifestLines = @(
+            "boot-linux-expected=1",
+            "boot-linux-app=/APPS/$($BootLinuxAppName.Trim().ToUpperInvariant())",
+            "boot-linux-app-bytes=$($bootLinuxAppItem.Length)",
+            "boot-linux-app-sha256=$bootLinuxAppSha256"
+        )
+    }
+    if (-not [string]::IsNullOrWhiteSpace($BootLinuxInterpPath)) {
+        if (-not (Test-Path $BootLinuxInterpPath)) {
+            throw "Boot Linux interpreter path not found: $BootLinuxInterpPath"
+        }
+        $bootLinuxInterpItem = Get-Item $BootLinuxInterpPath
+        $bootLinuxInterpSha256 = (Get-FileHash -Algorithm SHA256 -Path $bootLinuxInterpItem.FullName).Hash.ToLowerInvariant()
+        if ($bootLinuxManifestLines[0] -eq "boot-linux-expected=0") {
+            $bootLinuxManifestLines = @("boot-linux-expected=1")
+        }
+        $bootLinuxManifestLines += @(
+            "boot-linux-interp=/APPS/$($BootLinuxInterpName.Trim().ToUpperInvariant())",
+            "boot-linux-interp-bytes=$($bootLinuxInterpItem.Length)",
+            "boot-linux-interp-sha256=$bootLinuxInterpSha256"
+        )
+    }
+    $bootLinuxManifestText = $bootLinuxManifestLines -join "`n"
     $profileStatusLines = if ($BuildProfile -eq "Product") {
         "- build profile: Product`n- experimental runtime surfaces are quarantined: GUI/window-manager/desktop, AI, installer, and package-manager behavior are unavailable and must not be presented as product-path"
     }
@@ -1022,6 +1052,7 @@ kernel-byte-reserve=$($uefiKernelByteLimit - $uefiKernelBytes.Length)
 kernel-checksum-algorithm=fnv1a-32
 kernel-checksum=$kernelChecksumHex
 kernel-sha256=$kernelSha256Hex
+$bootLinuxManifestText
 handoff=uefi-loader-proof
 boot-contract=uefi-kernel-file
 non-product-package-registry-stubs=ASK,ECHO
