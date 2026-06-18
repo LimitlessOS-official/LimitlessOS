@@ -255,14 +255,26 @@ Do not run installer writes, formatting, or NVRAM boot-entry actions during this
 if (-not $SkipHandoffVerify.IsPresent) {
     $handoffOutputPath = Join-Path $EvidenceDir "msi-handoff-verification.txt"
     $handoffOutputDir = Join-Path $EvidenceDir "msi-handoff-verification"
-    $handoffOutput = & (Join-Path $root "tools\verify-msi-hardware-handoff.ps1") `
+    & (Join-Path $root "tools\verify-msi-hardware-handoff.ps1") `
         -EvidenceDir $EvidenceDir `
         -OutputDir $handoffOutputDir `
-        -RequireStagedDynamicArtifacts 2>&1
-    $handoffOutput | Set-Content -Path $handoffOutputPath -Encoding Ascii
+        -RequireStagedDynamicArtifacts
     if ($LASTEXITCODE -ne 0) {
         throw "M121 handoff prep: MSI hardware handoff verifier failed. See $handoffOutputPath"
     }
+    $storageSummaryPath = Join-Path $handoffOutputDir "storage-evidence\hardware-storage-evidence-verification.txt"
+    $handoffSummaryPath = Join-Path $handoffOutputDir "msi-hardware-handoff-verification.txt"
+    Assert-FileExists -Path $storageSummaryPath -Message "M121 handoff prep: storage handoff verification summary missing: $storageSummaryPath"
+    Assert-FileExists -Path $handoffSummaryPath -Message "M121 handoff prep: MSI handoff verification summary missing: $handoffSummaryPath"
+    @(
+        "M121 MSI hardware handoff self-verification",
+        "",
+        "storage evidence:",
+        (Get-Content -Path $storageSummaryPath),
+        "",
+        "msi handoff:",
+        (Get-Content -Path $handoffSummaryPath)
+    ) | Set-Content -Path $handoffOutputPath -Encoding Ascii
 }
 
 Write-Host "M121 MSI hardware handoff evidence bundle: $EvidenceDir"
