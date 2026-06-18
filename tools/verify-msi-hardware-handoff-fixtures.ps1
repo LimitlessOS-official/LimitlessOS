@@ -201,6 +201,58 @@ function New-EvidenceBundle
     return $evidenceDir
 }
 
+function Write-ReadyCapture
+{
+    param(
+        [string]$Path,
+        [string]$DynamicMode
+    )
+
+    $storageLine = "[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 1 dynldlimit-bytes 15680 ldlimit-stat 1 ldlimit-bytes 16704 boot-staged 1 boot-app-bytes 15680 boot-interp-bytes 16704 boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x75BC2409"
+    $displayLine = "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
+    $uiLine = "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
+    $lines = @(
+        $storageLine,
+        $displayLine,
+        $uiLine,
+        "xhci mouse endpoint: yes",
+        "xhci mouse reports: 2",
+        "xhci mouse bytes: 8",
+        "xhci error: 0",
+        "i2c pointer found: no",
+        "i2c pointer reports: 0",
+        "i2c pointer error: 0",
+        "i2c pointer candidates: 0",
+        "mouse packets: 2",
+        "ps2 fallback present: yes",
+        "ps2 fallback enabled: yes",
+        "[x64] $ linux /APPS/DYNLDLIMIT"
+    )
+
+    switch ($DynamicMode) {
+        "source2-runtime-fail" {
+            $lines += "linux: using UEFI boot-media staged file"
+            $lines += "[x64] drs-realbin-fail path /APPS/DYNLDLIMIT source 2 stage static code 8 boot-media-read 1 boot-media-read-error 0 boot-media-read-bytes 15680 boot-media-read-capacity 4194304"
+        }
+        "source2-exit0" {
+            $lines += "linux: using UEFI boot-media staged file"
+            $lines += "[x64] drs-realbin path /APPS/DYNLDLIMIT provenance 1 source 2 boot-media-read 1 elf 1 static 0 dynamic-transfer-started 1 console-bytes 15 exit 0 cleanup 1 page-faults 0"
+        }
+        "nvme-unavailable" {
+            $lines += "linux: NVMe FAT unavailable"
+            $lines += "[x64] drs-realbin-unavailable bios 0 nvme 0"
+        }
+        "wrong-source" {
+            $lines += "[x64] drs-realbin path /APPS/DYNLDLIMIT provenance 1 source 1 nvme-read 1 boot-media-read 0 elf 1 static 0 exit 0 cleanup 1"
+        }
+        default {
+            throw "Unknown dynamic capture mode: $DynamicMode"
+        }
+    }
+
+    $lines | Set-Content -Path $Path -Encoding Ascii
+}
+
 $fixtures = @(
     [PSCustomObject]@{
         name = "valid-m121"
@@ -298,10 +350,92 @@ foreach ($fixture in $fixtures) {
     }
 }
 
+$captureFixtures = @(
+    [PSCustomObject]@{
+        name = "capture-source2-runtime-fail"
+        dynamic_mode = "source2-runtime-fail"
+        expected_exit_code = 0
+        expected_stage = "dynamic-runtime-static"
+        expected_dynamic_pass = $true
+    },
+    [PSCustomObject]@{
+        name = "capture-nvme-unavailable"
+        dynamic_mode = "nvme-unavailable"
+        expected_exit_code = 2
+        expected_stage = "dynamic-handoff-nvme-unavailable"
+        expected_dynamic_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "capture-wrong-source"
+        dynamic_mode = "wrong-source"
+        expected_exit_code = 2
+        expected_stage = "dynamic-handoff-wrong-source"
+        expected_dynamic_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "capture-source2-exit0"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 0
+        expected_stage = "dynamic-runtime-exit0"
+        expected_dynamic_pass = $true
+    }
+)
+
+foreach ($fixture in $captureFixtures) {
+    $evidenceDir = New-EvidenceBundle -Name $fixture.name -Mutations @{} -RunbookMode "valid"
+    $fixtureOutputDir = Join-Path $resultRoot $fixture.name
+    New-Item -ItemType Directory -Force -Path $fixtureOutputDir | Out-Null
+
+    $capturePath = Join-Path $fixtureOutputDir "capture.txt"
+    Write-ReadyCapture -Path $capturePath -DynamicMode $fixture.dynamic_mode
+
+    $consoleText = ""
+    $exitCode = 0
+    try {
+        $global:LASTEXITCODE = 0
+        $console = & (Join-Path $root "tools\verify-msi-hardware-handoff.ps1") `
+            -EvidenceDir $evidenceDir `
+            -CapturePath $capturePath `
+            -OutputDir $fixtureOutputDir `
+            -RequireStagedDynamicArtifacts 2>&1
+        $consoleText = ($console | Out-String)
+        $exitCode = [int]$LASTEXITCODE
+    } catch {
+        $consoleText = $_.Exception.Message
+        $exitCode = 99
+    }
+
+    $consoleText | Set-Content -Path (Join-Path $fixtureOutputDir "verifier-console.txt") -Encoding Ascii
+    $verificationPath = Join-Path $fixtureOutputDir "msi-hardware-handoff-verification.json"
+    $actualStage = ""
+    $actualDynamicPass = $false
+    if (Test-Path $verificationPath) {
+        $verification = Get-Content -Raw -Path $verificationPath | ConvertFrom-Json
+        $actualStage = [string]$verification.dynamic_handoff_stage
+        $actualDynamicPass = [bool]$verification.dynamic_handoff_pass
+    }
+
+    $passed = (([uint32]$exitCode -eq [uint32]$fixture.expected_exit_code) -and
+        ($actualStage -eq [string]$fixture.expected_stage) -and
+        ($actualDynamicPass -eq [bool]$fixture.expected_dynamic_pass))
+    if (-not $passed) {
+        $failures += ("{0}: expected exit/stage/pass {1}/{2}/{3}, observed {4}/{5}/{6}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_stage, $fixture.expected_dynamic_pass, $exitCode, $actualStage, $actualDynamicPass)
+    }
+
+    $results += [PSCustomObject]@{
+        name = $fixture.name
+        expect_success = ([uint32]$fixture.expected_exit_code -eq 0)
+        success = ([uint32]$exitCode -eq 0)
+        expected_error = [string]$fixture.expected_stage
+        error = ""
+        pass = $passed
+    }
+}
+
 $summary = [PSCustomObject]@{
     tool = "verify-msi-hardware-handoff-fixtures"
     output_dir = (Resolve-Path $OutputDir).Path
-    total = $fixtures.Count
+    total = $results.Count
     passed = ($results | Where-Object { $_.pass }).Count
     failed = $failures.Count
     failures = $failures

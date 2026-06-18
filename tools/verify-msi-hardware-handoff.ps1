@@ -59,6 +59,122 @@ function Get-ManifestProperty
     return [string]$property.Value
 }
 
+function Get-TelemetryValue
+{
+    param(
+        [string]$Line,
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    $pattern = "(?i)(?:^|\s)" + [regex]::Escape($Name) + "\s+([^\s]+)"
+    $match = [regex]::Match($Line, $pattern)
+    if (-not $match.Success) {
+        return $Default
+    }
+    return $match.Groups[1].Value
+}
+
+function Get-DynamicHandoffClassification
+{
+    param([string]$Text)
+
+    $commandObserved = ($Text -match '(?im)linux\s+/APPS/DYNLDLIMIT')
+    $bootMediaMessage = ($Text -match '(?im)linux:\s+using UEFI boot-media staged file')
+    $nvmeUnavailable = ($Text -match '(?im)linux:\s+NVMe FAT unavailable') -or ($Text -match '(?im)drs-realbin-unavailable\b')
+    $dynamicLine = ""
+
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match '(?i)drs-realbin(?:-fail)?\s+path\s+/APPS/DYNLDLIMIT\b') {
+            $dynamicLine = $line
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($dynamicLine)) {
+        if ($nvmeUnavailable) {
+            return [PSCustomObject]@{
+                pass = $false
+                stage = "dynamic-handoff-nvme-unavailable"
+                detail = "The dynamic command reported NVMe FAT unavailable and did not produce source-2 boot-media telemetry."
+                source = ""
+                boot_media_read = ""
+                boot_media_read_error = ""
+                telemetry = ""
+                command_observed = $commandObserved
+                boot_media_message = $bootMediaMessage
+            }
+        }
+        return [PSCustomObject]@{
+            pass = $false
+            stage = "dynamic-handoff-missing-realbin"
+            detail = "The capture does not contain drs-realbin telemetry for linux /APPS/DYNLDLIMIT."
+            source = ""
+            boot_media_read = ""
+            boot_media_read_error = ""
+            telemetry = ""
+            command_observed = $commandObserved
+            boot_media_message = $bootMediaMessage
+        }
+    }
+
+    $source = Get-TelemetryValue -Line $dynamicLine -Name "source"
+    $bootMediaRead = Get-TelemetryValue -Line $dynamicLine -Name "boot-media-read"
+    $bootMediaReadError = Get-TelemetryValue -Line $dynamicLine -Name "boot-media-read-error"
+    $exitCode = Get-TelemetryValue -Line $dynamicLine -Name "exit"
+
+    if ($source -ne "2") {
+        return [PSCustomObject]@{
+            pass = $false
+            stage = "dynamic-handoff-wrong-source"
+            detail = "The dynamic command produced drs-realbin telemetry, but it did not use UEFI boot-media source 2."
+            source = $source
+            boot_media_read = $bootMediaRead
+            boot_media_read_error = $bootMediaReadError
+            telemetry = $dynamicLine
+            command_observed = $commandObserved
+            boot_media_message = $bootMediaMessage
+        }
+    }
+    if (($bootMediaRead -ne "1") -and ($bootMediaReadError -ne "0")) {
+        return [PSCustomObject]@{
+            pass = $false
+            stage = "dynamic-handoff-boot-media-read"
+            detail = "The dynamic command selected source 2, but boot-media read success was not proven."
+            source = $source
+            boot_media_read = $bootMediaRead
+            boot_media_read_error = $bootMediaReadError
+            telemetry = $dynamicLine
+            command_observed = $commandObserved
+            boot_media_message = $bootMediaMessage
+        }
+    }
+
+    $stage = "dynamic-handoff-source2"
+    $detail = "The dynamic command selected UEFI boot-media source 2 and proved boot-media read telemetry."
+    if ($dynamicLine -match '(?i)^.*drs-realbin-fail\b') {
+        $failStage = Get-TelemetryValue -Line $dynamicLine -Name "stage"
+        if (-not [string]::IsNullOrWhiteSpace($failStage)) {
+            $stage = "dynamic-runtime-$failStage"
+            $detail = "The dynamic command reached source 2 and failed later at runtime stage '$failStage'."
+        }
+    } elseif ($exitCode -eq "0") {
+        $stage = "dynamic-runtime-exit0"
+        $detail = "The dynamic command reached source 2 and exited 0."
+    }
+
+    return [PSCustomObject]@{
+        pass = $true
+        stage = $stage
+        detail = $detail
+        source = $source
+        boot_media_read = $bootMediaRead
+        boot_media_read_error = $bootMediaReadError
+        telemetry = $dynamicLine
+        command_observed = $commandObserved
+        boot_media_message = $bootMediaMessage
+    }
+}
+
 Assert-FileExists -Path $EvidenceDir -Message "MSI hardware handoff verifier: evidence directory not found: $EvidenceDir"
 $resolvedEvidenceDir = (Resolve-Path $EvidenceDir).Path
 
@@ -156,8 +272,22 @@ $combinedStage = ""
 $combinedPass = $false
 $combinedOutputDir = ""
 $combinedExitCode = 0
+$dynamicHandoff = [PSCustomObject]@{
+    pass = $false
+    stage = ""
+    detail = ""
+    source = ""
+    boot_media_read = ""
+    boot_media_read_error = ""
+    telemetry = ""
+    command_observed = $false
+    boot_media_message = $false
+}
 if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     Assert-FileExists -Path $CapturePath -Message "MSI hardware handoff verifier: capture file not found: $CapturePath"
+    $captureText = Get-Content -Raw -Path $CapturePath
+    $dynamicHandoff = Get-DynamicHandoffClassification -Text $captureText
+
     $combinedOutputDir = Join-Path $OutputDir "msi-analysis"
     $combinedArgs = @{
         EvidenceDir = $resolvedEvidenceDir
@@ -206,6 +336,16 @@ $verification = [PSCustomObject]@{
     combined_capture_pass = $combinedPass
     combined_capture_stage = $combinedStage
     combined_analyzer_exit_code = $combinedExitCode
+    dynamic_handoff_checked = (-not [string]::IsNullOrWhiteSpace($CapturePath))
+    dynamic_handoff_pass = [bool]$dynamicHandoff.pass
+    dynamic_handoff_stage = [string]$dynamicHandoff.stage
+    dynamic_handoff_detail = [string]$dynamicHandoff.detail
+    dynamic_handoff_source = [string]$dynamicHandoff.source
+    dynamic_handoff_boot_media_read = [string]$dynamicHandoff.boot_media_read
+    dynamic_handoff_boot_media_read_error = [string]$dynamicHandoff.boot_media_read_error
+    dynamic_handoff_command_observed = [bool]$dynamicHandoff.command_observed
+    dynamic_handoff_boot_media_message = [bool]$dynamicHandoff.boot_media_message
+    dynamic_handoff_telemetry = [string]$dynamicHandoff.telemetry
     boot_media_verifier_ran = $bootMediaVerifierRan
     boot_media_verifier_exit_code = $bootMediaVerifierExitCode
     milestone = $milestone
@@ -228,6 +368,12 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "storage-capture-stage: $($verification.storage_capture_stage)",
     "combined-capture-checked: $($verification.combined_capture_checked)",
     "combined-capture-stage: $combinedStage",
+    "dynamic-handoff-checked: $($verification.dynamic_handoff_checked)",
+    "dynamic-handoff-pass: $($verification.dynamic_handoff_pass)",
+    "dynamic-handoff-stage: $($verification.dynamic_handoff_stage)",
+    "dynamic-handoff-source: $($verification.dynamic_handoff_source)",
+    "dynamic-handoff-boot-media-read: $($verification.dynamic_handoff_boot_media_read)",
+    "dynamic-handoff-boot-media-read-error: $($verification.dynamic_handoff_boot_media_read_error)",
     "boot-media-verifier-ran: $bootMediaVerifierRan",
     "bios-sector-reserve: $($storageVerification.reserves.bios_sectors)",
     "uefi-byte-reserve: $($storageVerification.reserves.uefi_bytes)",
@@ -242,9 +388,11 @@ Write-Host "  uefi reserve: $($storageVerification.reserves.uefi_bytes) bytes"
 if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     Write-Host "  combined capture pass: $combinedPass"
     Write-Host "  combined capture stage: $combinedStage"
+    Write-Host "  dynamic handoff pass: $($dynamicHandoff.pass)"
+    Write-Host "  dynamic handoff stage: $($dynamicHandoff.stage)"
 }
 Write-Host "  output: $verificationJsonPath"
 
-if ((-not [string]::IsNullOrWhiteSpace($CapturePath)) -and (-not $combinedPass)) {
+if ((-not [string]::IsNullOrWhiteSpace($CapturePath)) -and ((-not $combinedPass) -or (-not [bool]$dynamicHandoff.pass))) {
     exit 2
 }

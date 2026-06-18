@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M125 is `MSI dynamic handoff capture classification`. `tools\verify-msi-hardware-handoff.ps1` now parses a real `linux /APPS/DYNLDLIMIT` transcript when `-CapturePath` is supplied and records `dynamic-handoff-*` fields alongside the existing storage/display analysis. It distinguishes source-2 boot-media handoff success, dynamic runtime failure after source 2, clean dynamic exit 0, old `NVMe FAT unavailable` behavior, missing `drs-realbin` telemetry, wrong source, and source-2 boot-media read failure. The handoff fixture suite now covers 11 cases, including four capture-side dynamic outcomes. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
 M124 is `self-verifying MSI handoff packaging`. `tools\prepare-hardware-storage-evidence.ps1` now runs `tools\verify-msi-hardware-handoff.ps1` against each generated bundle by default and stores the verifier transcript/output directory inside the evidence package. The generated runbook also tells testers to use the handoff verifier with `-CapturePath` before reading the combined analyzer output directly. A fast `-SkipBuild -SkipQemuGate` run proved the new path on current artifacts with `msi-hardware-handoff: verified`, source-2 required, BIOS reserve 101 sectors, and UEFI reserve 788,512 bytes. No kernel code changed.
 
 M123 is `MSI hardware handoff verifier fixture coverage`. The repo now has `tools\verify-msi-hardware-handoff-fixtures.ps1`, a host-side regression suite for the M122 handoff verifier. It synthesizes valid hash/reserve/BOOTMAN evidence bundles, proves a correct M121 handoff passes, and proves stale or malformed handoffs are rejected for old milestone labels, storage-only analyzer selection, missing source-2 requirement, stale M113 ISO naming, missing `linux /APPS/DYNLDLIMIT` runbook command, and missing source-2 runbook telemetry. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
@@ -2760,7 +2762,50 @@ Final reserves are unchanged because no kernel code changed:
 - UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 
-Proposed M125 scope: boot the M121/M124 self-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
+## M125 MSI Dynamic Handoff Capture Classification
+
+M125 is accepted as capture-side classification for the physical MSI `linux /APPS/DYNLDLIMIT` command. `tools\verify-msi-hardware-handoff.ps1` still verifies the bundle contract, storage evidence, and combined MSI analysis, but when `-CapturePath` is supplied it now also parses the real dynamic command telemetry and writes dedicated `dynamic_handoff_*` fields into `msi-hardware-handoff-verification.json`.
+
+Accepted command:
+
+```powershell
+.\tools\verify-msi-hardware-handoff-fixtures.ps1 -OutputDir .\build\m125-msi-handoff-fixtures-final
+```
+
+Acceptance output:
+
+```text
+msi-hardware-handoff-fixtures: 11/11
+  failed: 0
+```
+
+New capture-side dynamic stages:
+
+- `dynamic-runtime-static`: source 2 and boot-media read succeeded, then the realbin line failed later at stage `static`.
+- `dynamic-runtime-exit0`: source 2 and boot-media read succeeded, then the dynamic process exited 0.
+- `dynamic-handoff-nvme-unavailable`: capture still shows the old `linux: NVMe FAT unavailable` / `drs-realbin-unavailable` path.
+- `dynamic-handoff-wrong-source`: capture produced `drs-realbin` for `/APPS/DYNLDLIMIT`, but not with source `2`.
+- `dynamic-handoff-missing-realbin`: capture does not contain usable `drs-realbin` telemetry for `/APPS/DYNLDLIMIT`.
+- `dynamic-handoff-boot-media-read`: source 2 was selected but boot-media read success was not proven.
+
+Fixture coverage now includes:
+
+- 7 bundle/runbook contract cases from M123
+- `capture-source2-runtime-fail`
+- `capture-nvme-unavailable`
+- `capture-wrong-source`
+- `capture-source2-exit0`
+
+This means a physical transcript can now report storage/display ready while still failing the handoff with a precise dynamic stage instead of losing that information behind the broader `msi-hardware-ready` result.
+
+M125 non-claims: this does not certify the physical MSI laptop and does not add hardware support. It improves the capture analyzer/verifier so the next hardware run has a sharper first-failure answer.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+
+Proposed M126 scope: boot the M121/M125 self-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If `dynamic-handoff-stage` is `dynamic-runtime-*`, the next target is the named dynamic runtime failure; if it is `dynamic-handoff-*`, the next target is the physical boot-media/source-selection path; otherwise use the first storage or display/input stage.
 
 ## Persistence
 

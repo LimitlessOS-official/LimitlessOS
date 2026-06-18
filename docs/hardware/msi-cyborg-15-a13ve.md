@@ -83,6 +83,15 @@ Before writing the USB stick, verify the current handoff bundle itself:
 
 This checks the bundle hashes/reserves, the M121 manifest contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` runbook, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
 
+When a capture is supplied, the verifier also classifies the dynamic command itself. Use `dynamic-handoff-stage` as the dynamic launch target:
+
+- `dynamic-runtime-*`: boot-media source 2 worked; the next target is the named dynamic runtime stage.
+- `dynamic-runtime-exit0`: boot-media source 2 worked and the dynamic binary exited cleanly.
+- `dynamic-handoff-nvme-unavailable`: the laptop still followed the old NVMe-unavailable path.
+- `dynamic-handoff-wrong-source`: `drs-realbin` appeared, but not from source 2.
+- `dynamic-handoff-missing-realbin`: the transcript did not capture usable `drs-realbin` telemetry for `/APPS/DYNLDLIMIT`.
+- `dynamic-handoff-boot-media-read`: source 2 was selected but boot-media read success was not proven.
+
 M121 packages this handoff into a timestamped evidence directory:
 
 ```powershell
