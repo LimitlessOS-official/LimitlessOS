@@ -15,14 +15,14 @@ linux: NVMe FAT unavailable
 drs-realbin-unavailable bios 0 nvme 0
 ```
 
-Interpretation: this is the UEFI kernel branch (`bios 0`), not the BIOS checksum fallback. The real-binary launcher refuses before ELF parsing because the UEFI storage path did not expose the NVMe FAT source/capability used by the QEMU real-binary gate. Dynamic linker state is not being exercised on this hardware run yet.
+Interpretation: this was the UEFI kernel branch (`bios 0`), not the BIOS checksum fallback, from a pre-boot-media-handoff hardware run. Current staged UEFI images should choose the boot-media source for `/APPS/DYNLDLIMIT` before requiring NVMe FAT and print `linux: using UEFI boot-media staged file` when the UEFI loader copied the staged app into `boot_info`.
 
 Known open hardware gaps from the photos:
 
 - Display reaches GOP framebuffer output, but console/window layout is visibly mis-scaled or overlapped on the laptop panel. New UEFI-only `hwval` fields now report framebuffer pitch, format, base, and byte size to diagnose this.
 - Keyboard input works through the brokered shell. The shell waiting for a key is expected; seeded startup command replay is intentionally gone.
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
-- `linux /APPS/DYNLDLIMIT` cannot run until a real hardware-accessible Linux-binary source exists. Current QEMU gates stage Linux binaries in the separate NVMe GPT/FAT fixture; the physical USB/ISO boot-media `/APPS` descriptor path is a different read-only route and is not yet a large ELF source for `linux`.
+- `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
 Next hardware evidence to capture with the M113 evidence bundle (`m113-hardware-storage-evidence`) or later:
 
@@ -41,7 +41,15 @@ For hardware builds that need dynamic-linker artifacts available on the USB boot
   -BootLinuxInterpPath <path-to-LDLIMIT> -BootLinuxInterpName LDLIMIT
 ```
 
-This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader now reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and `BOOTMAN.TXT` records expected paths, byte counts, and SHA-256 hashes. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, `boot media status`, and the full `drs-nvme-triage` line.
+This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and `BOOTMAN.TXT` records expected paths, byte counts, and SHA-256 hashes. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, `boot media status`, and the full `drs-nvme-triage` line. When this staging is healthy, `linux /APPS/DYNLDLIMIT` should report `source 2` and `boot-media-read 1` in the `drs-realbin` telemetry even if NVMe FAT is unavailable.
+
+Host-side verifier for the boot-media handoff path:
+
+```powershell
+.\tools\verify-boot-media-linux-handoff.ps1
+```
+
+The verifier intentionally stages tiny invalid ELF-shaped probe payloads. Passing output proves UEFI FAT staging, `boot_info` handoff, shell source selection, and boot-media read telemetry; it does not claim the real dynamic binary completed.
 
 Analyze the evidence bundle and captured transcript from Windows/PowerShell with the combined M118 intake command:
 

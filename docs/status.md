@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M120 is `boot-media Linux handoff verification`. The existing `tools\verify-boot-media-linux-handoff.ps1` verifier was rerun and now closes the stale NVMe-only interpretation in the MSI runbook: when `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` are staged into the UEFI boot FAT image, the shell selects the UEFI boot-media source before requiring NVMe FAT. The proof observes the UEFI loader copying both staged files into `boot_info`, the shell printing `linux: using UEFI boot-media staged file`, and `drs-realbin-fail ... source 2 ... boot-media-read-error 0 ... boot-media-read-bytes 7` for the intentionally invalid probe payload. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
 M119 is `MSI hardware capture analysis fixture coverage`. The repo now has `tools\verify-msi-hardware-analysis-fixtures.ps1`, a self-contained host-side regression suite for the combined M118 analyzer. It synthesizes a valid evidence bundle, fabricates controlled `hwval` transcripts, and proves all-ready, storage-first, display-after-storage, and missing-telemetry priority behavior. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 
 M118 is `MSI hardware capture analysis`. The repo now has `tools\analyze-msi-hardware-capture.ps1`, a single host-side intake command that verifies the M113 storage evidence bundle, runs the M115/M114 storage capture path, runs the M117 display/input analyzer on the same transcript, and emits JSON/text/Markdown with one combined pass/stage/next-target result. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
@@ -2524,7 +2526,47 @@ Final reserves are unchanged because no kernel code changed:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum: `0x6714FC97`
 
-Proposed M120 scope: take a fresh MSI laptop `hwval` transcript from the staged evidence ISO, run `tools\analyze-msi-hardware-capture.ps1`, then implement exactly the first reported hardware stage. Based on the photo-era evidence, the likely first real target remains NVMe controller discovery/readiness or, if storage passes, visible cursor/direct-compositor cursor drawing on physical framebuffer modes.
+## M120 Boot-Media Linux Handoff Verification
+
+M120 is accepted as the hardware-readiness clarification for the `linux /APPS/DYNLDLIMIT` symptom shown in the MSI photos. No kernel code changed in this milestone; the existing boot-media handoff path was verified and the stale runbook language was corrected.
+
+Accepted command:
+
+```powershell
+.\tools\verify-boot-media-linux-handoff.ps1
+```
+
+The verifier builds an x86_64 UEFI Product image with tiny invalid ELF-shaped probe payloads staged as `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` in the UEFI boot FAT image. This deliberately stops at ELF parsing after the read, so the proof is about source selection and handoff rather than dynamic program execution.
+
+Acceptance output:
+
+```text
+Boot-media Linux handoff verifier passed.
+BIOS reserve sectors: 101
+UEFI reserve bytes: 788512
+Command: linux /APPS/DYNLDLIMIT
+```
+
+Key telemetry:
+
+```text
+[uefi] boot linux stage DYNLDLIMIT attempted 1 loaded 1 bytes 7 pages 1 base 0x0000000000100000 copied 1 token 0x709DAA1E status 0x0000000000000000
+[uefi] boot linux stage LDLIMIT attempted 1 loaded 1 bytes 7 pages 1 base 0x0000000000101000 copied 1 token 0x7E82AA7C status 0x0000000000000000
+linux: using UEFI boot-media staged file
+drs-realbin-fail path /APPS/DYNLDLIMIT source 2 stage elf code 2 ... boot-media-read-error 0 boot-media-read-bytes 7 boot-media-read-capacity 4194304
+```
+
+M120 changes the MSI interpretation: current staged UEFI images should not fail the initial `/APPS/DYNLDLIMIT` launch merely because NVMe FAT is unavailable. The shell checks the boot-media staged files first and uses Linux exec source `2` when the path matches. NVMe FAT still matters for `/nvme/apps`, Linux VFS file tests, staged artifact agreement, and broader storage readiness.
+
+M120 non-claims: this does not certify the physical MSI laptop, implement a new storage driver, or prove a real dynamic app ran on physical hardware. It proves the boot-media fallback path that avoids the older NVMe-only launch failure.
+
+Final reserves:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum for this verifier build: `0x52B9ED82`
+
+Proposed M121 scope: rebuild the M113 evidence bundle from the current source and run the M118 combined analyzer on a fresh physical MSI `hwval` plus `linux /APPS/DYNLDLIMIT` transcript. If the physical launch still reports `NVMe FAT unavailable`, the first target is why boot-media staging did not reach `boot_info`; if it reports `source 2`, proceed to the first dynamic runtime failure or the first storage/display/input stage from the combined analyzer.
 
 ## Persistence
 
