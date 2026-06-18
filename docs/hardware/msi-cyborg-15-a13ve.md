@@ -65,6 +65,16 @@ The combined analyzer checks the evidence bundle hashes/reserves first, runs the
 
 Before a physical capture handoff, `tools\verify-msi-hardware-analysis-fixtures.ps1` can be run as a host-side regression check for the combined analyzer ordering.
 
+Before writing the USB stick, verify the current handoff bundle itself:
+
+```powershell
+.\tools\verify-msi-hardware-handoff.ps1 `
+  -EvidenceDir .\dist\m121-msi-hardware-handoff-<timestamp> `
+  -RequireStagedDynamicArtifacts
+```
+
+This checks the bundle hashes/reserves, the M121 manifest contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` runbook, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
+
 M121 packages this handoff into a timestamped evidence directory:
 
 ```powershell

@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M122 is `MSI hardware handoff verifier`. The repo now has `tools\verify-msi-hardware-handoff.ps1`, a host-side verifier that wraps the storage evidence verifier and then enforces the M121-specific handoff contract: manifest milestone/purpose, M121 ISO/UEFI image names, `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` paths, combined MSI analyzer command, source-2 boot-media expectation, and runbook instructions to run both `hwval` and `linux /APPS/DYNLDLIMIT`. It verified the current M121 bundle with `source2 required: 2`, BIOS reserve 101 sectors, and UEFI reserve 788,512 bytes. No kernel code changed.
+
 M121 is `MSI hardware handoff bundle refresh`. The physical-laptop handoff packager now builds a current `dist\m121-msi-hardware-handoff-*` bundle instead of the older M113 storage-only bundle shape. The runbook tells the tester to run both `hwval` and `linux /APPS/DYNLDLIMIT`, then analyze the full transcript with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`. The generated bundle keeps the real `DYNLDLIMIT` and `LDLIMIT` artifacts, validates with `tools\verify-hardware-storage-evidence.ps1`, and carries the M120 boot-media source-2 expectation so a hardware `NVMe FAT unavailable` result is no longer misread as the first launch dependency. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 
 M120 is `boot-media Linux handoff verification`. The existing `tools\verify-boot-media-linux-handoff.ps1` verifier was rerun and now closes the stale NVMe-only interpretation in the MSI runbook: when `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` are staged into the UEFI boot FAT image, the shell selects the UEFI boot-media source before requiring NVMe FAT. The proof observes the UEFI loader copying both staged files into `boot_info`, the shell printing `linux: using UEFI boot-media staged file`, and `drs-realbin-fail ... source 2 ... boot-media-read-error 0 ... boot-media-read-bytes 7` for the intentionally invalid probe payload. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
@@ -2629,7 +2631,52 @@ Final reserves:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum for the generated build: `0x83CCAC74`
 
-Proposed M122 scope: boot the M121 bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run the combined analyzer, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
+## M122 MSI Hardware Handoff Verifier
+
+M122 is accepted as the regression guard for the physical MSI handoff bundle. It adds `tools\verify-msi-hardware-handoff.ps1`, a host-side verifier that first delegates to `tools\verify-hardware-storage-evidence.ps1` for hashes, byte counts, BOOTMAN staging lines, and reserve checks, then validates the M121-specific contract that the storage-only verifier intentionally does not know about.
+
+Accepted command:
+
+```powershell
+.\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir .\dist\m121-msi-hardware-handoff-20260617-225629 -OutputDir .\build\m122-msi-handoff-verifier -RequireStagedDynamicArtifacts
+```
+
+Verifier output:
+
+```text
+hardware-storage-evidence: verified
+  bundle pass: True
+  bios reserve: 101 sectors
+  uefi reserve: 788512 bytes
+msi-hardware-handoff: verified
+  handoff pass: True
+  source2 required: 2
+  bios reserve: 101 sectors
+  uefi reserve: 788512 bytes
+```
+
+The verifier rejects bundles that drift away from the M121 handoff contract:
+
+- manifest milestone must be `M121`
+- purpose must be `MSI hardware handoff evidence bundle`
+- ISO must be `limitlessos-x86_64-m121-handoff.iso`
+- UEFI image must be `limitlessos-x86_64-m121-handoff-uefi.img`
+- dynamic app/interpreter paths must be `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT`
+- manifest must point at `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`
+- manifest must require boot-media Linux source `2`
+- runbook must instruct `hwval` and `linux /APPS/DYNLDLIMIT`
+- runbook must include `linux: using UEFI boot-media staged file` and `drs-realbin ... source 2 ... boot-media-read 1`
+
+The verifier can optionally accept a real hardware capture and run the combined MSI analyzer through the same command surface. Without a capture, it proves bundle correctness only.
+
+M122 non-claims: this does not certify the physical MSI laptop and does not add hardware driver support. It prevents stale handoff packages from sending the next hardware run down the wrong diagnostic path.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+
+Proposed M123 scope: boot the M121/M122-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
 
 ## Persistence
 
