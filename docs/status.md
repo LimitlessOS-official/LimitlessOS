@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
 
 ## Accepted Baseline
 
@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M108 is `visible cursor fallback and bounded login recovery`. The UEFI Product display path now draws the mouse cursor directly into the physical framebuffer when pointer packets are moving but the compositor/back-buffer path is not active. This addresses the VirtualBox symptom where PS/2 mouse packet counts and coordinates changed but no cursor was visible. The UEFI Product login gate also has a bounded local-console recovery path so boot reaches the shell when no keyboard line is entered. The hardware display gate records cursor visibility, total cursor draws, and direct framebuffer cursor draws through `hwval`.
+M109 is `Product visual polish direct compositor foundation`. The UEFI Product display path now keeps the compositor logically active in a direct framebuffer mode when the full back buffer cannot be allocated inside the current handoff window. That lets the existing font, window manager, desktop, taskbar, launcher, and visible cursor paths draw on QEMU/VirtualBox-style GOP framebuffers instead of falling back to emergency text-only presentation. The hardware display gate now records `drs-ui-polish` with compositor mode, font/window/desktop/taskbar/window counts, cursor visibility, and a style token. BIOS remains at 101 reserve sectors.
+
+M108 is `visible cursor fallback and bounded login recovery`. The UEFI Product display path draws the mouse cursor directly into the physical framebuffer when pointer packets are moving but the compositor/back-buffer path is not active. This addresses the VirtualBox symptom where PS/2 mouse packet counts and coordinates changed but no cursor was visible. The UEFI Product login gate also has a bounded local-console recovery path so boot reaches the shell when no keyboard line is entered. The hardware display gate records cursor visibility, total cursor draws, and direct framebuffer cursor draws through `hwval`.
 
 M105 is `dynamic pipe close/error semantics`. The UEFI Product Linux persona launcher runs `/APPS/DYNPIPECLOSE`, a dynamic ET_EXEC smoke through the same bounded supported-interpreter path proven by M83-M104. The run proves a dynamic process can block in `read(pipe)`, be woken by the last writer closing and replay the original read as EOF, install a SIGPIPE handler with `rt_sigaction`, write to a pipe after all read ends are closed, receive SIGPIPE, return through `rt_sigreturn`, observe the original `-EPIPE` result, and clean up the fork child, both process roots, and all pipe objects. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
 
@@ -1887,7 +1889,42 @@ Final reserves after the implementation build:
 
 M108 non-claims: this does not redesign the desktop, add a full visual design system, add native GPU acceleration, implement DRM/KMS, add I2C HID touchpad support, or prove the MSI laptop NVMe path. It fixes the concrete visible-cursor failure mode where pointer packets move but no cursor is drawn, removes the no-key boot blocker, and adds telemetry so future physical hardware runs can distinguish input movement from cursor presentation.
 
-Proposed M109 scope: Product visual polish foundation. Clean up boot/load presentation, shell/status-panel spacing, default desktop colors, window borders, focus states, and typography using the existing framebuffer/compositor path, while keeping every visual claim backed by `hwval` or screenshot/telemetry gates.
+## M109 Product Visual Polish Direct Compositor Foundation
+
+M109 is accepted on the UEFI Product path with the hardware-display gate:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+```
+
+Implementation scope:
+
+- adds a UEFI-only direct compositor mode: when the full back buffer cannot fit in the current firmware handoff window, `g_display_compositor_active` remains true, `g_display_compositor_direct_mode` records the fallback, and drawing uses the physical framebuffer directly
+- keeps the back-buffer path intact when allocation succeeds and makes back-buffer indexed reads explicit so direct mode never dereferences a null back buffer
+- lets the existing font probe, window-manager probe, desktop probe, taskbar, launcher panel, and window rendering paths initialize on GOP framebuffers that cannot afford a separate full-size back buffer
+- updates the Product palette from the previous diagnostic red/grey look to a calmer teal-accented UI with distinct app colors, cleaner surface/border contrast, and a less shouted display-ready banner
+- adds UEFI-only `display64_compositor_direct_mode()` and `display64_ui_polish_token()` telemetry helpers
+- extends `hwval` and the hardware-display verifier with a new `drs-ui-polish` proof line while preserving the existing `drs-display-readability` line
+- excludes the new telemetry helpers from BIOS so the BIOS scaffold remains at 101 reserve sectors
+
+M109 acceptance telemetry:
+
+```text
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059
+[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83
+```
+
+Visible `hwval` evidence included `display compositor direct: yes`, `display ui polish token: 0xCB1B1C83`, `display cursor visible: yes`, `display cursor draws: 158`, `display direct cursor draws: 161`, `mouse packets: 2`, `mouse x: 560`, and `mouse y: 420`.
+
+Final reserves after the implementation build:
+
+- UEFI kernel bytes: 1,308,032 / 2,097,152, reserve 789,120 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x37D2EFB2`
+
+M109 non-claims: this does not add native GPU acceleration, DRM/KMS mode setting, EDID policy, multi-monitor support, a hardware touchpad driver, a complete GUI toolkit, or physical MSI laptop certification. It proves the existing Product desktop/window surface can initialize and draw through a direct GOP framebuffer compositor fallback, with visible cursor and telemetry-backed UI initialization.
+
+Proposed M110 scope: physical-laptop boot-media and NVMe availability triage. The attached hardware photos showed `LINUX: NVME FAT UNAVAILABLE` for `linux /apps/dynldlimit`; the next gate should add hardware-visible diagnostics for NVMe controller discovery, namespace readiness, FAT mount failure reason, and staged `/APPS` artifact presence on the real boot medium.
 
 ## Persistence
 

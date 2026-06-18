@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, and M108 visible cursor fallback are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, and M109 Product visual polish direct compositor foundation are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -1956,7 +1956,30 @@ Final reserves are UEFI 789,312 bytes and BIOS 101 sectors. The M108 UEFI manife
 
 M108 non-claims: no full GUI redesign, native GPU driver, DRM/KMS mode setting, acceleration, I2C HID touchpad driver, or broad laptop certification is claimed. The accepted claim is narrow and falsifiable: pointer movement can now produce a visible cursor through a direct framebuffer fallback, no-key Product boot can reach the shell through bounded recovery, and future hardware runs can report whether the cursor was actually drawn.
 
-Proposed M109 scope: Product visual polish foundation. Clean boot/load presentation, shell/status-panel spacing, desktop/window styling, focus states, and typography while keeping every polish claim backed by visible output, `hwval`, or screenshot telemetry.
+## M109 Product Visual Polish Direct Compositor Foundation
+
+M109 is accepted on the UEFI Product path with:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+```
+
+It turns the M108 direct cursor fallback into a real direct compositor fallback for UEFI Product. If the full back buffer cannot be allocated in the current firmware handoff window, the compositor remains active, records `compositor-direct 1`, and routes existing desktop/window/font drawing to the physical GOP framebuffer. The existing back-buffered path remains intact when allocation succeeds. The Product palette was also cleaned up from diagnostic red/grey into a calmer teal-accented surface with distinct app colors and clearer surface/border contrast.
+
+Acceptance telemetry:
+
+```text
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059
+[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83
+```
+
+Visible `hwval` evidence included `display compositor direct: yes`, `display ui polish token: 0xCB1B1C83`, `display cursor visible: yes`, `display cursor draws: 158`, `display direct cursor draws: 161`, `mouse packets: 2`, `mouse x: 560`, and `mouse y: 420`.
+
+Final reserves are UEFI 789,120 bytes and BIOS 101 sectors. The M109 UEFI manifest reports kernel bytes 1,308,032 and checksum `0x37D2EFB2`.
+
+M109 non-claims: no native GPU driver, DRM/KMS mode setting, EDID policy, acceleration, multi-monitor support, I2C HID touchpad driver, complete GUI toolkit, or broad physical laptop certification is claimed. The accepted claim is narrower: Product desktop/window/font/taskbar rendering can initialize and draw through a direct GOP framebuffer compositor fallback, with cursor visibility and UI initialization telemetry gated by `hwval`.
+
+Proposed M110 scope: physical-laptop boot-media and NVMe availability triage. The attached hardware photos showed `LINUX: NVME FAT UNAVAILABLE` for `linux /apps/dynldlimit`; the next gate should make NVMe controller discovery, namespace readiness, FAT mount failure reason, and staged `/APPS` artifact presence visible on real hardware.
 
 Later targets are:
 

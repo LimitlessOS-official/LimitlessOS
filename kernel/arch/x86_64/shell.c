@@ -773,6 +773,16 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor visible: ", display64_cursor_visible());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display cursor draws: ", display64_compositor_cursor_count());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display direct cursor draws: ", display64_direct_cursor_count());
+        (void)shell64_write_yes_no_line(
+            console_capability_handle,
+            owner_id,
+            "display compositor direct: ",
+            display64_compositor_direct_mode());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "display ui polish token: ",
+            display64_ui_polish_token());
         (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-display-readability display-readability 1");
         shell64_write_decimal_field(console_capability_handle, owner_id, " available ", display64_available());
         shell64_write_decimal_field(console_capability_handle, owner_id, " width ", display64_width());
@@ -798,6 +808,21 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
             owner_id,
             " token ",
             display64_layout_token());
+        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-ui-polish ui-polish 1");
+        shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-active ", display64_compositor_init_done());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-direct ", display64_compositor_direct_mode());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " font ", display64_font_init_done());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " wm ", display64_wm_init_done());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " desktop ", display64_desktop_init_done());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " taskbar ", display64_desktop_taskbar_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " launcher ", display64_desktop_launcher_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " windows ", display64_wm_window_created_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-visible ", display64_cursor_visible());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            " token ",
+            display64_ui_polish_token());
 #endif
     }
     else

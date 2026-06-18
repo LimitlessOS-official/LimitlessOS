@@ -31,28 +31,28 @@
 #define DISPLAY64_FONT_MAX_SCALE 3u
 #define DISPLAY64_FONT_ADVANCE_DEFAULT ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_DEFAULT_SCALE)
 #define DISPLAY64_LINE_ADVANCE_DEFAULT ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_DEFAULT_SCALE)
-#define DISPLAY64_RGB_DESKTOP_BG 0x001A1A1Eu
-#define DISPLAY64_RGB_BAR_BG 0x00111114u
-#define DISPLAY64_RGB_SURFACE 0x00242428u
-#define DISPLAY64_RGB_SURFACE_BORDER 0x003A3A40u
-#define DISPLAY64_RGB_CONTENT 0x001E1E22u
-#define DISPLAY64_RGB_TITLE_UNFOCUSED 0x002C2C32u
-#define DISPLAY64_RGB_TASK_BUTTON 0x002A2A30u
-#define DISPLAY64_RGB_TASK_BUTTON_BORDER 0x004A4A56u
-#define DISPLAY64_RGB_POPOVER_HOVER 0x002E2E36u
-#define DISPLAY64_RGB_ACCENT 0x00CC3333u
-#define DISPLAY64_RGB_FOCUS_BLUE 0x002E86C1u
+#define DISPLAY64_RGB_DESKTOP_BG 0x00121416u
+#define DISPLAY64_RGB_BAR_BG 0x001A1D20u
+#define DISPLAY64_RGB_SURFACE 0x0024262Au
+#define DISPLAY64_RGB_SURFACE_BORDER 0x00434A50u
+#define DISPLAY64_RGB_CONTENT 0x001B2024u
+#define DISPLAY64_RGB_TITLE_UNFOCUSED 0x002A3035u
+#define DISPLAY64_RGB_TASK_BUTTON 0x00252B30u
+#define DISPLAY64_RGB_TASK_BUTTON_BORDER 0x004B565Eu
+#define DISPLAY64_RGB_POPOVER_HOVER 0x00303934u
+#define DISPLAY64_RGB_ACCENT 0x0037B088u
+#define DISPLAY64_RGB_FOCUS_BLUE 0x004A90E2u
 #define DISPLAY64_RGB_TEXT_PRIMARY 0x00F0F0F2u
 #define DISPLAY64_RGB_TEXT_SECONDARY 0x009A9AA8u
 #define DISPLAY64_RGB_TEXT_ON_ACCENT 0x00FFFFFFu
 #define DISPLAY64_RGB_FIELD 0x00161618u
-#define DISPLAY64_RGB_CLOSE 0x00E05252u
-#define DISPLAY64_RGB_APP_TERMINAL 0x001A6B3Au
-#define DISPLAY64_RGB_APP_FILES 0x001A4A7Au
-#define DISPLAY64_RGB_APP_SETTINGS 0x005A3A7Au
-#define DISPLAY64_RGB_APP_ASSISTANT 0x007A3A1Au
-#define DISPLAY64_RGB_APP_INSTALLER 0x005A5A3Au
-#define DISPLAY64_RGB_WARNING 0x00D8A45Du
+#define DISPLAY64_RGB_CLOSE 0x00D45D5Du
+#define DISPLAY64_RGB_APP_TERMINAL 0x0037B088u
+#define DISPLAY64_RGB_APP_FILES 0x004A90E2u
+#define DISPLAY64_RGB_APP_SETTINGS 0x008B6BD6u
+#define DISPLAY64_RGB_APP_ASSISTANT 0x00C97941u
+#define DISPLAY64_RGB_APP_INSTALLER 0x00B79E42u
+#define DISPLAY64_RGB_WARNING 0x00D9A441u
 #define DISPLAY64_RGB_DISABLED_TEXT 0x006E6E78u
 #define DISPLAY64_TEXT_RGB DISPLAY64_RGB_TEXT_PRIMARY
 #define DISPLAY64_PANEL_X DISPLAY64_TEXT_START_X
@@ -156,6 +156,7 @@ static u32 g_display_compositor_present_count = 0u;
 static u32 g_display_compositor_cursor_count = 0u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 static u32 g_display_direct_cursor_count = 0u;
+static u32 g_display_compositor_direct_mode = 0u;
 #endif
 static u32 g_display_compositor_cursor_x = 32u;
 static u32 g_display_compositor_cursor_y = 32u;
@@ -891,6 +892,9 @@ static void display64_compositor_present_back_buffer_rect(u32 x, u32 y, u32 widt
     u32 column;
 
     if ((g_display_compositor_active == 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || (g_display_back_buffer == 0)
+#endif
         || !display64_has_framebuffer()
         || (width == 0u)
         || (height == 0u)
@@ -1002,7 +1006,7 @@ static void display64_compositor_save_cursor_underlay(void)
         {
             g_display_compositor_cursor_saved[(row * DISPLAY64_COMPOSITOR_CURSOR_WIDTH) + column] =
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-                (g_display_compositor_active != 0u)
+                (g_display_back_buffer != 0)
                     ? g_display_back_buffer[base_pixel + column]
                     : framebuffer[base_pixel + column];
 #else
@@ -1075,7 +1079,7 @@ static void display64_compositor_draw_cursor(void)
 
     ++g_display_compositor_cursor_count;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    if (g_display_compositor_active == 0u)
+    if (g_display_back_buffer == 0)
     {
         ++g_display_direct_cursor_count;
     }
@@ -1098,12 +1102,21 @@ static void display64_compositor_init_back_buffer(void)
     g_display_back_buffer = 0;
     g_display_back_buffer_pixels = 0ull;
     g_display_back_buffer_bytes = 0ull;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_compositor_direct_mode = 0u;
+#endif
     if (display64_compositor_required_back_buffer(&pixels, &bytes) == 0u)
     {
         return;
     }
     if (display64_compositor_allocate_back_buffer(pixels, bytes) == 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_display_compositor_active = 1u;
+        g_display_compositor_direct_mode = 1u;
+        g_display_compositor_cursor_x = g_display_boot_info->framebuffer_width >> 1u;
+        g_display_compositor_cursor_y = g_display_boot_info->framebuffer_height >> 1u;
+#endif
         return;
     }
 
@@ -1114,6 +1127,9 @@ static void display64_compositor_init_back_buffer(void)
     }
 
     g_display_compositor_active = 1u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_compositor_direct_mode = 0u;
+#endif
     g_display_compositor_cursor_x = g_display_boot_info->framebuffer_width >> 1u;
     g_display_compositor_cursor_y = g_display_boot_info->framebuffer_height >> 1u;
 }
@@ -2422,7 +2438,7 @@ void display64_font_probe(void)
 
     g_display_font_active = 1u;
     display64_font_draw_status_bar();
-    (void)display64_draw_font_text(24u, 48u, "DISPLAY ONLINE", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(24u, 48u, "Display ready", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_compositor_present();
 }
 
@@ -4154,6 +4170,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_compositor_cursor_count = 0u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     g_display_direct_cursor_count = 0u;
+    g_display_compositor_direct_mode = 0u;
 #endif
     g_display_compositor_cursor_x = 32u;
     g_display_compositor_cursor_y = 32u;
@@ -4870,6 +4887,13 @@ u32 display64_compositor_init_done(void)
     return g_display_compositor_active;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_compositor_direct_mode(void)
+{
+    return g_display_compositor_direct_mode;
+}
+#endif
+
 u32 display64_compositor_present_count(void)
 {
     return g_display_compositor_present_count;
@@ -4888,6 +4912,27 @@ u32 display64_direct_cursor_count(void)
     return 0u;
 #endif
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_ui_polish_token(void)
+{
+    u32 token = 2166136261u;
+
+    token = display64_mix_token(token, DISPLAY64_RGB_DESKTOP_BG);
+    token = display64_mix_token(token, DISPLAY64_RGB_BAR_BG);
+    token = display64_mix_token(token, DISPLAY64_RGB_SURFACE);
+    token = display64_mix_token(token, DISPLAY64_RGB_ACCENT);
+    token = display64_mix_token(token, g_display_compositor_active);
+    token = display64_mix_token(token, display64_compositor_direct_mode());
+    token = display64_mix_token(token, g_display_font_active);
+    token = display64_mix_token(token, g_display_wm_active);
+    token = display64_mix_token(token, g_display_desktop_active);
+    token = display64_mix_token(token, g_display_desktop_taskbar_count);
+    token = display64_mix_token(token, g_display_desktop_launcher_count);
+    token = display64_mix_token(token, g_display_wm_window_count);
+    return token;
+}
+#endif
 
 u32 display64_cursor_visible(void)
 {

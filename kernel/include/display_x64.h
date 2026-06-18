@@ -65,9 +65,15 @@ u32 display64_write_mouse_diagnostics(
 void display64_compositor_probe(u32 cursor_x, u32 cursor_y, u32 buttons);
 u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons);
 u32 display64_compositor_init_done(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_compositor_direct_mode(void);
+#endif
 u32 display64_compositor_present_count(void);
 u32 display64_compositor_cursor_count(void);
 u32 display64_direct_cursor_count(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_ui_polish_token(void);
+#endif
 u32 display64_cursor_visible(void);
 void display64_font_probe(void);
 u32 display64_font_init_done(void);
