@@ -41,11 +41,20 @@
 #define INPUT64_PS2_COMMAND_WRITE_SECOND_PORT 0xD4u
 #define INPUT64_PS2_DEVICE_RESET 0xFFu
 #define INPUT64_PS2_DEVICE_ENABLE_SCANNING 0xF4u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define INPUT64_PS2_DEVICE_GET_ID 0xF2u
+#define INPUT64_PS2_DEVICE_SET_SAMPLE_RATE 0xF3u
+#endif
 #define INPUT64_PS2_CONFIG_IRQ1 0x01u
 #define INPUT64_PS2_CONFIG_IRQ12 0x02u
 #define INPUT64_PS2_CONFIG_FIRST_PORT_CLOCK_DISABLE 0x10u
 #define INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE 0x20u
 #define INPUT64_PS2_CONFIG_TRANSLATION 0x40u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define INPUT64_PS2_MOUSE_PACKET_BYTES 4u
+#else
+#define INPUT64_PS2_MOUSE_PACKET_BYTES 3u
+#endif
 
 struct input64_mouse_event
 {
@@ -123,8 +132,13 @@ static u32 g_ps2_mouse_irq12_configured = 0u;
 static u32 g_ps2_mouse_enable_command = 0u;
 static u32 g_ps2_mouse_present = 0u;
 static u32 g_ps2_mouse_ack = 0u;
-static u8 g_ps2_mouse_packet[3];
+static u8 g_ps2_mouse_packet[INPUT64_PS2_MOUSE_PACKET_BYTES];
 static u32 g_ps2_mouse_phase = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_ps2_mouse_packet_bytes = 3u;
+static u32 g_ps2_mouse_wheel_enabled = 0u;
+static u32 g_ps2_mouse_wheel_count = 0u;
+#endif
 static u32 g_ps2_mouse_last_raw_byte = 0u;
 static u32 g_ps2_mouse_bad_start_count = 0u;
 static u32 g_ps2_mouse_raw_log_count = 0u;
@@ -409,6 +423,12 @@ static void input64_mouse_reset(void)
     g_ps2_mouse_packet[0] = 0u;
     g_ps2_mouse_packet[1] = 0u;
     g_ps2_mouse_packet[2] = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_ps2_mouse_packet[3] = 0u;
+    g_ps2_mouse_packet_bytes = 3u;
+    g_ps2_mouse_wheel_enabled = 0u;
+    g_ps2_mouse_wheel_count = 0u;
+#endif
     g_ps2_mouse_phase = 0u;
     g_ps2_mouse_last_raw_byte = 0u;
     g_ps2_mouse_bad_start_count = 0u;
@@ -581,6 +601,10 @@ static u32 input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
 
 static void input64_mouse_accept_ps2_byte(u8 value)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 packet_bytes = g_ps2_mouse_packet_bytes;
+#endif
+
     g_ps2_mouse_last_raw_byte = (u32)value;
     if (g_ps2_mouse_phase == 0u)
     {
@@ -606,7 +630,11 @@ static void input64_mouse_accept_ps2_byte(u8 value)
 
     g_ps2_mouse_packet[g_ps2_mouse_phase] = value;
     ++g_ps2_mouse_phase;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_ps2_mouse_phase >= packet_bytes)
+#else
     if (g_ps2_mouse_phase >= 3u)
+#endif
     {
         s32 dx = input64_ps2_mouse_delta(g_ps2_mouse_packet[0], g_ps2_mouse_packet[1], 0x10u);
         s32 dy = -input64_ps2_mouse_delta(g_ps2_mouse_packet[0], g_ps2_mouse_packet[2], 0x20u);
@@ -617,6 +645,21 @@ static void input64_mouse_accept_ps2_byte(u8 value)
             return;
         }
         input64_mouse_enqueue_delta(dx, dy, (u32)(g_ps2_mouse_packet[0] & 0x07u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if (packet_bytes >= 4u)
+        {
+            s32 wheel = (s32)(g_ps2_mouse_packet[3] & 0x0Fu);
+            if ((wheel & 0x08) != 0)
+            {
+                wheel -= 16;
+            }
+            if (wheel != 0)
+            {
+                ++g_ps2_mouse_wheel_count;
+                (void)display64_wm_process_mouse_wheel(wheel);
+            }
+        }
+#endif
         g_ps2_mouse_phase = 0u;
     }
 }
@@ -1260,6 +1303,69 @@ static u32 input64_ps2_read_mouse_ack_lenient(u8 *ack)
     return 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 input64_ps2_write_aux_data(u8 value)
+{
+    if (input64_ps2_wait_input_clear() == 0u)
+    {
+        return 0u;
+    }
+    outb(INPUT64_PS2_STATUS_PORT, INPUT64_PS2_COMMAND_WRITE_SECOND_PORT);
+    if (input64_ps2_wait_input_clear() == 0u)
+    {
+        return 0u;
+    }
+    outb(INPUT64_PS2_DATA_PORT, value);
+    return 1u;
+}
+
+static u32 input64_ps2_send_aux_command_ack(u8 command)
+{
+    u8 ack = 0u;
+
+    if (input64_ps2_write_aux_data(command) == 0u)
+    {
+        return 0u;
+    }
+    return input64_ps2_read_mouse_ack_lenient(&ack);
+}
+
+static u32 input64_ps2_send_aux_sample_rate(u8 sample_rate)
+{
+    return (input64_ps2_send_aux_command_ack(INPUT64_PS2_DEVICE_SET_SAMPLE_RATE) != 0u)
+        && (input64_ps2_send_aux_command_ack(sample_rate) != 0u)
+        ? 1u
+        : 0u;
+}
+
+static u32 input64_ps2_try_enable_wheel(void)
+{
+    u8 device_id = 0u;
+
+    if ((input64_ps2_send_aux_sample_rate(200u) == 0u)
+        || (input64_ps2_send_aux_sample_rate(100u) == 0u)
+        || (input64_ps2_send_aux_sample_rate(80u) == 0u)
+        || (input64_ps2_send_aux_command_ack(INPUT64_PS2_DEVICE_GET_ID) == 0u)
+        || (input64_ps2_read_device_data(&device_id, 1u) == 0u))
+    {
+        g_ps2_mouse_packet_bytes = 3u;
+        g_ps2_mouse_wheel_enabled = 0u;
+        return 0u;
+    }
+
+    if ((device_id == 3u) || (device_id == 4u))
+    {
+        g_ps2_mouse_packet_bytes = 4u;
+        g_ps2_mouse_wheel_enabled = 1u;
+        return 1u;
+    }
+
+    g_ps2_mouse_packet_bytes = 3u;
+    g_ps2_mouse_wheel_enabled = 0u;
+    return 0u;
+}
+#endif
+
 static u32 input64_ps2_send_aux_enable_streaming_strict(u8 *ack)
 {
     u32 attempt;
@@ -1405,6 +1511,9 @@ static void input64_ps2_enable_controller(void)
         (((config & INPUT64_PS2_CONFIG_IRQ12) != 0u)
             && ((config & INPUT64_PS2_CONFIG_SECOND_PORT_CLOCK_DISABLE) == 0u)) ? 1u : 0u;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)input64_ps2_try_enable_wheel();
+#endif
     g_ps2_mouse_enable_command = 1u;
     if (input64_ps2_send_aux_enable_streaming_strict(&mouse_ack) != 0u)
     {
@@ -1565,16 +1674,24 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
 void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count)
 {
     u32 offset;
+    u32 accepted;
 
     if ((report == 0) || (byte_count < 3u))
     {
         return;
     }
 
-    if (input64_mouse_enqueue_delta(
+    accepted = input64_mouse_enqueue_delta(
         input64_sign_extend_byte(report[1]),
         input64_sign_extend_byte(report[2]),
-        (u32)(report[0] & 0x07u)) != 0u)
+        (u32)(report[0] & 0x07u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (byte_count >= 4u)
+    {
+        (void)display64_wm_process_mouse_wheel(input64_sign_extend_byte(report[3]));
+    }
+#endif
+    if (accepted != 0u)
     {
         return;
     }
@@ -2183,3 +2300,20 @@ u32 input64_ps2_mouse_bad_start_count(void)
 {
     return g_ps2_mouse_bad_start_count;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_ps2_mouse_packet_bytes(void)
+{
+    return g_ps2_mouse_packet_bytes;
+}
+
+u32 input64_ps2_mouse_wheel_enabled(void)
+{
+    return g_ps2_mouse_wheel_enabled;
+}
+
+u32 input64_ps2_mouse_wheel_count(void)
+{
+    return g_ps2_mouse_wheel_count;
+}
+#endif

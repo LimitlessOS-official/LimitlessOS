@@ -7415,6 +7415,32 @@ u32 mmio64_nvme_fat_shell_read_file_range(
     u32 owner_id,
     u32 *bytes_read,
     u32 *file_size_out);
+u32 mmio64_nvme_fat_shell_delete_file(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 owner_id);
+u32 mmio64_nvme_fat_shell_mkdir(
+    const u8 *path,
+    u32 path_byte_count,
+    u32 owner_id);
+u32 mmio64_nvme_fat_shell_copy_file(
+    const u8 *source_path,
+    u32 source_path_byte_count,
+    const u8 *destination_path,
+    u32 destination_path_byte_count,
+    u32 owner_id);
+u32 mmio64_nvme_fat_shell_rename_file(
+    const u8 *source_path,
+    u32 source_path_byte_count,
+    const u8 *destination_path,
+    u32 destination_path_byte_count,
+    u32 owner_id);
+u32 mmio64_nvme_fat_shell_move_file(
+    const u8 *source_path,
+    u32 source_path_byte_count,
+    const u8 *destination_path,
+    u32 destination_path_byte_count,
+    u32 owner_id);
 #endif
 u32 mmio64_nvme_m5_write_boot_marker(
     u32 scoped_write_capability,
@@ -7486,6 +7512,13 @@ u32 mmio64_nvme_fat_update_bytes(void);
 u32 mmio64_nvme_fat_update_checksum(void);
 u32 mmio64_nvme_fat_delete_freed(void);
 u32 mmio64_nvme_fat_delete_tombstone(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_fat_mkdir_proof(void);
+u32 mmio64_nvme_fat_copy_proof(void);
+u32 mmio64_nvme_fat_rename_proof(void);
+u32 mmio64_nvme_fat_move_proof(void);
+u32 mmio64_nvme_fat_recursive_delete_proof(void);
+#endif
 u32 mmio64_nvme_fat_flushes(void);
 u32 mmio64_nvme_fat_fs_delegation(void);
 u32 mmio64_nvme_fat_block_endpoint(void);
@@ -7500,6 +7533,16 @@ u32 mmio64_nvme_rw_stale_denied(void);
 u32 mmio64_nvme_rw_revoked(void);
 u32 mmio64_nvme_rw_shell_write(void);
 u32 mmio64_nvme_rw_shell_readback(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_rw_shell_delete(void);
+u32 mmio64_nvme_rw_shell_delete_verified(void);
+u32 mmio64_nvme_rw_shell_mkdir(void);
+u32 mmio64_nvme_rw_shell_copy(void);
+u32 mmio64_nvme_rw_shell_rename(void);
+u32 mmio64_nvme_rw_shell_move(void);
+u32 mmio64_nvme_rw_shell_recursive_delete(void);
+u32 mmio64_nvme_rw_shell_mutation_denial(void);
+#endif
 u32 mmio64_nvme_rw_write_bytes(void);
 u32 mmio64_nvme_rw_write_checksum(void);
 u32 mmio64_nvme_rw_persisted(void);

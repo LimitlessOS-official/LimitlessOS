@@ -767,6 +767,32 @@ static void log_gui_interactive_surface(void)
     write_labeled_dec_u32(" drs-gui-fileman-opened ", display64_gui_fileman_opened());
     write_labeled_dec_u32(" drs-gui-settings-opened ", display64_gui_settings_opened());
     write_labeled_dec_u32(" drs-gui-installer-opened ", display64_gui_installer_opened());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_labeled_dec_u32(" drs-gui-right-click ", display64_gui_right_click_count());
+    write_labeled_dec_u32(" drs-gui-scroll ", display64_gui_scroll_count());
+    write_labeled_dec_u32(" terminal-actions ", display64_gui_terminal_action_count());
+    write_labeled_dec_u32(" fileman-actions ", display64_gui_fileman_action_count());
+    write_labeled_dec_u32(" fileman-refresh ", display64_gui_fileman_backend_refresh_count());
+    write_labeled_dec_u32(" fileman-preview ", display64_gui_fileman_backend_preview_count());
+    write_labeled_dec_u32(" fileman-open-dir ", display64_gui_fileman_backend_open_dir_count());
+    write_labeled_dec_u32(" fileman-write ", display64_gui_fileman_backend_write_count());
+    write_labeled_dec_u32(" fileman-write-denial ", display64_gui_fileman_backend_write_denial_count());
+    write_labeled_dec_u32(" fileman-delete ", display64_gui_fileman_backend_delete_count());
+    write_labeled_dec_u32(" fileman-delete-denial ", display64_gui_fileman_backend_delete_denial_count());
+    write_labeled_dec_u32(" fileman-delete-confirm ", display64_gui_fileman_backend_delete_confirm_count());
+    write_labeled_dec_u32(" fileman-mkdir ", display64_gui_fileman_backend_mkdir_count());
+    write_labeled_dec_u32(" fileman-mkdir-denial ", display64_gui_fileman_backend_mkdir_denial_count());
+    write_labeled_dec_u32(" fileman-copy ", display64_gui_fileman_backend_copy_count());
+    write_labeled_dec_u32(" fileman-copy-denial ", display64_gui_fileman_backend_copy_denial_count());
+    write_labeled_dec_u32(" fileman-rename ", display64_gui_fileman_backend_rename_count());
+    write_labeled_dec_u32(" fileman-rename-denial ", display64_gui_fileman_backend_rename_denial_count());
+    write_labeled_dec_u32(" fileman-move ", display64_gui_fileman_backend_move_count());
+    write_labeled_dec_u32(" fileman-move-denial ", display64_gui_fileman_backend_move_denial_count());
+    write_labeled_dec_u32(" fileman-edit ", display64_gui_fileman_backend_edit_count());
+    write_labeled_dec_u32(" fileman-edit-commit ", display64_gui_fileman_backend_edit_commit_count());
+    write_labeled_dec_u32(" settings-actions ", display64_gui_settings_action_count());
+    write_labeled_dec_u32(" installer-actions ", display64_gui_installer_action_count());
+#endif
     write_labeled_dec_u32(" drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
     write_labeled_dec_u32(" drs-gui-no-ambient-input ", display64_gui_no_ambient_input());
     write_labeled_dec_u32(" drs-gui-no-ambient-display ", display64_gui_no_ambient_display());

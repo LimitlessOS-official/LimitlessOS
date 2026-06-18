@@ -1018,6 +1018,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse y: ", input64_mouse_y());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback present: ", input64_ps2_present());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback enabled: ", input64_ps2_enabled());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "ps2 mouse packet bytes: ", input64_ps2_mouse_packet_bytes());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 mouse wheel enabled: ", input64_ps2_mouse_wheel_enabled());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "ps2 mouse wheel packets: ", input64_ps2_mouse_wheel_count());
+#endif
     (void)shell64_write_status_line(
         console_capability_handle,
         owner_id,
@@ -1069,6 +1074,23 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "nvme rw capability: ",
         mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE);
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw delete: ", mmio64_nvme_rw_shell_delete());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw delete verified: ", mmio64_nvme_rw_shell_delete_verified());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw mkdir: ", mmio64_nvme_rw_shell_mkdir());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw copy: ", mmio64_nvme_rw_shell_copy());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw rename: ", mmio64_nvme_rw_shell_rename());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw move: ", mmio64_nvme_rw_shell_move());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw recursive delete: ", mmio64_nvme_rw_shell_recursive_delete());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat mkdir proof: ", mmio64_nvme_fat_mkdir_proof());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat copy proof: ", mmio64_nvme_fat_copy_proof());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat rename proof: ", mmio64_nvme_fat_rename_proof());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat move proof: ", mmio64_nvme_fat_move_proof());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "nvme fat recursive delete proof: ",
+        mmio64_nvme_fat_recursive_delete_proof());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw mutation denials: ", mmio64_nvme_rw_shell_mutation_denial());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw error: ", mmio64_nvme_rw_error());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "boot media linux staged: ", boot_media64_available());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media app bytes: ", boot_media64_app_bytes());

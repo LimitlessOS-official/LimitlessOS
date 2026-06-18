@@ -83,6 +83,9 @@ void display64_login_setup_screen(void);
 void display64_login_screen_draw(const char *title, const char *message, u32 failures, u32 lockout_seconds);
 void display64_wm_probe(void);
 u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_wm_process_mouse_wheel(s32 wheel_delta);
+#endif
 u32 display64_wm_process_keyboard_event(u8 value);
 u32 display64_wm_init_done(void);
 u32 display64_wm_window_created_count(void);
@@ -126,6 +129,32 @@ u32 display64_gui_fileman_opened(void);
 u32 display64_gui_settings_opened(void);
 u32 display64_gui_installer_opened(void);
 u32 display64_gui_assistant_opened(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_gui_right_click_count(void);
+u32 display64_gui_scroll_count(void);
+u32 display64_gui_terminal_action_count(void);
+u32 display64_gui_fileman_action_count(void);
+u32 display64_gui_fileman_backend_refresh_count(void);
+u32 display64_gui_fileman_backend_preview_count(void);
+u32 display64_gui_fileman_backend_open_dir_count(void);
+u32 display64_gui_fileman_backend_write_count(void);
+u32 display64_gui_fileman_backend_write_denial_count(void);
+u32 display64_gui_fileman_backend_delete_count(void);
+u32 display64_gui_fileman_backend_delete_denial_count(void);
+u32 display64_gui_fileman_backend_delete_confirm_count(void);
+u32 display64_gui_fileman_backend_mkdir_count(void);
+u32 display64_gui_fileman_backend_mkdir_denial_count(void);
+u32 display64_gui_fileman_backend_copy_count(void);
+u32 display64_gui_fileman_backend_copy_denial_count(void);
+u32 display64_gui_fileman_backend_rename_count(void);
+u32 display64_gui_fileman_backend_rename_denial_count(void);
+u32 display64_gui_fileman_backend_move_count(void);
+u32 display64_gui_fileman_backend_move_denial_count(void);
+u32 display64_gui_fileman_backend_edit_count(void);
+u32 display64_gui_fileman_backend_edit_commit_count(void);
+u32 display64_gui_settings_action_count(void);
+u32 display64_gui_installer_action_count(void);
+#endif
 u32 display64_gui_unfocused_key_denied(void);
 u32 display64_gui_no_ambient_input(void);
 u32 display64_gui_no_ambient_display(void);

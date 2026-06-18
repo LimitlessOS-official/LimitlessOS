@@ -88,5 +88,10 @@ u32 input64_ps2_mouse_enable_command(void);
 u32 input64_ps2_mouse_ack(void);
 u32 input64_ps2_mouse_raw_byte(void);
 u32 input64_ps2_mouse_bad_start_count(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_ps2_mouse_packet_bytes(void);
+u32 input64_ps2_mouse_wheel_enabled(void);
+u32 input64_ps2_mouse_wheel_count(void);
+#endif
 
 #endif

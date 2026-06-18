@@ -10,8 +10,10 @@
 #include "identity_transport_x64.h"
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
+#include "mmio_x64.h"
 #include "package_signing_x64.h"
 #include "pit.h"
+#include "principal_x64.h"
 #include "runtime_image_x64.h"
 #include "services.h"
 #include "services_x64.h"
@@ -31,10 +33,32 @@
 #define DISPLAY64_FONT_MAX_SCALE 3u
 #define DISPLAY64_FONT_ADVANCE_DEFAULT ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_DEFAULT_SCALE)
 #define DISPLAY64_LINE_ADVANCE_DEFAULT ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_DEFAULT_SCALE)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define DISPLAY64_UI_STYLE_GENERATION 1u
+#define DISPLAY64_RGB_DESKTOP_BG 0x00101213u
+#define DISPLAY64_RGB_BAR_BG 0x0015191Bu
+#define DISPLAY64_RGB_SURFACE 0x001B2023u
+#define DISPLAY64_RGB_SURFACE_HIGH 0x0022282Cu
+#define DISPLAY64_RGB_SURFACE_BORDER 0x00343C42u
+#define DISPLAY64_RGB_SURFACE_BORDER_STRONG 0x0055616Au
+#define DISPLAY64_RGB_CONTENT 0x0015191Bu
+#define DISPLAY64_RGB_TITLE_UNFOCUSED 0x001B2023u
+#define DISPLAY64_RGB_TASK_BUTTON 0x0022282Cu
+#define DISPLAY64_RGB_TASK_BUTTON_BORDER 0x00343C42u
+#define DISPLAY64_RGB_POPOVER_HOVER 0x002A3136u
+#define DISPLAY64_RGB_ACCENT 0x0035B88Eu
+#define DISPLAY64_RGB_FOCUS_BLUE 0x004D8FEAu
+#define DISPLAY64_RGB_TEXT_PRIMARY 0x00F2F4F3u
+#define DISPLAY64_RGB_TEXT_SECONDARY 0x00AEB6B8u
+#define DISPLAY64_RGB_TEXT_MUTED 0x007C8588u
+#else
+#define DISPLAY64_UI_STYLE_GENERATION 0u
 #define DISPLAY64_RGB_DESKTOP_BG 0x00121416u
 #define DISPLAY64_RGB_BAR_BG 0x001A1D20u
 #define DISPLAY64_RGB_SURFACE 0x0024262Au
+#define DISPLAY64_RGB_SURFACE_HIGH DISPLAY64_RGB_SURFACE
 #define DISPLAY64_RGB_SURFACE_BORDER 0x00434A50u
+#define DISPLAY64_RGB_SURFACE_BORDER_STRONG DISPLAY64_RGB_SURFACE_BORDER
 #define DISPLAY64_RGB_CONTENT 0x001B2024u
 #define DISPLAY64_RGB_TITLE_UNFOCUSED 0x002A3035u
 #define DISPLAY64_RGB_TASK_BUTTON 0x00252B30u
@@ -44,7 +68,22 @@
 #define DISPLAY64_RGB_FOCUS_BLUE 0x004A90E2u
 #define DISPLAY64_RGB_TEXT_PRIMARY 0x00F0F0F2u
 #define DISPLAY64_RGB_TEXT_SECONDARY 0x009A9AA8u
+#define DISPLAY64_RGB_TEXT_MUTED DISPLAY64_RGB_TEXT_SECONDARY
+#endif
 #define DISPLAY64_RGB_TEXT_ON_ACCENT 0x00FFFFFFu
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define DISPLAY64_RGB_FIELD 0x000B0F10u
+#define DISPLAY64_RGB_CLOSE 0x00D96161u
+#define DISPLAY64_RGB_APP_TERMINAL DISPLAY64_RGB_ACCENT
+#define DISPLAY64_RGB_APP_FILES DISPLAY64_RGB_FOCUS_BLUE
+#define DISPLAY64_RGB_APP_SETTINGS 0x008E76D8u
+#define DISPLAY64_RGB_APP_ASSISTANT 0x00D8A63Au
+#define DISPLAY64_RGB_APP_INSTALLER 0x00168E6Eu
+#define DISPLAY64_RGB_WARNING 0x00D8A63Au
+#define DISPLAY64_RGB_DISABLED_TEXT 0x005E6669u
+#define DISPLAY64_RGB_SHADOW 0x00060809u
+#define DISPLAY64_RGB_HIGHLIGHT 0x00313A40u
+#else
 #define DISPLAY64_RGB_FIELD 0x00161618u
 #define DISPLAY64_RGB_CLOSE 0x00D45D5Du
 #define DISPLAY64_RGB_APP_TERMINAL 0x0037B088u
@@ -54,6 +93,9 @@
 #define DISPLAY64_RGB_APP_INSTALLER 0x00B79E42u
 #define DISPLAY64_RGB_WARNING 0x00D9A441u
 #define DISPLAY64_RGB_DISABLED_TEXT 0x006E6E78u
+#define DISPLAY64_RGB_SHADOW 0x00000000u
+#define DISPLAY64_RGB_HIGHLIGHT DISPLAY64_RGB_SURFACE_BORDER
+#endif
 #define DISPLAY64_TEXT_RGB DISPLAY64_RGB_TEXT_PRIMARY
 #define DISPLAY64_PANEL_X DISPLAY64_TEXT_START_X
 #define DISPLAY64_PANEL_Y DISPLAY64_TEXT_START_Y
@@ -110,9 +152,31 @@
 #define DISPLAY64_GUI_REGION_LAUNCHER_FILEMAN 9u
 #define DISPLAY64_GUI_REGION_LAUNCHER_SETTINGS 10u
 #define DISPLAY64_GUI_REGION_LAUNCHER_ASSISTANT 11u
+#define DISPLAY64_GUI_REGION_CONTEXT_MENU 12u
+#define DISPLAY64_GUI_REGION_FILEMAN_ROW 13u
+#define DISPLAY64_GUI_REGION_SETTINGS_ROW 14u
+#define DISPLAY64_GUI_REGION_INSTALLER_ACTION 15u
+#define DISPLAY64_GUI_REGION_TERMINAL_ACTION 16u
 #define DISPLAY64_GUI_INPUT_PATH_TOKEN 0x494E5054u
 #define DISPLAY64_GUI_DISPLAY_PATH_TOKEN 0x44495350u
 #define DISPLAY64_GUI_FS_PATH_TOKEN 0x46535041u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define DISPLAY64_FILEMAN_MAX_ENTRIES 4u
+#define DISPLAY64_FILEMAN_PATH_BYTES 64u
+#define DISPLAY64_FILEMAN_EDIT_BYTES 64u
+#define DISPLAY64_FILEMAN_PREVIEW_BYTES 112u
+#define DISPLAY64_FILEMAN_PREVIEW_LINES 4u
+#define DISPLAY64_FILEMAN_NAV_UP 1u
+#define DISPLAY64_FILEMAN_NAV_ROOT 2u
+#define DISPLAY64_FILEMAN_NAV_APPS 3u
+#define DISPLAY64_FILEMAN_NAV_DATA 4u
+#define DISPLAY64_FILEMAN_NAV_NEW_NOTE 5u
+#define DISPLAY64_FILEMAN_NAV_DELETE_NOTE 6u
+#define DISPLAY64_FILEMAN_NAV_NEW_FOLDER 7u
+#define DISPLAY64_FILEMAN_NAV_RENAME 8u
+#define DISPLAY64_FILEMAN_NAV_MOVE 9u
+#define DISPLAY64_FILEMAN_NAV_COPY 10u
+#endif
 
 static struct boot_info g_display_boot_info_storage;
 static const struct boot_info *g_display_boot_info = 0;
@@ -260,6 +324,56 @@ static u32 g_display_gui_focus_after = 0u;
 static u32 g_display_gui_z_before = 0u;
 static u32 g_display_gui_z_after = 0u;
 static u32 g_display_gui_key_target_window = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_gui_right_click_count = 0u;
+static u32 g_display_gui_scroll_count = 0u;
+static u32 g_display_settings_scroll_index = 0u;
+static u32 g_display_context_menu_open = 0u;
+static u32 g_display_context_menu_x = 0u;
+static u32 g_display_context_menu_y = 0u;
+static u32 g_display_context_menu_target = 0u;
+static u32 g_display_context_menu_kind = 0u;
+static u32 g_display_fileman_selected_index = 0u;
+static u32 g_display_settings_selected_index = 0u;
+static u32 g_display_installer_step_index = 0u;
+static u32 g_display_terminal_action_count = 0u;
+static u32 g_display_fileman_action_count = 0u;
+static u32 g_display_settings_action_count = 0u;
+static u32 g_display_installer_action_count = 0u;
+static u32 g_display_fileman_entry_count = 0u;
+static u32 g_display_fileman_backend_refresh_count = 0u;
+static u32 g_display_fileman_backend_preview_count = 0u;
+static u32 g_display_fileman_backend_open_dir_count = 0u;
+static u32 g_display_fileman_backend_write_count = 0u;
+static u32 g_display_fileman_backend_write_denial_count = 0u;
+static u32 g_display_fileman_backend_delete_count = 0u;
+static u32 g_display_fileman_backend_delete_denial_count = 0u;
+static u32 g_display_fileman_backend_delete_confirm_count = 0u;
+static u32 g_display_fileman_backend_mkdir_count = 0u;
+static u32 g_display_fileman_backend_mkdir_denial_count = 0u;
+static u32 g_display_fileman_backend_copy_count = 0u;
+static u32 g_display_fileman_backend_copy_denial_count = 0u;
+static u32 g_display_fileman_backend_rename_count = 0u;
+static u32 g_display_fileman_backend_rename_denial_count = 0u;
+static u32 g_display_fileman_backend_move_count = 0u;
+static u32 g_display_fileman_backend_move_denial_count = 0u;
+static u32 g_display_fileman_backend_edit_count = 0u;
+static u32 g_display_fileman_backend_edit_commit_count = 0u;
+static u32 g_display_fileman_last_status = 0u;
+static u32 g_display_fileman_last_write_status = 0u;
+static u32 g_display_fileman_last_delete_status = 0u;
+static u32 g_display_fileman_last_mutation_status = 0u;
+static u32 g_display_fileman_delete_armed = 0u;
+static u32 g_display_fileman_edit_mode = 0u;
+static u32 g_display_fileman_edit_bytes = 0u;
+static u8 g_display_fileman_current_path[DISPLAY64_FILEMAN_PATH_BYTES];
+static u8 g_display_fileman_delete_path[DISPLAY64_FILEMAN_PATH_BYTES];
+static u8 g_display_fileman_edit_buffer[DISPLAY64_FILEMAN_EDIT_BYTES];
+static mmio64_nvme_fat_dirent_t g_display_fileman_entries[DISPLAY64_FILEMAN_MAX_ENTRIES];
+static u8 g_display_fileman_preview[DISPLAY64_FILEMAN_PREVIEW_BYTES + 1u];
+static u32 g_display_fileman_preview_bytes = 0u;
+static u32 g_display_fileman_preview_size = 0u;
+#endif
 static u32 *g_display_back_buffer = 0;
 static u64 g_display_back_buffer_pixels = 0ull;
 static u64 g_display_back_buffer_bytes = 0ull;
@@ -2031,10 +2145,20 @@ static void display64_compositor_draw_rect(u32 x, u32 y, u32 width, u32 height, 
     display64_compositor_fill_rect(x + width - 1u, y, 1u, height, rgb);
 }
 
+static u32 display64_draw_font_text(
+    u32 x,
+    u32 y,
+    const char *text,
+    u32 font_size,
+    u32 color,
+    u32 bg_color);
+
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
 static u32 display64_rgb(u32 red, u32 green, u32 blue)
 {
     return ((red & 0xFFu) << 16u) | ((green & 0xFFu) << 8u) | (blue & 0xFFu);
 }
+#endif
 
 static void display64_compositor_fill_round_rect_4(u32 x, u32 y, u32 width, u32 height, u32 rgb)
 {
@@ -2067,6 +2191,220 @@ static void display64_compositor_fill_circle_16(u32 x, u32 y, u32 rgb)
     display64_compositor_fill_rect(x + 3u, y + 14u, 10u, 1u, rgb);
     display64_compositor_fill_rect(x + 5u, y + 15u, 6u, 1u, rgb);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_compositor_draw_soft_shadow(u32 x, u32 y, u32 width, u32 height, u32 depth)
+{
+    if ((width < 8u) || (height < 8u) || (depth == 0u))
+    {
+        return;
+    }
+
+    display64_compositor_fill_round_rect_4(x + 2u, y + 2u, width, height, DISPLAY64_RGB_SHADOW);
+    if (depth > 1u)
+    {
+        display64_compositor_fill_round_rect_4(x + 4u, y + 4u, width, height, DISPLAY64_RGB_SHADOW);
+    }
+}
+
+static void display64_compositor_draw_surface(u32 x, u32 y, u32 width, u32 height, u32 fill_rgb, u32 border_rgb, u32 elevation)
+{
+    if ((width == 0u) || (height == 0u))
+    {
+        return;
+    }
+
+    display64_compositor_draw_soft_shadow(x, y, width, height, elevation);
+    if ((width < 4u) || (height < 4u))
+    {
+        display64_compositor_fill_rect(x, y, width, height, fill_rgb);
+        return;
+    }
+
+    display64_compositor_fill_round_rect_4(x, y, width, height, border_rgb);
+    display64_compositor_fill_round_rect_4(x + 1u, y + 1u, width - 2u, height - 2u, fill_rgb);
+    display64_compositor_fill_rect(x + 4u, y + 1u, width - 8u, 1u, DISPLAY64_RGB_HIGHLIGHT);
+}
+
+static void display64_compositor_draw_badge(u32 x, u32 y, u32 width, const char *text, u32 rgb)
+{
+    display64_compositor_fill_round_rect_4(x, y, width, 22u, DISPLAY64_RGB_SURFACE_BORDER);
+    display64_compositor_fill_round_rect_4(x + 1u, y + 1u, width - 2u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    display64_compositor_fill_rect(x + 5u, y + 6u, 4u, 10u, rgb);
+    (void)display64_draw_font_text(x + 14u, y + 4u, text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+}
+
+static void display64_desktop_draw_icon_glyph(u32 x, u32 y, u32 kind, u32 rgb)
+{
+    display64_compositor_fill_round_rect_4(x, y, 24u, 24u, rgb);
+
+    if (kind == 0u)
+    {
+        (void)display64_draw_font_text(x + 4u, y + 4u, ">_", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+        return;
+    }
+    if (kind == 1u)
+    {
+        display64_compositor_fill_rect(x + 5u, y + 7u, 6u, 3u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 4u, y + 10u, 16u, 9u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 5u, y + 11u, 14u, 7u, rgb);
+        return;
+    }
+    if (kind == 2u)
+    {
+        display64_compositor_fill_rect(x + 6u, y + 7u, 12u, 2u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 6u, y + 12u, 12u, 2u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 6u, y + 17u, 12u, 2u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 9u, y + 5u, 3u, 6u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 14u, y + 10u, 3u, 6u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 8u, y + 15u, 3u, 6u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        return;
+    }
+    if (kind == 3u)
+    {
+        display64_compositor_fill_rect(x + 6u, y + 6u, 12u, 10u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 8u, y + 8u, 8u, 6u, rgb);
+        display64_compositor_fill_rect(x + 8u, y + 18u, 8u, 2u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 13u, y + 14u, 2u, 5u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        display64_compositor_fill_rect(x + 15u, y + 16u, 4u, 2u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+        return;
+    }
+
+    display64_compositor_fill_rect(x + 5u, y + 7u, 14u, 10u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+    display64_compositor_fill_rect(x + 7u, y + 9u, 10u, 6u, rgb);
+    display64_compositor_fill_rect(x + 9u, y + 17u, 5u, 3u, DISPLAY64_RGB_TEXT_ON_ACCENT);
+}
+
+static void display64_desktop_draw_info_row(
+    u32 x,
+    u32 y,
+    u32 width,
+    const char *title,
+    const char *detail,
+    u32 accent_rgb)
+{
+    if (width < 24u)
+    {
+        return;
+    }
+
+    display64_compositor_draw_surface(x, y, width, 38u, DISPLAY64_RGB_SURFACE_HIGH, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    display64_compositor_fill_rect(x + 5u, y + 8u, 3u, 22u, accent_rgb);
+    (void)display64_draw_font_text(x + 14u, y + 5u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(x + 14u, y + 21u, detail, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+}
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_desktop_draw_info_row_selected(
+    u32 x,
+    u32 y,
+    u32 width,
+    const char *title,
+    const char *detail,
+    u32 accent_rgb,
+    u32 selected)
+{
+    display64_desktop_draw_info_row(x, y, width, title, detail, accent_rgb);
+    if ((selected != 0u) && (width > 4u))
+    {
+        display64_compositor_draw_rect(x + 1u, y + 1u, width - 2u, 36u, DISPLAY64_RGB_FOCUS_BLUE);
+    }
+}
+
+static const char *display64_settings_title(u32 index)
+{
+    switch (index)
+    {
+        case 0u: return "Display";
+        case 1u: return "Storage";
+        case 2u: return "Network";
+        case 3u: return "Session";
+        case 4u: return "Installer";
+        case 5u: return "Identity";
+        case 6u: return "Identity transport";
+        case 7u: return "Account";
+        case 8u: return "Cloud storage";
+        case 9u: return "AI policy";
+        default: return "Package Trust";
+    }
+}
+
+static const char *display64_settings_detail(u32 index)
+{
+    switch (index)
+    {
+        case 0u: return "geometry, scale, readability";
+        case 1u: return "RAMFS and NVME FAT status";
+        case 2u: return "brokered DHCP DNS HTTP";
+        case 3u: return "seat, input, display, fs caps";
+        case 4u: return "dry-run only, writes disabled";
+        case 5u: return "local identity metadata";
+        case 6u: return "transport unavailable";
+        case 7u: return "local-only account state";
+        case 8u: return "sync/upload denied";
+        case 9u: return "templates require consent";
+        default: return "signed package inventory";
+    }
+}
+
+static u32 display64_settings_accent(u32 index)
+{
+    switch (index)
+    {
+        case 0u: return DISPLAY64_RGB_FOCUS_BLUE;
+        case 1u: return DISPLAY64_RGB_APP_FILES;
+        case 2u: return DISPLAY64_RGB_ACCENT;
+        case 4u: return DISPLAY64_RGB_APP_INSTALLER;
+        case 5u:
+        case 6u:
+        case 7u: return DISPLAY64_RGB_APP_SETTINGS;
+        case 8u: return DISPLAY64_RGB_DISABLED_TEXT;
+        case 9u: return DISPLAY64_RGB_APP_ASSISTANT;
+        case 10u: return DISPLAY64_RGB_WARNING;
+        default: return DISPLAY64_RGB_TEXT_SECONDARY;
+    }
+}
+
+static void display64_desktop_draw_settings_summary(
+    u32 body_x,
+    u32 body_y,
+    u32 width)
+{
+    u32 row_index;
+    u32 visible_row = 0u;
+    u32 start = g_display_settings_scroll_index;
+    u32 row_count = 11u;
+    u32 row_h = 44u;
+    u32 row_w = (width > 32u) ? (width - 32u) : width;
+
+    if (start >= row_count)
+    {
+        start = 0u;
+        g_display_settings_scroll_index = 0u;
+    }
+
+    (void)display64_draw_font_text(body_x, body_y, "Settings", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(body_x + 96u, body_y - 4u, 94u, "Product", DISPLAY64_RGB_ACCENT);
+    for (row_index = start; (row_index < row_count) && (visible_row < 6u); ++row_index)
+    {
+        u32 row_y = body_y + 28u + (visible_row * row_h);
+        display64_desktop_draw_info_row_selected(
+            body_x,
+            row_y,
+            row_w,
+            display64_settings_title(row_index),
+            display64_settings_detail(row_index),
+            display64_settings_accent(row_index),
+            (row_index == g_display_settings_selected_index) ? 1u : 0u);
+        ++visible_row;
+    }
+
+    display64_compositor_fill_round_rect_4(body_x, body_y + 308u, 72u, 24u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(body_x + 18u, body_y + 313u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(body_x + 84u, body_y + 309u, 116u, display64_settings_title(g_display_settings_selected_index), display64_settings_accent(g_display_settings_selected_index));
+}
+#endif
+#endif
 
 static u32 display64_string_length(const char *text)
 {
@@ -2128,12 +2466,20 @@ static u32 display64_font_width(u32 font_size)
 {
     if (font_size == DISPLAY64_FONT_LARGE)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return 14u;
+#else
         return 16u;
+#endif
     }
 
     if (font_size == DISPLAY64_FONT_NORMAL)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return 7u;
+#else
         return 8u;
+#endif
     }
 
     return 5u;
@@ -2143,12 +2489,20 @@ static u32 display64_font_height(u32 font_size)
 {
     if (font_size == DISPLAY64_FONT_LARGE)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return 28u;
+#else
         return 32u;
+#endif
     }
 
     if (font_size == DISPLAY64_FONT_NORMAL)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return 14u;
+#else
         return 16u;
+#endif
     }
 
     return 7u;
@@ -2455,10 +2809,12 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     u32 button_y;
     u32 button_text_x;
     u32 button_text_y;
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
     u32 inset;
     u32 red;
     u32 green;
     u32 blue;
+#endif
 
     if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
     {
@@ -2475,7 +2831,26 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     password_y = panel_y + 246u;
     button_y = panel_y + 286u;
 
-    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, 0x000E0E10u);
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, DISPLAY64_RGB_DESKTOP_BG);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, 4u, DISPLAY64_RGB_ACCENT);
+    display64_compositor_draw_surface(panel_x, panel_y, panel_w, panel_h, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 2u);
+    display64_compositor_draw_badge(panel_x + 34u, panel_y + 78u, 104u, "Local auth", DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 108u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 132u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+
+    (void)display64_draw_font_text(field_x, panel_y + 166u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_surface(field_x, username_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "limitless", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+
+    (void)display64_draw_font_text(field_x, panel_y + 226u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_FOCUS_BLUE, 0u);
+    display64_compositor_fill_rect(field_x + 1u, password_y + 1u, field_w - 2u, 2u, DISPLAY64_RGB_FOCUS_BLUE);
+    (void)display64_draw_font_text(field_x + 12u, password_y + 7u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+
+    display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 34u, DISPLAY64_RGB_ACCENT);
+#else
     inset = 8u;
     red = 0x10u;
     green = 0x10u;
@@ -2513,6 +2888,7 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     (void)display64_draw_font_text(field_x + 10u, password_y + 6u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
     display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 32u, DISPLAY64_RGB_ACCENT);
+#endif
     button_text_x = (field_w > display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL))
         ? (field_x + ((field_w - display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL)) / 2u))
         : field_x;
@@ -2876,6 +3252,12 @@ static void display64_wm_destroy_window(u32 handle)
     {
         g_display_desktop_installer_handle = 0u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (handle == g_display_desktop_assistant_handle)
+    {
+        g_display_desktop_assistant_handle = 0u;
+    }
+#endif
     if (handle == g_display_wm_shell_handle)
     {
         g_display_wm_shell_handle = 0u;
@@ -2902,6 +3284,47 @@ static void display64_wm_present_window(u32 handle)
         return;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    title_rgb = (window->focused != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_TITLE_UNFOCUSED;
+    display64_compositor_draw_surface(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, (window->focused != 0u) ? 2u : 1u);
+    display64_compositor_fill_rect(
+        window->x + DISPLAY64_WM_BORDER,
+        window->y + DISPLAY64_WM_BORDER,
+        window->width - (DISPLAY64_WM_BORDER * 2u),
+        DISPLAY64_WM_TITLE_HEIGHT - DISPLAY64_WM_BORDER,
+        title_rgb);
+    if (window->focused != 0u)
+    {
+        display64_compositor_fill_rect(window->x + 8u, window->y + 1u, window->width - 16u, 2u, DISPLAY64_RGB_ACCENT);
+    }
+    display64_compositor_fill_rect(
+        window->x + DISPLAY64_WM_BORDER,
+        window->y + DISPLAY64_WM_TITLE_HEIGHT,
+        window->width - (DISPLAY64_WM_BORDER * 2u),
+        1u,
+        DISPLAY64_RGB_SURFACE_BORDER);
+    content_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + DISPLAY64_WM_BORDER;
+    content_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + (DISPLAY64_WM_BORDER * 2u)))
+        ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - (DISPLAY64_WM_BORDER * 2u))
+        : 0u;
+    display64_compositor_fill_rect(
+        window->x + DISPLAY64_WM_BORDER,
+        content_y,
+        window->width - (DISPLAY64_WM_BORDER * 2u),
+        content_h,
+        DISPLAY64_RGB_CONTENT);
+    (void)display64_draw_font_text(
+        window->x + 12u,
+        window->y + ((DISPLAY64_WM_TITLE_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u),
+        window->title,
+        DISPLAY64_FONT_NORMAL,
+        DISPLAY64_RGB_TEXT_PRIMARY,
+        DISPLAY64_FONT_TRANSPARENT);
+    close_x = (window->width > 32u) ? (window->x + window->width - 24u) : window->x;
+    close_y = window->y + ((DISPLAY64_WM_TITLE_HEIGHT - 16u) / 2u);
+    display64_compositor_fill_circle_16(close_x, close_y, DISPLAY64_RGB_SURFACE_BORDER);
+    (void)display64_draw_font_text(close_x + 5u, close_y + 4u, "X", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_CLOSE, DISPLAY64_FONT_TRANSPARENT);
+#else
     title_rgb = (window->focused != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TITLE_UNFOCUSED;
     display64_compositor_fill_rect(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE);
     display64_compositor_draw_rect(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE_BORDER);
@@ -2938,6 +3361,7 @@ static void display64_wm_present_window(u32 handle)
     close_y = window->y + ((DISPLAY64_WM_TITLE_HEIGHT - 16u) / 2u);
     display64_compositor_fill_circle_16(close_x, close_y, DISPLAY64_RGB_CLOSE);
     (void)display64_draw_font_text(close_x + 5u, close_y + 4u, "X", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+#endif
     ++g_display_wm_present_count;
 }
 
@@ -3004,11 +3428,16 @@ static void display64_desktop_draw_launcher_button(u32 x, u32 y)
             DISPLAY64_DESKTOP_LAUNCHER_BUTTON_HEIGHT))
         ? 1u
         : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    bg_rgb = (active != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_TASK_BUTTON;
+    dot_rgb = (active != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TEXT_SECONDARY;
+    display64_compositor_draw_surface(x, y, 28u, 24u, bg_rgb, DISPLAY64_RGB_TASK_BUTTON_BORDER, 0u);
+#else
     bg_rgb = (active != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TASK_BUTTON;
     dot_rgb = (active != 0u) ? DISPLAY64_RGB_TEXT_ON_ACCENT : DISPLAY64_RGB_TEXT_PRIMARY;
-
     display64_compositor_fill_round_rect_4(x, y, 28u, 24u, DISPLAY64_RGB_TASK_BUTTON_BORDER);
     display64_compositor_fill_round_rect_4(x + 1u, y + 1u, 26u, 22u, bg_rgb);
+#endif
     for (row = 0u; row < 3u; ++row)
     {
         for (column = 0u; column < 3u; ++column)
@@ -3025,6 +3454,23 @@ static void display64_desktop_draw_launcher_button(u32 x, u32 y)
 
 static void display64_desktop_draw_window_button(u32 x, u32 y, const char *title, u32 active)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 bg_rgb = (active != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_TASK_BUTTON;
+    u32 text_rgb = (active != 0u) ? DISPLAY64_RGB_TEXT_PRIMARY : DISPLAY64_RGB_TEXT_SECONDARY;
+
+    display64_compositor_draw_surface(
+        x,
+        y,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH,
+        DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT,
+        bg_rgb,
+        DISPLAY64_RGB_TASK_BUTTON_BORDER,
+        0u);
+    if (active != 0u)
+    {
+        display64_compositor_fill_rect(x + 8u, y + DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT - 3u, DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH - 16u, 2u, DISPLAY64_RGB_ACCENT);
+    }
+#else
     u32 bg_rgb = (active != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TASK_BUTTON;
     u32 text_rgb = (active != 0u) ? DISPLAY64_RGB_TEXT_ON_ACCENT : DISPLAY64_RGB_TEXT_PRIMARY;
 
@@ -3040,6 +3486,7 @@ static void display64_desktop_draw_window_button(u32 x, u32 y, const char *title
         DISPLAY64_DESKTOP_WINDOW_BUTTON_WIDTH - 2u,
         DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT - 2u,
         bg_rgb);
+#endif
     (void)display64_draw_font_text(
         x + 8u,
         y + ((DISPLAY64_DESKTOP_WINDOW_BUTTON_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u),
@@ -3066,8 +3513,13 @@ static void display64_desktop_draw_taskbar(void)
         return;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, DISPLAY64_DESKTOP_TASKBAR_HEIGHT, DISPLAY64_RGB_BAR_BG);
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, 1u, DISPLAY64_RGB_HIGHLIGHT);
+#else
     display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, DISPLAY64_DESKTOP_TASKBAR_HEIGHT, DISPLAY64_RGB_BAR_BG);
     display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, 1u, DISPLAY64_RGB_SURFACE_BORDER);
+#endif
     display64_desktop_draw_launcher_button(DISPLAY64_DESKTOP_LAUNCHER_BUTTON_X, y + 4u);
     clock_x = (g_display_boot_info->framebuffer_width > 96u)
         ? (g_display_boot_info->framebuffer_width - 96u)
@@ -3122,11 +3574,18 @@ static void display64_desktop_draw_launcher_entry(
     u32 row_w,
     u32 row_h,
     u32 icon_rgb,
+    u32 icon_kind,
     const char *letter,
     const char *name)
 {
     u32 icon_x = row_x + 4u;
     u32 icon_y = row_y + 4u;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)letter;
+#else
+    (void)icon_kind;
+#endif
 
     if (display64_point_in_rect(
             g_display_compositor_cursor_x,
@@ -3136,11 +3595,19 @@ static void display64_desktop_draw_launcher_entry(
             row_w,
             row_h))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        display64_compositor_fill_round_rect_4(row_x, row_y, row_w, row_h, DISPLAY64_RGB_POPOVER_HOVER);
+#else
         display64_compositor_fill_rect(row_x, row_y, row_w, row_h, DISPLAY64_RGB_POPOVER_HOVER);
+#endif
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_desktop_draw_icon_glyph(icon_x, icon_y, icon_kind, icon_rgb);
+#else
     display64_compositor_fill_rect(icon_x, icon_y, 24u, 24u, icon_rgb);
     (void)display64_draw_font_text(icon_x + 8u, icon_y + 4u, letter, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+#endif
     (void)display64_draw_font_text(row_x + 36u, row_y + 8u, name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 }
 
@@ -3148,19 +3615,873 @@ static void display64_desktop_draw_launcher_panel(void)
 {
     u32 panel_y = display64_desktop_launcher_panel_y();
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_compositor_draw_surface(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 2u);
+#else
     display64_compositor_fill_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, DISPLAY64_RGB_SURFACE);
     display64_compositor_draw_rect(12u, panel_y, DISPLAY64_DESKTOP_LAUNCHER_WIDTH, DISPLAY64_DESKTOP_LAUNCHER_HEIGHT, DISPLAY64_RGB_SURFACE_BORDER);
+#endif
     (void)display64_draw_font_text(20u, panel_y + 10u, "Apps", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_desktop_draw_launcher_entry(24u, panel_y + 36u, 92u, 32u, DISPLAY64_RGB_APP_TERMINAL, "T", "Terminal");
-    display64_desktop_draw_launcher_entry(24u, panel_y + 72u, 92u, 32u, DISPLAY64_RGB_APP_FILES, "F", "Files");
-    display64_desktop_draw_launcher_entry(120u, panel_y + 36u, 96u, 32u, DISPLAY64_RGB_APP_SETTINGS, "S", "Settings");
-    display64_desktop_draw_launcher_entry(120u, panel_y + 72u, 96u, 32u, DISPLAY64_RGB_APP_INSTALLER, "I", "Installer");
-    display64_desktop_draw_launcher_entry(24u, panel_y + 108u, 192u, 32u, DISPLAY64_RGB_APP_ASSISTANT, "A", "Assistant");
+    display64_desktop_draw_launcher_entry(24u, panel_y + 36u, 92u, 32u, DISPLAY64_RGB_APP_TERMINAL, 0u, "T", "Terminal");
+    display64_desktop_draw_launcher_entry(24u, panel_y + 72u, 92u, 32u, DISPLAY64_RGB_APP_FILES, 1u, "F", "Files");
+    display64_desktop_draw_launcher_entry(120u, panel_y + 36u, 96u, 32u, DISPLAY64_RGB_APP_SETTINGS, 2u, "S", "Settings");
+    display64_desktop_draw_launcher_entry(120u, panel_y + 72u, 96u, 32u, DISPLAY64_RGB_APP_INSTALLER, 3u, "I", "Installer");
+    display64_desktop_draw_launcher_entry(24u, panel_y + 108u, 192u, 32u, DISPLAY64_RGB_APP_ASSISTANT, 4u, "A", "Assistant");
     if (g_display_desktop_launcher_count == 0u)
     {
         ++g_display_desktop_launcher_count;
     }
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_fileman_zero(void *address, u32 byte_count)
+{
+    u8 *bytes = (u8 *)address;
+    u32 index;
+
+    for (index = 0u; index < byte_count; ++index)
+    {
+        bytes[index] = 0u;
+    }
+}
+
+static u32 display64_fileman_copy_cstr(u8 *destination, u32 capacity, const char *source)
+{
+    u32 index = 0u;
+
+    if ((destination == (u8 *)0) || (capacity == 0u) || (source == (const char *)0))
+    {
+        return 0u;
+    }
+
+    while ((index + 1u) < capacity && source[index] != '\0')
+    {
+        destination[index] = (u8)source[index];
+        ++index;
+    }
+    destination[index] = 0u;
+    return index;
+}
+
+static u32 display64_fileman_cstr_bytes(const u8 *text, u32 capacity)
+{
+    u32 index = 0u;
+
+    if (text == (const u8 *)0)
+    {
+        return 0u;
+    }
+
+    while ((index < capacity) && (text[index] != 0u))
+    {
+        ++index;
+    }
+
+    return index;
+}
+
+static void display64_fileman_clear_delete_confirm(void)
+{
+    g_display_fileman_delete_armed = 0u;
+    display64_fileman_zero(g_display_fileman_delete_path, sizeof(g_display_fileman_delete_path));
+}
+
+static void display64_fileman_clear_edit(void)
+{
+    g_display_fileman_edit_mode = 0u;
+    g_display_fileman_edit_bytes = 0u;
+    display64_fileman_zero(g_display_fileman_edit_buffer, sizeof(g_display_fileman_edit_buffer));
+}
+
+static u32 display64_fileman_copy_bytes(u8 *destination, u32 capacity, const u8 *source, u32 source_bytes)
+{
+    u32 index;
+
+    if ((destination == (u8 *)0) || (source == (const u8 *)0) || (capacity == 0u))
+    {
+        return 0u;
+    }
+
+    display64_fileman_zero(destination, capacity);
+    for (index = 0u; (index < source_bytes) && (index < (capacity - 1u)); ++index)
+    {
+        destination[index] = source[index];
+    }
+    destination[index] = 0u;
+    return index;
+}
+
+static u32 display64_fileman_path_matches(const u8 *left, const u8 *right, u32 capacity)
+{
+    u32 index;
+
+    if ((left == (const u8 *)0) || (right == (const u8 *)0))
+    {
+        return 0u;
+    }
+    for (index = 0u; index < capacity; ++index)
+    {
+        if (left[index] != right[index])
+        {
+            return 0u;
+        }
+        if (left[index] == 0u)
+        {
+            return 1u;
+        }
+    }
+    return 1u;
+}
+
+static void display64_desktop_redraw(void);
+
+static void display64_fileman_begin_edit(u32 mode, const u8 *default_text, u32 default_bytes)
+{
+    g_display_fileman_edit_mode = mode;
+    g_display_fileman_last_mutation_status = 7u;
+    g_display_fileman_edit_bytes = display64_fileman_copy_bytes(
+        g_display_fileman_edit_buffer,
+        sizeof(g_display_fileman_edit_buffer),
+        default_text,
+        default_bytes);
+    display64_fileman_clear_delete_confirm();
+    ++g_display_fileman_backend_edit_count;
+}
+
+static void display64_fileman_set_path(const char *path)
+{
+    (void)display64_fileman_copy_cstr(g_display_fileman_current_path, sizeof(g_display_fileman_current_path), path);
+    g_display_fileman_selected_index = 0u;
+    g_display_fileman_preview_bytes = 0u;
+    g_display_fileman_preview_size = 0u;
+    g_display_fileman_preview[0] = 0u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_clear_edit();
+}
+
+static void display64_fileman_ensure_path(void)
+{
+    if (g_display_fileman_current_path[0] == 0u)
+    {
+        display64_fileman_set_path("/APPS");
+    }
+}
+
+static u32 display64_fileman_build_child_path(u8 *destination, u32 capacity, const mmio64_nvme_fat_dirent_t *entry)
+{
+    u32 path_bytes;
+    u32 name_index;
+    u32 cursor = 0u;
+
+    if ((destination == (u8 *)0) || (capacity < 2u) || (entry == (const mmio64_nvme_fat_dirent_t *)0))
+    {
+        return 0u;
+    }
+
+    path_bytes = display64_fileman_cstr_bytes(g_display_fileman_current_path, sizeof(g_display_fileman_current_path));
+    if (path_bytes == 0u)
+    {
+        return 0u;
+    }
+
+    display64_fileman_zero(destination, capacity);
+    while ((cursor < path_bytes) && ((cursor + 1u) < capacity))
+    {
+        destination[cursor] = g_display_fileman_current_path[cursor];
+        ++cursor;
+    }
+
+    if ((cursor > 1u) && (destination[cursor - 1u] != (u8)'/'))
+    {
+        if ((cursor + 1u) >= capacity)
+        {
+            return 0u;
+        }
+        destination[cursor] = (u8)'/';
+        ++cursor;
+    }
+
+    for (name_index = 0u;
+         (name_index < entry->name_byte_count)
+            && (name_index < MMIO64_NVME_FAT_DIRENT_NAME_MAX)
+            && ((cursor + 1u) < capacity);
+         ++name_index)
+    {
+        destination[cursor] = entry->name[name_index];
+        ++cursor;
+    }
+
+    destination[cursor] = 0u;
+    return cursor;
+}
+
+static void display64_fileman_parent_path(void)
+{
+    u32 path_bytes;
+
+    display64_fileman_ensure_path();
+    path_bytes = display64_fileman_cstr_bytes(g_display_fileman_current_path, sizeof(g_display_fileman_current_path));
+    if (path_bytes <= 1u)
+    {
+        display64_fileman_set_path("/");
+        return;
+    }
+
+    while ((path_bytes > 1u) && (g_display_fileman_current_path[path_bytes - 1u] == (u8)'/'))
+    {
+        --path_bytes;
+    }
+    while ((path_bytes > 1u) && (g_display_fileman_current_path[path_bytes - 1u] != (u8)'/'))
+    {
+        --path_bytes;
+    }
+    if (path_bytes <= 1u)
+    {
+        display64_fileman_set_path("/");
+        return;
+    }
+
+    g_display_fileman_current_path[path_bytes - 1u] = 0u;
+    g_display_fileman_selected_index = 0u;
+    g_display_fileman_preview_bytes = 0u;
+    g_display_fileman_preview_size = 0u;
+    g_display_fileman_preview[0] = 0u;
+}
+
+static const char *display64_fileman_type_text(u32 entry_type)
+{
+    if (entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+    {
+        return "directory";
+    }
+    if (entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        return "file";
+    }
+
+    return "entry";
+}
+
+static void display64_fileman_refresh(void)
+{
+    u32 cursor = 0u;
+    u32 index;
+    u32 result;
+
+    display64_fileman_ensure_path();
+    display64_fileman_zero(g_display_fileman_entries, sizeof(g_display_fileman_entries));
+    g_display_fileman_entry_count = 0u;
+    g_display_fileman_last_status = 0u;
+
+    if ((mmio64_nvme_fat_located() == 0u) || (mmio64_nvme_fat_unavailable() != 0u) || (mmio64_nvme_fat_error() != 0u))
+    {
+        g_display_fileman_last_status = 1u;
+        return;
+    }
+
+    for (index = 0u; index < DISPLAY64_FILEMAN_MAX_ENTRIES; ++index)
+    {
+        result = mmio64_nvme_fat_shell_read_dirent(
+            g_display_fileman_current_path,
+            display64_fileman_cstr_bytes(g_display_fileman_current_path, sizeof(g_display_fileman_current_path)),
+            cursor,
+            PRINCIPAL64_ID_CONSOLE_CLIENT,
+            &g_display_fileman_entries[index]);
+        if (result == MMIO64_NVME_FAT_READDIR_EOF)
+        {
+            break;
+        }
+        if (result != MMIO64_NVME_FAT_READDIR_OK)
+        {
+            g_display_fileman_last_status = 2u;
+            break;
+        }
+        ++g_display_fileman_entry_count;
+        cursor = g_display_fileman_entries[index].next_cursor;
+        if (cursor == 0u)
+        {
+            break;
+        }
+    }
+
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        g_display_fileman_selected_index = 0u;
+    }
+
+    ++g_display_fileman_backend_refresh_count;
+}
+
+static void display64_fileman_preview_selected(void)
+{
+    u8 path[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 path_bytes;
+    u32 index;
+
+    g_display_fileman_preview_bytes = 0u;
+    g_display_fileman_preview_size = 0u;
+    g_display_fileman_preview[0] = 0u;
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if ((entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+        && (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
+    {
+        return;
+    }
+
+    path_bytes = display64_fileman_build_child_path(path, sizeof(path), entry);
+    if (path_bytes == 0u)
+    {
+        return;
+    }
+
+    if (mmio64_nvme_fat_shell_read_file_range(
+            path,
+            path_bytes,
+            0u,
+            g_display_fileman_preview,
+            DISPLAY64_FILEMAN_PREVIEW_BYTES,
+            PRINCIPAL64_ID_CONSOLE_CLIENT,
+            &g_display_fileman_preview_bytes,
+            &g_display_fileman_preview_size) == 0u)
+    {
+        g_display_fileman_preview_bytes = 0u;
+        g_display_fileman_preview_size = 0u;
+        g_display_fileman_preview[0] = 0u;
+        return;
+    }
+
+    for (index = 0u; index < g_display_fileman_preview_bytes; ++index)
+    {
+        if ((g_display_fileman_preview[index] < 0x20u) || (g_display_fileman_preview[index] > 0x7Eu))
+        {
+            g_display_fileman_preview[index] = (u8)' ';
+        }
+    }
+    g_display_fileman_preview[g_display_fileman_preview_bytes] = 0u;
+    ++g_display_fileman_backend_preview_count;
+}
+
+static void display64_fileman_open_selected_if_directory(void)
+{
+    u8 path[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 path_bytes;
+
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+    {
+        display64_fileman_preview_selected();
+        return;
+    }
+
+    path_bytes = display64_fileman_build_child_path(path, sizeof(path), entry);
+    if (path_bytes == 0u)
+    {
+        return;
+    }
+
+    display64_fileman_zero(g_display_fileman_current_path, sizeof(g_display_fileman_current_path));
+    for (g_display_fileman_selected_index = 0u;
+         (g_display_fileman_selected_index < path_bytes) && (g_display_fileman_selected_index < (sizeof(g_display_fileman_current_path) - 1u));
+         ++g_display_fileman_selected_index)
+    {
+        g_display_fileman_current_path[g_display_fileman_selected_index] = path[g_display_fileman_selected_index];
+    }
+    g_display_fileman_current_path[g_display_fileman_selected_index] = 0u;
+    g_display_fileman_selected_index = 0u;
+    g_display_fileman_preview_bytes = 0u;
+    g_display_fileman_preview_size = 0u;
+    g_display_fileman_preview[0] = 0u;
+    ++g_display_fileman_backend_open_dir_count;
+    display64_fileman_refresh();
+}
+
+static u32 display64_fileman_build_current_named_path(
+    u8 *destination,
+    u32 capacity,
+    const u8 *name,
+    u32 name_bytes)
+{
+    u32 path_bytes;
+    u32 cursor = 0u;
+    u32 name_index;
+
+    if ((destination == (u8 *)0)
+        || (name == (const u8 *)0)
+        || (name_bytes == 0u)
+        || (capacity < (name_bytes + 2u)))
+    {
+        return 0u;
+    }
+
+    display64_fileman_ensure_path();
+    path_bytes = display64_fileman_cstr_bytes(g_display_fileman_current_path, sizeof(g_display_fileman_current_path));
+    if (path_bytes == 0u)
+    {
+        return 0u;
+    }
+
+    display64_fileman_zero(destination, capacity);
+    while ((cursor < path_bytes) && ((cursor + 1u) < capacity))
+    {
+        destination[cursor] = g_display_fileman_current_path[cursor];
+        ++cursor;
+    }
+    if ((cursor > 1u) && (destination[cursor - 1u] != (u8)'/'))
+    {
+        if ((cursor + 1u) >= capacity)
+        {
+            return 0u;
+        }
+        destination[cursor++] = (u8)'/';
+    }
+    for (name_index = 0u; name_index < name_bytes; ++name_index)
+    {
+        if ((cursor + 1u) >= capacity)
+        {
+            return 0u;
+        }
+        destination[cursor++] = name[name_index];
+    }
+    destination[cursor] = 0u;
+    return cursor;
+}
+
+static u32 display64_fileman_build_edit_target_path(u8 *destination, u32 capacity)
+{
+    u32 index;
+
+    if ((destination == (u8 *)0)
+        || (capacity == 0u)
+        || (g_display_fileman_edit_bytes == 0u))
+    {
+        return 0u;
+    }
+    if (g_display_fileman_edit_buffer[0] == (u8)'/')
+    {
+        display64_fileman_zero(destination, capacity);
+        for (index = 0u;
+             (index < g_display_fileman_edit_bytes) && ((index + 1u) < capacity);
+             ++index)
+        {
+            destination[index] = g_display_fileman_edit_buffer[index];
+        }
+        destination[index] = 0u;
+        return (index == g_display_fileman_edit_bytes) ? index : 0u;
+    }
+
+    return display64_fileman_build_current_named_path(
+        destination,
+        capacity,
+        g_display_fileman_edit_buffer,
+        g_display_fileman_edit_bytes);
+}
+
+static u32 display64_fileman_build_current_note_path(u8 *destination, u32 capacity)
+{
+    static const u8 note_name[] = "GUI-NOTE.TXT";
+
+    return display64_fileman_build_current_named_path(
+        destination,
+        capacity,
+        note_name,
+        (u32)(sizeof(note_name) - 1u));
+}
+
+static void display64_fileman_write_note(void)
+{
+    static const u8 note_data[] =
+        "LimitlessOS Product GUI note\n"
+        "Created through the brokered NVMe FAT File Manager.\n";
+    u8 note_path[DISPLAY64_FILEMAN_PATH_BYTES];
+    u32 path_bytes;
+
+    path_bytes = display64_fileman_build_current_note_path(note_path, sizeof(note_path));
+    g_display_fileman_last_write_status = 0u;
+    if ((path_bytes != 0u)
+        && (mmio64_nvme_fat_shell_write_file(
+            note_path,
+            path_bytes,
+            note_data,
+            (u32)(sizeof(note_data) - 1u),
+            PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u))
+    {
+        ++g_display_fileman_backend_write_count;
+        g_display_fileman_last_write_status = 1u;
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_write_denial_count;
+    g_display_fileman_last_write_status = 2u;
+    display64_fileman_refresh();
+}
+
+static void display64_fileman_delete_selected(void)
+{
+    u8 path[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 path_bytes;
+
+    g_display_fileman_last_delete_status = 0u;
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        ++g_display_fileman_backend_delete_denial_count;
+        g_display_fileman_last_delete_status = 2u;
+        display64_fileman_clear_delete_confirm();
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        ++g_display_fileman_backend_delete_denial_count;
+        g_display_fileman_last_delete_status = 2u;
+        display64_fileman_clear_delete_confirm();
+        return;
+    }
+
+    path_bytes = display64_fileman_build_child_path(path, sizeof(path), entry);
+    if (path_bytes == 0u)
+    {
+        ++g_display_fileman_backend_delete_denial_count;
+        g_display_fileman_last_delete_status = 2u;
+        display64_fileman_clear_delete_confirm();
+        return;
+    }
+
+    if ((g_display_fileman_delete_armed == 0u)
+        || (display64_fileman_path_matches(path, g_display_fileman_delete_path, sizeof(path)) == 0u))
+    {
+        (void)display64_fileman_copy_bytes(g_display_fileman_delete_path, sizeof(g_display_fileman_delete_path), path, path_bytes);
+        g_display_fileman_delete_armed = 1u;
+        g_display_fileman_last_delete_status = 3u;
+        ++g_display_fileman_backend_delete_confirm_count;
+        return;
+    }
+
+    if (mmio64_nvme_fat_shell_delete_file(
+            path,
+            path_bytes,
+            PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u)
+    {
+        ++g_display_fileman_backend_delete_count;
+        g_display_fileman_last_delete_status = 1u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_delete_denial_count;
+    g_display_fileman_last_delete_status = 2u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_refresh();
+}
+
+static void display64_fileman_create_folder(void)
+{
+    static const u8 folder_name[] = "GUI-DIR";
+
+    display64_fileman_begin_edit(1u, folder_name, (u32)(sizeof(folder_name) - 1u));
+}
+
+static void display64_fileman_commit_create_folder(void)
+{
+    u8 path[DISPLAY64_FILEMAN_PATH_BYTES];
+    u32 path_bytes;
+
+    g_display_fileman_last_mutation_status = 0u;
+    path_bytes = display64_fileman_build_edit_target_path(path, sizeof(path));
+    if ((path_bytes != 0u)
+        && (mmio64_nvme_fat_shell_mkdir(
+                path,
+                path_bytes,
+                PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u))
+    {
+        ++g_display_fileman_backend_mkdir_count;
+        g_display_fileman_last_mutation_status = 1u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_mkdir_denial_count;
+    g_display_fileman_last_mutation_status = 2u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_clear_edit();
+    display64_fileman_refresh();
+}
+
+static void display64_fileman_rename_selected(void)
+{
+    static const u8 renamed_name[] = "RENAMED.TXT";
+
+    display64_fileman_begin_edit(2u, renamed_name, (u32)(sizeof(renamed_name) - 1u));
+}
+
+static void display64_fileman_commit_rename_selected(void)
+{
+    u8 source[DISPLAY64_FILEMAN_PATH_BYTES];
+    u8 destination[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 source_bytes;
+    u32 destination_bytes;
+
+    g_display_fileman_last_mutation_status = 0u;
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        ++g_display_fileman_backend_rename_denial_count;
+        g_display_fileman_last_mutation_status = 4u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        ++g_display_fileman_backend_rename_denial_count;
+        g_display_fileman_last_mutation_status = 4u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    source_bytes = display64_fileman_build_child_path(source, sizeof(source), entry);
+    destination_bytes = display64_fileman_build_edit_target_path(destination, sizeof(destination));
+    if ((source_bytes != 0u)
+        && (destination_bytes != 0u)
+        && (mmio64_nvme_fat_shell_rename_file(
+                source,
+                source_bytes,
+                destination,
+                destination_bytes,
+                PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u))
+    {
+        ++g_display_fileman_backend_rename_count;
+        g_display_fileman_last_mutation_status = 3u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_rename_denial_count;
+    g_display_fileman_last_mutation_status = 4u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_clear_edit();
+    display64_fileman_refresh();
+}
+
+static void display64_fileman_move_selected_to_data(void)
+{
+    static const u8 destination[] = "/APPS/DATA/MOVED.TXT";
+
+    display64_fileman_begin_edit(3u, destination, (u32)(sizeof(destination) - 1u));
+}
+
+static void display64_fileman_copy_selected_to_data(void)
+{
+    static const u8 destination[] = "/APPS/DATA/COPY.TXT";
+
+    display64_fileman_begin_edit(4u, destination, (u32)(sizeof(destination) - 1u));
+}
+
+static void display64_fileman_commit_move_selected(void)
+{
+    u8 source[DISPLAY64_FILEMAN_PATH_BYTES];
+    u8 destination[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 source_bytes;
+    u32 destination_bytes;
+
+    g_display_fileman_last_mutation_status = 0u;
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        ++g_display_fileman_backend_move_denial_count;
+        g_display_fileman_last_mutation_status = 6u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        ++g_display_fileman_backend_move_denial_count;
+        g_display_fileman_last_mutation_status = 6u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    source_bytes = display64_fileman_build_child_path(source, sizeof(source), entry);
+    destination_bytes = display64_fileman_build_edit_target_path(destination, sizeof(destination));
+    if ((source_bytes != 0u)
+        && (destination_bytes != 0u)
+        && (mmio64_nvme_fat_shell_move_file(
+                source,
+                source_bytes,
+                destination,
+                destination_bytes,
+                PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u))
+    {
+        ++g_display_fileman_backend_move_count;
+        g_display_fileman_last_mutation_status = 5u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_move_denial_count;
+    g_display_fileman_last_mutation_status = 6u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_clear_edit();
+    display64_fileman_refresh();
+}
+
+static void display64_fileman_commit_copy_selected(void)
+{
+    u8 source[DISPLAY64_FILEMAN_PATH_BYTES];
+    u8 destination[DISPLAY64_FILEMAN_PATH_BYTES];
+    mmio64_nvme_fat_dirent_t *entry;
+    u32 source_bytes;
+    u32 destination_bytes;
+
+    g_display_fileman_last_mutation_status = 0u;
+    if (g_display_fileman_selected_index >= g_display_fileman_entry_count)
+    {
+        ++g_display_fileman_backend_copy_denial_count;
+        g_display_fileman_last_mutation_status = 9u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    entry = &g_display_fileman_entries[g_display_fileman_selected_index];
+    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        ++g_display_fileman_backend_copy_denial_count;
+        g_display_fileman_last_mutation_status = 9u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        return;
+    }
+
+    source_bytes = display64_fileman_build_child_path(source, sizeof(source), entry);
+    destination_bytes = display64_fileman_build_edit_target_path(destination, sizeof(destination));
+    if ((source_bytes != 0u)
+        && (destination_bytes != 0u)
+        && (mmio64_nvme_fat_shell_copy_file(
+                source,
+                source_bytes,
+                destination,
+                destination_bytes,
+                PRINCIPAL64_ID_CONSOLE_CLIENT) != 0u))
+    {
+        ++g_display_fileman_backend_copy_count;
+        g_display_fileman_last_mutation_status = 8u;
+        display64_fileman_clear_delete_confirm();
+        display64_fileman_clear_edit();
+        display64_fileman_refresh();
+        return;
+    }
+
+    ++g_display_fileman_backend_copy_denial_count;
+    g_display_fileman_last_mutation_status = 9u;
+    display64_fileman_clear_delete_confirm();
+    display64_fileman_clear_edit();
+    display64_fileman_refresh();
+}
+
+static u32 display64_fileman_process_keyboard_edit(u8 value)
+{
+    if (g_display_fileman_edit_mode == 0u)
+    {
+        return 0u;
+    }
+    if (value == (u8)'\b')
+    {
+        if (g_display_fileman_edit_bytes > 0u)
+        {
+            --g_display_fileman_edit_bytes;
+            g_display_fileman_edit_buffer[g_display_fileman_edit_bytes] = 0u;
+        }
+        display64_desktop_redraw();
+        return 1u;
+    }
+    if ((value == (u8)'\n') || (value == (u8)'\r'))
+    {
+        ++g_display_fileman_backend_edit_commit_count;
+        if (g_display_fileman_edit_mode == 1u)
+        {
+            display64_fileman_commit_create_folder();
+        }
+        else if (g_display_fileman_edit_mode == 2u)
+        {
+            display64_fileman_commit_rename_selected();
+        }
+        else if (g_display_fileman_edit_mode == 3u)
+        {
+            display64_fileman_commit_move_selected();
+        }
+        else if (g_display_fileman_edit_mode == 4u)
+        {
+            display64_fileman_commit_copy_selected();
+        }
+        else
+        {
+            display64_fileman_clear_edit();
+        }
+        display64_desktop_redraw();
+        return 1u;
+    }
+    if ((value >= 32u) && (value <= 126u))
+    {
+        if ((g_display_fileman_edit_bytes + 1u) < sizeof(g_display_fileman_edit_buffer))
+        {
+            g_display_fileman_edit_buffer[g_display_fileman_edit_bytes++] = value;
+            g_display_fileman_edit_buffer[g_display_fileman_edit_bytes] = 0u;
+        }
+        display64_desktop_redraw();
+        return 1u;
+    }
+
+    return 1u;
+}
+
+static void display64_fileman_draw_preview_line(u32 x, u32 y, u32 line_index)
+{
+    char line[29];
+    u32 source = line_index * 28u;
+    u32 index;
+
+    for (index = 0u; index < 28u; ++index)
+    {
+        line[index] = (source + index < g_display_fileman_preview_bytes)
+            ? (char)g_display_fileman_preview[source + index]
+            : '\0';
+    }
+    line[28] = '\0';
+    if (line[0] != '\0')
+    {
+        (void)display64_draw_font_text(x, y, line, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    }
+}
+#endif
 
 static void display64_desktop_draw_file_manager(u32 handle)
 {
@@ -3168,6 +4489,10 @@ static void display64_desktop_draw_file_manager(u32 handle)
     u32 body_x;
     u32 body_y;
     u32 body_h;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 content_w;
+    u32 row;
+#endif
 
     if (window == 0)
     {
@@ -3175,6 +4500,179 @@ static void display64_desktop_draw_file_manager(u32 handle)
     }
 
     display64_wm_present_window(handle);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    cloud_storage64_init();
+    display64_fileman_refresh();
+    display64_fileman_preview_selected();
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    body_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + 28u))
+        ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - 28u)
+        : 0u;
+    content_w = (window->width > 170u) ? (window->width - 158u) : 0u;
+    if (content_w < 120u)
+    {
+        content_w = 120u;
+    }
+    display64_compositor_draw_surface(body_x, body_y, 110u, body_h, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    display64_compositor_fill_rect(body_x + 6u, body_y + 10u, 3u, 18u, DISPLAY64_RGB_APP_FILES);
+    (void)display64_draw_font_text(body_x + 16u, body_y + 10u, "NVME FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 36u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 31u, body_y + 40u, "Up", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 60u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 28u, body_y + 64u, "Root", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 84u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 29u, body_y + 88u, "APPS", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 108u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 29u, body_y + 112u, "DATA", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 132u, 78u, 20u, DISPLAY64_RGB_APP_FILES);
+    (void)display64_draw_font_text(body_x + 23u, body_y + 136u, "New Note", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 156u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 25u, body_y + 160u, "Folder", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 180u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 23u, body_y + 184u, "Rename", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 204u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 30u, body_y + 208u, "Move", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 228u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 30u, body_y + 232u, "Copy", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 252u, 78u, 20u, DISPLAY64_RGB_CLOSE);
+    (void)display64_draw_font_text(body_x + 25u, body_y + 256u, "Delete", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 16u, body_y + 276u, cloud_storage64_mode(), DISPLAY64_FONT_SMALL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_fileman_last_write_status == 1u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 288u, "Wrote note", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_write_status == 2u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 288u, "Write denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    if (g_display_fileman_last_delete_status == 1u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 300u, "Deleted path", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_CLOSE, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_delete_status == 2u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 300u, "Delete denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_delete_status == 3u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 300u, "Click again", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    if (g_display_fileman_last_mutation_status == 1u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Folder made", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 2u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Folder denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 3u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Renamed file", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 4u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Rename denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 5u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Moved file", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 6u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Move denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 7u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Type, Enter", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 8u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Copied file", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else if (g_display_fileman_last_mutation_status == 9u)
+    {
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Copy denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+    }
+
+    display64_compositor_draw_badge(body_x + 126u, body_y - 4u, content_w, (const char *)g_display_fileman_current_path, DISPLAY64_RGB_APP_FILES);
+    if (g_display_fileman_last_status != 0u)
+    {
+        display64_desktop_draw_info_row_selected(body_x + 126u, body_y + 28u, content_w, "NVMe unavailable", "run hwval for storage status", DISPLAY64_RGB_WARNING, 1u);
+    }
+    else if (g_display_fileman_entry_count == 0u)
+    {
+        display64_desktop_draw_info_row_selected(body_x + 126u, body_y + 28u, content_w, "Empty folder", "no visible entries", DISPLAY64_RGB_TEXT_SECONDARY, 1u);
+    }
+    else
+    {
+        for (row = 0u; row < g_display_fileman_entry_count; ++row)
+        {
+            display64_desktop_draw_info_row_selected(
+                body_x + 126u,
+                body_y + 28u + (row * 40u),
+                content_w,
+                (const char *)g_display_fileman_entries[row].name,
+                display64_fileman_type_text(g_display_fileman_entries[row].entry_type),
+                (g_display_fileman_entries[row].entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY) ? DISPLAY64_RGB_APP_FILES : DISPLAY64_RGB_TEXT_SECONDARY,
+                (g_display_fileman_selected_index == row) ? 1u : 0u);
+            if (g_display_fileman_entries[row].entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+            {
+                display64_draw_label_value(body_x + content_w + 74u, body_y + 34u + (row * 40u), "", g_display_fileman_entries[row].byte_count, DISPLAY64_RGB_TEXT_MUTED);
+            }
+        }
+    }
+    if (content_w > 24u)
+    {
+        u32 preview_y = body_y + 192u;
+        display64_compositor_draw_surface(body_x + 126u, preview_y, content_w, 72u, DISPLAY64_RGB_CONTENT, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+        if (g_display_fileman_edit_mode != 0u)
+        {
+            const char *edit_title = "Type path";
+            if (g_display_fileman_edit_mode == 1u)
+            {
+                edit_title = "New folder";
+            }
+            else if (g_display_fileman_edit_mode == 2u)
+            {
+                edit_title = "Rename to";
+            }
+            else if (g_display_fileman_edit_mode == 3u)
+            {
+                edit_title = "Move to";
+            }
+            else if (g_display_fileman_edit_mode == 4u)
+            {
+                edit_title = "Copy to";
+            }
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, edit_title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            display64_compositor_fill_round_rect_4(body_x + 138u, preview_y + 30u, content_w - 24u, 24u, DISPLAY64_RGB_SURFACE_HIGH);
+            (void)display64_draw_font_text(body_x + 148u, preview_y + 36u, (const char *)g_display_fileman_edit_buffer, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 60u, "Enter commits", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+        }
+        else if ((g_display_fileman_selected_index < g_display_fileman_entry_count)
+            && (g_display_fileman_entries[g_display_fileman_selected_index].entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+            && (g_display_fileman_preview_bytes != 0u))
+        {
+            display64_draw_label_value(body_x + 138u, preview_y + 8u, "Preview bytes ", g_display_fileman_preview_size, DISPLAY64_RGB_TEXT_PRIMARY);
+            for (row = 0u; row < DISPLAY64_FILEMAN_PREVIEW_LINES; ++row)
+            {
+                display64_fileman_draw_preview_line(body_x + 138u, preview_y + 24u + (row * 10u), row);
+            }
+        }
+        else if ((g_display_fileman_selected_index < g_display_fileman_entry_count)
+            && (g_display_fileman_entries[g_display_fileman_selected_index].entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
+        {
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, "Directory", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 26u, "Click row to open", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+        }
+        else
+        {
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, "NVMe FAT actions", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            (void)display64_draw_font_text(body_x + 138u, preview_y + 26u, "Delete selected file", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+        }
+    }
+#else
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
     body_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + 20u))
@@ -3188,6 +4686,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
     (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "Cloud unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "No sync/upload", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+#endif
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     cloud_storage64_init();
     (void)cloud_storage64_fileman_status_readonly();
@@ -3214,6 +4713,51 @@ static void display64_desktop_draw_settings(u32 handle)
     }
 
     display64_wm_present_window(handle);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    display64_desktop_draw_settings_summary(body_x, body_y, window->width);
+    services64_product_status_query();
+    identity64_status_readonly();
+    identity_transport64_init();
+    (void)identity_transport64_status_readonly();
+    account_association64_init();
+    (void)account_association64_status_readonly();
+    cloud_storage64_init();
+    (void)cloud_storage64_settings_readonly();
+    ai_policy64_init();
+    ai_policy64_action_probe();
+    (void)ai_policy64_settings_readonly();
+    if (g_display_desktop_settings_count == 0u)
+    {
+        ++g_display_desktop_settings_count;
+    }
+    if (g_display_pkg_settings_panel_count == 0u)
+    {
+        ++g_display_pkg_settings_panel_count;
+    }
+    if (g_display_identity_settings_panel_count == 0u)
+    {
+        ++g_display_identity_settings_panel_count;
+    }
+    if (g_display_identity_transport_settings_panel_count == 0u)
+    {
+        ++g_display_identity_transport_settings_panel_count;
+    }
+    if (g_display_account_settings_panel_count == 0u)
+    {
+        ++g_display_account_settings_panel_count;
+    }
+    if (g_display_cloud_settings_panel_count == 0u)
+    {
+        ++g_display_cloud_settings_panel_count;
+    }
+    if (g_display_ai_settings_panel_count == 0u)
+    {
+        ++g_display_ai_settings_panel_count;
+    }
+    return;
+#endif
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
     (void)display64_draw_font_text(body_x, body_y, "Display", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
@@ -3326,18 +4870,16 @@ static void display64_desktop_draw_installer(u32 handle)
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
     installer_ux64_init();
     (void)display64_draw_font_text(body_x, body_y, "LimitlessOS Installer", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 18u, "Product UEFI dry-run safe", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 36u, "Internal writes disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(body_x + 164u, body_y - 4u, 92u, installer_ux64_dryrun_status(), DISPLAY64_RGB_APP_INSTALLER);
     if (g_display_installer_welcome_count == 0u)
     {
         ++g_display_installer_welcome_count;
     }
     (void)installer_ux64_welcome();
-
-    (void)display64_draw_font_text(body_x, body_y + 62u, "Beginner: recommended general use", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 80u, "Advanced: read-only planning controls", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_beginner_count == 0u)
     {
         ++g_display_installer_beginner_count;
@@ -3348,9 +4890,6 @@ static void display64_desktop_draw_installer(u32 handle)
     }
     (void)installer_ux64_beginner_mode();
     (void)installer_ux64_advanced_mode();
-
-    (void)display64_draw_font_text(body_x, body_y + 106u, "Hardware: display/input/net/storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 124u, "Recommendation: General use", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_hardware_count == 0u)
     {
         ++g_display_installer_hardware_count;
@@ -3361,42 +4900,27 @@ static void display64_desktop_draw_installer(u32 handle)
     }
     (void)installer_ux64_hardware_summary();
     (void)installer_ux64_recommendation();
-
-    (void)display64_draw_font_text(body_x, body_y + 150u, "Components: Product set selected", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 168u, "Unavailable items labeled planned", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_component_count == 0u)
     {
         ++g_display_installer_component_count;
     }
     (void)installer_ux64_component_selection();
     (void)installer_ux64_unavailable_components_labeled();
-
-    (void)display64_draw_font_text(body_x, body_y + 194u, "Account: local available only", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 212u, "Personal/enterprise/key unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_account_count == 0u)
     {
         ++g_display_installer_account_count;
     }
     (void)installer_ux64_account_page();
-
-    (void)display64_draw_font_text(body_x, body_y + 238u, "Cloud: broker status only", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 256u, "No sync/upload/download/token storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_cloud_count == 0u)
     {
         ++g_display_installer_cloud_count;
     }
     (void)installer_ux64_cloud_page();
-
-    (void)display64_draw_font_text(body_x, body_y + 282u, "AI setup: planned; requires consent broker", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 300u, "No AI-assisted setup in M15", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_ai_count == 0u)
     {
         ++g_display_installer_ai_count;
     }
     (void)installer_ux64_ai_page();
-
-    (void)display64_draw_font_text(body_x, body_y + 326u, "Plan: writes 0 formats 0 boot entries 0", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 344u, "Dry-run validates no forbidden targets", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_installer_plan_count == 0u)
     {
         ++g_display_installer_plan_count;
@@ -3407,6 +4931,19 @@ static void display64_desktop_draw_installer(u32 handle)
     }
     (void)installer_ux64_plan_generated();
     (void)installer_ux64_dryrun_no_writes();
+
+    display64_desktop_draw_info_row_selected(body_x, body_y + 34u, window->width - 32u, "Profile", installer_ux64_selected_profile(), DISPLAY64_RGB_APP_INSTALLER, (g_display_installer_step_index == 0u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 80u, window->width - 32u, "Hardware", installer_ux64_recommendation_text(), DISPLAY64_RGB_FOCUS_BLUE, (g_display_installer_step_index == 1u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 126u, window->width - 32u, "Components", installer_ux64_component_status(), DISPLAY64_RGB_TEXT_SECONDARY, (g_display_installer_step_index == 2u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 172u, window->width - 32u, "Account", installer_ux64_account_status(), DISPLAY64_RGB_APP_SETTINGS, (g_display_installer_step_index == 3u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 218u, window->width - 32u, "Cloud and AI", installer_ux64_cloud_status(), DISPLAY64_RGB_DISABLED_TEXT, (g_display_installer_step_index == 4u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 264u, window->width - 32u, "Plan", installer_ux64_plan_status(), DISPLAY64_RGB_WARNING, (g_display_installer_step_index == 5u) ? 1u : 0u);
+    display64_compositor_fill_round_rect_4(body_x, body_y + 312u, 78u, 26u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(body_x + 20u, body_y + 318u, "Back", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 88u, body_y + 312u, 78u, 26u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(body_x + 112u, body_y + 318u, "Next", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(body_x + 176u, body_y + 312u, 92u, 26u, DISPLAY64_RGB_WARNING);
+    (void)display64_draw_font_text(body_x + 190u, body_y + 318u, "Dry run", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
 #else
     (void)display64_draw_font_text(body_x, body_y, "Installer UX unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS fallback keeps dry-run/write disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
@@ -3459,10 +4996,165 @@ static int display64_desktop_settings_lock_hit(const struct display64_window *wi
         return 0;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    return display64_point_in_rect(x, y, body_x, body_y + 308u, 72u, 24u);
+#else
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
     return display64_point_in_rect(x, y, body_x, body_y + 184u, 72u, 24u);
+#endif
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_desktop_settings_row_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 body_x;
+    u32 body_y;
+    u32 row_w;
+    u32 row_index;
+    u32 visible_row;
+
+    if (window == 0)
+    {
+        return 0xFFFFFFFFu;
+    }
+
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    row_w = (window->width > 32u) ? (window->width - 32u) : window->width;
+    for (visible_row = 0u; visible_row < 6u; ++visible_row)
+    {
+        row_index = g_display_settings_scroll_index + visible_row;
+        if (row_index >= 11u)
+        {
+            return 0xFFFFFFFFu;
+        }
+        if (display64_point_in_rect(x, y, body_x, body_y + 28u + (visible_row * 44u), row_w, 38u))
+        {
+            return row_index;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static u32 display64_desktop_file_manager_row_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 body_x;
+    u32 body_y;
+    u32 content_w;
+    u32 index;
+
+    if (window == 0)
+    {
+        return 0xFFFFFFFFu;
+    }
+
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    content_w = (window->width > 170u) ? (window->width - 158u) : 0u;
+    for (index = 0u; (index < g_display_fileman_entry_count) && (index < DISPLAY64_FILEMAN_MAX_ENTRIES); ++index)
+    {
+        if (display64_point_in_rect(x, y, body_x + 126u, body_y + 28u + (index * 40u), content_w, 38u))
+        {
+            return index;
+        }
+    }
+
+    return 0xFFFFFFFFu;
+}
+
+static u32 display64_desktop_file_manager_nav_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 body_x;
+    u32 body_y;
+
+    if (window == 0)
+    {
+        return 0u;
+    }
+
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 36u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_UP;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 60u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_ROOT;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 84u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_APPS;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 108u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_DATA;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 132u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_NEW_NOTE;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 156u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_NEW_FOLDER;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 180u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_RENAME;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 204u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_MOVE;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 228u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_COPY;
+    }
+    if (display64_point_in_rect(x, y, body_x + 14u, body_y + 252u, 78u, 20u))
+    {
+        return DISPLAY64_FILEMAN_NAV_DELETE_NOTE;
+    }
+
+    return 0u;
+}
+
+static int display64_desktop_file_manager_apps_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    return (display64_desktop_file_manager_nav_hit(window, x, y) == DISPLAY64_FILEMAN_NAV_APPS) ? 1 : 0;
+}
+
+static u32 display64_desktop_installer_action_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 body_x;
+    u32 body_y;
+
+    if (window == 0)
+    {
+        return 0u;
+    }
+
+    body_x = window->x + 16u;
+    body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
+    if (display64_point_in_rect(x, y, body_x, body_y + 312u, 78u, 26u))
+    {
+        return 1u;
+    }
+    if (display64_point_in_rect(x, y, body_x + 88u, body_y + 312u, 78u, 26u))
+    {
+        return 2u;
+    }
+    if (display64_point_in_rect(x, y, body_x + 176u, body_y + 312u, 92u, 26u))
+    {
+        return 3u;
+    }
+
+    return 0u;
+}
+#endif
 
 static void display64_desktop_draw_background(void)
 {
@@ -3543,6 +5235,107 @@ static void display64_desktop_draw_windows_by_z(void)
     }
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_desktop_draw_context_row(u32 x, u32 y, const char *text, u32 accent)
+{
+    display64_compositor_fill_round_rect_4(x + 4u, y, 140u, 24u, DISPLAY64_RGB_SURFACE_HIGH);
+    display64_compositor_fill_rect(x + 10u, y + 7u, 3u, 10u, accent);
+    (void)display64_draw_font_text(x + 20u, y + 5u, text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+}
+
+static void display64_desktop_draw_context_menu(void)
+{
+    u32 x;
+    u32 y;
+    const char *third = "Settings";
+    u32 third_rgb = DISPLAY64_RGB_APP_SETTINGS;
+
+    if (g_display_context_menu_open == 0u)
+    {
+        return;
+    }
+
+    x = g_display_context_menu_x;
+    y = g_display_context_menu_y;
+    if ((x + 152u) >= g_display_boot_info->framebuffer_width)
+    {
+        x = (g_display_boot_info->framebuffer_width > 160u) ? (g_display_boot_info->framebuffer_width - 160u) : 0u;
+    }
+    if ((y + 96u) >= display64_desktop_taskbar_y())
+    {
+        y = (display64_desktop_taskbar_y() > 104u) ? (display64_desktop_taskbar_y() - 104u) : 0u;
+    }
+
+    display64_compositor_draw_surface(x, y, 152u, 94u, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 2u);
+    if (g_display_context_menu_kind == 2u)
+    {
+        struct display64_window *window = display64_wm_find_window(g_display_context_menu_target);
+        if ((window != 0) && (window->handle == g_display_desktop_installer_handle))
+        {
+            third = "Dry run";
+            third_rgb = DISPLAY64_RGB_WARNING;
+        }
+        else if ((window != 0) && (window->handle == g_display_desktop_settings_handle))
+        {
+            third = "Lock";
+            third_rgb = DISPLAY64_RGB_ACCENT;
+        }
+        else if ((window != 0) && display64_wm_window_is_terminal(window))
+        {
+            third = "New Terminal";
+            third_rgb = DISPLAY64_RGB_APP_TERMINAL;
+        }
+        else if ((window != 0) && (window->handle == g_display_desktop_fileman_handle))
+        {
+            third = "Delete";
+            third_rgb = DISPLAY64_RGB_CLOSE;
+        }
+        else
+        {
+            third = "Refresh";
+            third_rgb = DISPLAY64_RGB_APP_FILES;
+        }
+        display64_desktop_draw_context_row(x, y + 8u, "Focus", DISPLAY64_RGB_FOCUS_BLUE);
+        display64_desktop_draw_context_row(x, y + 34u, "Close", DISPLAY64_RGB_CLOSE);
+        display64_desktop_draw_context_row(x, y + 60u, third, third_rgb);
+        return;
+    }
+
+    display64_desktop_draw_context_row(x, y + 8u, "Terminal", DISPLAY64_RGB_APP_TERMINAL);
+    display64_desktop_draw_context_row(x, y + 34u, "Files", DISPLAY64_RGB_APP_FILES);
+    display64_desktop_draw_context_row(x, y + 60u, "Settings", DISPLAY64_RGB_APP_SETTINGS);
+}
+
+static u32 display64_desktop_context_menu_hit(u32 x, u32 y)
+{
+    u32 menu_x = g_display_context_menu_x;
+    u32 menu_y = g_display_context_menu_y;
+    u32 row;
+
+    if (g_display_context_menu_open == 0u)
+    {
+        return 0u;
+    }
+    if ((menu_x + 152u) >= g_display_boot_info->framebuffer_width)
+    {
+        menu_x = (g_display_boot_info->framebuffer_width > 160u) ? (g_display_boot_info->framebuffer_width - 160u) : 0u;
+    }
+    if ((menu_y + 96u) >= display64_desktop_taskbar_y())
+    {
+        menu_y = (display64_desktop_taskbar_y() > 104u) ? (display64_desktop_taskbar_y() - 104u) : 0u;
+    }
+    for (row = 0u; row < 3u; ++row)
+    {
+        if (display64_point_in_rect(x, y, menu_x + 4u, menu_y + 8u + (row * 26u), 140u, 24u))
+        {
+            return row + 1u;
+        }
+    }
+
+    return 0u;
+}
+#endif
+
 static void display64_desktop_redraw(void)
 {
     if ((g_display_desktop_active == 0u)
@@ -3558,6 +5351,9 @@ static void display64_desktop_redraw(void)
     {
         display64_desktop_draw_launcher_panel();
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_desktop_draw_context_menu();
+#endif
     display64_desktop_draw_taskbar();
     (void)display64_compositor_present();
 }
@@ -3676,17 +5472,69 @@ static void display64_desktop_open_terminal(void)
     }
 }
 
+static u32 display64_desktop_side_reserved_width(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_boot_info->framebuffer_width > 960u)
+    {
+        return DISPLAY64_MOUSE_DIAG_PANEL_WIDTH + (DISPLAY64_DIAG_MARGIN * 2u);
+    }
+#endif
+    return 0u;
+}
+
+static u32 display64_desktop_side_right_edge(void)
+{
+    u32 reserved = display64_desktop_side_reserved_width();
+
+    if ((g_display_boot_info->framebuffer_width > reserved)
+        && ((g_display_boot_info->framebuffer_width - reserved) > 384u))
+    {
+        return g_display_boot_info->framebuffer_width - reserved;
+    }
+
+    return g_display_boot_info->framebuffer_width;
+}
+
+static u32 display64_desktop_side_x(void)
+{
+    u32 right_edge = display64_desktop_side_right_edge();
+
+    if (right_edge > 368u)
+    {
+        return right_edge - 344u;
+    }
+
+    return 24u;
+}
+
+static u32 display64_desktop_side_w(u32 side_x)
+{
+    u32 right_edge = display64_desktop_side_right_edge();
+    u32 side_w = (right_edge > (side_x + 24u))
+        ? display64_min_u32(320u, right_edge - side_x - 24u)
+        : 160u;
+
+    return (side_w < 160u) ? 160u : side_w;
+}
+
 static void display64_desktop_open_file_manager(void)
 {
     if (display64_wm_find_window(g_display_desktop_fileman_handle) == 0)
     {
-        u32 side_x = (g_display_boot_info->framebuffer_width > 368u)
-            ? (g_display_boot_info->framebuffer_width - 344u)
-            : 24u;
-        u32 side_w = (g_display_boot_info->framebuffer_width > (side_x + 24u))
-            ? display64_min_u32(320u, g_display_boot_info->framebuffer_width - side_x - 24u)
-            : 160u;
-        g_display_desktop_fileman_handle = display64_wm_create_window("File Manager", side_x, 64u, side_w, 210u);
+        u32 side_x = display64_desktop_side_x();
+        u32 side_w = display64_desktop_side_w(side_x);
+        g_display_desktop_fileman_handle = display64_wm_create_window(
+            "File Manager",
+            side_x,
+            64u,
+            side_w,
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            380u
+#else
+            210u
+#endif
+        );
     }
     display64_wm_focus_and_route_console(g_display_desktop_fileman_handle);
 }
@@ -3695,14 +5543,20 @@ static void display64_desktop_open_settings(void)
 {
     if (display64_wm_find_window(g_display_desktop_settings_handle) == 0)
     {
-        u32 side_x = (g_display_boot_info->framebuffer_width > 368u)
-            ? (g_display_boot_info->framebuffer_width - 344u)
-            : 24u;
-        u32 side_w = (g_display_boot_info->framebuffer_width > (side_x + 24u))
-            ? display64_min_u32(320u, g_display_boot_info->framebuffer_width - side_x - 24u)
-            : 160u;
+        u32 side_x = display64_desktop_side_x();
+        u32 side_w = display64_desktop_side_w(side_x);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        u32 settings_y = (g_display_boot_info->framebuffer_height < 740u) ? 300u : 456u;
+        u32 settings_h = display64_min_u32(
+            390u,
+            (g_display_boot_info->framebuffer_height > (settings_y + 60u))
+                ? (g_display_boot_info->framebuffer_height - settings_y - 60u)
+                : 260u);
+        g_display_desktop_settings_handle = display64_wm_create_window("Settings", side_x, settings_y, side_w, settings_h);
+#else
         u32 settings_y = (g_display_boot_info->framebuffer_height < 620u) ? 220u : 250u;
         g_display_desktop_settings_handle = display64_wm_create_window("Settings", side_x, settings_y, side_w, 500u);
+#endif
     }
     display64_wm_focus_and_route_console(g_display_desktop_settings_handle);
 }
@@ -3781,7 +5635,10 @@ void display64_desktop_probe(void)
     u32 side_x;
     u32 side_w;
     u32 file_y = 64u;
-    u32 settings_y = 250u;
+    u32 settings_y;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 settings_h;
+#endif
     struct display64_window *terminal;
 
     if ((g_display_compositor_active == 0u)
@@ -3794,24 +5651,50 @@ void display64_desktop_probe(void)
 
     display64_desktop_draw_background();
 
-    side_x = (g_display_boot_info->framebuffer_width > 368u)
-        ? (g_display_boot_info->framebuffer_width - 344u)
-        : 24u;
-    side_w = (g_display_boot_info->framebuffer_width > (side_x + 24u))
-        ? display64_min_u32(320u, g_display_boot_info->framebuffer_width - side_x - 24u)
-        : 160u;
-    if (side_w < 160u)
+    side_x = display64_desktop_side_x();
+    side_w = display64_desktop_side_w(side_x);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    settings_y = 456u;
+    if (g_display_boot_info->framebuffer_height < 740u)
     {
-        side_w = 160u;
+        settings_y = 300u;
     }
+    settings_h = display64_min_u32(
+        390u,
+        (g_display_boot_info->framebuffer_height > (settings_y + 60u))
+            ? (g_display_boot_info->framebuffer_height - settings_y - 60u)
+            : 260u);
+#else
+    settings_y = 250u;
     if (g_display_boot_info->framebuffer_height < 620u)
     {
         settings_y = 220u;
     }
+#endif
 
     g_display_desktop_terminal_count = (g_display_wm_shell_handle != 0u) ? 1u : 0u;
-    g_display_desktop_fileman_handle = display64_wm_create_window("File Manager", side_x, file_y, side_w, 210u);
-    g_display_desktop_settings_handle = display64_wm_create_window("Settings", side_x, settings_y, side_w, 500u);
+    g_display_desktop_fileman_handle = display64_wm_create_window(
+        "File Manager",
+        side_x,
+        file_y,
+        side_w,
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        380u
+#else
+        210u
+#endif
+    );
+    g_display_desktop_settings_handle = display64_wm_create_window(
+        "Settings",
+        side_x,
+        settings_y,
+        side_w,
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        settings_h
+#else
+        500u
+#endif
+    );
     g_display_desktop_launcher_open = 1u;
 
     display64_wm_present_window(g_display_wm_shell_handle);
@@ -3847,6 +5730,11 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
     u32 previous_left = g_display_wm_last_buttons & 0x1u;
     u32 pressed = ((left != 0u) && (previous_left == 0u)) ? 1u : 0u;
     u32 released = ((left == 0u) && (previous_left != 0u)) ? 1u : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 right = buttons & 0x2u;
+    u32 previous_right = g_display_wm_last_buttons & 0x2u;
+    u32 right_pressed = ((right != 0u) && (previous_right == 0u)) ? 1u : 0u;
+#endif
     u32 focus_before = display64_wm_focused_handle();
     u32 z_before = 0u;
 
@@ -3860,6 +5748,53 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         g_display_wm_last_buttons = buttons;
         return 0u;
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (right_pressed != 0u)
+    {
+        struct display64_window *right_window = display64_wm_hit_window(x, y);
+        ++g_display_gui_right_click_count;
+        g_display_context_menu_open = 1u;
+        g_display_context_menu_x = x;
+        g_display_context_menu_y = y;
+        if (right_window != 0)
+        {
+            z_before = right_window->z;
+            g_display_desktop_launcher_open = 0u;
+            g_display_context_menu_kind = 2u;
+            g_display_context_menu_target = right_window->handle;
+            display64_wm_focus_and_route_console(right_window->handle);
+            display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_BODY,
+                right_window->handle,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                display64_wm_window_z(right_window->handle));
+        }
+        else
+        {
+            g_display_context_menu_kind = 1u;
+            g_display_context_menu_target = 0u;
+            g_display_desktop_launcher_open = 0u;
+            display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_DESKTOP,
+                0u,
+                focus_before,
+                display64_wm_focused_handle(),
+                0u,
+                0u);
+        }
+        g_display_wm_last_buttons = buttons;
+        return 1u;
+    }
+#endif
 
     if (g_display_wm_dragging != 0u)
     {
@@ -3906,6 +5841,91 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
 
     if (pressed != 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if (g_display_context_menu_open != 0u)
+        {
+            u32 menu_action = display64_desktop_context_menu_hit(x, y);
+            u32 target = g_display_context_menu_target;
+            u32 kind = g_display_context_menu_kind;
+            g_display_context_menu_open = 0u;
+            if (menu_action != 0u)
+            {
+                if (kind == 1u)
+                {
+                    if (menu_action == 1u)
+                    {
+                        display64_desktop_open_terminal();
+                        g_display_gui_terminal_opened = 1u;
+                        ++g_display_terminal_action_count;
+                    }
+                    else if (menu_action == 2u)
+                    {
+                        display64_desktop_open_file_manager();
+                        g_display_gui_fileman_opened = 1u;
+                        ++g_display_fileman_action_count;
+                    }
+                    else
+                    {
+                        display64_desktop_open_settings();
+                        g_display_gui_settings_opened = 1u;
+                        ++g_display_settings_action_count;
+                    }
+                }
+                else if (target != 0u)
+                {
+                    struct display64_window *target_window = display64_wm_find_window(target);
+                    if (menu_action == 1u)
+                    {
+                        display64_wm_focus_and_route_console(target);
+                    }
+                    else if (menu_action == 2u)
+                    {
+                        display64_wm_destroy_window(target);
+                        g_display_gui_close_completed = 1u;
+                    }
+                    else if ((target_window != 0) && (target == g_display_desktop_settings_handle))
+                    {
+                        (void)auth64_lock_session();
+                        ++g_display_settings_action_count;
+                    }
+                    else if ((target_window != 0) && (target == g_display_desktop_installer_handle))
+                    {
+                        (void)installer_ux64_commit_probe();
+                        (void)installer_ux64_commit_unavailable();
+                        ++g_display_installer_action_count;
+                    }
+                    else if ((target_window != 0) && display64_wm_window_is_terminal(target_window))
+                    {
+                        display64_desktop_open_terminal();
+                        g_display_gui_terminal_opened = 1u;
+                        ++g_display_terminal_action_count;
+                    }
+                    else if ((target_window != 0) && (target == g_display_desktop_fileman_handle))
+                    {
+                        display64_fileman_delete_selected();
+                        ++g_display_fileman_action_count;
+                    }
+                    else
+                    {
+                        ++g_display_fileman_action_count;
+                    }
+                }
+                display64_desktop_redraw();
+                display64_gui_record_event(
+                    x,
+                    y,
+                    DISPLAY64_GUI_REGION_CONTEXT_MENU,
+                    target,
+                    focus_before,
+                    display64_wm_focused_handle(),
+                    0u,
+                    display64_wm_window_z(display64_wm_focused_handle()));
+                g_display_wm_last_buttons = buttons;
+                return 1u;
+            }
+            display64_desktop_redraw();
+        }
+#endif
         u32 taskbar_hit = display64_desktop_hit_taskbar_button(x, y);
         if (taskbar_hit == 0xFFFFFFFFu)
         {
@@ -4024,6 +6044,189 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                     return 1u;
                 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                if (window->handle == g_display_desktop_settings_handle)
+                {
+                    u32 settings_hit = display64_desktop_settings_row_hit(window, x, y);
+                    if (settings_hit != 0xFFFFFFFFu)
+                    {
+                        g_display_settings_selected_index = settings_hit;
+                        ++g_display_settings_action_count;
+                        display64_wm_focus_and_route_console(window->handle);
+                        display64_desktop_redraw();
+                        display64_gui_record_event(
+                            x,
+                            y,
+                            DISPLAY64_GUI_REGION_SETTINGS_ROW,
+                            window->handle,
+                            focus_before,
+                            display64_wm_focused_handle(),
+                            z_before,
+                            display64_wm_window_z(window->handle));
+                        g_display_wm_last_buttons = buttons;
+                        return 1u;
+                    }
+                }
+
+                if (window->handle == g_display_desktop_installer_handle)
+                {
+                    u32 installer_action = display64_desktop_installer_action_hit(window, x, y);
+                    if (installer_action != 0u)
+                    {
+                        if (installer_action == 1u)
+                        {
+                            if (g_display_installer_step_index > 0u)
+                            {
+                                --g_display_installer_step_index;
+                            }
+                        }
+                        else if (installer_action == 2u)
+                        {
+                            if (g_display_installer_step_index < 5u)
+                            {
+                                ++g_display_installer_step_index;
+                            }
+                        }
+                        else
+                        {
+                            (void)installer_ux64_commit_probe();
+                            (void)installer_ux64_commit_unavailable();
+                        }
+                        ++g_display_installer_action_count;
+                        display64_wm_focus_and_route_console(window->handle);
+                        display64_desktop_redraw();
+                        display64_gui_record_event(
+                            x,
+                            y,
+                            DISPLAY64_GUI_REGION_INSTALLER_ACTION,
+                            window->handle,
+                            focus_before,
+                            display64_wm_focused_handle(),
+                            z_before,
+                            display64_wm_window_z(window->handle));
+                        g_display_wm_last_buttons = buttons;
+                        return 1u;
+                    }
+                }
+
+                if (window->handle == g_display_desktop_fileman_handle)
+                {
+                    u32 nav_hit = display64_desktop_file_manager_nav_hit(window, x, y);
+                    if (nav_hit != 0u)
+                    {
+                        if (nav_hit == DISPLAY64_FILEMAN_NAV_UP)
+                        {
+                            display64_fileman_parent_path();
+                        }
+                        else if (nav_hit == DISPLAY64_FILEMAN_NAV_ROOT)
+                        {
+                            display64_fileman_set_path("/");
+                        }
+                        else if (nav_hit == DISPLAY64_FILEMAN_NAV_APPS)
+                        {
+                            display64_fileman_set_path("/APPS");
+                        }
+                        else if (nav_hit == DISPLAY64_FILEMAN_NAV_DATA)
+                        {
+                            display64_fileman_set_path("/APPS/DATA");
+                        }
+                        else
+                        {
+                            if (nav_hit == DISPLAY64_FILEMAN_NAV_NEW_NOTE)
+                            {
+                                display64_fileman_write_note();
+                            }
+                            else if (nav_hit == DISPLAY64_FILEMAN_NAV_NEW_FOLDER)
+                            {
+                                display64_fileman_create_folder();
+                            }
+                            else if (nav_hit == DISPLAY64_FILEMAN_NAV_RENAME)
+                            {
+                                display64_fileman_rename_selected();
+                            }
+                            else if (nav_hit == DISPLAY64_FILEMAN_NAV_MOVE)
+                            {
+                                display64_fileman_move_selected_to_data();
+                            }
+                            else if (nav_hit == DISPLAY64_FILEMAN_NAV_COPY)
+                            {
+                                display64_fileman_copy_selected_to_data();
+                            }
+                            else
+                            {
+                                display64_fileman_delete_selected();
+                            }
+                        }
+                        if ((nav_hit != DISPLAY64_FILEMAN_NAV_NEW_NOTE)
+                            && (nav_hit != DISPLAY64_FILEMAN_NAV_NEW_FOLDER)
+                            && (nav_hit != DISPLAY64_FILEMAN_NAV_RENAME)
+                            && (nav_hit != DISPLAY64_FILEMAN_NAV_MOVE)
+                            && (nav_hit != DISPLAY64_FILEMAN_NAV_COPY)
+                            && (nav_hit != DISPLAY64_FILEMAN_NAV_DELETE_NOTE))
+                        {
+                            display64_fileman_refresh();
+                        }
+                        ++g_display_fileman_action_count;
+                        display64_wm_focus_and_route_console(window->handle);
+                        display64_desktop_redraw();
+                        display64_gui_record_event(
+                            x,
+                            y,
+                            DISPLAY64_GUI_REGION_FILEMAN_ROW,
+                            window->handle,
+                            focus_before,
+                            display64_wm_focused_handle(),
+                            z_before,
+                            display64_wm_window_z(window->handle));
+                        g_display_wm_last_buttons = buttons;
+                        return 1u;
+                    }
+
+                    u32 file_hit = display64_desktop_file_manager_row_hit(window, x, y);
+                    if (file_hit != 0xFFFFFFFFu)
+                    {
+                        g_display_fileman_selected_index = file_hit;
+                        display64_fileman_clear_delete_confirm();
+                        display64_fileman_clear_edit();
+                        ++g_display_fileman_action_count;
+                        display64_fileman_open_selected_if_directory();
+                        display64_wm_focus_and_route_console(window->handle);
+                        display64_desktop_redraw();
+                        display64_gui_record_event(
+                            x,
+                            y,
+                            DISPLAY64_GUI_REGION_FILEMAN_ROW,
+                            window->handle,
+                            focus_before,
+                            display64_wm_focused_handle(),
+                            z_before,
+                            display64_wm_window_z(window->handle));
+                        g_display_wm_last_buttons = buttons;
+                        return 1u;
+                    }
+                }
+
+                if ((window->handle == g_display_desktop_fileman_handle)
+                    && (display64_desktop_file_manager_apps_hit(window, x, y) != 0))
+                {
+                    display64_wm_focus_and_route_console(window->handle);
+                    g_display_desktop_launcher_open = 1u;
+                    g_display_gui_launcher_opened = 1u;
+                    display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_BODY,
+                        window->handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        display64_wm_window_z(window->handle));
+                    g_display_wm_last_buttons = buttons;
+                    return 1u;
+                }
+#endif
+
                 if (display64_point_in_rect(x, y, close_x, close_y, 14u, 14u))
                 {
                     u32 target_handle = window->handle;
@@ -4119,9 +6322,100 @@ u32 display64_wm_process_keyboard_event(u8 value)
         return 1u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (focused->handle == g_display_desktop_fileman_handle)
+    {
+        if (display64_fileman_process_keyboard_edit(value) != 0u)
+        {
+            return 1u;
+        }
+    }
+#endif
+
     display64_gui_record_unfocused_keyboard_denial(focused_handle);
     return 0u;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
+{
+    struct display64_window *window;
+
+    if ((wheel_delta == 0)
+        || (g_display_desktop_active == 0u)
+        || (g_display_wm_active == 0u)
+        || !display64_has_framebuffer())
+    {
+        return 0u;
+    }
+
+    window = display64_wm_hit_window(g_display_compositor_cursor_x, g_display_compositor_cursor_y);
+    if (window == 0)
+    {
+        window = display64_wm_focused_window();
+    }
+    if ((window != 0) && (window->handle == g_display_desktop_settings_handle))
+    {
+        if (wheel_delta < 0)
+        {
+            if (g_display_settings_scroll_index < 5u)
+            {
+                ++g_display_settings_scroll_index;
+            }
+        }
+        else if (g_display_settings_scroll_index > 0u)
+        {
+            --g_display_settings_scroll_index;
+        }
+        ++g_display_gui_scroll_count;
+        display64_wm_focus_and_route_console(window->handle);
+        display64_desktop_redraw();
+        return 1u;
+    }
+    if ((window != 0) && (window->handle == g_display_desktop_fileman_handle))
+    {
+        display64_fileman_refresh();
+        if (wheel_delta < 0)
+        {
+            if ((g_display_fileman_entry_count != 0u)
+                && ((g_display_fileman_selected_index + 1u) < g_display_fileman_entry_count)
+                && ((g_display_fileman_selected_index + 1u) < DISPLAY64_FILEMAN_MAX_ENTRIES))
+            {
+                ++g_display_fileman_selected_index;
+            }
+        }
+        else if (g_display_fileman_selected_index > 0u)
+        {
+            --g_display_fileman_selected_index;
+        }
+        display64_fileman_preview_selected();
+        ++g_display_gui_scroll_count;
+        display64_wm_focus_and_route_console(window->handle);
+        display64_desktop_redraw();
+        return 1u;
+    }
+    if ((window != 0) && (window->handle == g_display_desktop_installer_handle))
+    {
+        if (wheel_delta < 0)
+        {
+            if (g_display_installer_step_index < 5u)
+            {
+                ++g_display_installer_step_index;
+            }
+        }
+        else if (g_display_installer_step_index > 0u)
+        {
+            --g_display_installer_step_index;
+        }
+        ++g_display_gui_scroll_count;
+        display64_wm_focus_and_route_console(window->handle);
+        display64_desktop_redraw();
+        return 1u;
+    }
+
+    return 0u;
+}
+#endif
 
 void display64_init(const struct boot_info *boot_info)
 {
@@ -4255,6 +6549,53 @@ void display64_init(const struct boot_info *boot_info)
     g_display_gui_z_before = 0u;
     g_display_gui_z_after = 0u;
     g_display_gui_key_target_window = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_gui_right_click_count = 0u;
+    g_display_gui_scroll_count = 0u;
+    g_display_settings_scroll_index = 0u;
+    g_display_context_menu_open = 0u;
+    g_display_context_menu_x = 0u;
+    g_display_context_menu_y = 0u;
+    g_display_context_menu_target = 0u;
+    g_display_context_menu_kind = 0u;
+    g_display_fileman_selected_index = 0u;
+    g_display_settings_selected_index = 0u;
+    g_display_installer_step_index = 0u;
+    g_display_terminal_action_count = 0u;
+    g_display_fileman_action_count = 0u;
+    g_display_settings_action_count = 0u;
+    g_display_installer_action_count = 0u;
+    g_display_fileman_entry_count = 0u;
+    g_display_fileman_backend_refresh_count = 0u;
+    g_display_fileman_backend_preview_count = 0u;
+    g_display_fileman_backend_open_dir_count = 0u;
+    g_display_fileman_backend_write_count = 0u;
+    g_display_fileman_backend_write_denial_count = 0u;
+    g_display_fileman_backend_delete_count = 0u;
+    g_display_fileman_backend_delete_denial_count = 0u;
+    g_display_fileman_backend_delete_confirm_count = 0u;
+    g_display_fileman_backend_mkdir_count = 0u;
+    g_display_fileman_backend_mkdir_denial_count = 0u;
+    g_display_fileman_backend_copy_count = 0u;
+    g_display_fileman_backend_copy_denial_count = 0u;
+    g_display_fileman_backend_rename_count = 0u;
+    g_display_fileman_backend_rename_denial_count = 0u;
+    g_display_fileman_backend_move_count = 0u;
+    g_display_fileman_backend_move_denial_count = 0u;
+    g_display_fileman_backend_edit_count = 0u;
+    g_display_fileman_backend_edit_commit_count = 0u;
+    g_display_fileman_last_status = 0u;
+    g_display_fileman_last_write_status = 0u;
+    g_display_fileman_last_delete_status = 0u;
+    g_display_fileman_last_mutation_status = 0u;
+    g_display_fileman_delete_armed = 0u;
+    g_display_fileman_edit_mode = 0u;
+    g_display_fileman_edit_bytes = 0u;
+    display64_fileman_set_path("/APPS");
+    display64_fileman_zero(g_display_fileman_delete_path, sizeof(g_display_fileman_delete_path));
+    display64_fileman_zero(g_display_fileman_edit_buffer, sizeof(g_display_fileman_edit_buffer));
+    display64_fileman_zero(g_display_fileman_entries, sizeof(g_display_fileman_entries));
+#endif
     for (window_index = 0u; window_index < DISPLAY64_WM_MAX_WINDOWS; ++window_index)
     {
         g_display_windows[window_index].handle = 0u;
@@ -4582,6 +6923,13 @@ u32 display64_write_mouse_diagnostics(
         ++g_display_unavailable_count;
         return 0u;
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_desktop_active != 0u)
+    {
+        return 1u;
+    }
+#endif
 
     panel_width = display64_min_u32(DISPLAY64_MOUSE_DIAG_PANEL_WIDTH, g_display_boot_info->framebuffer_width);
     panel_height = display64_min_u32(DISPLAY64_MOUSE_DIAG_PANEL_HEIGHT, g_display_boot_info->framebuffer_height);
@@ -4918,9 +7266,11 @@ u32 display64_ui_polish_token(void)
 {
     u32 token = 2166136261u;
 
+    token = display64_mix_token(token, DISPLAY64_UI_STYLE_GENERATION);
     token = display64_mix_token(token, DISPLAY64_RGB_DESKTOP_BG);
     token = display64_mix_token(token, DISPLAY64_RGB_BAR_BG);
     token = display64_mix_token(token, DISPLAY64_RGB_SURFACE);
+    token = display64_mix_token(token, DISPLAY64_RGB_SURFACE_HIGH);
     token = display64_mix_token(token, DISPLAY64_RGB_ACCENT);
     token = display64_mix_token(token, g_display_compositor_active);
     token = display64_mix_token(token, display64_compositor_direct_mode());
@@ -5158,6 +7508,128 @@ u32 display64_gui_assistant_opened(void)
 {
     return g_display_gui_assistant_opened;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_gui_right_click_count(void)
+{
+    return g_display_gui_right_click_count;
+}
+
+u32 display64_gui_scroll_count(void)
+{
+    return g_display_gui_scroll_count;
+}
+
+u32 display64_gui_terminal_action_count(void)
+{
+    return g_display_terminal_action_count;
+}
+
+u32 display64_gui_fileman_action_count(void)
+{
+    return g_display_fileman_action_count;
+}
+
+u32 display64_gui_fileman_backend_refresh_count(void)
+{
+    return g_display_fileman_backend_refresh_count;
+}
+
+u32 display64_gui_fileman_backend_preview_count(void)
+{
+    return g_display_fileman_backend_preview_count;
+}
+
+u32 display64_gui_fileman_backend_open_dir_count(void)
+{
+    return g_display_fileman_backend_open_dir_count;
+}
+
+u32 display64_gui_fileman_backend_write_count(void)
+{
+    return g_display_fileman_backend_write_count;
+}
+
+u32 display64_gui_fileman_backend_write_denial_count(void)
+{
+    return g_display_fileman_backend_write_denial_count;
+}
+
+u32 display64_gui_fileman_backend_delete_count(void)
+{
+    return g_display_fileman_backend_delete_count;
+}
+
+u32 display64_gui_fileman_backend_delete_denial_count(void)
+{
+    return g_display_fileman_backend_delete_denial_count;
+}
+
+u32 display64_gui_fileman_backend_delete_confirm_count(void)
+{
+    return g_display_fileman_backend_delete_confirm_count;
+}
+
+u32 display64_gui_fileman_backend_mkdir_count(void)
+{
+    return g_display_fileman_backend_mkdir_count;
+}
+
+u32 display64_gui_fileman_backend_mkdir_denial_count(void)
+{
+    return g_display_fileman_backend_mkdir_denial_count;
+}
+
+u32 display64_gui_fileman_backend_copy_count(void)
+{
+    return g_display_fileman_backend_copy_count;
+}
+
+u32 display64_gui_fileman_backend_copy_denial_count(void)
+{
+    return g_display_fileman_backend_copy_denial_count;
+}
+
+u32 display64_gui_fileman_backend_rename_count(void)
+{
+    return g_display_fileman_backend_rename_count;
+}
+
+u32 display64_gui_fileman_backend_rename_denial_count(void)
+{
+    return g_display_fileman_backend_rename_denial_count;
+}
+
+u32 display64_gui_fileman_backend_move_count(void)
+{
+    return g_display_fileman_backend_move_count;
+}
+
+u32 display64_gui_fileman_backend_move_denial_count(void)
+{
+    return g_display_fileman_backend_move_denial_count;
+}
+
+u32 display64_gui_fileman_backend_edit_count(void)
+{
+    return g_display_fileman_backend_edit_count;
+}
+
+u32 display64_gui_fileman_backend_edit_commit_count(void)
+{
+    return g_display_fileman_backend_edit_commit_count;
+}
+
+u32 display64_gui_settings_action_count(void)
+{
+    return g_display_settings_action_count;
+}
+
+u32 display64_gui_installer_action_count(void)
+{
+    return g_display_installer_action_count;
+}
+#endif
 
 u32 display64_gui_unfocused_key_denied(void)
 {
