@@ -29,7 +29,8 @@ param(
     [string]$ExtraApp3Version = "",
     [string[]]$ExtraShellLine = @(),
     [switch]$HardwareRegistryGate,
-    [switch]$HardwareDisplayGate
+    [switch]$HardwareDisplayGate,
+    [switch]$HardwareStorageGate
 )
 
 Set-StrictMode -Version Latest
@@ -549,6 +550,7 @@ function Send-QemuKeyboardProbe
         [bool]$RealBinaryProbeEnabled = $false,
         [bool]$HardwareRegistryProbeEnabled = $false,
         [bool]$HardwareDisplayProbeEnabled = $false,
+        [bool]$HardwareStorageProbeEnabled = $false,
         [string[]]$ExtraTextLines = @()
     )
 
@@ -898,13 +900,16 @@ function Send-QemuKeyboardProbe
             Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
             return
         }
-        if ($HardwareRegistryProbeEnabled -or $HardwareDisplayProbeEnabled) {
+        if ($HardwareRegistryProbeEnabled -or $HardwareDisplayProbeEnabled -or $HardwareStorageProbeEnabled) {
             & $sendTextLine "hwval"
             if ($HardwareRegistryProbeEnabled) {
                 Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-hardware-registry' -TimeoutMilliseconds 180000
             }
             if ($HardwareDisplayProbeEnabled) {
                 Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-display-readability' -TimeoutMilliseconds 180000
+            }
+            if ($HardwareStorageProbeEnabled) {
+                Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-nvme-triage' -TimeoutMilliseconds 180000
             }
             & $sendTextLine "exit"
             return
@@ -1141,9 +1146,9 @@ try {
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -ExtraTextLines $extraTextLines
-        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent)) {
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $HardwareStorageGate.IsPresent))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$($HardwareStorageGate.IsPresent) -ExtraTextLines $extraTextLines
+        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $HardwareStorageGate.IsPresent)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
     }
@@ -1227,6 +1232,13 @@ if ($HardwareDisplayGate.IsPresent) {
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M107 hwval did not report read-only Product mode."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-display-readability display-readability 1 available 1 width [1-9][0-9]* height [1-9][0-9]* pitch [1-9][0-9]* stride-ok 1 bounds-ok 1 scale [1-3] viewport-x [0-9]+ viewport-y [0-9]+ viewport-w [1-9][0-9]* viewport-h [1-9][0-9]* columns [1-9][0-9]* rows [1-9][0-9]* fit 1 readable 1 clip [0-9]+ cursor-visible [0-1] cursor-draws [0-9]+ direct-cursor-draws [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M107 display readability proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct [0-1] font 1 wm 1 desktop 1 taskbar [1-9][0-9]* launcher [1-9][0-9]* windows [1-9][0-9]* cursor-visible 1 token 0x[0-9A-F]{8}' -Message "x64 M109 UI polish proof was not observed."
+    $outputLines
+    return
+}
+if ($HardwareStorageGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M110 hwval command."
+    Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M110 hwval did not report read-only Product mode."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions [1-9][0-9]* fat32-start [1-9][0-9]* fat32-sectors [1-9][0-9]* gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat [01] busybox-bytes [0-9]+ dynldlimit-stat [01] dynldlimit-bytes [0-9]+ ldlimit-stat [01] ldlimit-bytes [0-9]+ boot-staged [01] boot-app-bytes [0-9]+ boot-interp-bytes [0-9]+ boot-status [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M110 NVMe/FAT storage triage proof was not observed."
     $outputLines
     return
 }

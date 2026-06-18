@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M109 is `Product visual polish direct compositor foundation`. The UEFI Product display path now keeps the compositor logically active in a direct framebuffer mode when the full back buffer cannot be allocated inside the current handoff window. That lets the existing font, window manager, desktop, taskbar, launcher, and visible cursor paths draw on QEMU/VirtualBox-style GOP framebuffers instead of falling back to emergency text-only presentation. The hardware display gate now records `drs-ui-polish` with compositor mode, font/window/desktop/taskbar/window counts, cursor visibility, and a style token. BIOS remains at 101 reserve sectors.
+M110 is `NVMe/FAT hardware storage triage`. The UEFI Product `hwval` path now emits a compact `drs-nvme-triage` line that separates NVMe controller discovery, controller readiness, Identify, IO queue creation, read completion/status, GPT/VBR discovery, FAT BPB/location, shell read-write capability, `/APPS` directory visibility, first `/APPS` dirent visibility, and staged artifact presence for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`. This is the hardware-facing diagnostic needed for the real laptop symptom where `linux /apps/dynldlimit` returned `NVME FAT UNAVAILABLE`: the next physical run can now tell whether the failure is controller discovery, namespace/IO, GPT/VBR, FAT mount, scoped shell authority, `/APPS` absence, or missing staged dynamic artifacts. BIOS remains at 101 reserve sectors.
+
+M109 is `Product visual polish direct compositor foundation`. The UEFI Product display path keeps the compositor logically active in a direct framebuffer mode when the full back buffer cannot be allocated inside the current handoff window. That lets the existing font, window manager, desktop, taskbar, launcher, and visible cursor paths draw on QEMU/VirtualBox-style GOP framebuffers instead of falling back to emergency text-only presentation. The hardware display gate records `drs-ui-polish` with compositor mode, font/window/desktop/taskbar/window counts, cursor visibility, and a style token. BIOS remains at 101 reserve sectors.
 
 M108 is `visible cursor fallback and bounded login recovery`. The UEFI Product display path draws the mouse cursor directly into the physical framebuffer when pointer packets are moving but the compositor/back-buffer path is not active. This addresses the VirtualBox symptom where PS/2 mouse packet counts and coordinates changed but no cursor was visible. The UEFI Product login gate also has a bounded local-console recovery path so boot reaches the shell when no keyboard line is entered. The hardware display gate records cursor visibility, total cursor draws, and direct framebuffer cursor draws through `hwval`.
 
@@ -1924,7 +1926,39 @@ Final reserves after the implementation build:
 
 M109 non-claims: this does not add native GPU acceleration, DRM/KMS mode setting, EDID policy, multi-monitor support, a hardware touchpad driver, a complete GUI toolkit, or physical MSI laptop certification. It proves the existing Product desktop/window surface can initialize and draw through a direct GOP framebuffer compositor fallback, with visible cursor and telemetry-backed UI initialization.
 
-Proposed M110 scope: physical-laptop boot-media and NVMe availability triage. The attached hardware photos showed `LINUX: NVME FAT UNAVAILABLE` for `linux /apps/dynldlimit`; the next gate should add hardware-visible diagnostics for NVMe controller discovery, namespace readiness, FAT mount failure reason, and staged `/APPS` artifact presence on the real boot medium.
+## M110 NVMe/FAT Hardware Storage Triage
+
+M110 is accepted on the UEFI Product path with the new hardware-storage gate:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareStorageGate
+```
+
+Implementation scope:
+
+- adds a UEFI-only `drs-nvme-triage` proof line to `hwval`
+- records NVMe controller discovery, readiness, Identify, IO queue creation, issued/completed read, read status, GPT signature, partition count, FAT32 start/size, VBR, FAT BPB, FAT located/unavailable/error, scoped shell RW capability, `/APPS` stat, `/APPS` first dirent, and staged file stat/size for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`
+- emits the same triage line from the `linux` unavailable path so a direct `linux /apps/dynldlimit` failure on hardware carries the diagnostic context without requiring a separate command first
+- adds `-HardwareStorageGate` to `tools/verify-qemu.ps1`, reusing the normal persistent shell plus `hwval` path
+- preserves storage behavior: no new read/write authority, no new block endpoint, no FAT mutation, no Linux launcher behavior change, and no BIOS code expansion for the triage helper
+
+M110 acceptance telemetry:
+
+```text
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 0 dynldlimit-bytes 0 ldlimit-stat 0 ldlimit-bytes 0 boot-staged 0 boot-app-bytes 0 boot-interp-bytes 0 boot-status 14 token 0xCDD4D6A0
+```
+
+The default M110 storage-gate image intentionally proves the diagnostic separation rather than staging dynamic artifacts: NVMe, GPT, FAT, and `/APPS` are healthy, while `busybox-stat`, `dynldlimit-stat`, and `ldlimit-stat` are `0` because those optional real-binary artifacts were not staged for this gate run.
+
+Final reserves after the implementation build:
+
+- UEFI kernel bytes: 1,308,544 / 2,097,152, reserve 788,608 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x769D7150`
+
+M110 non-claims: this does not add a new NVMe driver, broaden hardware support, fix a physical laptop controller quirk by itself, add arbitrary filesystem mounting, or stage missing dynamic artifacts automatically. It makes the real-hardware storage failure falsifiable at the shell.
+
+Proposed M111 scope: real-hardware boot-media staging verification. Add a host/verifier path that produces a physical USB/ISO artifact with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged and records a manifest-visible expected presence list, then have `hwval` compare expected boot-media/NVMe artifact presence against actual `/APPS` stat results on hardware.
 
 ## Persistence
 

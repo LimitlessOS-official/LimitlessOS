@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, and M109 Product visual polish direct compositor foundation are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, and M110 NVMe/FAT hardware storage triage are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -1979,7 +1979,29 @@ Final reserves are UEFI 789,120 bytes and BIOS 101 sectors. The M109 UEFI manife
 
 M109 non-claims: no native GPU driver, DRM/KMS mode setting, EDID policy, acceleration, multi-monitor support, I2C HID touchpad driver, complete GUI toolkit, or broad physical laptop certification is claimed. The accepted claim is narrower: Product desktop/window/font/taskbar rendering can initialize and draw through a direct GOP framebuffer compositor fallback, with cursor visibility and UI initialization telemetry gated by `hwval`.
 
-Proposed M110 scope: physical-laptop boot-media and NVMe availability triage. The attached hardware photos showed `LINUX: NVME FAT UNAVAILABLE` for `linux /apps/dynldlimit`; the next gate should make NVMe controller discovery, namespace readiness, FAT mount failure reason, and staged `/APPS` artifact presence visible on real hardware.
+## M110 NVMe/FAT Hardware Storage Triage
+
+M110 is accepted on the UEFI Product path with:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareStorageGate
+```
+
+It adds hardware-facing storage diagnostics for the observed real-laptop symptom where `linux /apps/dynldlimit` reported `NVME FAT UNAVAILABLE`. The new UEFI-only `drs-nvme-triage` line distinguishes controller discovery, controller readiness, Identify, IO queue creation, read completion/status, GPT signature, FAT32 partition geometry, VBR, FAT BPB/location/error, scoped shell RW capability, `/APPS` directory visibility, first `/APPS` dirent visibility, and staged artifact presence for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`. The same triage line is emitted from the `linux` unavailable path so direct launch failures carry the diagnostic context.
+
+Acceptance telemetry:
+
+```text
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 0 dynldlimit-bytes 0 ldlimit-stat 0 ldlimit-bytes 0 boot-staged 0 boot-app-bytes 0 boot-interp-bytes 0 boot-status 14 token 0xCDD4D6A0
+```
+
+The default storage-gate image proves the diagnostic separation: NVMe/GPT/FAT and `/APPS` are healthy, while optional real-binary artifacts are absent unless a staging verifier explicitly adds them.
+
+Final reserves are UEFI 788,608 bytes and BIOS 101 sectors. The M110 UEFI manifest reports kernel bytes 1,308,544 and checksum `0x769D7150`.
+
+M110 non-claims: no new NVMe driver, broad hardware fix, arbitrary filesystem mounting, automatic artifact staging, or physical laptop pass is claimed. The accepted claim is that real-hardware storage failures are now stage-specific and visible from `hwval` or from the `linux` unavailable path.
+
+Proposed M111 scope: real-hardware boot-media staging verification. Add a host/verifier path that produces a physical USB/ISO artifact with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged and records a manifest-visible expected presence list, then compare expected artifact presence against the new `/APPS` stat fields on hardware.
 
 Later targets are:
 

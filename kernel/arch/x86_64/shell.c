@@ -710,6 +710,119 @@ static const char *shell64_mouse_backend_label(void)
     return "pending";
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_storage_triage_mix(u32 token, u32 value)
+{
+    token ^= value;
+    token *= 16777619u;
+    return token;
+}
+
+static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 owner_id)
+{
+    static const u8 apps_path[] = "/APPS";
+    static const u8 busybox_path[] = "/APPS/BUSYBOX";
+    static const u8 dynldlimit_path[] = "/APPS/DYNLDLIMIT";
+    static const u8 ldlimit_path[] = "/APPS/LDLIMIT";
+    mmio64_nvme_fat_stat_t apps_stat;
+    mmio64_nvme_fat_stat_t busybox_stat;
+    mmio64_nvme_fat_stat_t dynldlimit_stat;
+    mmio64_nvme_fat_stat_t ldlimit_stat;
+    mmio64_nvme_fat_dirent_t apps_dirent;
+    u32 rw_cap_present;
+    u32 apps_stat_ok;
+    u32 busybox_stat_ok;
+    u32 dynldlimit_stat_ok;
+    u32 ldlimit_stat_ok;
+    u32 apps_dir_result;
+    u32 apps_dirent_ok;
+    u32 token = 2166136261u;
+
+    rw_cap_present = (mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
+    apps_stat_ok = mmio64_nvme_fat_shell_stat_path(
+        apps_path,
+        (u32)(sizeof(apps_path) - 1u),
+        owner_id,
+        &apps_stat);
+    busybox_stat_ok = mmio64_nvme_fat_shell_stat_path(
+        busybox_path,
+        (u32)(sizeof(busybox_path) - 1u),
+        owner_id,
+        &busybox_stat);
+    dynldlimit_stat_ok = mmio64_nvme_fat_shell_stat_path(
+        dynldlimit_path,
+        (u32)(sizeof(dynldlimit_path) - 1u),
+        owner_id,
+        &dynldlimit_stat);
+    ldlimit_stat_ok = mmio64_nvme_fat_shell_stat_path(
+        ldlimit_path,
+        (u32)(sizeof(ldlimit_path) - 1u),
+        owner_id,
+        &ldlimit_stat);
+    apps_dir_result = mmio64_nvme_fat_shell_read_dirent(
+        apps_path,
+        (u32)(sizeof(apps_path) - 1u),
+        0u,
+        owner_id,
+        &apps_dirent);
+    apps_dirent_ok = (apps_dir_result == MMIO64_NVME_FAT_READDIR_OK) ? 1u : 0u;
+
+    token = shell64_storage_triage_mix(token, mmio64_nvme_probe_found());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_probe_identify());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_read_ioq_created());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_read_status());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_gpt_signature());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_gpt_vbr());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_fat_bpb());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_fat_located());
+    token = shell64_storage_triage_mix(token, mmio64_nvme_fat_error());
+    token = shell64_storage_triage_mix(token, rw_cap_present);
+    token = shell64_storage_triage_mix(token, apps_stat_ok);
+    token = shell64_storage_triage_mix(token, apps_dirent_ok);
+    token = shell64_storage_triage_mix(token, busybox_stat_ok);
+    token = shell64_storage_triage_mix(token, dynldlimit_stat_ok);
+    token = shell64_storage_triage_mix(token, ldlimit_stat_ok);
+    token = shell64_storage_triage_mix(token, boot_media64_status());
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-triage storage-triage 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-found ", mmio64_nvme_probe_found());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", mmio64_nvme_probe_ready());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-identify ", mmio64_nvme_probe_identify());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " ioq ", mmio64_nvme_read_ioq_created());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " read-issued ", mmio64_nvme_read_issued());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " read-completed ", mmio64_nvme_read_completed());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " read-status ", mmio64_nvme_read_status());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " gpt-signature ", mmio64_nvme_gpt_signature());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " gpt-partitions ", mmio64_nvme_gpt_partitions());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat32-start ", mmio64_nvme_gpt_fat32_start());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat32-sectors ", mmio64_nvme_gpt_fat32_sectors());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " gpt-vbr ", mmio64_nvme_gpt_vbr());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat-bpb ", mmio64_nvme_fat_bpb());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat-located ", mmio64_nvme_fat_located());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat-unavailable ", mmio64_nvme_fat_unavailable());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fat-error ", mmio64_nvme_fat_error());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " rw-cap ", rw_cap_present);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " rw-delegated ", mmio64_nvme_rw_delegated());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " rw-error ", mmio64_nvme_rw_error());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " apps-stat ", apps_stat_ok);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " apps-type ", apps_stat.entry_type);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " apps-dirent ", apps_dirent_ok);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " apps-dir-result ", apps_dir_result);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " busybox-stat ", busybox_stat_ok);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " busybox-bytes ", busybox_stat.byte_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " dynldlimit-stat ", dynldlimit_stat_ok);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " dynldlimit-bytes ", dynldlimit_stat.byte_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " ldlimit-stat ", ldlimit_stat_ok);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " ldlimit-bytes ", ldlimit_stat.byte_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " boot-staged ", boot_media64_available());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " boot-app-bytes ", boot_media64_app_bytes());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " boot-interp-bytes ", boot_media64_interp_bytes());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " boot-status ", boot_media64_status());
+    return shell64_write_hex32_line(console_capability_handle, owner_id, " token ", token);
+}
+#endif
+
 static u32 shell64_print_hardware_validation_status(u32 console_capability_handle, u32 owner_id)
 {
     u32 network_online = (virtio_net64_dhcp_ack() != 0u) ? 1u : 0u;
@@ -936,6 +1049,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media interp bytes: ", boot_media64_interp_bytes());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media flags: ", boot_media64_flags());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media status: ", boot_media64_status());
+    (void)shell64_print_nvme_storage_triage(console_capability_handle, owner_id);
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ahci detected: ", pci64_ecam_ahci_found());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -1595,7 +1709,8 @@ static u32 shell64_linux_run(
         shell64_write_decimal_field(console_capability_handle, owner_id, " fat-error ", mmio64_nvme_fat_error());
         shell64_write_decimal_field(console_capability_handle, owner_id, " rw-delegated ", mmio64_nvme_rw_delegated());
         shell64_write_decimal_field(console_capability_handle, owner_id, " rw-error ", mmio64_nvme_rw_error());
-        return shell64_write_text(console_capability_handle, owner_id, "\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+        return shell64_print_nvme_storage_triage(console_capability_handle, owner_id);
     }
 
     return linux_exec64_run_nvme(
