@@ -55,6 +55,8 @@ Analyze the evidence bundle and captured transcript from Windows/PowerShell with
 
 The combined analyzer checks the evidence bundle hashes/reserves first, runs the storage analyzer, runs the display/input analyzer, and writes `msi-hardware-analysis.json`, `.txt`, and `.md`. Use the top-level `stage` and `next-target` as the next implementation target. If storage fails first, the stage names the first failing controller/GPT/FAT/capability/`/APPS`/staged-artifact dependency. If storage passes and display/input fails, the stage names the first framebuffer/compositor/cursor/pointer backend dependency.
 
+Before a physical capture handoff, `tools\verify-msi-hardware-analysis-fixtures.ps1` can be run as a host-side regression check for the combined analyzer ordering.
+
 M113 packages this handoff into a timestamped evidence directory:
 
 ```powershell

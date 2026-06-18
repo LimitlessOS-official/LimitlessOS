@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M119 is `MSI hardware capture analysis fixture coverage`. The repo now has `tools\verify-msi-hardware-analysis-fixtures.ps1`, a self-contained host-side regression suite for the combined M118 analyzer. It synthesizes a valid evidence bundle, fabricates controlled `hwval` transcripts, and proves all-ready, storage-first, display-after-storage, and missing-telemetry priority behavior. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
 M118 is `MSI hardware capture analysis`. The repo now has `tools\analyze-msi-hardware-capture.ps1`, a single host-side intake command that verifies the M113 storage evidence bundle, runs the M115/M114 storage capture path, runs the M117 display/input analyzer on the same transcript, and emits JSON/text/Markdown with one combined pass/stage/next-target result. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 
 M117 is `physical display/input capture analysis`. The repo now has `tools\analyze-hardware-display-input-capture.ps1` and `tools\verify-hardware-display-input-fixtures.ps1`, host-side tools that classify real `hwval` display/UI/cursor/pointer telemetry. They distinguish unreadable framebuffer geometry, missing UI/compositor pieces, hidden cursor despite mouse packets, xHCI/PS2/I2C pointer backend failures, and the final `display-input-ready` pass. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
@@ -2479,6 +2481,50 @@ Final reserves are unchanged because no kernel code changed:
 - UEFI manifest checksum: `0x6714FC97`
 
 Proposed M119 scope: run the M118 combined analyzer on a fresh physical MSI `hwval` transcript from the staged evidence ISO, then implement only the first reported hardware stage. If storage fails first, start with the reported NVMe/GPT/FAT/capability stage; if storage passes and display/input fails, start with the reported framebuffer/cursor/pointer backend stage.
+
+## M119 MSI Hardware Capture Analysis Fixture Coverage
+
+M119 is accepted as deterministic regression coverage for the combined M118 MSI analyzer. It adds:
+
+```powershell
+.\tools\verify-msi-hardware-analysis-fixtures.ps1 [-OutputDir <dir>]
+```
+
+The verifier builds a synthetic evidence bundle under the output directory, including matching `hardware-storage-evidence-manifest.json`, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, and `LDLIMIT` files with real byte counts and SHA-256s. It then fabricates controlled `hwval` transcripts and runs `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts` against each one.
+
+Accepted command:
+
+```powershell
+.\tools\verify-msi-hardware-analysis-fixtures.ps1
+```
+
+Result:
+
+```text
+msi-hardware-analysis-fixtures: 4/4
+failed: 0
+```
+
+Covered combined stages:
+
+```text
+all-ready: msi-hardware-ready
+storage-first: storage-nvme-controller-discovery
+display-after-storage: display-input-pointer-moving-cursor-hidden
+missing-storage-priority: storage-missing-storage-triage
+```
+
+The important proof is ordering: a storage failure remains the top-level target even when display/input passes, and display/input becomes the top-level target only after storage reaches `storage-ready`. Missing storage telemetry also wins over missing display telemetry so the next action is to repeat `hwval` on a suitable staged image instead of debugging a display symptom from an insufficient transcript.
+
+M119 non-claims: this does not add or certify hardware support. It keeps the M118 intake tool from regressing before a fresh physical laptop transcript is available.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M120 scope: take a fresh MSI laptop `hwval` transcript from the staged evidence ISO, run `tools\analyze-msi-hardware-capture.ps1`, then implement exactly the first reported hardware stage. Based on the photo-era evidence, the likely first real target remains NVMe controller discovery/readiness or, if storage passes, visible cursor/direct-compositor cursor drawing on physical framebuffer modes.
 
 ## Persistence
 
