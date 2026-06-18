@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M115 is `physical hardware storage evidence verification`. The repo now has `tools\verify-hardware-storage-evidence.ps1`, a host-side verifier that validates an M113 evidence bundle before hardware use, checks ISO/UEFI/app/interpreter byte counts and SHA-256s against `hardware-storage-evidence-manifest.json`, checks the staged `BOOTMAN.TXT` contract, checks reserves against the size map, and optionally runs the M114 analyzer on a captured transcript. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+M116 is `physical hardware storage analysis fixture coverage`. The repo now has `tools\verify-hardware-storage-analysis-fixtures.ps1`, a host-side regression suite that fabricates one tiny capture for every M112/M114 storage stage and proves the analyzer reports the expected stage and exit code. It covers missing telemetry, legacy `drs-realbin-unavailable`, every NVMe/GPT/FAT/capability/`/APPS`/staged-artifact failure, and the final `storage-ready` pass. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
+M115 is `physical hardware storage evidence verification`. The repo now has `tools\verify-hardware-storage-evidence.ps1`, a host-side verifier that validates an M113 evidence bundle before hardware use, checks ISO/UEFI/app/interpreter byte counts and SHA-256s against `hardware-storage-evidence-manifest.json`, checks the staged `BOOTMAN.TXT` contract, checks reserves against the size map, and optionally runs the M114 analyzer on a captured transcript.
 
 M114 is `physical hardware storage capture analysis`. The repo now has `tools\analyze-hardware-storage-capture.ps1`, a host-side intake wrapper that runs the M112 parser, preserves failing classifications as useful diagnostics, and writes JSON/text/Markdown reports with the first failing storage stage, key triage fields, and the next kernel/driver target. It can read expected dynamic artifact sizes from an M113 evidence manifest.
 
@@ -2246,7 +2248,78 @@ Final reserves are unchanged from M111 because no kernel code changed:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum: `0x6714FC97`
 
-Proposed M116 scope: run the M113/M115 verified staged ISO on the MSI laptop, capture `hwval`, verify it with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`, then implement only the first failing storage stage reported by `capture-stage`.
+## M116 Physical Hardware Storage Analysis Fixture Coverage
+
+M116 is accepted as host-side regression coverage for the hardware storage diagnostic chain. It adds:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 [-OutputDir <dir>]
+```
+
+The verifier generates small synthetic transcript files and runs each through `tools\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`. It asserts both the expected `stage` and the expected analyzer exit code: `2` for every diagnostic failure and `0` for `storage-ready`.
+
+Accepted command:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1
+```
+
+Accepted result:
+
+```text
+hardware-storage-analysis-fixtures: 35/35
+failed: 0
+```
+
+Covered stages:
+
+```text
+missing-storage-triage
+legacy-realbin-unavailable
+nvme-controller-discovery
+nvme-controller-ready
+nvme-identify
+nvme-io-queue
+nvme-read-issue
+nvme-read-completion
+nvme-read-status
+gpt-signature
+gpt-partition-table
+fat32-partition
+fat32-vbr
+fat32-bpb
+fat32-mount
+fat32-unavailable
+fat32-error
+storage-capability
+storage-capability-delegation
+storage-capability-error
+apps-directory-stat
+apps-directory-type
+apps-directory-read
+boot-media-staging
+boot-media-app-size
+boot-media-interp-size
+nvme-dynldlimit-stat
+nvme-dynldlimit-size
+nvme-ldlimit-stat
+nvme-ldlimit-size
+stage-expected-flag
+dynldlimit-match
+ldlimit-match
+stage-match
+storage-ready
+```
+
+M116 non-claims: this does not certify the MSI laptop, add a storage driver, alter kernel behavior, or prove physical NVMe access. It proves the host-side diagnostic classifier is not guessing once the physical `hwval` transcript exists.
+
+Final reserves are unchanged from M111 because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M117 scope: run the M113/M115 verified staged ISO on the MSI laptop, capture `hwval`, verify it with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`, then implement only the first failing storage stage reported by `capture-stage`.
 
 ## Persistence
 
