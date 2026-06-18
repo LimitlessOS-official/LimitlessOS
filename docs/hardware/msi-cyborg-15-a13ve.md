@@ -89,7 +89,7 @@ M121 packages this handoff into a timestamped evidence directory:
 .\tools\prepare-hardware-storage-evidence.ps1
 ```
 
-The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, and `README-HARDWARE-STORAGE.txt`. The accepted M121 bundle shape is:
+The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, `README-HARDWARE-STORAGE.txt`, and an embedded `msi-handoff-verification` result proving the package still matches the current source-2 handoff contract. The accepted M121 bundle shape is:
 
 ```text
 dist\m121-msi-hardware-handoff-20260617-225629

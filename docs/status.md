@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M124 is `self-verifying MSI handoff packaging`. `tools\prepare-hardware-storage-evidence.ps1` now runs `tools\verify-msi-hardware-handoff.ps1` against each generated bundle by default and stores the verifier transcript/output directory inside the evidence package. The generated runbook also tells testers to use the handoff verifier with `-CapturePath` before reading the combined analyzer output directly. A fast `-SkipBuild -SkipQemuGate` run proved the new path on current artifacts with `msi-hardware-handoff: verified`, source-2 required, BIOS reserve 101 sectors, and UEFI reserve 788,512 bytes. No kernel code changed.
+
 M123 is `MSI hardware handoff verifier fixture coverage`. The repo now has `tools\verify-msi-hardware-handoff-fixtures.ps1`, a host-side regression suite for the M122 handoff verifier. It synthesizes valid hash/reserve/BOOTMAN evidence bundles, proves a correct M121 handoff passes, and proves stale or malformed handoffs are rejected for old milestone labels, storage-only analyzer selection, missing source-2 requirement, stale M113 ISO naming, missing `linux /APPS/DYNLDLIMIT` runbook command, and missing source-2 runbook telemetry. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 
 M122 is `MSI hardware handoff verifier`. The repo now has `tools\verify-msi-hardware-handoff.ps1`, a host-side verifier that wraps the storage evidence verifier and then enforces the M121-specific handoff contract: manifest milestone/purpose, M121 ISO/UEFI image names, `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` paths, combined MSI analyzer command, source-2 boot-media expectation, and runbook instructions to run both `hwval` and `linux /APPS/DYNLDLIMIT`. It verified the current M121 bundle with `source2 required: 2`, BIOS reserve 101 sectors, and UEFI reserve 788,512 bytes. No kernel code changed.
@@ -2714,7 +2716,51 @@ Final reserves are unchanged because no kernel code changed:
 - UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 
-Proposed M124 scope: boot the M121/M123-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
+## M124 Self-Verifying MSI Handoff Packaging
+
+M124 is accepted as packaging hardening for the physical MSI handoff. `tools\prepare-hardware-storage-evidence.ps1` now calls `tools\verify-msi-hardware-handoff.ps1` after writing the evidence bundle, unless explicitly passed `-SkipHandoffVerify`. This means a freshly generated package fails before handoff if it has stale M113 naming, the wrong analyzer path, missing source-2 boot-media expectations, bad hashes/reserves, or an incomplete runbook.
+
+Accepted command:
+
+```powershell
+.\tools\prepare-hardware-storage-evidence.ps1 -EvidenceDir .\build\m124-self-verified-handoff -SkipBuild -SkipQemuGate
+```
+
+Acceptance output:
+
+```text
+hardware-storage-evidence: verified
+  bundle pass: True
+  bios reserve: 101 sectors
+  uefi reserve: 788512 bytes
+msi-hardware-handoff: verified
+  handoff pass: True
+  source2 required: 2
+  bios reserve: 101 sectors
+  uefi reserve: 788512 bytes
+M121 MSI hardware handoff evidence bundle: .\build\m124-self-verified-handoff
+```
+
+The packager now writes these verifier artifacts into the generated bundle:
+
+- `msi-handoff-verification.txt`
+- `msi-handoff-verification\storage-evidence\hardware-storage-evidence-verification.json`
+- `msi-handoff-verification\msi-hardware-handoff-verification.json`
+
+The generated runbook now puts the handoff verifier in front of the direct analyzer command:
+
+```powershell
+.\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
+```
+
+M124 non-claims: this does not certify the physical MSI laptop and does not add hardware support. It reduces the chance that a bad or stale USB handoff package reaches hardware testing.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+
+Proposed M125 scope: boot the M121/M124 self-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
 
 ## Persistence
 

@@ -7,7 +7,9 @@ param(
 
     [switch]$SkipBuild,
 
-    [switch]$SkipQemuGate
+    [switch]$SkipQemuGate,
+
+    [switch]$SkipHandoffVerify
 )
 
 Set-StrictMode -Version Latest
@@ -59,8 +61,8 @@ function Copy-EvidenceFile
     return $destination
 }
 
-Assert-FileExists -Path $DynamicAppPath -Message "M113 evidence prep: dynamic app artifact not found: $DynamicAppPath"
-Assert-FileExists -Path $DynamicInterpPath -Message "M113 evidence prep: dynamic interpreter artifact not found: $DynamicInterpPath"
+Assert-FileExists -Path $DynamicAppPath -Message "M121 handoff prep: dynamic app artifact not found: $DynamicAppPath"
+Assert-FileExists -Path $DynamicInterpPath -Message "M121 handoff prep: dynamic interpreter artifact not found: $DynamicInterpPath"
 
 $resolvedApp = (Resolve-Path $DynamicAppPath).Path
 $resolvedInterp = (Resolve-Path $DynamicInterpPath).Path
@@ -78,7 +80,7 @@ if (-not $SkipBuild.IsPresent) {
         -BootLinuxInterpPath $resolvedInterp `
         -BootLinuxInterpName LDLIMIT
     if (-not $?) {
-        throw "M113 evidence prep: staged Product build failed."
+        throw "M121 handoff prep: staged Product build failed."
     }
 }
 
@@ -87,10 +89,10 @@ $uefiImagePath = Join-Path $distDir "limitlessos-x86_64-uefi.img"
 $bootManifestPath = Join-Path $distDir "limitlessos-x86_64-uefi\BOOTMAN.TXT"
 $sizeMapPath = Join-Path $distDir "limitlessos-x86_64.size.txt"
 
-Assert-FileExists -Path $isoPath -Message "M113 evidence prep: staged ISO was not generated: $isoPath"
-Assert-FileExists -Path $uefiImagePath -Message "M113 evidence prep: staged UEFI image was not generated: $uefiImagePath"
-Assert-FileExists -Path $bootManifestPath -Message "M113 evidence prep: BOOTMAN.TXT was not generated: $bootManifestPath"
-Assert-FileExists -Path $sizeMapPath -Message "M113 evidence prep: size map was not generated: $sizeMapPath"
+Assert-FileExists -Path $isoPath -Message "M121 handoff prep: staged ISO was not generated: $isoPath"
+Assert-FileExists -Path $uefiImagePath -Message "M121 handoff prep: staged UEFI image was not generated: $uefiImagePath"
+Assert-FileExists -Path $bootManifestPath -Message "M121 handoff prep: BOOTMAN.TXT was not generated: $bootManifestPath"
+Assert-FileExists -Path $sizeMapPath -Message "M121 handoff prep: size map was not generated: $sizeMapPath"
 
 $bootManifest = Get-Content $bootManifestPath
 foreach ($expectedLine in @(
@@ -103,7 +105,7 @@ foreach ($expectedLine in @(
         "boot-linux-interp-sha256=$interpSha256"
     )) {
     if (-not ($bootManifest -contains $expectedLine)) {
-        throw "M113 evidence prep: BOOTMAN.TXT missing expected staging line: $expectedLine"
+        throw "M121 handoff prep: BOOTMAN.TXT missing expected staging line: $expectedLine"
     }
 }
 
@@ -114,7 +116,7 @@ if (-not $SkipQemuGate.IsPresent) {
     $qemuOutput = & (Join-Path $root "tools\verify-hardware-storage-staging.ps1") -DynamicAppPath $resolvedApp -DynamicInterpPath $resolvedInterp -SkipBuild 2>&1
     $qemuOutput | Set-Content -Path $qemuOutputPath -Encoding Ascii
     if ($LASTEXITCODE -ne 0) {
-        throw "M113 evidence prep: staged QEMU storage gate failed. See $qemuOutputPath"
+        throw "M121 handoff prep: staged QEMU storage gate failed. See $qemuOutputPath"
     }
 }
 
@@ -215,6 +217,8 @@ LimitlessOS M121 MSI Hardware Handoff Runbook
 4. Capture the full transcript to a text file named msi-hwval-storage.txt.
 5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
 
+   .\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
+
    .\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts
 
 Pass means the combined analyzer reports:
@@ -247,6 +251,19 @@ Before creating or using a bundle, the host-side boot-media handoff verifier can
 
 Do not run installer writes, formatting, or NVRAM boot-entry actions during this evidence pass.
 "@ | Set-Content -Path $runbookPath -Encoding Ascii
+
+if (-not $SkipHandoffVerify.IsPresent) {
+    $handoffOutputPath = Join-Path $EvidenceDir "msi-handoff-verification.txt"
+    $handoffOutputDir = Join-Path $EvidenceDir "msi-handoff-verification"
+    $handoffOutput = & (Join-Path $root "tools\verify-msi-hardware-handoff.ps1") `
+        -EvidenceDir $EvidenceDir `
+        -OutputDir $handoffOutputDir `
+        -RequireStagedDynamicArtifacts 2>&1
+    $handoffOutput | Set-Content -Path $handoffOutputPath -Encoding Ascii
+    if ($LASTEXITCODE -ne 0) {
+        throw "M121 handoff prep: MSI hardware handoff verifier failed. See $handoffOutputPath"
+    }
+}
 
 Write-Host "M121 MSI hardware handoff evidence bundle: $EvidenceDir"
 Write-Host "  iso sha256       : $($manifestObject.iso.sha256)"
