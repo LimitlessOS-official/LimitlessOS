@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M118 is `MSI hardware capture analysis`. The repo now has `tools\analyze-msi-hardware-capture.ps1`, a single host-side intake command that verifies the M113 storage evidence bundle, runs the M115/M114 storage capture path, runs the M117 display/input analyzer on the same transcript, and emits JSON/text/Markdown with one combined pass/stage/next-target result. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
 M117 is `physical display/input capture analysis`. The repo now has `tools\analyze-hardware-display-input-capture.ps1` and `tools\verify-hardware-display-input-fixtures.ps1`, host-side tools that classify real `hwval` display/UI/cursor/pointer telemetry. They distinguish unreadable framebuffer geometry, missing UI/compositor pieces, hidden cursor despite mouse packets, xHCI/PS2/I2C pointer backend failures, and the final `display-input-ready` pass. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 
 M116 is `physical hardware storage analysis fixture coverage`. The repo now has `tools\verify-hardware-storage-analysis-fixtures.ps1`, a host-side regression suite that fabricates one tiny capture for every M112/M114 storage stage and proves the analyzer reports the expected stage and exit code. It covers missing telemetry, legacy `drs-realbin-unavailable`, every NVMe/GPT/FAT/capability/`/APPS`/staged-artifact failure, and the final `storage-ready` pass.
@@ -2398,7 +2400,85 @@ Final reserves are unchanged from M111 because no kernel code changed:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum: `0x6714FC97`
 
-Proposed M118 scope: run the M113/M115 verified staged ISO on the MSI laptop, capture `hwval`, verify storage with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`, analyze display/input with `tools\analyze-hardware-display-input-capture.ps1`, then implement only the first reported physical hardware failure stage.
+## M118 MSI Hardware Capture Analysis
+
+M118 is accepted as the single host-side intake command for the MSI Cyborg 15 A13VE hardware run. It adds:
+
+```powershell
+.\tools\analyze-msi-hardware-capture.ps1 `
+  -EvidenceDir <m113-hardware-storage-evidence-dir> `
+  -CapturePath <captured-hwval-transcript> `
+  -OutputDir <analysis-dir> `
+  -RequireStagedDynamicArtifacts
+```
+
+The wrapper verifies the evidence bundle first, then runs the storage capture analyzer and display/input analyzer against the same transcript. It writes:
+
+```text
+msi-hardware-analysis.json
+msi-hardware-analysis.txt
+msi-hardware-analysis.md
+```
+
+Positive QEMU/staged-evidence proof:
+
+```powershell
+.\tools\analyze-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m113-hardware-storage-20260617-222838 `
+  -CapturePath .\build\qemu-x86_64-uefi-debug.log `
+  -OutputDir .\build\m118-msi-qemu `
+  -RequireStagedDynamicArtifacts
+```
+
+Result:
+
+```text
+msi-hardware-analysis: msi-hardware-ready
+pass: True
+storage-stage: storage-ready
+display-input-stage: display-input-ready
+bios-sector-reserve: 101
+uefi-byte-reserve: 788512
+```
+
+Legacy/incomplete-capture proof:
+
+```powershell
+.\tools\analyze-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m113-hardware-storage-20260617-222838 `
+  -CapturePath .\docs\hardware\msi-cyborg-15-a13ve.md `
+  -OutputDir .\build\m118-msi-legacy `
+  -RequireStagedDynamicArtifacts
+```
+
+Result:
+
+```text
+msi-hardware-analysis: storage-nvme-controller-discovery
+pass: False
+storage-stage: nvme-controller-discovery
+display-input-stage: missing-display-readability
+next-target: Driver target: PCI/NVMe enumeration, class-code match, BAR mapping, and controller register visibility.
+```
+
+Regression suites remained green:
+
+```text
+hardware-storage-analysis-fixtures: 35/35
+failed: 0
+hardware-display-input-fixtures: 26/26
+failed: 0
+```
+
+M118 non-claims: this does not certify the MSI laptop, add a storage driver fix, add a GPU driver, or add a touchpad driver. It makes the next real transcript produce one authoritative first implementation target across storage and display/input instead of splitting evidence across separate tools.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M119 scope: run the M118 combined analyzer on a fresh physical MSI `hwval` transcript from the staged evidence ISO, then implement only the first reported hardware stage. If storage fails first, start with the reported NVMe/GPT/FAT/capability stage; if storage passes and display/input fails, start with the reported framebuffer/cursor/pointer backend stage.
 
 ## Persistence
 
