@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M111 is `boot/NVMe staged dynamic artifact verification`. The UEFI Product build can now be produced with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged into the UEFI boot FAT image and recorded in `BOOTMAN.TXT` with expected paths, byte counts, and SHA-256s. The M111 verifier stages the same two files into the NVMe GPT FAT `/APPS` directory, boots the system, and requires `hwval` to prove the loader-copied boot-media byte counts match the NVMe FAT stat results with `stage-match 1`, `dynldlimit-match 1`, and `ldlimit-match 1`. This closes the ambiguity behind the physical-laptop `linux /apps/dynldlimit` symptom: the next hardware run can prove whether the artifact was staged correctly before diagnosing controller or FAT availability. BIOS remains at 101 reserve sectors.
+M112 is `physical hardware storage capture parser`. The repo now has `tools\parse-hardware-storage-capture.ps1`, a host-side parser for real laptop `hwval` transcripts. It reads the `drs-nvme-triage` line, emits JSON, and classifies the first failing stage across NVMe discovery/readiness/Identify/IO queue/read status, GPT, FAT32 VBR/BPB/mount, scoped capability delegation, `/APPS` visibility, and M111 staged dynamic artifact match. It also recognizes the older `drs-realbin-unavailable` photo-era line as legacy/insufficient evidence and tells the tester to rerun `hwval` on an M111-staged image. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
+M111 is `boot/NVMe staged dynamic artifact verification`. The UEFI Product build can now be produced with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` staged into the UEFI boot FAT image and recorded in `BOOTMAN.TXT` with expected paths, byte counts, and SHA-256s. The M111 verifier stages the same two files into the NVMe GPT FAT `/APPS` directory, boots the system, and requires `hwval` to prove the loader-copied boot-media byte counts match the NVMe FAT stat results with `stage-match 1`, `dynldlimit-match 1`, and `ldlimit-match 1`. This closes the ambiguity behind the physical-laptop `linux /apps/dynldlimit` symptom: the next hardware run can prove whether the artifact was staged correctly before diagnosing controller or FAT availability.
 
 M110 is `NVMe/FAT hardware storage triage`. The UEFI Product `hwval` path now emits a compact `drs-nvme-triage` line that separates NVMe controller discovery, controller readiness, Identify, IO queue creation, read completion/status, GPT/VBR discovery, FAT BPB/location, shell read-write capability, `/APPS` directory visibility, first `/APPS` dirent visibility, and staged artifact presence for `/APPS/BUSYBOX`, `/APPS/DYNLDLIMIT`, and `/APPS/LDLIMIT`. This is the hardware-facing diagnostic needed for the real laptop symptom where `linux /apps/dynldlimit` returned `NVME FAT UNAVAILABLE`: hardware runs can now tell whether the failure is controller discovery, namespace/IO, GPT/VBR, FAT mount, scoped shell authority, `/APPS` absence, or missing staged dynamic artifacts.
 
@@ -2006,7 +2008,61 @@ Final reserves after the staged build:
 
 M111 non-claims: this does not make physical NVMe universally work by itself, does not add a new storage driver, does not launch the dynamic binary, and does not change the Linux execution path. It proves that the generated UEFI/ISO artifact can carry the dynamic app/interpreter pair, that the loader stages both into boot-info, and that the runtime can compare those expected staged artifacts against the NVMe `/APPS` directory from `hwval`.
 
-Proposed M112 scope: physical-hardware storage capture. Boot the M111-staged ISO/USB on the laptop, run `hwval`, and use the `drs-nvme-triage` fields to classify the remaining hardware failure as controller discovery, controller readiness, Identify/IO queue setup, read status, GPT/VBR/FAT parsing, scoped capability delegation, `/APPS` visibility, or artifact mismatch.
+## M112 Physical Hardware Storage Capture Parser
+
+M112 is accepted as a tooling milestone for real-hardware bring-up. It adds:
+
+```powershell
+.\tools\parse-hardware-storage-capture.ps1 -InputPath <captured-hwval-transcript> -OutputPath <evidence.json> [-RequireStagedDynamicArtifacts]
+```
+
+The parser consumes the `drs-nvme-triage` line emitted by `hwval`, writes a JSON evidence record, and reports the first failing stage in dependency order:
+
+- NVMe controller discovery/readiness
+- NVMe Identify
+- IO queue creation
+- read issue/completion/status
+- GPT signature and partition enumeration
+- FAT32 candidate geometry, VBR, BPB, mount, and error state
+- scoped NVMe capability presence/delegation/error
+- `/APPS` stat/type/dirent visibility
+- optional M111 staged artifact presence and byte-count agreement for `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT`
+
+Validation performed:
+
+```powershell
+.\tools\parse-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputPath .\build\hardware-storage-capture-qemu.json
+.\tools\parse-hardware-storage-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputPath .\build\hardware-storage-capture-qemu-staged-pass.json -RequireStagedDynamicArtifacts
+.\tools\parse-hardware-storage-capture.ps1 -InputPath .\docs\hardware\msi-cyborg-15-a13ve.md -OutputPath .\build\hardware-storage-capture-legacy.json
+```
+
+Observed parser outcomes:
+
+```text
+hardware-storage-capture: storage-ready
+  pass: True
+  detail: NVMe, GPT, FAT, /APPS, capability delegation, and requested staged artifacts are all visible.
+
+hardware-storage-capture: nvme-dynldlimit-stat
+  pass: False
+  detail: /APPS/DYNLDLIMIT was not visible through NVMe FAT.
+
+hardware-storage-capture: legacy-realbin-unavailable
+  pass: False
+  detail: Only legacy drs-realbin-unavailable telemetry was found. Boot the M111-staged image and run hwval to capture drs-nvme-triage.
+```
+
+The `nvme-dynldlimit-stat` negative result was intentionally observed against an unstaged M110-style NVMe fixture; the staged M111 verifier was rerun and the parser then passed strict staged mode against the refreshed log.
+
+M112 non-claims: this does not certify the MSI laptop, add a storage driver, modify kernel behavior, or prove physical NVMe access. It turns the next physical `hwval` capture into a deterministic stage classification so the following hardware milestone can target the actual failing layer.
+
+Final reserves are unchanged from M111 because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M113 scope: physical laptop storage evidence run. Boot the M111-staged ISO/USB on the MSI laptop, capture `hwval`, parse it with `tools\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`, and implement the first kernel/driver fix only after the parser identifies the exact failing stage.
 
 ## Persistence
 

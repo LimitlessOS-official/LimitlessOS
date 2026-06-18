@@ -24,14 +24,14 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` cannot run until a real hardware-accessible Linux-binary source exists. Current QEMU gates stage Linux binaries in the separate NVMe GPT/FAT fixture; the physical USB/ISO boot-media `/APPS` descriptor path is a different read-only route and is not yet a large ELF source for `linux`.
 
-Next hardware evidence to capture with a build containing commit `179a5b34` or later:
+Next hardware evidence to capture with the M111 staged image (`m111-storage-staging`) or later:
 
 ```text
 hwval
 linux /APPS/DYNLDLIMIT
 ```
 
-Record the full `drs-realbin-unavailable` line, especially `nvme-probe`, `nvme-ready`, `nvme-cap`, `fat-located`, `fat-unavailable`, `fat-error`, `rw-delegated`, and `rw-error`.
+Record the full `drs-nvme-triage` line from `hwval`. It is the primary storage diagnosis line for M112 and newer builds. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with `hwval` on the staged image.
 
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
@@ -41,7 +41,18 @@ For hardware builds that need dynamic-linker artifacts available on the USB boot
   -BootLinuxInterpPath <path-to-LDLIMIT> -BootLinuxInterpName LDLIMIT
 ```
 
-This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader now reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and the kernel `linux` command can fall back to this boot-media source when the QEMU NVMe FAT fixture is unavailable. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, and `boot media status`. In `linux /APPS/DYNLDLIMIT` telemetry, `source 2 boot-media-read 1` proves the hardware boot-media route was used.
+This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot image. The UEFI loader now reads those files before `ExitBootServices`, copies them into low mapped handoff pages, records their base/size/token in `boot_info`, and `BOOTMAN.TXT` records expected paths, byte counts, and SHA-256 hashes. In `hwval`, capture `boot media linux staged`, `boot media app bytes`, `boot media interp bytes`, `boot media flags`, `boot media status`, and the full `drs-nvme-triage` line.
+
+Parse the captured transcript from Windows/PowerShell with:
+
+```powershell
+.\tools\parse-hardware-storage-capture.ps1 `
+  -InputPath .\dist\msi-hwval-storage.txt `
+  -OutputPath .\dist\msi-hwval-storage.json `
+  -RequireStagedDynamicArtifacts
+```
+
+The parser reports the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch.
 
 ## Safety Rules
 
@@ -83,6 +94,9 @@ This creates `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` inside the UEFI FAT boot ima
 - [ ] Run `ls /`.
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
+- [ ] Save the complete `hwval` transcript.
+- [ ] Parse the transcript with `tools\parse-hardware-storage-capture.ps1`.
+- [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
 - [ ] Record the exact shell prompt text.
 - [ ] Record whether Terminal input pauses for roughly 10 seconds before commands run.
@@ -166,6 +180,7 @@ Suggested read-only command shape from Windows/PowerShell after capturing output
 - Forbidden partition detection status:
 - M5 dry-run output filename:
 - Parsed dry-run evidence filename:
+- Parsed storage evidence filename:
 - Photos/video filenames:
 - Tester:
 - Date/time:

@@ -1,0 +1,247 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$InputPath,
+
+    [string]$OutputPath = "",
+
+    [switch]$RequireStagedDynamicArtifacts,
+
+    [uint32]$ExpectedDynamicAppBytes = 15680,
+
+    [uint32]$ExpectedDynamicInterpBytes = 16704
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $OutputPath = Join-Path $root "dist\hardware-storage-capture.json"
+}
+
+function Get-FieldValue
+{
+    param(
+        [hashtable]$Fields,
+        [string]$Name,
+        [uint64]$Default = 0
+    )
+
+    if ($Fields.ContainsKey($Name)) {
+        return [uint64]$Fields[$Name]
+    }
+    return $Default
+}
+
+function Convert-TokenValue
+{
+    param([string]$Value)
+
+    if ($Value -match '^0x([0-9A-Fa-f]+)$') {
+        return [Convert]::ToUInt64($Matches[1], 16)
+    }
+    return [Convert]::ToUInt64($Value, 10)
+}
+
+function Parse-TelemetryFields
+{
+    param([string]$Line)
+
+    $fields = @{}
+    $matches = [regex]::Matches($Line, '(?<!\S)([A-Za-z][A-Za-z0-9-]*)\s+(0x[0-9A-Fa-f]+|[0-9]+)(?!\S)')
+    foreach ($match in $matches) {
+        $name = $match.Groups[1].Value
+        $value = Convert-TokenValue -Value $match.Groups[2].Value
+        $fields[$name] = $value
+    }
+    return $fields
+}
+
+function New-Classification
+{
+    param(
+        [string]$Stage,
+        [string]$Detail,
+        [bool]$Pass = $false
+    )
+
+    return [PSCustomObject]@{
+        pass = $Pass
+        stage = $Stage
+        detail = $Detail
+    }
+}
+
+function Classify-StorageCapture
+{
+    param(
+        [hashtable]$Fields,
+        [bool]$RequireStage,
+        [uint32]$ExpectedAppBytes,
+        [uint32]$ExpectedInterpBytes
+    )
+
+    if ((Get-FieldValue -Fields $Fields -Name "nvme-found") -ne 1) {
+        return New-Classification -Stage "nvme-controller-discovery" -Detail "NVMe controller was not discovered."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "nvme-ready") -ne 1) {
+        return New-Classification -Stage "nvme-controller-ready" -Detail "NVMe controller was discovered but did not become ready."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "nvme-identify") -ne 1) {
+        return New-Classification -Stage "nvme-identify" -Detail "NVMe Identify did not complete."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "ioq") -ne 1) {
+        return New-Classification -Stage "nvme-io-queue" -Detail "NVMe IO queue creation failed."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "read-issued") -ne 1) {
+        return New-Classification -Stage "nvme-read-issue" -Detail "The first NVMe read was not issued."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "read-completed") -ne 1) {
+        return New-Classification -Stage "nvme-read-completion" -Detail "The first NVMe read did not complete."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "read-status") -ne 0) {
+        return New-Classification -Stage "nvme-read-status" -Detail ("NVMe read completed with status {0}." -f (Get-FieldValue -Fields $Fields -Name "read-status"))
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "gpt-signature") -ne 1) {
+        return New-Classification -Stage "gpt-signature" -Detail "GPT signature was not found."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "gpt-partitions") -eq 0) {
+        return New-Classification -Stage "gpt-partition-table" -Detail "GPT was found but no partitions were enumerated."
+    }
+    if (((Get-FieldValue -Fields $Fields -Name "fat32-start") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "fat32-sectors") -eq 0)) {
+        return New-Classification -Stage "fat32-partition" -Detail "No candidate FAT32 partition geometry was recorded."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "gpt-vbr") -ne 1) {
+        return New-Classification -Stage "fat32-vbr" -Detail "The FAT32 partition VBR was not accepted."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "fat-bpb") -ne 1) {
+        return New-Classification -Stage "fat32-bpb" -Detail "The FAT32 BPB was not accepted."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "fat-located") -ne 1) {
+        return New-Classification -Stage "fat32-mount" -Detail "FAT32 was not located after GPT/VBR/BPB probing."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "fat-unavailable") -ne 0) {
+        return New-Classification -Stage "fat32-unavailable" -Detail "The kernel marked the FAT source unavailable."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "fat-error") -ne 0) {
+        return New-Classification -Stage "fat32-error" -Detail ("FAT probing recorded error {0}." -f (Get-FieldValue -Fields $Fields -Name "fat-error"))
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "rw-cap") -ne 1) {
+        return New-Classification -Stage "storage-capability" -Detail "The shell did not hold a scoped NVMe read/write capability."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "rw-delegated") -ne 1) {
+        return New-Classification -Stage "storage-capability-delegation" -Detail "The NVMe read/write capability was not delegated."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "rw-error") -ne 0) {
+        return New-Classification -Stage "storage-capability-error" -Detail ("NVMe capability setup recorded error {0}." -f (Get-FieldValue -Fields $Fields -Name "rw-error"))
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "apps-stat") -ne 1) {
+        return New-Classification -Stage "apps-directory-stat" -Detail "/APPS could not be statted through NVMe FAT."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "apps-type") -ne 2) {
+        return New-Classification -Stage "apps-directory-type" -Detail "/APPS exists but is not reported as a directory."
+    }
+    if ((Get-FieldValue -Fields $Fields -Name "apps-dirent") -ne 1) {
+        return New-Classification -Stage "apps-directory-read" -Detail "The first /APPS directory entry could not be read."
+    }
+
+    if ($RequireStage) {
+        if ((Get-FieldValue -Fields $Fields -Name "boot-staged") -ne 1) {
+            return New-Classification -Stage "boot-media-staging" -Detail "UEFI boot-media dynamic artifacts were not staged into boot_info."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "boot-app-bytes") -ne $ExpectedAppBytes) {
+            return New-Classification -Stage "boot-media-app-size" -Detail ("Expected boot app {0} bytes, observed {1}." -f $ExpectedAppBytes, (Get-FieldValue -Fields $Fields -Name "boot-app-bytes"))
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "boot-interp-bytes") -ne $ExpectedInterpBytes) {
+            return New-Classification -Stage "boot-media-interp-size" -Detail ("Expected boot interpreter {0} bytes, observed {1}." -f $ExpectedInterpBytes, (Get-FieldValue -Fields $Fields -Name "boot-interp-bytes"))
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "dynldlimit-stat") -ne 1) {
+            return New-Classification -Stage "nvme-dynldlimit-stat" -Detail "/APPS/DYNLDLIMIT was not visible through NVMe FAT."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "dynldlimit-bytes") -ne $ExpectedAppBytes) {
+            return New-Classification -Stage "nvme-dynldlimit-size" -Detail ("Expected /APPS/DYNLDLIMIT {0} bytes, observed {1}." -f $ExpectedAppBytes, (Get-FieldValue -Fields $Fields -Name "dynldlimit-bytes"))
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "ldlimit-stat") -ne 1) {
+            return New-Classification -Stage "nvme-ldlimit-stat" -Detail "/APPS/LDLIMIT was not visible through NVMe FAT."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "ldlimit-bytes") -ne $ExpectedInterpBytes) {
+            return New-Classification -Stage "nvme-ldlimit-size" -Detail ("Expected /APPS/LDLIMIT {0} bytes, observed {1}." -f $ExpectedInterpBytes, (Get-FieldValue -Fields $Fields -Name "ldlimit-bytes"))
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "stage-expected") -ne 1) {
+            return New-Classification -Stage "stage-expected-flag" -Detail "Kernel did not mark staged dynamic artifacts as expected."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "dynldlimit-match") -ne 1) {
+            return New-Classification -Stage "dynldlimit-match" -Detail "Boot-media DYNLDLIMIT bytes do not match NVMe /APPS/DYNLDLIMIT bytes."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "ldlimit-match") -ne 1) {
+            return New-Classification -Stage "ldlimit-match" -Detail "Boot-media LDLIMIT bytes do not match NVMe /APPS/LDLIMIT bytes."
+        }
+        if ((Get-FieldValue -Fields $Fields -Name "stage-match") -ne 1) {
+            return New-Classification -Stage "stage-match" -Detail "Overall staged artifact match failed."
+        }
+    }
+
+    return New-Classification -Stage "storage-ready" -Detail "NVMe, GPT, FAT, /APPS, capability delegation, and requested staged artifacts are all visible." -Pass $true
+}
+
+if (-not (Test-Path $InputPath)) {
+    throw "Hardware storage capture parser: input file not found: $InputPath"
+}
+
+$lines = @(Get-Content $InputPath)
+$triageLine = @($lines | Where-Object { $_ -match 'drs-nvme-triage' } | Select-Object -Last 1)
+$legacyUnavailableLine = @($lines | Where-Object { $_ -match 'drs-realbin-unavailable' } | Select-Object -Last 1)
+
+if ($triageLine.Count -eq 0) {
+    $classification = if ($legacyUnavailableLine.Count -ne 0) {
+        New-Classification -Stage "legacy-realbin-unavailable" -Detail "Only legacy drs-realbin-unavailable telemetry was found. Boot the M111-staged image and run hwval to capture drs-nvme-triage."
+    }
+    else {
+        New-Classification -Stage "missing-storage-triage" -Detail "No drs-nvme-triage line was found in the capture."
+    }
+    $result = [PSCustomObject]@{
+        tool = "parse-hardware-storage-capture"
+        input = (Resolve-Path $InputPath).Path
+        telemetry_found = 0
+        require_staged_dynamic_artifacts = [bool]$RequireStagedDynamicArtifacts
+        classification = $classification
+        raw_line = ""
+        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { $legacyUnavailableLine[0] } else { "" }
+        fields = [PSCustomObject]@{}
+    }
+}
+else {
+    $fields = Parse-TelemetryFields -Line $triageLine[0]
+    $classification = Classify-StorageCapture `
+        -Fields $fields `
+        -RequireStage ([bool]$RequireStagedDynamicArtifacts) `
+        -ExpectedAppBytes $ExpectedDynamicAppBytes `
+        -ExpectedInterpBytes $ExpectedDynamicInterpBytes
+    $result = [PSCustomObject]@{
+        tool = "parse-hardware-storage-capture"
+        input = (Resolve-Path $InputPath).Path
+        telemetry_found = 1
+        require_staged_dynamic_artifacts = [bool]$RequireStagedDynamicArtifacts
+        expected_dynamic_app_bytes = $ExpectedDynamicAppBytes
+        expected_dynamic_interp_bytes = $ExpectedDynamicInterpBytes
+        classification = $classification
+        raw_line = $triageLine[0]
+        legacy_line = if ($legacyUnavailableLine.Count -ne 0) { $legacyUnavailableLine[0] } else { "" }
+        fields = [PSCustomObject]$fields
+    }
+}
+
+$outputDir = Split-Path -Parent $OutputPath
+if (-not [string]::IsNullOrWhiteSpace($outputDir)) {
+    New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+}
+$result | ConvertTo-Json -Depth 6 | Set-Content -Path $OutputPath -Encoding Ascii
+
+Write-Host "hardware-storage-capture: $($result.classification.stage)"
+Write-Host "  pass: $($result.classification.pass)"
+Write-Host "  detail: $($result.classification.detail)"
+Write-Host "  output: $OutputPath"
+
+if (-not $result.classification.pass) {
+    exit 2
+}
