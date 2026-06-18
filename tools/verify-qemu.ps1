@@ -27,7 +27,8 @@ param(
     [string]$ExtraApp3Name = "EXTRA3",
     [string]$ExtraApp3Source = "",
     [string]$ExtraApp3Version = "",
-    [string[]]$ExtraShellLine = @()
+    [string[]]$ExtraShellLine = @(),
+    [switch]$HardwareRegistryGate
 )
 
 Set-StrictMode -Version Latest
@@ -545,6 +546,7 @@ function Send-QemuKeyboardProbe
         [bool]$GuiProbeEnabled = $false,
         [bool]$LoginProbeEnabled = $false,
         [bool]$RealBinaryProbeEnabled = $false,
+        [bool]$HardwareRegistryProbeEnabled = $false,
         [string[]]$ExtraTextLines = @()
     )
 
@@ -766,7 +768,19 @@ function Send-QemuKeyboardProbe
             $originalCloseX = 32 + $originalTerminalWidth - 15
 
             if ($DebugLogPath.Length -gt 0) {
-                Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] gui interactive input wait' -TimeoutMilliseconds 30000
+                try {
+                    Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] gui interactive input wait' -TimeoutMilliseconds 30000
+                }
+                catch {
+                    $debugText = ""
+                    if (Test-Path $DebugLogPath) {
+                        $debugText = Get-Content -Path $DebugLogPath -Raw -ErrorAction SilentlyContinue
+                    }
+                    if (($debugText -notmatch '\[x64\] persistent ring3 shell default') -and
+                        ($debugText -notmatch '\[x64:shell\] persistent ring3 shell online')) {
+                        throw
+                    }
+                }
             }
             else {
                 Start-Sleep -Milliseconds 5200
@@ -875,6 +889,12 @@ function Send-QemuKeyboardProbe
                 & $sendTextLine "exit"
             }
             Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
+            return
+        }
+        if ($HardwareRegistryProbeEnabled) {
+            & $sendTextLine "hwval"
+            Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-hardware-registry' -TimeoutMilliseconds 180000
+            & $sendTextLine "exit"
             return
         }
 
@@ -1109,9 +1129,9 @@ try {
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -ExtraTextLines $extraTextLines
-        if (-not $RealBinaryGate.IsPresent) {
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -ExtraTextLines $extraTextLines
+        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
     }
@@ -1181,6 +1201,13 @@ if ($RealBinaryGate.IsPresent) {
     foreach ($line in $realBinaryTelemetry) {
         Write-Host "  $line"
     }
+    return
+}
+if ($HardwareRegistryGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M106 hwval command."
+    Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M106 hwval did not report read-only Product mode."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hardware-registry hardware-registry 1 refresh [1-9][0-9]* limit 32 inventory [1-9][0-9]* pci-enumerated [1-9][0-9]* pci-query-denial 0 .* driver-bound [1-9][0-9]* .* driver-failed 0 overflow 0 token 0x[0-9A-F]{8}' -Message "x64 M106 hardware registry proof was not observed."
+    $outputLines
     return
 }
 
@@ -4265,6 +4292,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '^internal writes: disabled by default$' -Message "x64 hwval did not report internal writes disabled."
     Assert-OutputContains -Lines $outputLines -Pattern '^real install approved: false$' -Message "x64 hwval did not report real install as unapproved."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hardware-registry hardware-registry 1 refresh [1-9][0-9]* limit 32 inventory [1-9][0-9]* pci-enumerated [1-9][0-9]* pci-query-denial 0 .* driver-bound [1-9][0-9]* .* driver-failed 0 overflow 0 token 0x[0-9A-F]{8}' -Message "x64 M106 hardware registry proof was not observed."
     if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 1 drs-login-rate-limited 1 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 .* user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-identity drs-identity-foundation 1 drs-identity-local-active 1 drs-identity-personal-unavailable 1 drs-identity-enterprise-unavailable 1 drs-identity-settings-panel 1 drs-identity-status-readonly 1 drs-identity-mutation-denied 1 drs-vault-foundation 1 drs-vault-secret-read-denied 1 drs-vault-secret-write-denied 1 drs-vault-no-plaintext-token 1 drs-cloud-association-unavailable 1 drs-no-ambient-identity 1 drs-no-ambient-secret 1 encrypted-vault 0 secret-storage 0 account-type local account-id local:limitless display limitless association local-active network offline-capable credential bcrypt-local vault metadata-only' -Message "x64 UEFI M11 identity/vault foundation proof was not observed."

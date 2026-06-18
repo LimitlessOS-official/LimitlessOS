@@ -5,11 +5,13 @@
 #include "apic_x64.h"
 #include "auth_x64.h"
 #include "boot_media_x64.h"
+#include "capability_x64.h"
 #include "console_x64.h"
 #include "cloud_storage_x64.h"
 #include "display_x64.h"
 #include "e1000e_x64.h"
 #include "fs_x64.h"
+#include "hardware_registry_x64.h"
 #include "i2c_hid_x64.h"
 #include "identity_transport_x64.h"
 #include "input_x64.h"
@@ -22,6 +24,7 @@
 #include "pci_x64.h"
 #include "ramfs.h"
 #include "runtime_image_x64.h"
+#include "services.h"
 #include "types.h"
 #include "virtio_net_x64.h"
 #include "xhci_x64.h"
@@ -710,6 +713,19 @@ static const char *shell64_mouse_backend_label(void)
 static u32 shell64_print_hardware_validation_status(u32 console_capability_handle, u32 owner_id)
 {
     u32 network_online = (virtio_net64_dhcp_ack() != 0u) ? 1u : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 hardware_capability;
+
+    hardware_capability = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_HARDWARE,
+        CAPABILITY64_RIGHT_QUERY,
+        owner_id);
+    hardware64_registry_refresh(hardware_capability, owner_id);
+    if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
+    {
+        (void)capability64_revoke(hardware_capability, owner_id);
+    }
+#endif
 
     (void)shell64_write_text(console_capability_handle, owner_id, "hardware validation: read-only Product mode\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "machine model: unavailable from firmware table\n");
@@ -845,6 +861,56 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot media status: ", boot_media64_status());
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ahci detected: ", pci64_ecam_ahci_found());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "hardware registry devices: ",
+        hardware64_registry_count());
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "hardware driver bound: ",
+        hardware64_registry_driver_bound_count());
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "hardware driver deferred: ",
+        hardware64_registry_driver_deferred_count());
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "hardware driver unsupported: ",
+        hardware64_registry_driver_unsupported_count());
+    (void)shell64_write_decimal_line(
+        console_capability_handle,
+        owner_id,
+        "hardware driver failed: ",
+        hardware64_registry_driver_failed_count());
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hardware-registry hardware-registry 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " refresh ", hardware64_registry_refresh_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " limit ", hardware64_registry_limit());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " inventory ", hardware64_registry_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-enumerated ", hardware64_registry_pci_device_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-query-denial ", hardware64_registry_pci_query_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " acpi-tables ", hardware64_registry_acpi_table_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " display-device ", hardware64_registry_display_device_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " input-device ", hardware64_registry_input_device_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " storage-device ", hardware64_registry_storage_device_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " usb-controller ", hardware64_registry_usb_controller_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " network-device ", hardware64_registry_network_device_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-bound ", hardware64_registry_driver_bound_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-candidate ", hardware64_registry_driver_candidate_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-deferred ", hardware64_registry_driver_deferred_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-unsupported ", hardware64_registry_driver_unsupported_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-failed ", hardware64_registry_driver_failed_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " overflow ", hardware64_registry_overflow_count());
+    (void)shell64_write_hex32_line(
+        console_capability_handle,
+        owner_id,
+        " token ",
+        hardware64_registry_token());
+#endif
     (void)shell64_write_yes_no_line(
         console_capability_handle,
         owner_id,

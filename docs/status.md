@@ -1783,6 +1783,41 @@ drs-realbin path /APPS/BUSYBOX provenance 1 nvme-read 1 elf 1 static 1 mapped 4 
 drs-realbin-syscall-last number 231 result 0x00000000 unimplemented 0 unimplemented-last 511 unimplemented-rip 0x00000000F05001FF page-faults 0 page-fault-rip 0xFFFFFFFF8001016E
 ```
 
+## M106 Universal Hardware Inventory And Driver Binding Core
+
+M106 is accepted on the UEFI Product path with the new hardware-registry gate:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareRegistryGate
+```
+
+Implementation scope:
+
+- added a UEFI-only fixed-size hardware registry with `HARDWARE64_REGISTRY_MAX_DEVICES = 32`
+- records platform, display, input, storage, USB controller, and network binding evidence in a static table
+- keeps PCI inventory queries behind the existing hardware-inventory capability token
+- exposes a compact `drs-hardware-registry` proof through `hwval`
+- excludes the real registry implementation from the BIOS build; BIOS remains on its prior path and reserve
+- adds a narrow verifier gate for hardware registry evidence without running the full historical UI command script
+
+M106 acceptance telemetry:
+
+```text
+[x64] drs-hardware-registry hardware-registry 1 refresh 1 limit 32 inventory 11 pci-enumerated 8 pci-query-denial 0 acpi-tables 2 display-device 2 input-device 4 storage-device 2 usb-controller 1 network-device 1 driver-bound 9 driver-candidate 0 driver-deferred 2 driver-unsupported 0 driver-failed 0 overflow 0 token 0x89CF635C
+```
+
+Visible `hwval` evidence included framebuffer `1280x800`, ECAM active, xHCI found/mapped, PS/2 and xHCI input evidence, NVMe ready with FAT located, AHCI detected as deferred, and virtio networking online through the brokered Product path.
+
+Final reserves after the implementation build:
+
+- UEFI kernel bytes: 1,303,232 / 2,097,152, reserve 793,920 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0xF1037FB1`
+
+M106 non-claims: this does not add new hardware drivers by itself, does not claim universal hardware support, does not fix physical laptop display mode selection, does not add touchpad HID parsing beyond current evidence, does not add Wi-Fi, audio, GPU acceleration, ACPI power management, or arbitrary USB class support. It creates the Product evidence surface needed to make those follow-on milestones falsifiable.
+
+Proposed M107 scope: physical display bring-up reliability. Use the MSI laptop evidence to add mode/stride/framebuffer diagnostics, safe text scaling, visible-mode sanity telemetry, and a hardware-display gate that proves the console is readable without relying on QEMU-only framebuffer assumptions.
+
 ## Persistence
 
 Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` runs two sequential boots against the same NVMe GPT image, observes content written in the first boot from the second boot, and prints:
@@ -1816,5 +1851,5 @@ Persistence is reboot-surviving in the verifier. `verify-nvme-persistence.ps1` r
 - M14 has a cloud-storage broker foundation only; real public cloud storage, sync, automatic upload/download, offline cache, token storage, encrypted cloud transport, AI cloud access, and app-direct cloud authority remain unavailable or denied.
 - M15 has installer UX planning only; destructive install actions remain disabled by default and not Product-approved.
 - Assistant remains Mode B with read-only context flow and predefined consent-scoped action templates only. Inference backend, model transport, generated answers, broad automation, autonomous action, package install/update, settings mutation, cloud AI, cloud memory, and internal install/write remain unavailable.
-- Hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
+- M106 adds the UEFI Product universal hardware inventory and driver-binding evidence core, but hardware coverage is still QEMU-first plus limited real-hardware debugging; broad laptop validation remains incomplete.
 - Source control now exists in this workspace, but dist/build artifacts are intentionally ignored and evidence packs live under ignored `dist/`.

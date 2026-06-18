@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, and M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, and dynamic pipe close/error semantics are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, and M106 universal hardware inventory/driver-binding evidence are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -1894,7 +1894,27 @@ Final reserves are UEFI 794,400 bytes and BIOS 101 sectors. The M105 UEFI manife
 
 M105 non-claims: arbitrary dynamic-linker search/loading, glibc compatibility, broad pipe capacity/backpressure behavior, `vfork`, dynamic `execve`, sockets, and broad Linux VFS parity remain unavailable. The accepted claim is intentionally narrow: dynamic pipe close/error semantics work for EOF after writer close and handled SIGPIPE/EPIPE after reader close without leaking pipe objects, blocked tasks, or process roots.
 
-Proposed M106 scope: trace and prove dynamic blocked pipe writer close/error behavior, especially a dynamic writer blocked on a full pipe being woken when the last reader closes, receiving `SIGPIPE`/`EPIPE`, and cleaning up with `pipe-live-final 0`, `pipe-replays >=1`, `signal-sigpipe 1`, `page-faults 0`, and `exit 0`.
+## M106 Universal Hardware Inventory And Driver Binding Core
+
+M106 is accepted on the UEFI Product path with:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareRegistryGate
+```
+
+It adds a UEFI-only fixed-size `HARDWARE64_REGISTRY_MAX_DEVICES = 32` registry that snapshots platform, display, input, storage, USB controller, and network device evidence behind the existing hardware-inventory capability token. The BIOS build excludes the real registry implementation and stays at 101 reserve sectors.
+
+Acceptance telemetry:
+
+```text
+[x64] drs-hardware-registry hardware-registry 1 refresh 1 limit 32 inventory 11 pci-enumerated 8 pci-query-denial 0 acpi-tables 2 display-device 2 input-device 4 storage-device 2 usb-controller 1 network-device 1 driver-bound 9 driver-candidate 0 driver-deferred 2 driver-unsupported 0 driver-failed 0 overflow 0 token 0x89CF635C
+```
+
+Final reserves are UEFI 793,920 bytes and BIOS 101 sectors. The M106 UEFI manifest reports kernel bytes 1,303,232 and checksum `0xF1037FB1`.
+
+M106 non-claims: no new physical hardware driver is claimed by the registry alone; real laptop display, pointer, NVMe, USB class, Wi-Fi, audio, power, and GPU support remain follow-on hardware milestones.
+
+Proposed M107 scope: physical display bring-up reliability. Add mode/stride/framebuffer diagnostics, readable text scaling, and a physical-hardware display gate so the MSI laptop no longer depends on QEMU-only framebuffer assumptions.
 
 Later targets are:
 

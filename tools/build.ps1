@@ -695,6 +695,7 @@ function Build-X64Scaffold
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_vfs.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_abi.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "linux_vdso.c" })
+    $biosSources = @($biosSources | Where-Object { $_.Name -ne "hardware_registry.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "windows_seh.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "windows_abi.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "windows_handle.c" })
