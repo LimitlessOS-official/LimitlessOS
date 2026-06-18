@@ -24,14 +24,14 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the M113 evidence bundle (`m113-hardware-storage-evidence`) or later:
+Next hardware evidence to capture with the M121 handoff bundle:
 
 ```text
 hwval
 linux /APPS/DYNLDLIMIT
 ```
 
-Record the full `drs-nvme-triage` line from `hwval`. It is the primary storage diagnosis line for M112 and newer builds. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with `hwval` on the staged image.
+Record the full `drs-nvme-triage` line from `hwval` and the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the M121 staged image.
 
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
@@ -55,7 +55,7 @@ Analyze the evidence bundle and captured transcript from Windows/PowerShell with
 
 ```powershell
 .\tools\analyze-msi-hardware-capture.ps1 `
-  -EvidenceDir .\dist\m113-hardware-storage-<timestamp> `
+  -EvidenceDir .\dist\m121-msi-hardware-handoff-<timestamp> `
   -CapturePath .\dist\msi-hwval-storage.txt `
   -OutputDir .\dist\msi-hardware-analysis `
   -RequireStagedDynamicArtifacts
@@ -65,19 +65,19 @@ The combined analyzer checks the evidence bundle hashes/reserves first, runs the
 
 Before a physical capture handoff, `tools\verify-msi-hardware-analysis-fixtures.ps1` can be run as a host-side regression check for the combined analyzer ordering.
 
-M113 packages this handoff into a timestamped evidence directory:
+M121 packages this handoff into a timestamped evidence directory:
 
 ```powershell
 .\tools\prepare-hardware-storage-evidence.ps1
 ```
 
-The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, and `README-HARDWARE-STORAGE.txt`. The accepted M113 bundle shape was:
+The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, and `README-HARDWARE-STORAGE.txt`. The accepted M121 bundle shape is:
 
 ```text
-dist\m113-hardware-storage-20260617-221334
+dist\m121-msi-hardware-handoff-20260617-225629
 ```
 
-For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then analyze it with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m121-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then analyze it with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 

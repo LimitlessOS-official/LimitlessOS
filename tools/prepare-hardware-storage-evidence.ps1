@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhiteSpace($DynamicInterpPath)) {
 }
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $EvidenceDir = Join-Path $distDir "m113-hardware-storage-$stamp"
+    $EvidenceDir = Join-Path $distDir "m121-msi-hardware-handoff-$stamp"
 }
 
 function Assert-FileExists
@@ -118,8 +118,8 @@ if (-not $SkipQemuGate.IsPresent) {
     }
 }
 
-$copiedIso = Copy-EvidenceFile -Path $isoPath -Name "limitlessos-x86_64-m113-staged.iso"
-$copiedUefi = Copy-EvidenceFile -Path $uefiImagePath -Name "limitlessos-x86_64-m113-staged-uefi.img"
+$copiedIso = Copy-EvidenceFile -Path $isoPath -Name "limitlessos-x86_64-m121-handoff.iso"
+$copiedUefi = Copy-EvidenceFile -Path $uefiImagePath -Name "limitlessos-x86_64-m121-handoff-uefi.img"
 $copiedManifest = Copy-EvidenceFile -Path $bootManifestPath -Name "BOOTMAN.TXT"
 $copiedSizeMap = Copy-EvidenceFile -Path $sizeMapPath -Name "limitlessos-x86_64.size.txt"
 $copiedApp = Copy-EvidenceFile -Path $resolvedApp -Name "DYNLDLIMIT"
@@ -135,8 +135,8 @@ foreach ($line in (Get-Content $sizeMapPath)) {
 }
 
 $manifestObject = [PSCustomObject]@{
-    milestone = "M113"
-    purpose = "physical hardware storage evidence bundle"
+    milestone = "M121"
+    purpose = "MSI hardware handoff evidence bundle"
     generated_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     git_commit = (& git -C $root rev-parse --short HEAD)
     iso = [PSCustomObject]@{
@@ -170,9 +170,11 @@ $manifestObject = [PSCustomObject]@{
     expected_hwval = [PSCustomObject]@{
         command = "hwval"
         required_line = "drs-nvme-triage"
-        analyzer = "tools\\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts"
-        verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
-        required_pass_stage = "storage-ready"
+        analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
+        storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
+        boot_media_handoff_verifier = "tools\\verify-boot-media-linux-handoff.ps1"
+        required_storage_stage = "storage-ready"
+        required_boot_media_linux_source = 2
     }
 }
 
@@ -182,7 +184,7 @@ $runbookPath = Join-Path $EvidenceDir "README-HARDWARE-STORAGE.txt"
 
 $manifestObject | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestJsonPath -Encoding Ascii
 @(
-    "LimitlessOS M113 hardware storage evidence bundle",
+    "LimitlessOS M121 MSI hardware handoff evidence bundle",
     "git-commit=$($manifestObject.git_commit)",
     "iso=$($manifestObject.iso.path)",
     "iso-bytes=$($manifestObject.iso.bytes)",
@@ -201,29 +203,52 @@ $manifestObject | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestJsonPath 
 ) | Set-Content -Path $manifestTextPath -Encoding Ascii
 
 @"
-LimitlessOS M113 Hardware Storage Runbook
+LimitlessOS M121 MSI Hardware Handoff Runbook
 
-1. Write limitlessos-x86_64-m113-staged.iso to a USB drive using your normal image writer.
+1. Write limitlessos-x86_64-m121-handoff.iso to a USB drive using your normal image writer.
 2. Boot the laptop through the UEFI USB boot entry.
 3. At the [x64] shell, run:
 
    hwval
+   linux /APPS/DYNLDLIMIT
 
-4. Capture the full hwval transcript to a text file named msi-hwval-storage.txt.
+4. Capture the full transcript to a text file named msi-hwval-storage.txt.
 5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
+
+   .\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts
+
+Pass means the combined analyzer reports:
+
+   msi-hardware-analysis: msi-hardware-ready
+   pass: True
+   storage-stage: storage-ready
+   display/input-stage: display-input-ready
+
+If storage is unavailable on the laptop, linux /APPS/DYNLDLIMIT should still prefer the UEFI boot-media staged source when this bundle was written correctly. Capture that command output too. Expected handoff signal:
+
+   linux: using UEFI boot-media staged file
+   drs-realbin ... source 2 ... boot-media-read 1
+
+If the command still prints NVMe FAT unavailable before source 2 telemetry, the first target is boot-media staging/handoff rather than the dynamic linker.
+
+The lower-level storage-only verifier remains available when you only need the storage stage:
 
    .\tools\verify-hardware-storage-evidence.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
 
-Pass means the verifier reports:
+Pass means the storage verifier reports:
 
    hardware-storage-evidence: verified
    capture pass: True
    capture stage: storage-ready
 
-If it fails, use the reported stage as the next kernel/driver target. Do not run installer writes, formatting, or NVRAM boot-entry actions during this evidence pass.
+Before creating or using a bundle, the host-side boot-media handoff verifier can confirm source-2 shell selection in QEMU:
+
+   .\tools\verify-boot-media-linux-handoff.ps1
+
+Do not run installer writes, formatting, or NVRAM boot-entry actions during this evidence pass.
 "@ | Set-Content -Path $runbookPath -Encoding Ascii
 
-Write-Host "M113 hardware storage evidence bundle: $EvidenceDir"
+Write-Host "M121 MSI hardware handoff evidence bundle: $EvidenceDir"
 Write-Host "  iso sha256       : $($manifestObject.iso.sha256)"
 Write-Host "  uefi image sha256: $($manifestObject.uefi_image.sha256)"
 Write-Host "  app sha256       : $appSha256"
