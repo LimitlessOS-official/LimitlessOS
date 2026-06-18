@@ -770,6 +770,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display console columns: ", display64_console_columns());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display console rows: ", display64_console_rows());
         (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display readable: ", display64_readable());
+        (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor visible: ", display64_cursor_visible());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display cursor draws: ", display64_compositor_cursor_count());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display direct cursor draws: ", display64_direct_cursor_count());
         (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-display-readability display-readability 1");
         shell64_write_decimal_field(console_capability_handle, owner_id, " available ", display64_available());
         shell64_write_decimal_field(console_capability_handle, owner_id, " width ", display64_width());
@@ -787,6 +790,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " fit ", display64_console_fit());
         shell64_write_decimal_field(console_capability_handle, owner_id, " readable ", display64_readable());
         shell64_write_decimal_field(console_capability_handle, owner_id, " clip ", display64_console_clip_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-visible ", display64_cursor_visible());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-draws ", display64_compositor_cursor_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " direct-cursor-draws ", display64_direct_cursor_count());
         (void)shell64_write_hex32_line(
             console_capability_handle,
             owner_id,

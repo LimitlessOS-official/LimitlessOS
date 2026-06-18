@@ -739,6 +739,11 @@ function Send-QemuKeyboardProbe
                     Start-Sleep -Milliseconds 1200
                     break
                 }
+                if (($logText -match '\[x64\] stage LOGIN OK') -or ($logText -match '\[x64:shell\] persistent ring3 shell online')) {
+                    $loginSent = $true
+                    Start-Sleep -Milliseconds 1200
+                    break
+                }
                 Start-Sleep -Milliseconds 120
             }
             if (-not $loginSent) {
@@ -1220,7 +1225,7 @@ if ($HardwareRegistryGate.IsPresent) {
 if ($HardwareDisplayGate.IsPresent) {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M107 hwval command."
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M107 hwval did not report read-only Product mode."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-display-readability display-readability 1 available 1 width [1-9][0-9]* height [1-9][0-9]* pitch [1-9][0-9]* stride-ok 1 bounds-ok 1 scale [1-3] viewport-x [0-9]+ viewport-y [0-9]+ viewport-w [1-9][0-9]* viewport-h [1-9][0-9]* columns [1-9][0-9]* rows [1-9][0-9]* fit 1 readable 1 clip [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M107 display readability proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-display-readability display-readability 1 available 1 width [1-9][0-9]* height [1-9][0-9]* pitch [1-9][0-9]* stride-ok 1 bounds-ok 1 scale [1-3] viewport-x [0-9]+ viewport-y [0-9]+ viewport-w [1-9][0-9]* viewport-h [1-9][0-9]* columns [1-9][0-9]* rows [1-9][0-9]* fit 1 readable 1 clip [0-9]+ cursor-visible [0-1] cursor-draws [0-9]+ direct-cursor-draws [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M107 display readability proof was not observed."
     $outputLines
     return
 }

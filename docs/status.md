@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M105 is `dynamic pipe close/error semantics`. The UEFI Product Linux persona launcher now runs `/APPS/DYNPIPECLOSE`, a dynamic ET_EXEC smoke through the same bounded supported-interpreter path proven by M83-M104. The run proves a dynamic process can block in `read(pipe)`, be woken by the last writer closing and replay the original read as EOF, install a SIGPIPE handler with `rt_sigaction`, write to a pipe after all read ends are closed, receive SIGPIPE, return through `rt_sigreturn`, observe the original `-EPIPE` result, and clean up the fork child, both process roots, and all pipe objects. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
+M108 is `visible cursor fallback and bounded login recovery`. The UEFI Product display path now draws the mouse cursor directly into the physical framebuffer when pointer packets are moving but the compositor/back-buffer path is not active. This addresses the VirtualBox symptom where PS/2 mouse packet counts and coordinates changed but no cursor was visible. The UEFI Product login gate also has a bounded local-console recovery path so boot reaches the shell when no keyboard line is entered. The hardware display gate records cursor visibility, total cursor draws, and direct framebuffer cursor draws through `hwval`.
+
+M105 is `dynamic pipe close/error semantics`. The UEFI Product Linux persona launcher runs `/APPS/DYNPIPECLOSE`, a dynamic ET_EXEC smoke through the same bounded supported-interpreter path proven by M83-M104. The run proves a dynamic process can block in `read(pipe)`, be woken by the last writer closing and replay the original read as EOF, install a SIGPIPE handler with `rt_sigaction`, write to a pipe after all read ends are closed, receive SIGPIPE, return through `rt_sigreturn`, observe the original `-EPIPE` result, and clean up the fork child, both process roots, and all pipe objects. Broader dynamic linking remains intentionally narrow: this is still a fixed supported-interpreter handoff with bounded relocations and the in-tree libc shim, not arbitrary shared-library loading.
 
 M62 through M66 are also accepted after the older M61 path-normalization chain: M62 removed the low-identity compatibility mapping from Linux persona roots, M63 added the signal foundation for SIGPIPE/SIGCHLD and `rt_sigreturn`, M64 added musl pthread-style `clone(56)` threading, M65 fixed contended futex wakeups, and M66 expanded static thread/process pools while proving per-thread TLS with eight worker threads.
 
@@ -1849,7 +1851,43 @@ Final reserves after the implementation build:
 
 M107 non-claims: this does not add DRM/KMS, native GPU mode setting, EDID policy, acceleration, multi-monitor support, font rasterization, or a complete physical-laptop display pass. It makes framebuffer readability and clipping falsifiable so the next physical hardware runs can tell whether the issue is mode selection, pitch/size mismatch, viewport fit, or a later compositor/input problem.
 
-Proposed M108 scope: physical input bring-up reliability. Use the MSI laptop mouse/touchpad evidence to separate PS/2, USB HID mouse, and I2C HID touchpad paths, add pointer movement/readiness telemetry, and remove any Product boot path that waits indefinitely for a key before the shell becomes usable.
+## M108 Visible Cursor Fallback And Bounded Login Recovery
+
+M108 is accepted on the UEFI Product path with the hardware-display gate:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+```
+
+Implementation scope:
+
+- keeps mouse packet/coordinate handling unchanged and fixes only the visibility path
+- lets the compositor cursor save/restore/draw path operate directly against the physical framebuffer on UEFI when `g_display_compositor_active == 0`
+- preserves the existing BIOS behavior and avoids adding new BIOS display machinery
+- adds `display64_cursor_visible()` and `display64_direct_cursor_count()` telemetry helpers
+- extends `hwval` and the hardware-display verifier with `cursor-visible`, `cursor-draws`, and `direct-cursor-draws`
+- changes the UEFI Product login gate from an indefinite input wait into a bounded local-console recovery path; typed credentials are still accepted first, but missing input no longer halts boot before the shell
+- updates the QEMU verifier to accept either typed login completion or bounded `LOGIN OK` recovery before sending shell commands
+
+M108 acceptance telemetry:
+
+```text
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 24 viewport-y 96 viewport-w 1232 viewport-h 680 columns 102 rows 37 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 3 direct-cursor-draws 3 token 0xF8C98059
+```
+
+Visible `hwval` evidence included `display cursor visible: yes`, `display cursor draws: 3`, `display direct cursor draws: 3`, `mouse packets: 2`, `mouse x: 560`, and `mouse y: 420`.
+
+Bounded login evidence included `first-run hardware input fallback`, `first-run hardware recovery login`, `stage LOGIN OK`, `drs-login-auth-success 1`, and the persistent shell accepting the subsequent `hwval` command without a manual key press.
+
+Final reserves after the implementation build:
+
+- UEFI kernel bytes: 1,307,840 / 2,097,152, reserve 789,312 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x1A4850D3`
+
+M108 non-claims: this does not redesign the desktop, add a full visual design system, add native GPU acceleration, implement DRM/KMS, add I2C HID touchpad support, or prove the MSI laptop NVMe path. It fixes the concrete visible-cursor failure mode where pointer packets move but no cursor is drawn, removes the no-key boot blocker, and adds telemetry so future physical hardware runs can distinguish input movement from cursor presentation.
+
+Proposed M109 scope: Product visual polish foundation. Clean up boot/load presentation, shell/status-panel spacing, default desktop colors, window borders, focus states, and typography using the existing framebuffer/compositor path, while keeping every visual claim backed by `hwval` or screenshot/telemetry gates.
 
 ## Persistence
 

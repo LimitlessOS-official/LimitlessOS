@@ -22,7 +22,6 @@ char *__crypt_blowfish(const char *key, const char *setting, char *output);
 #define AUTH64_BCRYPT_HASH_BYTES 60u
 #define AUTH64_LOGIN_TIMEOUT_TICKS 0u
 #define AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS 100u
-#define AUTH64_HARDWARE_INPUT_SPIN_BUDGET 128u
 #define AUTH64_RATE_LIMIT_SECONDS 30u
 #define AUTH64_KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ull
 
@@ -104,15 +103,10 @@ static void auth64_cpu_pause(void)
 static u32 auth64_hardware_input_fallback_enabled(void)
 {
     /*
-     * QEMU verifiers use the known emulated xHCI path at the default 1024-wide
-     * GOP mode. Wide GOP hardware such as the MSI needs a bounded recovery path
-     * while native laptop input is still being brought up.
+     * Product boot must not halt indefinitely on missing keyboard input. The
+     * typed credential path remains first, but every UEFI Product login read has
+     * a bounded local-console recovery fallback while hardware input matures.
      */
-    if ((xhci64_live_polling_supported() != 0u) && (display64_width() < 1600u))
-    {
-        return 0u;
-    }
-
     return 1u;
 }
 
@@ -385,7 +379,6 @@ static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity
     u32 bytes = 0u;
     u32 hardware_fallback = auth64_hardware_input_fallback_enabled();
     u32 start_ticks = pit_get_ticks();
-    u32 guard = 0u;
 
     auth64_zero(buffer, capacity);
     for (;;)
@@ -419,11 +412,9 @@ static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity
             cpu_halt();
         }
         interrupts64_disable();
-        ++guard;
         if (hardware_fallback != 0u)
         {
-            if (((pit_get_ticks() - start_ticks) >= AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS)
-                || (guard >= AUTH64_HARDWARE_INPUT_SPIN_BUDGET))
+            if ((pit_get_ticks() - start_ticks) >= AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS)
             {
                 break;
             }

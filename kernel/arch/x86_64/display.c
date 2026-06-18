@@ -154,6 +154,9 @@ static u32 g_display_layout_token = 0u;
 static u32 g_display_compositor_active = 0u;
 static u32 g_display_compositor_present_count = 0u;
 static u32 g_display_compositor_cursor_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_direct_cursor_count = 0u;
+#endif
 static u32 g_display_compositor_cursor_x = 32u;
 static u32 g_display_compositor_cursor_y = 32u;
 static u32 g_display_compositor_cursor_buttons = 0u;
@@ -923,7 +926,9 @@ static void display64_compositor_restore_cursor_saved(void)
     u32 column;
 
     if ((g_display_compositor_cursor_saved_valid == 0u)
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
         || (g_display_compositor_active == 0u)
+#endif
         || !display64_has_framebuffer())
     {
         return;
@@ -954,13 +959,20 @@ static void display64_compositor_restore_cursor_saved(void)
 
 static void display64_compositor_save_cursor_underlay(void)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    volatile u32 *framebuffer;
+#endif
     u32 width;
     u32 height;
     u32 row;
     u32 column;
 
     g_display_compositor_cursor_saved_valid = 0u;
-    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    if (
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
+        (g_display_compositor_active == 0u) ||
+#endif
+        !display64_has_framebuffer())
     {
         return;
     }
@@ -975,6 +987,9 @@ static void display64_compositor_save_cursor_underlay(void)
         return;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    framebuffer = display64_physical_framebuffer();
+#endif
     for (row = 0u; row < height; ++row)
     {
         u64 base_pixel = 0ull;
@@ -986,7 +1001,13 @@ static void display64_compositor_save_cursor_underlay(void)
         for (column = 0u; column < width; ++column)
         {
             g_display_compositor_cursor_saved[(row * DISPLAY64_COMPOSITOR_CURSOR_WIDTH) + column] =
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                (g_display_compositor_active != 0u)
+                    ? g_display_back_buffer[base_pixel + column]
+                    : framebuffer[base_pixel + column];
+#else
                 g_display_back_buffer[base_pixel + column];
+#endif
         }
     }
 
@@ -1005,7 +1026,11 @@ static void display64_compositor_draw_cursor(void)
     u32 row;
     u32 column;
 
-    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    if (
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
+        (g_display_compositor_active == 0u) ||
+#endif
+        !display64_has_framebuffer())
     {
         return;
     }
@@ -1049,6 +1074,12 @@ static void display64_compositor_draw_cursor(void)
     }
 
     ++g_display_compositor_cursor_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_compositor_active == 0u)
+    {
+        ++g_display_direct_cursor_count;
+    }
+#endif
     g_display_compositor_cursor_drawn_valid = 1u;
     g_display_compositor_cursor_drawn_x = g_display_compositor_cursor_x;
     g_display_compositor_cursor_drawn_y = g_display_compositor_cursor_y;
@@ -1929,7 +1960,7 @@ u32 display64_compositor_present(void)
     u32 width;
     u32 height;
 
-    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    if (!display64_has_framebuffer())
     {
         return 0u;
     }
@@ -2331,7 +2362,11 @@ u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons)
     u32 union_w = 0u;
     u32 union_h = 0u;
 
-    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    if (
+#if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
+        (g_display_compositor_active == 0u) ||
+#endif
+        !display64_has_framebuffer())
     {
         return 0u;
     }
@@ -2366,7 +2401,7 @@ u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons)
         &union_w,
         &union_h);
 
-    if ((union_w != 0u) && (union_h != 0u))
+    if ((g_display_compositor_active != 0u) && (union_w != 0u) && (union_h != 0u))
     {
         display64_compositor_present_back_buffer_rect(union_x, union_y, union_w, union_h);
     }
@@ -4117,6 +4152,9 @@ void display64_init(const struct boot_info *boot_info)
     g_display_back_buffer_bytes = 0ull;
     g_display_compositor_present_count = 0u;
     g_display_compositor_cursor_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_direct_cursor_count = 0u;
+#endif
     g_display_compositor_cursor_x = 32u;
     g_display_compositor_cursor_y = 32u;
     g_display_compositor_cursor_buttons = 0u;
@@ -4840,6 +4878,20 @@ u32 display64_compositor_present_count(void)
 u32 display64_compositor_cursor_count(void)
 {
     return g_display_compositor_cursor_count;
+}
+
+u32 display64_direct_cursor_count(void)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return g_display_direct_cursor_count;
+#else
+    return 0u;
+#endif
+}
+
+u32 display64_cursor_visible(void)
+{
+    return (g_display_compositor_cursor_drawn_valid != 0u) ? 1u : 0u;
 }
 
 u32 display64_font_init_done(void)
