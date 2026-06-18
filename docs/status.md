@@ -16,6 +16,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
+M123 is `MSI hardware handoff verifier fixture coverage`. The repo now has `tools\verify-msi-hardware-handoff-fixtures.ps1`, a host-side regression suite for the M122 handoff verifier. It synthesizes valid hash/reserve/BOOTMAN evidence bundles, proves a correct M121 handoff passes, and proves stale or malformed handoffs are rejected for old milestone labels, storage-only analyzer selection, missing source-2 requirement, stale M113 ISO naming, missing `linux /APPS/DYNLDLIMIT` runbook command, and missing source-2 runbook telemetry. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
 M122 is `MSI hardware handoff verifier`. The repo now has `tools\verify-msi-hardware-handoff.ps1`, a host-side verifier that wraps the storage evidence verifier and then enforces the M121-specific handoff contract: manifest milestone/purpose, M121 ISO/UEFI image names, `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` paths, combined MSI analyzer command, source-2 boot-media expectation, and runbook instructions to run both `hwval` and `linux /APPS/DYNLDLIMIT`. It verified the current M121 bundle with `source2 required: 2`, BIOS reserve 101 sectors, and UEFI reserve 788,512 bytes. No kernel code changed.
 
 M121 is `MSI hardware handoff bundle refresh`. The physical-laptop handoff packager now builds a current `dist\m121-msi-hardware-handoff-*` bundle instead of the older M113 storage-only bundle shape. The runbook tells the tester to run both `hwval` and `linux /APPS/DYNLDLIMIT`, then analyze the full transcript with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`. The generated bundle keeps the real `DYNLDLIMIT` and `LDLIMIT` artifacts, validates with `tools\verify-hardware-storage-evidence.ps1`, and carries the M120 boot-media source-2 expectation so a hardware `NVMe FAT unavailable` result is no longer misread as the first launch dependency. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
@@ -2676,7 +2678,43 @@ Final reserves are unchanged because no kernel code changed:
 - UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 
-Proposed M123 scope: boot the M121/M122-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
+## M123 MSI Hardware Handoff Verifier Fixture Coverage
+
+M123 is accepted as deterministic regression coverage for the M122 handoff verifier. It adds `tools\verify-msi-hardware-handoff-fixtures.ps1`, which synthesizes tiny self-contained evidence bundles whose hashes, byte counts, BOOTMAN lines, size-map reserves, and runbooks are controlled by the test.
+
+Accepted command:
+
+```powershell
+.\tools\verify-msi-hardware-handoff-fixtures.ps1 -OutputDir .\build\m123-msi-handoff-fixtures
+```
+
+Acceptance output:
+
+```text
+msi-hardware-handoff-fixtures: 7/7
+  failed: 0
+```
+
+Fixture coverage:
+
+- `valid-m121`: a correct M121 bundle passes the M122 verifier.
+- `stale-milestone`: a storage-valid bundle labeled `M113` is rejected.
+- `stale-analyzer`: a storage-valid bundle pointing at the storage-only analyzer is rejected.
+- `missing-source2`: a storage-valid bundle without required boot-media Linux source `2` is rejected.
+- `stale-iso-name`: a storage-valid bundle using the old `limitlessos-x86_64-m113-staged.iso` name is rejected.
+- `missing-linux-command`: a storage-valid runbook that omits `linux /APPS/DYNLDLIMIT` is rejected.
+- `missing-source2-runbook`: a storage-valid runbook that omits `drs-realbin ... source 2 ... boot-media-read 1` is rejected.
+
+Every negative fixture still passes the lower-level storage evidence verifier before the M122 handoff verifier rejects it, so the suite proves the new M121/M122 handoff contract specifically instead of accidentally testing generic hash or reserve failures.
+
+M123 non-claims: this does not certify the physical MSI laptop and does not add hardware support. It prevents the handoff verifier itself from regressing while the next physical transcript is still pending.
+
+Final reserves are unchanged because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+
+Proposed M124 scope: boot the M121/M123-verified bundle on the physical MSI laptop, capture the full `hwval` and `linux /APPS/DYNLDLIMIT` transcript, run `tools\verify-msi-hardware-handoff.ps1` with `-CapturePath`, and implement only the first reported hardware stage. If the dynamic command reaches `source 2`, the next target is the first dynamic runtime failure or display/input/storage stage from the transcript; if it does not reach `source 2`, the target is the UEFI boot-media staging handoff on physical hardware.
 
 ## Persistence
 

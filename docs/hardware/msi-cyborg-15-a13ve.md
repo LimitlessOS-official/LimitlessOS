@@ -65,6 +65,14 @@ The combined analyzer checks the evidence bundle hashes/reserves first, runs the
 
 Before a physical capture handoff, `tools\verify-msi-hardware-analysis-fixtures.ps1` can be run as a host-side regression check for the combined analyzer ordering.
 
+The M121/M122 handoff verifier also has fixture coverage:
+
+```powershell
+.\tools\verify-msi-hardware-handoff-fixtures.ps1
+```
+
+This proves stale storage-only packages, old M113 ISO names, missing source-2 requirements, and incomplete runbooks are rejected before a physical tester spends time on them.
+
 Before writing the USB stick, verify the current handoff bundle itself:
 
 ```powershell
