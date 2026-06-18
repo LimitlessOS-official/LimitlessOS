@@ -24,7 +24,7 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` cannot run until a real hardware-accessible Linux-binary source exists. Current QEMU gates stage Linux binaries in the separate NVMe GPT/FAT fixture; the physical USB/ISO boot-media `/APPS` descriptor path is a different read-only route and is not yet a large ELF source for `linux`.
 
-Next hardware evidence to capture with the M111 staged image (`m111-storage-staging`) or later:
+Next hardware evidence to capture with the M113 evidence bundle (`m113-hardware-storage-evidence`) or later:
 
 ```text
 hwval
@@ -53,6 +53,20 @@ Parse the captured transcript from Windows/PowerShell with:
 ```
 
 The parser reports the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch.
+
+M113 packages this handoff into a timestamped evidence directory:
+
+```powershell
+.\tools\prepare-hardware-storage-evidence.ps1
+```
+
+The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, and `README-HARDWARE-STORAGE.txt`. The accepted M113 bundle shape was:
+
+```text
+dist\m113-hardware-storage-20260617-221334
+```
+
+For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, save the transcript, then parse it with `tools\parse-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 
