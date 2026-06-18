@@ -746,6 +746,52 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer base high: ", display64_framebuffer_base_high());
         (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer base low: ", display64_framebuffer_base_low());
         (void)shell64_write_hex32_line(console_capability_handle, owner_id, "framebuffer bytes low: ", display64_framebuffer_bytes_low());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "framebuffer required high: ",
+            display64_framebuffer_required_bytes_high());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "framebuffer required low: ",
+            display64_framebuffer_required_bytes_low());
+        (void)shell64_write_yes_no_line(
+            console_capability_handle,
+            owner_id,
+            "framebuffer stride sane: ",
+            display64_framebuffer_stride_ok());
+        (void)shell64_write_yes_no_line(
+            console_capability_handle,
+            owner_id,
+            "framebuffer bounds sane: ",
+            display64_framebuffer_bounds_ok());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display text scale: ", display64_text_scale());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display console columns: ", display64_console_columns());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display console rows: ", display64_console_rows());
+        (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display readable: ", display64_readable());
+        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-display-readability display-readability 1");
+        shell64_write_decimal_field(console_capability_handle, owner_id, " available ", display64_available());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " width ", display64_width());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " height ", display64_height());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " pitch ", display64_pixels_per_scanline());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " stride-ok ", display64_framebuffer_stride_ok());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " bounds-ok ", display64_framebuffer_bounds_ok());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " scale ", display64_text_scale());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " viewport-x ", display64_console_viewport_x());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " viewport-y ", display64_console_viewport_y());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " viewport-w ", display64_console_viewport_w());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " viewport-h ", display64_console_viewport_h());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " columns ", display64_console_columns());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " rows ", display64_console_rows());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " fit ", display64_console_fit());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " readable ", display64_readable());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " clip ", display64_console_clip_count());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            " token ",
+            display64_layout_token());
 #endif
     }
     else

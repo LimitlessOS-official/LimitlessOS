@@ -28,7 +28,8 @@ param(
     [string]$ExtraApp3Source = "",
     [string]$ExtraApp3Version = "",
     [string[]]$ExtraShellLine = @(),
-    [switch]$HardwareRegistryGate
+    [switch]$HardwareRegistryGate,
+    [switch]$HardwareDisplayGate
 )
 
 Set-StrictMode -Version Latest
@@ -547,6 +548,7 @@ function Send-QemuKeyboardProbe
         [bool]$LoginProbeEnabled = $false,
         [bool]$RealBinaryProbeEnabled = $false,
         [bool]$HardwareRegistryProbeEnabled = $false,
+        [bool]$HardwareDisplayProbeEnabled = $false,
         [string[]]$ExtraTextLines = @()
     )
 
@@ -891,9 +893,14 @@ function Send-QemuKeyboardProbe
             Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-realbin' -TimeoutMilliseconds 180000
             return
         }
-        if ($HardwareRegistryProbeEnabled) {
+        if ($HardwareRegistryProbeEnabled -or $HardwareDisplayProbeEnabled) {
             & $sendTextLine "hwval"
-            Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-hardware-registry' -TimeoutMilliseconds 180000
+            if ($HardwareRegistryProbeEnabled) {
+                Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-hardware-registry' -TimeoutMilliseconds 180000
+            }
+            if ($HardwareDisplayProbeEnabled) {
+                Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-display-readability' -TimeoutMilliseconds 180000
+            }
             & $sendTextLine "exit"
             return
         }
@@ -1129,9 +1136,9 @@ try {
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -ExtraTextLines $extraTextLines
-        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent)) {
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -ExtraTextLines $extraTextLines
+        if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
     }
@@ -1207,6 +1214,13 @@ if ($HardwareRegistryGate.IsPresent) {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M106 hwval command."
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M106 hwval did not report read-only Product mode."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hardware-registry hardware-registry 1 refresh [1-9][0-9]* limit 32 inventory [1-9][0-9]* pci-enumerated [1-9][0-9]* pci-query-denial 0 .* driver-bound [1-9][0-9]* .* driver-failed 0 overflow 0 token 0x[0-9A-F]{8}' -Message "x64 M106 hardware registry proof was not observed."
+    $outputLines
+    return
+}
+if ($HardwareDisplayGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M107 hwval command."
+    Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M107 hwval did not report read-only Product mode."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-display-readability display-readability 1 available 1 width [1-9][0-9]* height [1-9][0-9]* pitch [1-9][0-9]* stride-ok 1 bounds-ok 1 scale [1-3] viewport-x [0-9]+ viewport-y [0-9]+ viewport-w [1-9][0-9]* viewport-h [1-9][0-9]* columns [1-9][0-9]* rows [1-9][0-9]* fit 1 readable 1 clip [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M107 display readability proof was not observed."
     $outputLines
     return
 }

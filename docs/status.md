@@ -1816,7 +1816,40 @@ Final reserves after the implementation build:
 
 M106 non-claims: this does not add new hardware drivers by itself, does not claim universal hardware support, does not fix physical laptop display mode selection, does not add touchpad HID parsing beyond current evidence, does not add Wi-Fi, audio, GPU acceleration, ACPI power management, or arbitrary USB class support. It creates the Product evidence surface needed to make those follow-on milestones falsifiable.
 
-Proposed M107 scope: physical display bring-up reliability. Use the MSI laptop evidence to add mode/stride/framebuffer diagnostics, safe text scaling, visible-mode sanity telemetry, and a hardware-display gate that proves the console is readable without relying on QEMU-only framebuffer assumptions.
+## M107 Physical Display Bring-Up Reliability
+
+M107 is accepted on the UEFI Product path with the new hardware-display gate:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+```
+
+Implementation scope:
+
+- derives the default console viewport from the actual GOP framebuffer geometry instead of keeping the previous fixed 960x648 rectangle
+- selects a bounded text scale from the real mode size, keeping 1280x800 at scale 2 and allowing larger physical panels to use scale 3
+- validates framebuffer pitch/stride and byte coverage before claiming the display readable
+- records console columns, rows, viewport origin/size, fit status, readable status, clipping count, and layout token
+- exposes a compact `drs-display-readability` proof through `hwval`
+- keeps the new dynamic layout/readability machinery UEFI-only; the BIOS display path keeps the previous fixed constants and remains at 101 reserve sectors
+
+M107 acceptance telemetry:
+
+```text
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 24 viewport-y 96 viewport-w 1232 viewport-h 680 columns 102 rows 37 fit 1 readable 1 clip 0 token 0xF8C98059
+```
+
+Visible `hwval` evidence included framebuffer required bytes matching provided bytes (`0x003E8000`), stride sane, bounds sane, display text scale `2`, console columns `102`, console rows `37`, and display readable `yes`.
+
+Final reserves after the implementation build:
+
+- UEFI kernel bytes: 1,307,712 / 2,097,152, reserve 789,440 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x8A9C8B83`
+
+M107 non-claims: this does not add DRM/KMS, native GPU mode setting, EDID policy, acceleration, multi-monitor support, font rasterization, or a complete physical-laptop display pass. It makes framebuffer readability and clipping falsifiable so the next physical hardware runs can tell whether the issue is mode selection, pitch/size mismatch, viewport fit, or a later compositor/input problem.
+
+Proposed M108 scope: physical input bring-up reliability. Use the MSI laptop mouse/touchpad evidence to separate PS/2, USB HID mouse, and I2C HID touchpad paths, add pointer movement/readiness telemetry, and remove any Product boot path that waits indefinitely for a key before the shell becomes usable.
 
 ## Persistence
 

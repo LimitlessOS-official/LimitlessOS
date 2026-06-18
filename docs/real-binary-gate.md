@@ -1914,7 +1914,27 @@ Final reserves are UEFI 793,920 bytes and BIOS 101 sectors. The M106 UEFI manife
 
 M106 non-claims: no new physical hardware driver is claimed by the registry alone; real laptop display, pointer, NVMe, USB class, Wi-Fi, audio, power, and GPU support remain follow-on hardware milestones.
 
-Proposed M107 scope: physical display bring-up reliability. Add mode/stride/framebuffer diagnostics, readable text scaling, and a physical-hardware display gate so the MSI laptop no longer depends on QEMU-only framebuffer assumptions.
+## M107 Physical Display Bring-Up Reliability
+
+M107 is accepted on the UEFI Product path with:
+
+```powershell
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+```
+
+It adds UEFI-only derived display layout/readability telemetry to `hwval`: framebuffer stride sanity, byte coverage, selected text scale, console viewport origin/size, columns, rows, fit status, readable status, clipping count, and a layout token. The default console viewport now comes from the GOP mode geometry instead of the previous fixed QEMU-sized rectangle. Larger physical modes can select scale 3; the verified QEMU 1280x800 mode keeps scale 2.
+
+Acceptance telemetry:
+
+```text
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 24 viewport-y 96 viewport-w 1232 viewport-h 680 columns 102 rows 37 fit 1 readable 1 clip 0 token 0xF8C98059
+```
+
+Final reserves are UEFI 789,440 bytes and BIOS 101 sectors. The M107 UEFI manifest reports kernel bytes 1,307,712 and checksum `0x8A9C8B83`.
+
+M107 non-claims: no native GPU driver, DRM/KMS mode setting, EDID policy, acceleration, multi-monitor support, or complete physical laptop display certification is claimed. The accepted claim is the narrower foundation needed for real hardware bring-up: framebuffer geometry, pitch, bounds, scale, viewport fit, and clipping are now visible and gated.
+
+Proposed M108 scope: physical input bring-up reliability. Add pointer-path telemetry that distinguishes PS/2 fallback, USB HID mouse, and I2C HID touchpad behavior, then remove any Product boot path that can sit indefinitely waiting for keyboard input before the shell is usable.
 
 Later targets are:
 

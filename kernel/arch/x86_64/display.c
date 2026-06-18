@@ -27,9 +27,10 @@
 #define DISPLAY64_TEXT_START_Y 96u
 #define DISPLAY64_FONT_WIDTH 5u
 #define DISPLAY64_FONT_HEIGHT 7u
-#define DISPLAY64_FONT_SCALE 2u
-#define DISPLAY64_FONT_ADVANCE ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_SCALE)
-#define DISPLAY64_LINE_ADVANCE ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_SCALE)
+#define DISPLAY64_FONT_DEFAULT_SCALE 2u
+#define DISPLAY64_FONT_MAX_SCALE 3u
+#define DISPLAY64_FONT_ADVANCE_DEFAULT ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_DEFAULT_SCALE)
+#define DISPLAY64_LINE_ADVANCE_DEFAULT ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_DEFAULT_SCALE)
 #define DISPLAY64_RGB_DESKTOP_BG 0x001A1A1Eu
 #define DISPLAY64_RGB_BAR_BG 0x00111114u
 #define DISPLAY64_RGB_SURFACE 0x00242428u
@@ -57,7 +58,7 @@
 #define DISPLAY64_PANEL_X DISPLAY64_TEXT_START_X
 #define DISPLAY64_PANEL_Y DISPLAY64_TEXT_START_Y
 #define DISPLAY64_PANEL_WIDTH 360u
-#define DISPLAY64_PANEL_HEIGHT (DISPLAY64_LINE_ADVANCE + 4u)
+#define DISPLAY64_PANEL_HEIGHT (DISPLAY64_LINE_ADVANCE_DEFAULT + 4u)
 #define DISPLAY64_PANEL_RGB DISPLAY64_RGB_CONTENT
 #define DISPLAY64_CONSOLE_VIEWPORT_WIDTH 960u
 #define DISPLAY64_CONSOLE_VIEWPORT_HEIGHT 648u
@@ -129,6 +130,9 @@ static u32 g_display_console_line_clear_count = 0u;
 static u32 g_display_console_wrap_count = 0u;
 static u32 g_display_console_scroll_count = 0u;
 static u32 g_display_console_line_dirty = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_console_clip_count = 0u;
+#endif
 static u8 g_display_console_replay[DISPLAY64_CONSOLE_REPLAY_BYTES];
 static u32 g_display_console_replay_head = 0u;
 static u32 g_display_console_replay_count = 0u;
@@ -139,6 +143,14 @@ static u32 g_display_console_x = DISPLAY64_TEXT_START_X;
 static u32 g_display_console_y = DISPLAY64_TEXT_START_Y;
 static u32 g_display_console_w = DISPLAY64_CONSOLE_VIEWPORT_WIDTH;
 static u32 g_display_console_h = DISPLAY64_CONSOLE_VIEWPORT_HEIGHT;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_text_scale = DISPLAY64_FONT_DEFAULT_SCALE;
+static u32 g_display_stride_ok = 0u;
+static u32 g_display_bounds_ok = 0u;
+static u32 g_display_console_fit = 0u;
+static u32 g_display_readable = 0u;
+static u32 g_display_layout_token = 0u;
+#endif
 static u32 g_display_compositor_active = 0u;
 static u32 g_display_compositor_present_count = 0u;
 static u32 g_display_compositor_cursor_count = 0u;
@@ -309,6 +321,164 @@ static u32 display64_min_u32(u32 left, u32 right)
 {
     return (left < right) ? left : right;
 }
+
+static int display64_has_framebuffer(void);
+static u32 display64_console_viewport_width(void);
+static u32 display64_console_viewport_height(void);
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_font_scale_value(void)
+{
+    if (g_display_text_scale == 0u)
+    {
+        return DISPLAY64_FONT_DEFAULT_SCALE;
+    }
+
+    return g_display_text_scale;
+}
+
+static u32 display64_font_advance(void)
+{
+    return (DISPLAY64_FONT_WIDTH + 1u) * display64_font_scale_value();
+}
+
+static u32 display64_line_advance(void)
+{
+    return (DISPLAY64_FONT_HEIGHT + 2u) * display64_font_scale_value();
+}
+
+static u64 display64_required_framebuffer_bytes(void)
+{
+    u64 last_row_pixels;
+
+    if ((g_display_boot_info == 0)
+        || (g_display_boot_info->framebuffer_width == 0u)
+        || (g_display_boot_info->framebuffer_height == 0u)
+        || (g_display_boot_info->framebuffer_pixels_per_scanline == 0u))
+    {
+        return 0ull;
+    }
+
+    last_row_pixels = ((u64)(g_display_boot_info->framebuffer_height - 1u)
+        * (u64)g_display_boot_info->framebuffer_pixels_per_scanline)
+        + (u64)g_display_boot_info->framebuffer_width;
+    return last_row_pixels * 4ull;
+}
+
+static u32 display64_choose_text_scale(void)
+{
+    if (!display64_has_framebuffer())
+    {
+        return DISPLAY64_FONT_DEFAULT_SCALE;
+    }
+
+    if ((g_display_boot_info->framebuffer_width >= 1800u)
+        && (g_display_boot_info->framebuffer_height >= 1000u))
+    {
+        return DISPLAY64_FONT_MAX_SCALE;
+    }
+    if ((g_display_boot_info->framebuffer_width >= 1000u)
+        && (g_display_boot_info->framebuffer_height >= 700u))
+    {
+        return DISPLAY64_FONT_DEFAULT_SCALE;
+    }
+
+    return 1u;
+}
+
+static void display64_refresh_layout_token(void)
+{
+    u32 token = 2166136261u;
+
+    token ^= g_display_text_scale;
+    token *= 16777619u;
+    token ^= g_display_console_x;
+    token *= 16777619u;
+    token ^= g_display_console_y;
+    token *= 16777619u;
+    token ^= g_display_console_w;
+    token *= 16777619u;
+    token ^= g_display_console_h;
+    token *= 16777619u;
+    token ^= g_display_stride_ok;
+    token *= 16777619u;
+    token ^= g_display_bounds_ok;
+    token *= 16777619u;
+    token ^= g_display_console_fit;
+    token *= 16777619u;
+    token ^= g_display_readable;
+    token *= 16777619u;
+    g_display_layout_token = token;
+}
+
+static void display64_configure_console_layout(void)
+{
+    u64 required_bytes;
+    u32 margin = 8u;
+    u32 top_margin = 48u;
+    u32 columns;
+    u32 rows;
+
+    g_display_text_scale = DISPLAY64_FONT_DEFAULT_SCALE;
+    g_display_stride_ok = 0u;
+    g_display_bounds_ok = 0u;
+    g_display_console_fit = 0u;
+    g_display_readable = 0u;
+    g_display_console_x = DISPLAY64_TEXT_START_X;
+    g_display_console_y = DISPLAY64_TEXT_START_Y;
+    g_display_console_w = DISPLAY64_CONSOLE_VIEWPORT_WIDTH;
+    g_display_console_h = DISPLAY64_CONSOLE_VIEWPORT_HEIGHT;
+
+    if (!display64_has_framebuffer())
+    {
+        display64_refresh_layout_token();
+        return;
+    }
+
+    g_display_text_scale = display64_choose_text_scale();
+    if (g_display_boot_info->framebuffer_width >= 1200u)
+    {
+        margin = 24u;
+    }
+    if (g_display_boot_info->framebuffer_height >= 720u)
+    {
+        top_margin = 96u;
+    }
+
+    g_display_console_x = display64_min_u32(margin, g_display_boot_info->framebuffer_width - 1u);
+    g_display_console_y = display64_min_u32(top_margin, g_display_boot_info->framebuffer_height - 1u);
+    g_display_console_w = (g_display_boot_info->framebuffer_width > (g_display_console_x + margin))
+        ? (g_display_boot_info->framebuffer_width - g_display_console_x - margin)
+        : (g_display_boot_info->framebuffer_width - g_display_console_x);
+    g_display_console_h = (g_display_boot_info->framebuffer_height > (g_display_console_y + margin))
+        ? (g_display_boot_info->framebuffer_height - g_display_console_y - margin)
+        : (g_display_boot_info->framebuffer_height - g_display_console_y);
+    g_display_text_x = g_display_console_x;
+    g_display_text_y = g_display_console_y;
+
+    required_bytes = display64_required_framebuffer_bytes();
+    g_display_stride_ok =
+        (g_display_boot_info->framebuffer_pixels_per_scanline >= g_display_boot_info->framebuffer_width)
+            ? 1u
+            : 0u;
+    g_display_bounds_ok =
+        ((required_bytes != 0ull) && (required_bytes <= g_display_boot_info->framebuffer_bytes))
+            ? 1u
+            : 0u;
+    columns = display64_console_viewport_width() / display64_font_advance();
+    rows = display64_console_viewport_height() / display64_line_advance();
+    g_display_console_fit = ((columns >= 40u) && (rows >= 16u)) ? 1u : 0u;
+    g_display_readable =
+        ((g_display_stride_ok != 0u) && (g_display_bounds_ok != 0u) && (g_display_console_fit != 0u))
+            ? 1u
+            : 0u;
+    display64_refresh_layout_token();
+}
+#else
+#define display64_font_scale_value() DISPLAY64_FONT_DEFAULT_SCALE
+#define display64_font_advance() DISPLAY64_FONT_ADVANCE_DEFAULT
+#define display64_line_advance() DISPLAY64_LINE_ADVANCE_DEFAULT
+#endif
 
 static int display64_format_supported(u32 format)
 {
@@ -1084,16 +1254,19 @@ static u32 display64_draw_glyph(u8 character, u32 x, u32 y, u32 pixel, u32 *toke
                 continue;
             }
 
-            for (scale_y = 0u; scale_y < DISPLAY64_FONT_SCALE; ++scale_y)
+            for (scale_y = 0u; scale_y < display64_font_scale_value(); ++scale_y)
             {
-                for (scale_x = 0u; scale_x < DISPLAY64_FONT_SCALE; ++scale_x)
+                for (scale_x = 0u; scale_x < display64_font_scale_value(); ++scale_x)
                 {
                     u64 index = 0ull;
-                    u32 px = x + (column * DISPLAY64_FONT_SCALE) + scale_x;
-                    u32 py = y + (row * DISPLAY64_FONT_SCALE) + scale_y;
+                    u32 px = x + (column * display64_font_scale_value()) + scale_x;
+                    u32 py = y + (row * display64_font_scale_value()) + scale_y;
 
                     if (display64_pixel_index(px, py, &index) == 0)
                     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                        ++g_display_console_clip_count;
+#endif
                         continue;
                     }
 
@@ -1173,10 +1346,10 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
 
     cursor_x = panel_x + 8u;
     while ((*text != '\0')
-        && ((cursor_x + (DISPLAY64_FONT_WIDTH * DISPLAY64_FONT_SCALE)) < (panel_x + panel_w)))
+        && ((cursor_x + (DISPLAY64_FONT_WIDTH * display64_font_scale_value())) < (panel_x + panel_w)))
     {
         drawn += display64_draw_glyph((u8)*text, cursor_x, panel_y + 7u, text_pixel, &token);
-        cursor_x += DISPLAY64_FONT_ADVANCE;
+        cursor_x += display64_font_advance();
         ++text;
     }
 
@@ -1242,19 +1415,19 @@ static u32 display64_scroll_console_viewport(u32 *token)
     u32 drawn = 0u;
     u32 cleared;
 
-    if ((viewport_width == 0u) || (viewport_height <= DISPLAY64_LINE_ADVANCE))
+    if ((viewport_width == 0u) || (viewport_height <= display64_line_advance()))
     {
         return 0u;
     }
 
     framebuffer = display64_draw_buffer();
-    scroll_height = viewport_height - DISPLAY64_LINE_ADVANCE;
+    scroll_height = viewport_height - display64_line_advance();
 
     for (row = 0u; row < scroll_height; ++row)
     {
         u64 source_index = 0ull;
         u64 target_index = 0ull;
-        u32 source_y = g_display_console_y + DISPLAY64_LINE_ADVANCE + row;
+        u32 source_y = g_display_console_y + display64_line_advance() + row;
         u32 target_y = g_display_console_y + row;
 
         if ((display64_pixel_index(g_display_console_x, source_y, &source_index) == 0)
@@ -1280,7 +1453,7 @@ static u32 display64_scroll_console_viewport(u32 *token)
         g_display_console_x,
         g_display_console_y + scroll_height,
         viewport_width,
-        DISPLAY64_LINE_ADVANCE,
+        display64_line_advance(),
         DISPLAY64_PANEL_RGB,
         token);
     drawn += cleared;
@@ -1304,18 +1477,18 @@ static u32 display64_text_newline(u32 track_console_wrap, u32 *token)
     u32 scrolled = 0u;
 
     g_display_text_x = g_display_console_x;
-    g_display_text_y += DISPLAY64_LINE_ADVANCE;
+    g_display_text_y += display64_line_advance();
 
     if (display64_has_framebuffer()
-        && ((g_display_text_y + (DISPLAY64_FONT_HEIGHT * DISPLAY64_FONT_SCALE))
+        && ((g_display_text_y + (DISPLAY64_FONT_HEIGHT * display64_font_scale_value()))
             >= display64_console_viewport_bottom()))
     {
         if (track_console_wrap != 0u)
         {
             drawn += display64_scroll_console_viewport(token);
-            if (display64_console_viewport_height() > DISPLAY64_LINE_ADVANCE)
+            if (display64_console_viewport_height() > display64_line_advance())
             {
-                g_display_text_y = display64_console_viewport_bottom() - DISPLAY64_LINE_ADVANCE;
+                g_display_text_y = display64_console_viewport_bottom() - display64_line_advance();
             }
             else
             {
@@ -1408,7 +1581,7 @@ static u32 display64_clear_console_line(u32 *token)
         g_display_console_x,
         g_display_text_y,
         viewport_width,
-        DISPLAY64_LINE_ADVANCE,
+        display64_line_advance(),
         DISPLAY64_PANEL_RGB,
         token);
 
@@ -1437,8 +1610,8 @@ static u32 display64_text_limit_x(u32 clear_console_lines)
 static u32 display64_text_backspace(u32 clear_console_lines, u32 *token)
 {
     u32 drawn = 0u;
-    u32 cell_width = DISPLAY64_FONT_ADVANCE;
-    u32 cell_height = DISPLAY64_LINE_ADVANCE;
+    u32 cell_width = display64_font_advance();
+    u32 cell_height = display64_line_advance();
 
     if (!display64_has_framebuffer())
     {
@@ -1447,17 +1620,17 @@ static u32 display64_text_backspace(u32 clear_console_lines, u32 *token)
 
     if (g_display_text_x > g_display_console_x)
     {
-        g_display_text_x -= DISPLAY64_FONT_ADVANCE;
+        g_display_text_x -= display64_font_advance();
     }
     else if ((clear_console_lines != 0u) && (g_display_text_y > g_display_console_y))
     {
         u32 viewport_width = display64_console_viewport_width();
-        g_display_text_y -= DISPLAY64_LINE_ADVANCE;
-        if (viewport_width > DISPLAY64_FONT_ADVANCE)
+        g_display_text_y -= display64_line_advance();
+        if (viewport_width > display64_font_advance())
         {
             g_display_text_x = g_display_console_x
-                + ((viewport_width - DISPLAY64_FONT_ADVANCE) / DISPLAY64_FONT_ADVANCE)
-                    * DISPLAY64_FONT_ADVANCE;
+                + ((viewport_width - display64_font_advance()) / display64_font_advance())
+                    * display64_font_advance();
         }
     }
 
@@ -1537,7 +1710,7 @@ static u32 display64_render_text_bytes(
             continue;
         }
 
-        if ((g_display_text_x + DISPLAY64_FONT_ADVANCE) >= display64_text_limit_x(clear_console_lines))
+        if ((g_display_text_x + display64_font_advance()) >= display64_text_limit_x(clear_console_lines))
         {
             if (clear_console_lines != 0u)
             {
@@ -1548,7 +1721,7 @@ static u32 display64_render_text_bytes(
 
         drawn += (clear_console_lines != 0u) ? display64_clear_console_line(token) : 0u;
         drawn += display64_draw_glyph(character, g_display_text_x, g_display_text_y, pixel, token);
-        g_display_text_x += DISPLAY64_FONT_ADVANCE;
+        g_display_text_x += display64_font_advance();
     }
 
     return drawn;
@@ -1727,23 +1900,23 @@ static u32 display64_render_text_at(
         if (character == (u8)'\n')
         {
             cursor_x = base_x;
-            cursor_y += DISPLAY64_LINE_ADVANCE;
+            cursor_y += display64_line_advance();
             continue;
         }
 
-        if ((cursor_x + DISPLAY64_FONT_ADVANCE) >= g_display_boot_info->framebuffer_width)
+        if ((cursor_x + display64_font_advance()) >= g_display_boot_info->framebuffer_width)
         {
             cursor_x = base_x;
-            cursor_y += DISPLAY64_LINE_ADVANCE;
+            cursor_y += display64_line_advance();
         }
 
-        if ((cursor_y + DISPLAY64_LINE_ADVANCE) >= g_display_boot_info->framebuffer_height)
+        if ((cursor_y + display64_line_advance()) >= g_display_boot_info->framebuffer_height)
         {
             break;
         }
 
         drawn += display64_draw_glyph(character, cursor_x, cursor_y, pixel, token);
-        cursor_x += DISPLAY64_FONT_ADVANCE;
+        cursor_x += display64_font_advance();
     }
 
     return drawn;
@@ -3918,6 +4091,9 @@ void display64_init(const struct boot_info *boot_info)
     g_display_console_wrap_count = 0u;
     g_display_console_scroll_count = 0u;
     g_display_console_line_dirty = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_console_clip_count = 0u;
+#endif
     g_display_console_replay_head = 0u;
     g_display_console_replay_count = 0u;
     g_display_console_replay_overflow = 0u;
@@ -3927,6 +4103,14 @@ void display64_init(const struct boot_info *boot_info)
     g_display_console_y = DISPLAY64_TEXT_START_Y;
     g_display_console_w = DISPLAY64_CONSOLE_VIEWPORT_WIDTH;
     g_display_console_h = DISPLAY64_CONSOLE_VIEWPORT_HEIGHT;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_text_scale = DISPLAY64_FONT_DEFAULT_SCALE;
+    g_display_stride_ok = 0u;
+    g_display_bounds_ok = 0u;
+    g_display_console_fit = 0u;
+    g_display_readable = 0u;
+    g_display_layout_token = 0u;
+#endif
     g_display_compositor_active = 0u;
     g_display_back_buffer = 0;
     g_display_back_buffer_pixels = 0ull;
@@ -4023,6 +4207,9 @@ void display64_init(const struct boot_info *boot_info)
         g_display_windows[window_index].focused = 0u;
         g_display_windows[window_index].z = 0u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_configure_console_layout();
+#endif
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
     display64_compositor_init_back_buffer();
 #endif
@@ -4558,6 +4745,85 @@ u32 display64_framebuffer_base_high(void)
 u32 display64_framebuffer_bytes_low(void)
 {
     return display64_has_framebuffer() ? (u32)g_display_boot_info->framebuffer_bytes : 0u;
+}
+
+u32 display64_framebuffer_required_bytes_low(void)
+{
+    return display64_has_framebuffer() ? (u32)display64_required_framebuffer_bytes() : 0u;
+}
+
+u32 display64_framebuffer_required_bytes_high(void)
+{
+    return display64_has_framebuffer() ? (u32)(display64_required_framebuffer_bytes() >> 32) : 0u;
+}
+
+u32 display64_framebuffer_stride_ok(void)
+{
+    return g_display_stride_ok;
+}
+
+u32 display64_framebuffer_bounds_ok(void)
+{
+    return g_display_bounds_ok;
+}
+
+u32 display64_text_scale(void)
+{
+    return g_display_text_scale;
+}
+
+u32 display64_console_viewport_x(void)
+{
+    return g_display_console_x;
+}
+
+u32 display64_console_viewport_y(void)
+{
+    return g_display_console_y;
+}
+
+u32 display64_console_viewport_w(void)
+{
+    return display64_console_viewport_width();
+}
+
+u32 display64_console_viewport_h(void)
+{
+    return display64_console_viewport_height();
+}
+
+u32 display64_console_columns(void)
+{
+    u32 advance = display64_font_advance();
+
+    return (advance != 0u) ? (display64_console_viewport_width() / advance) : 0u;
+}
+
+u32 display64_console_rows(void)
+{
+    u32 advance = display64_line_advance();
+
+    return (advance != 0u) ? (display64_console_viewport_height() / advance) : 0u;
+}
+
+u32 display64_console_fit(void)
+{
+    return g_display_console_fit;
+}
+
+u32 display64_readable(void)
+{
+    return g_display_readable;
+}
+
+u32 display64_console_clip_count(void)
+{
+    return g_display_console_clip_count;
+}
+
+u32 display64_layout_token(void)
+{
+    return g_display_layout_token;
 }
 #endif
 
