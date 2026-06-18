@@ -1,0 +1,287 @@
+param(
+    [string]$OutputDir = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = Join-Path $root "build\m117-hardware-display-input-fixtures"
+}
+
+$captureDir = Join-Path $OutputDir "captures"
+$analysisDir = Join-Path $OutputDir "analysis"
+New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
+New-Item -ItemType Directory -Force -Path $analysisDir | Out-Null
+
+$displayOrder = @(
+    "display-readability",
+    "available",
+    "width",
+    "height",
+    "pitch",
+    "stride-ok",
+    "bounds-ok",
+    "scale",
+    "viewport-x",
+    "viewport-y",
+    "viewport-w",
+    "viewport-h",
+    "columns",
+    "rows",
+    "fit",
+    "readable",
+    "clip",
+    "cursor-visible",
+    "cursor-draws",
+    "direct-cursor-draws",
+    "token"
+)
+
+$uiOrder = @(
+    "ui-polish",
+    "compositor-active",
+    "compositor-direct",
+    "font",
+    "wm",
+    "desktop",
+    "taskbar",
+    "launcher",
+    "windows",
+    "cursor-visible",
+    "token"
+)
+
+$baseDisplay = @{
+    "display-readability" = "1"
+    "available" = "1"
+    "width" = "1280"
+    "height" = "800"
+    "pitch" = "1280"
+    "stride-ok" = "1"
+    "bounds-ok" = "1"
+    "scale" = "2"
+    "viewport-x" = "40"
+    "viewport-y" = "92"
+    "viewport-w" = "904"
+    "viewport-h" = "516"
+    "columns" = "75"
+    "rows" = "28"
+    "fit" = "1"
+    "readable" = "1"
+    "clip" = "0"
+    "cursor-visible" = "1"
+    "cursor-draws" = "205"
+    "direct-cursor-draws" = "207"
+    "token" = "0xF8C98059"
+}
+
+$baseUi = @{
+    "ui-polish" = "1"
+    "compositor-active" = "1"
+    "compositor-direct" = "1"
+    "font" = "1"
+    "wm" = "1"
+    "desktop" = "1"
+    "taskbar" = "1"
+    "launcher" = "1"
+    "windows" = "3"
+    "cursor-visible" = "1"
+    "token" = "0xCB1B1C83"
+}
+
+$baseInput = @{
+    "mouse-packets" = "2"
+    "xhci-mouse-endpoint" = "1"
+    "xhci-mouse-reports" = "2"
+    "xhci-mouse-bytes" = "8"
+    "xhci-error" = "0"
+    "i2c-pointer-found" = "0"
+    "i2c-pointer-reports" = "0"
+    "i2c-pointer-error" = "0"
+    "i2c-pointer-candidates" = "0"
+    "ps2-present" = "1"
+    "ps2-enabled" = "1"
+}
+
+function Copy-Hashtable
+{
+    param([hashtable]$Source)
+
+    $copy = @{}
+    foreach ($key in $Source.Keys) {
+        $copy[$key] = $Source[$key]
+    }
+    return $copy
+}
+
+function New-TelemetryLine
+{
+    param(
+        [string]$Prefix,
+        [string[]]$Order,
+        [hashtable]$Fields
+    )
+
+    $parts = @()
+    foreach ($field in $Order) {
+        $parts += ("{0} {1}" -f $field, $Fields[$field])
+    }
+    return "[x64] $Prefix " + ($parts -join " ")
+}
+
+function New-Fixture
+{
+    param(
+        [string]$Name,
+        [string]$ExpectedStage,
+        [hashtable]$Display = @{},
+        [hashtable]$Ui = @{},
+        [hashtable]$InputMutations = @{},
+        [bool]$OmitDisplay = $false,
+        [bool]$OmitUi = $false
+    )
+
+    return [PSCustomObject]@{
+        name = $Name
+        expected_stage = $ExpectedStage
+        display = $Display
+        ui = $Ui
+        input = $InputMutations
+        omit_display = $OmitDisplay
+        omit_ui = $OmitUi
+    }
+}
+
+$fixtures = @(
+    (New-Fixture -Name "missing-display-readability" -ExpectedStage "missing-display-readability" -OmitDisplay:$true),
+    (New-Fixture -Name "display-unavailable" -ExpectedStage "display-unavailable" -Display @{ "available" = "0" }),
+    (New-Fixture -Name "framebuffer-stride" -ExpectedStage "framebuffer-stride" -Display @{ "stride-ok" = "0" }),
+    (New-Fixture -Name "framebuffer-bounds" -ExpectedStage "framebuffer-bounds" -Display @{ "bounds-ok" = "0" }),
+    (New-Fixture -Name "display-fit" -ExpectedStage "display-fit" -Display @{ "fit" = "0" }),
+    (New-Fixture -Name "display-readable" -ExpectedStage "display-readable" -Display @{ "readable" = "0" }),
+    (New-Fixture -Name "missing-ui-polish" -ExpectedStage "missing-ui-polish" -OmitUi:$true),
+    (New-Fixture -Name "compositor-inactive" -ExpectedStage "compositor-inactive" -Ui @{ "compositor-active" = "0" }),
+    (New-Fixture -Name "font-unavailable" -ExpectedStage "font-unavailable" -Ui @{ "font" = "0" }),
+    (New-Fixture -Name "window-manager-unavailable" -ExpectedStage "window-manager-unavailable" -Ui @{ "wm" = "0" }),
+    (New-Fixture -Name "desktop-unavailable" -ExpectedStage "desktop-unavailable" -Ui @{ "desktop" = "0" }),
+    (New-Fixture -Name "taskbar-unavailable" -ExpectedStage "taskbar-unavailable" -Ui @{ "taskbar" = "0" }),
+    (New-Fixture -Name "launcher-unavailable" -ExpectedStage "launcher-unavailable" -Ui @{ "launcher" = "0" }),
+    (New-Fixture -Name "windows-unavailable" -ExpectedStage "windows-unavailable" -Ui @{ "windows" = "0" }),
+    (New-Fixture -Name "pointer-moving-cursor-hidden" -ExpectedStage "pointer-moving-cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" }),
+    (New-Fixture -Name "cursor-hidden" -ExpectedStage "cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -InputMutations @{ "mouse-packets" = "0" }),
+    (New-Fixture -Name "i2c-pointer-reports-no-packets" -ExpectedStage "i2c-pointer-reports-no-packets" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-found" = "1"; "i2c-pointer-reports" = "2" }),
+    (New-Fixture -Name "i2c-pointer-error" -ExpectedStage "i2c-pointer-error" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-found" = "1"; "i2c-pointer-error" = "3" }),
+    (New-Fixture -Name "i2c-pointer-candidate-unbound" -ExpectedStage "i2c-pointer-candidate-unbound" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-candidates" = "1" }),
+    (New-Fixture -Name "xhci-mouse-reports-no-packets" -ExpectedStage "xhci-mouse-reports-no-packets" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "1"; "xhci-mouse-reports" = "2" }),
+    (New-Fixture -Name "xhci-mouse-no-reports" -ExpectedStage "xhci-mouse-no-reports" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "1"; "xhci-mouse-reports" = "0" }),
+    (New-Fixture -Name "xhci-input-error" -ExpectedStage "xhci-input-error" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "xhci-error" = "7" }),
+    (New-Fixture -Name "ps2-mouse-no-packets" -ExpectedStage "ps2-mouse-no-packets" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "1" }),
+    (New-Fixture -Name "ps2-mouse-disabled" -ExpectedStage "ps2-mouse-disabled" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "0" }),
+    (New-Fixture -Name "no-pointer-backend" -ExpectedStage "no-pointer-backend" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "0"; "ps2-enabled" = "0" }),
+    (New-Fixture -Name "display-input-ready" -ExpectedStage "display-input-ready")
+)
+
+$results = @()
+$failures = @()
+foreach ($fixture in $fixtures) {
+    $display = Copy-Hashtable -Source $baseDisplay
+    $ui = Copy-Hashtable -Source $baseUi
+    $input = Copy-Hashtable -Source $baseInput
+    foreach ($key in $fixture.display.Keys) {
+        $display[$key] = $fixture.display[$key]
+    }
+    foreach ($key in $fixture.ui.Keys) {
+        $ui[$key] = $fixture.ui[$key]
+    }
+    foreach ($key in $fixture.input.Keys) {
+        $input[$key] = $fixture.input[$key]
+    }
+
+    $capturePath = Join-Path $captureDir ($fixture.name + ".txt")
+    $lines = @()
+    if (-not $fixture.omit_display) {
+        $lines += New-TelemetryLine -Prefix "drs-display-readability" -Order $displayOrder -Fields $display
+    }
+    if (-not $fixture.omit_ui) {
+        $lines += New-TelemetryLine -Prefix "drs-ui-polish" -Order $uiOrder -Fields $ui
+    }
+    $lines += "xhci mouse endpoint: $(if ($input["xhci-mouse-endpoint"] -eq "1") { "yes" } else { "no" })"
+    $lines += "xhci mouse reports: $($input["xhci-mouse-reports"])"
+    $lines += "xhci mouse bytes: $($input["xhci-mouse-bytes"])"
+    $lines += "xhci error: $($input["xhci-error"])"
+    $lines += "i2c pointer found: $(if ($input["i2c-pointer-found"] -eq "1") { "yes" } else { "no" })"
+    $lines += "i2c pointer reports: $($input["i2c-pointer-reports"])"
+    $lines += "i2c pointer error: $($input["i2c-pointer-error"])"
+    $lines += "i2c pointer candidates: $($input["i2c-pointer-candidates"])"
+    $lines += "mouse packets: $($input["mouse-packets"])"
+    $lines += "ps2 fallback present: $(if ($input["ps2-present"] -eq "1") { "yes" } else { "no" })"
+    $lines += "ps2 fallback enabled: $(if ($input["ps2-enabled"] -eq "1") { "yes" } else { "no" })"
+    $lines | Set-Content -Path $capturePath -Encoding Ascii
+
+    $fixtureOutputDir = Join-Path $analysisDir $fixture.name
+    $global:LASTEXITCODE = 0
+    $analyzerOutput = & (Join-Path $root "tools\analyze-hardware-display-input-capture.ps1") `
+        -InputPath $capturePath `
+        -OutputDir $fixtureOutputDir 2>&1
+    $exitCode = $LASTEXITCODE
+    $analyzerOutput | Set-Content -Path (Join-Path $fixtureOutputDir "analyzer-console.txt") -Encoding Ascii
+
+    $analysisPath = Join-Path $fixtureOutputDir "hardware-display-input-analysis.json"
+    if (-not (Test-Path $analysisPath)) {
+        $failures += "$($fixture.name): analyzer did not write hardware-display-input-analysis.json"
+        continue
+    }
+
+    $analysis = Get-Content -Raw -Path $analysisPath | ConvertFrom-Json
+    $actualStage = [string]$analysis.stage
+    $expectedExitCode = if ($fixture.expected_stage -eq "display-input-ready") { 0 } else { 2 }
+    $pass = (($actualStage -eq $fixture.expected_stage) -and ($exitCode -eq $expectedExitCode))
+    if (-not $pass) {
+        $failures += ("{0}: expected stage {1}/exit {2}, observed stage {3}/exit {4}" -f $fixture.name, $fixture.expected_stage, $expectedExitCode, $actualStage, $exitCode)
+    }
+
+    $results += [PSCustomObject]@{
+        name = $fixture.name
+        expected_stage = $fixture.expected_stage
+        actual_stage = $actualStage
+        expected_exit_code = $expectedExitCode
+        actual_exit_code = $exitCode
+        pass = $pass
+        next_target = [string]$analysis.next_target
+    }
+}
+
+$summary = [PSCustomObject]@{
+    tool = "verify-hardware-display-input-fixtures"
+    output_dir = (Resolve-Path $OutputDir).Path
+    total = $fixtures.Count
+    passed = ($results | Where-Object { $_.pass }).Count
+    failed = $failures.Count
+    failures = $failures
+    results = $results
+}
+
+$summaryJsonPath = Join-Path $OutputDir "hardware-display-input-fixtures.json"
+$summaryTextPath = Join-Path $OutputDir "hardware-display-input-fixtures.txt"
+$summary | ConvertTo-Json -Depth 6 | Set-Content -Path $summaryJsonPath -Encoding Ascii
+
+@(
+    "hardware-display-input-fixtures: $($summary.passed)/$($summary.total)",
+    "failed: $($summary.failed)",
+    "output-json: $summaryJsonPath"
+) + ($results | ForEach-Object {
+    "{0}: expected {1} observed {2} exit {3} pass {4}" -f $_.name, $_.expected_stage, $_.actual_stage, $_.actual_exit_code, $_.pass
+}) | Set-Content -Path $summaryTextPath -Encoding Ascii
+
+Write-Host "hardware-display-input-fixtures: $($summary.passed)/$($summary.total)"
+Write-Host "  failed: $($summary.failed)"
+Write-Host "  output: $summaryJsonPath"
+
+if ($failures.Count -ne 0) {
+    foreach ($failure in $failures) {
+        Write-Host "  failure: $failure"
+    }
+    exit 1
+}

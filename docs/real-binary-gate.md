@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, and M116 physical hardware storage analysis fixture coverage are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, and M117 physical display/input capture analysis are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -2168,6 +2168,39 @@ failed: 0
 ```
 
 The fixture set covers missing telemetry, legacy `drs-realbin-unavailable`, every NVMe controller/readiness/Identify/queue/read failure, GPT/FAT discovery and mount failures, capability failures, `/APPS` lookup failures, staged boot/NVMe artifact mismatches, and the final `storage-ready` pass. M116 non-claims: it does not add or certify hardware support; it proves the host-side diagnosis layer is deterministic before the next real laptop capture.
+
+## M117 Physical Display/Input Capture Analysis
+
+M117 adds `tools\analyze-hardware-display-input-capture.ps1` and `tools\verify-hardware-display-input-fixtures.ps1`. These host-side tools classify `hwval` display/UI/cursor/pointer telemetry into concrete hardware stages.
+
+Accepted commands:
+
+```powershell
+.\tools\analyze-hardware-display-input-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m117-display-input-qemu
+.\tools\verify-hardware-display-input-fixtures.ps1
+```
+
+Positive QEMU proof:
+
+```text
+hardware-display-input-analysis: display-input-ready
+pass: True
+detail: Display is readable, UI initialized, cursor is visible, and pointer packets were received.
+mouse-packets: 2
+xhci-mouse-endpoint: 1
+xhci-mouse-reports: 2
+ps2-present: 1
+ps2-enabled: 1
+```
+
+Fixture proof:
+
+```text
+hardware-display-input-fixtures: 26/26
+failed: 0
+```
+
+The fixture set covers missing display/UI telemetry, framebuffer stride/bounds/fit/readability failures, compositor/font/window-manager/desktop/taskbar/launcher/window failures, cursor-hidden and pointer-moving-cursor-hidden cases, I2C HID touchpad errors/candidate binding/report bridging, xHCI mouse report failures, PS/2 fallback failures, no pointer backend, and final display/input readiness. M117 non-claims: it does not add a GPU driver, DRM/KMS, a new touchpad driver, or physical MSI certification; it makes the next hardware capture actionable.
 
 Later targets are:
 

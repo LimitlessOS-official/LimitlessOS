@@ -16,7 +16,9 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 
 ## Current Milestone
 
-M116 is `physical hardware storage analysis fixture coverage`. The repo now has `tools\verify-hardware-storage-analysis-fixtures.ps1`, a host-side regression suite that fabricates one tiny capture for every M112/M114 storage stage and proves the analyzer reports the expected stage and exit code. It covers missing telemetry, legacy `drs-realbin-unavailable`, every NVMe/GPT/FAT/capability/`/APPS`/staged-artifact failure, and the final `storage-ready` pass. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+M117 is `physical display/input capture analysis`. The repo now has `tools\analyze-hardware-display-input-capture.ps1` and `tools\verify-hardware-display-input-fixtures.ps1`, host-side tools that classify real `hwval` display/UI/cursor/pointer telemetry. They distinguish unreadable framebuffer geometry, missing UI/compositor pieces, hidden cursor despite mouse packets, xHCI/PS2/I2C pointer backend failures, and the final `display-input-ready` pass. No kernel code changes were needed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
+
+M116 is `physical hardware storage analysis fixture coverage`. The repo now has `tools\verify-hardware-storage-analysis-fixtures.ps1`, a host-side regression suite that fabricates one tiny capture for every M112/M114 storage stage and proves the analyzer reports the expected stage and exit code. It covers missing telemetry, legacy `drs-realbin-unavailable`, every NVMe/GPT/FAT/capability/`/APPS`/staged-artifact failure, and the final `storage-ready` pass.
 
 M115 is `physical hardware storage evidence verification`. The repo now has `tools\verify-hardware-storage-evidence.ps1`, a host-side verifier that validates an M113 evidence bundle before hardware use, checks ISO/UEFI/app/interpreter byte counts and SHA-256s against `hardware-storage-evidence-manifest.json`, checks the staged `BOOTMAN.TXT` contract, checks reserves against the size map, and optionally runs the M114 analyzer on a captured transcript.
 
@@ -2319,7 +2321,84 @@ Final reserves are unchanged from M111 because no kernel code changed:
 - BIOS kernel bytes: 472,160, reserve 101 sectors
 - UEFI manifest checksum: `0x6714FC97`
 
-Proposed M117 scope: run the M113/M115 verified staged ISO on the MSI laptop, capture `hwval`, verify it with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`, then implement only the first failing storage stage reported by `capture-stage`.
+## M117 Physical Display/Input Capture Analysis
+
+M117 is accepted as the host-side diagnosis layer for the display/input symptoms observed in the real laptop photos and VirtualBox pointer run. It adds:
+
+```powershell
+.\tools\analyze-hardware-display-input-capture.ps1 -InputPath <captured-hwval-transcript> [-OutputDir <dir>]
+.\tools\verify-hardware-display-input-fixtures.ps1 [-OutputDir <dir>]
+```
+
+The analyzer consumes `drs-display-readability`, `drs-ui-polish`, and the existing `hwval` pointer lines for xHCI, I2C HID, PS/2 fallback, mouse packet counts, and cursor visibility. It reports one dependency stage plus a `next-target` implementation hint.
+
+Validated commands:
+
+```powershell
+.\tools\analyze-hardware-display-input-capture.ps1 -InputPath .\build\qemu-x86_64-uefi-debug.log -OutputDir .\build\m117-display-input-qemu
+.\tools\verify-hardware-display-input-fixtures.ps1
+```
+
+Positive QEMU result:
+
+```text
+hardware-display-input-analysis: display-input-ready
+pass: True
+detail: Display is readable, UI initialized, cursor is visible, and pointer packets were received.
+mouse-packets: 2
+xhci-mouse-endpoint: 1
+xhci-mouse-reports: 2
+ps2-present: 1
+ps2-enabled: 1
+```
+
+Fixture coverage:
+
+```text
+hardware-display-input-fixtures: 26/26
+failed: 0
+```
+
+Covered stages:
+
+```text
+missing-display-readability
+display-unavailable
+framebuffer-stride
+framebuffer-bounds
+display-fit
+display-readable
+missing-ui-polish
+compositor-inactive
+font-unavailable
+window-manager-unavailable
+desktop-unavailable
+taskbar-unavailable
+launcher-unavailable
+windows-unavailable
+pointer-moving-cursor-hidden
+cursor-hidden
+i2c-pointer-reports-no-packets
+i2c-pointer-error
+i2c-pointer-candidate-unbound
+xhci-mouse-reports-no-packets
+xhci-mouse-no-reports
+xhci-input-error
+ps2-mouse-no-packets
+ps2-mouse-disabled
+no-pointer-backend
+display-input-ready
+```
+
+M117 non-claims: this does not add a GPU driver, DRM/KMS, a new touchpad driver, or certify the MSI laptop. It makes the next real laptop `hwval` capture classify the observed display overlap, hidden cursor, and touchpad/mouse failure into a concrete implementation target instead of relying on photos.
+
+Final reserves are unchanged from M111 because no kernel code changed:
+
+- UEFI kernel bytes: 1,308,640 / 2,097,152, reserve 788,512 bytes
+- BIOS kernel bytes: 472,160, reserve 101 sectors
+- UEFI manifest checksum: `0x6714FC97`
+
+Proposed M118 scope: run the M113/M115 verified staged ISO on the MSI laptop, capture `hwval`, verify storage with `tools\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts`, analyze display/input with `tools\analyze-hardware-display-input-capture.ps1`, then implement only the first reported physical hardware failure stage.
 
 ## Persistence
 

@@ -55,6 +55,16 @@ Verify the evidence bundle and captured transcript from Windows/PowerShell with:
 
 The verifier checks the evidence bundle hashes/reserves first, then runs the analyzer and names the first failing storage stage: controller discovery, controller ready, Identify, IO queue, read issue/completion/status, GPT, FAT32 geometry/VBR/BPB/mount, scoped capability delegation, `/APPS` directory visibility, or staged artifact mismatch. Use `capture-stage` and the nested analyzer `next-target` line as the next kernel/driver implementation target.
 
+Analyze display/input from the same captured transcript with:
+
+```powershell
+.\tools\analyze-hardware-display-input-capture.ps1 `
+  -InputPath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\msi-display-input-analysis
+```
+
+The display/input analyzer reports whether the display is readable, whether the Product UI/compositor initialized, whether a cursor is visible, and which pointer backend failed first: hidden cursor despite packets, I2C HID touchpad binding/report/error, xHCI mouse report handling, PS/2 mouse packets, or no pointer backend. Use the analyzer `stage` and `next-target` lines as the display/input implementation target.
+
 M113 packages this handoff into a timestamped evidence directory:
 
 ```powershell
@@ -111,6 +121,7 @@ For the next physical run, write `limitlessos-x86_64-m113-staged.iso` from that 
 - [ ] Run `hwval`.
 - [ ] Save the complete `hwval` transcript.
 - [ ] Verify the evidence bundle and transcript with `tools\verify-hardware-storage-evidence.ps1`.
+- [ ] Analyze display/input with `tools\analyze-hardware-display-input-capture.ps1`.
 - [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
 - [ ] Record the exact shell prompt text.
