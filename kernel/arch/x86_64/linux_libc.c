@@ -209,6 +209,28 @@ static u32 linux_libc64_checksum_bytes(const u8 *data, u32 byte_count)
     return checksum;
 }
 
+static const char *linux_libc64_kernel_cstr(const char *text)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 address;
+
+    if (text == 0)
+    {
+        return 0;
+    }
+
+    address = (u64)text;
+    if ((address >= 0x0000000000010000ull)
+        && (address < 0x0000000002000000ull))
+    {
+        address += 0xFFFFFFFF80000000ull;
+    }
+    return (const char *)address;
+#else
+    return text;
+#endif
+}
+
 static u32 linux_libc64_name_matches(
     const char *left,
     u32 left_length,
@@ -222,6 +244,8 @@ static u32 linux_libc64_name_matches(
         return 0u;
     }
 
+    left = linux_libc64_kernel_cstr(left);
+    right = linux_libc64_kernel_cstr(right);
     for (index = 0u; index < left_length; ++index)
     {
         if (left[index] != right[index])
@@ -237,6 +261,7 @@ static u32 linux_libc64_cstring_length(const char *text, u32 max_bytes)
 {
     u32 index;
 
+    text = linux_libc64_kernel_cstr(text);
     if (text == 0)
     {
         return 0u;
@@ -251,6 +276,13 @@ static u32 linux_libc64_cstring_length(const char *text, u32 max_bytes)
     }
 
     return max_bytes;
+}
+
+static u32 linux_libc64_user_page_protection(u32 pid, u64 virtual_address)
+{
+    return (paging64_process_root_physical(pid) != 0ull)
+        ? paging64_user_page_protection_for_process(pid, virtual_address)
+        : paging64_user_page_protection(virtual_address);
 }
 
 static void linux_libc64_copy_bytes(u8 *target, const u8 *source, u32 byte_count)
@@ -273,6 +305,7 @@ static u32 linux_libc64_env_string_valid(const char *source, u32 max_bytes)
     u32 index;
     u32 saw_equals = 0u;
 
+    source = linux_libc64_kernel_cstr(source);
     if ((source == 0) || (max_bytes < 2u))
     {
         return 0u;
@@ -301,6 +334,7 @@ static u32 linux_libc64_copy_env_string(
     u32 index;
     u32 saw_equals = 0u;
 
+    source = linux_libc64_kernel_cstr(source);
     if ((target == 0) || (source == 0) || (max_bytes < 2u))
     {
         return 0u;
@@ -1878,7 +1912,7 @@ u32 linux_libc64_bind_environment(
         || (setenv_count_readback != snapshot_count)
         || (vector_readback != ((snapshot_count != 0u) ? snapshot_string : 0ull))
         || (vector_terminator != 0ull)
-        || (paging64_user_page_protection_for_process(pid, text_page)
+        || (linux_libc64_user_page_protection(pid, text_page)
             != (PAGING64_USER_PROT_READ | PAGING64_USER_PROT_EXECUTE)))
     {
         return linux_libc64_record_denial(pid, LINUX_LIBC64_ERROR_ENVIRONMENT, 0ull);

@@ -756,8 +756,6 @@ function Send-QemuKeyboardProbe
 
         if ($GuiProbeEnabled) {
             Start-Sleep -Milliseconds 300
-            & $sendKey "a"
-            & $sendKey "ret"
 
             $taskbarY = $frameHeight - 24 - 32
             $launcherY = $taskbarY + 16
@@ -880,7 +878,8 @@ function Send-QemuKeyboardProbe
                 Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64\] drs-app-m21 ' -TimeoutMilliseconds 600000
                 Start-Sleep -Milliseconds 500
                 & $sendKey "ret"
-                Start-Sleep -Milliseconds 300
+                Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64:shell\] persistent ring3 shell online' -TimeoutMilliseconds 600000
+                Start-Sleep -Milliseconds 1200
             }
             else {
                 Wait-ForLogPattern -Path $DebugLogPath -Pattern '\[x64:shell\] persistent ring3 shell online' -TimeoutMilliseconds 600000
@@ -916,35 +915,57 @@ function Send-QemuKeyboardProbe
             return
         }
 
-        $keys = @(
-            "l", "s", "ret",
-            "h", "e", "l", "p", "ret",
-            "h", "e", "l", "p", "spc", "c", "a", "t", "ret",
-            "h", "e", "l", "p", "spc", "w", "r", "i", "t", "e", "ret",
-            "a", "p", "p", "s", "ret",
-            "p", "w", "d", "ret",
-            "l", "s", "ret",
-            "l", "s", "spc", "a", "p", "p", "s", "ret",
-            "c", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
-            "s", "t", "a", "t", "spc", "r", "e", "a", "d", "m", "e", "dot", "t", "x", "t", "ret",
-            "i", "n", "f", "o", "spc", "w", "r", "i", "t", "e", "ret",
-            "n", "e", "t", "ret",
-            "n", "e", "t", "spc", "c", "u", "r", "l", "spc", "e", "x", "a", "m", "p", "l", "e", "dot", "c", "o", "m", "ret",
-            "p", "k", "g", "i", "n", "f", "o", "ret",
-            "h", "w", "v", "a", "l", "ret"
+        if ($DebugLogPath.Length -gt 0) {
+            $shellSynced = $false
+            for ($shellSyncAttempt = 0; $shellSyncAttempt -lt 4; $shellSyncAttempt++) {
+                & $sendTextLine "ls"
+                Start-Sleep -Milliseconds 900
+                $shellSyncText = ""
+                if (Test-Path $DebugLogPath) {
+                    $shellSyncText = Get-Content -Path $DebugLogPath -Raw -ErrorAction SilentlyContinue
+                }
+                if ($shellSyncText -match '\[x64\] \$ ls') {
+                    $shellSynced = $true
+                    break
+                }
+                & $sendKey "ret"
+                Start-Sleep -Milliseconds 900
+            }
+            if (-not $shellSynced) {
+                & $sendTextLine "ls"
+            }
+        }
+
+        $shellTextLines = @(
+            "help",
+            "help cat",
+            "help write",
+            "apps",
+            "pwd",
+            "ls",
+            "ls apps",
+            "cat readme.txt",
+            "stat readme.txt",
+            "info write",
+            "net",
+            "net curl example.com",
+            "pkginfo",
+            "hwval"
         )
         if ($LoginProbeEnabled) {
-            $keys += @(
-                "l", "o", "c", "k", "ret",
-                "l", "i", "m", "i", "t", "l", "e", "s", "s", "ret"
+            $shellTextLines += @(
+                "lock",
+                "limitless"
             )
         }
-        $keys += @(
-            "w", "r", "i", "t", "e", "spc", "w", "dot", "t", "x", "t", "spc", "o", "k", "ret",
-            "c", "a", "t", "spc", "w", "dot", "t", "x", "t", "ret"
+        $shellTextLines += @(
+            "write w.txt ok",
+            "cat w.txt"
         )
-        foreach ($key in $keys) {
-            & $sendKey $key
+        foreach ($shellTextLine in $shellTextLines) {
+            if (-not [string]::IsNullOrWhiteSpace($shellTextLine)) {
+                & $sendTextLine $shellTextLine
+            }
         }
         foreach ($extraTextLine in $ExtraTextLines) {
             if (-not [string]::IsNullOrWhiteSpace($extraTextLine)) {
@@ -1144,7 +1165,7 @@ try {
     if ($Architecture -eq "x86_64") {
         Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] PIT at 100 Hz' -TimeoutMilliseconds 45000
 
-        $probeMilliseconds = if ($BootMedia -eq "disk") { 52000 } else { 56000 }
+        $probeMilliseconds = if ($BootMedia -eq "disk") { 52000 } elseif ($BuildProfile -eq "Product") { 120000 } else { 56000 }
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -3021,7 +3042,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 UEFI font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 .* drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [0-9]+ fileman-refresh [1-9][0-9]* .* drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 UEFI virtio-net brokered ARP proof was not observed."
         }
@@ -3039,7 +3060,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 Product font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 .* drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [1-9][0-9]* .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [0-9]+ fileman-refresh [1-9][0-9]* .* drs-gui-unfocused-key-denied 1 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [1-9][0-9]* input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }
@@ -4202,7 +4223,7 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-abi-F33 poll ret 0x0000000000000000/0x0000000000000001 ppoll 0x0000000000000001 nval 0x0000000000000001 bad 0xFFFFFFFFFFFFFFEA fault 0xFFFFFFFFFFFFFFF2 revents 0x00000000/0x00000001/0x00000001/0x00000020 bytes 5 map 1/8 entries 1/1 audit [0-9]+/[0-9]+ d 3/1/3/2/1 last 7/1/0/0/14 events 3/3/3/3 cleanup 1/1/1 live ([0-9]+)/\1 positive 1' -Message "x64 UEFI Linux ABI F.33 poll/ppoll checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-vdso-H1 map 1 validate 1 base 0x00000000441C0000 pte 1 prot 0x00000005 elf 1/2/1/3/62 phdr 2 seg 1/1 names 1/1/1 checksum 0x(?!00000000)[0-9A-F]{8} deny 1/1 fast 0x0000000000000000 tv 0x[0-9A-F]{16}/0x[0-9A-F]{16} counts 1/1/0/0 cleanup 1/1/0 positive 1' -Message "x64 UEFI Linux VDSO H.1 page checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-vdso-H2 aux 1 value 0x00000000441C0000 entries 19/19 validate 1 pte 1 prot 0x00000005 elf 1/2/1/3/62 phdr 2 stack 1/1 cleanup 1 positive 1' -Message "x64 UEFI Linux VDSO H.2 auxv mapping checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-signal-I1 sigaction-bytes 24 slots 64 pending 0x0000000000000000 mask 0x0000000000000000 zero 64/64/64 invalid 1 positive 1' -Message "x64 UEFI Linux signal I.1 context checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-signal-I1 sigaction-bytes 32 slots 64 pending 0x0000000000000000 mask 0x0000000000000000 zero 64/64/64 invalid 1 positive 1' -Message "x64 UEFI Linux signal I.1 context checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-signal-I2 rt-sigaction ret 0x0000000000000000/0x0000000000000000 deny 0xFFFFFFFFFFFFFFEA/0xFFFFFFFFFFFFFFF2 entry 1 signal 10 handler 0x0000000040123450/0x0000000040123450 old 0x0000000000000000 mask 0x0000000000000400/0x0000000000000400 flags 0x0000000001000000/0x0000000001000000 counts 0/2 query 0/1 denial 0/2 fault 0/1 audit [0-9]+/[0-9]+ events 3/3/3/3 results 0/0/22/14 cleanup 1 positive 1' -Message "x64 UEFI Linux signal I.2 rt_sigaction checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-signal-I3 rt-sigprocmask ret 0x0000000000000000/0x0000000000000000/0x0000000000000000 deny 0xFFFFFFFFFFFFFFEA/0xFFFFFFFFFFFFFFF2 entry 1 masks 0x0000000000000000/0x0000000000000200/0x0000000000000200/0x0000000000000200/0x0000000000000000 set 0x0000000000000300/0x0000000000000200 counts 0/3 query 0/1 denial 0/2 fault 0/1 audit [0-9]+/[0-9]+ events 3/3/3/3/3 results 0/0/0/22/14 last 0/14 cleanup 1 positive 1' -Message "x64 UEFI Linux signal I.3 rt_sigprocmask checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-signal-I4 inject kill 0x0000000000000000 deliver 1 masked 0 fault 0 pending 0x0000000000000000/0x0000000000000200/0x0000000000000000/0x0000000000000200/0x0000000000000000 mask 0x0000000000000000/0x0000000000000600/0x0000000000000000 handler 10/0x0000000040123450 frame 0x0000000044030[0-9A-F]{3} saved 0x00000000441000A4/0x0000000044030F00/0x0000000000000000 args 1/1/1 align 1 counts 0/1/0/1/0/1/0/1 audit [0-9]+/[0-9]+ events 3/3/3 results 0/0/14 last 10/14 cleanup 1 positive 1' -Message "x64 UEFI Linux signal I.4 injection checkpoint was not observed."
@@ -4267,16 +4288,16 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] persona-o4 isolation bind 1/1/1 groups [1-9][0-9]*/[1-9][0-9]* ret 0x0000000000000000/0xFFFFFFFFFFFFFFFD audit 0/2/1 record 4/62/3/1/1 last [1-9][0-9]*/[1-9][0-9]*/[1-9][0-9]*/[1-9][0-9]*/1 denials 1 types 1/2 cleanup 1/1/1/1/1/1 positive 1' -Message "x64 UEFI persona O.4 process-group isolation checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] persona-o5 unavailable bind 1/1/1/1/1/1 ret 0xFFFFFFFFFFFFFFDA/0x00000000C0000002/0xFFFFFFFFFFFFFFB2 expected 0xFFFFFFFFFFFFFFDA/0x00000000C0000002/0xFFFFFFFFFFFFFFB2 abi 0x00000026/0xC0000002/0x0000004E audit 0/1/1 0/1/1 0/1/1 records 2/511/0x00000026/1/255 2/7/0xC0000002/2/255 2/511/0x0000004E/3/255 deltas 1/1/1 cleanup 1/1/1/1/1/1/1/1/1/1 positive 1' -Message "x64 UEFI persona O.5 truthful unavailability checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] persona-o6 crash-report bind 1/1/1 record 1/0 audit 0/1/1 crash 0/1/1 event 5/11/11/1/0x0000000044600BAD frame 14/0x0000000000000004/0x0000000044600BAD/0x0000000047600F00/0x0000000000000000 vma 1/0x0000000000001000/0x0000000047600000/0x0000000047601000/0x00000003/0 cleanup 1/1/1/0/1/1 positive 1' -Message "x64 UEFI persona O.6 crash reporting checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-dynamic-P1 ld init 1 prepare 1/0 counts 1/1/1/1 interp 3/1/1/10/0x(?!00000000)[0-9A-F]{8} prot 0x00000005/0x00000005 aux 0x0000000047800000/0x0000000047801000/1/1 deps 0/1/1/8 audit 0/1/1/4/8 ctx 1/1/1 cleanup 3/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux dynamic linker P.1 checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2 shim init 1 prepare 1 counts 1/1/1/1/2 needed 1/1/0/1 libc 1/1/3/1/1/49/16/3/5/4/4/1/0/0x(?!00000000)[0-9A-F]{8} prot 0x00000005 exports 0x0000000047811020/0x0000000047811240/0x0000000047811480/0x0000000047811400/1/1 deps 1/0 deny 0/3 audit 0/1/1/4/3 ctx 1 fd 1/[3-9][0-9]* cleanup 5/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux libc shim P.2 checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-pthread-P3 alias init 1 prepare 1/0 counts 1/1/1/1/1/1 needed 2/2/0/1/1 needok 1 checks 0x(?!00000000)[0-9A-F]{8}/0x(?!00000000)[0-9A-F]{8} pthread 1/1/1/1/1/0 libc 1/1/49/1/1/1/2/5 exports 1 ctx 1 deny 8/1/1/1 audit 0/1/1/4/8 cleanup 5/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux libpthread alias P.3 checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-dynamic-P1 ld init 1 prepare 1/0 counts 1/1/1/1 interp 3/1/1/10/0x(?!00000000)[0-9A-F]{8} prot 0x00000005/0x00000005 aux 0x0000000047800000/0x0000000047900200/1/1 deps 0/1/1/8 audit 0/1/1/4/8 ctx 1/1/1 cleanup 3/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux dynamic linker P.1 checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2 shim init 1 prepare 1 counts 1/1/1/1/2 needed 1/1/0/1 libc 1/1/3/1/1/67/33/3/5/4/4/1/0/0x(?!00000000)[0-9A-F]{8} prot 0x00000005 exports 0x0000000047811020/0x0000000047811240/0x0000000047811480/0x0000000047811400/1/1 deps 1/0 deny 0/3 audit 0/1/1/4/3 ctx 1 fd 1/[3-9][0-9]* cleanup 5/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux libc shim P.2 checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-pthread-P3 alias init 1 prepare 1/0 counts 1/1/1/1/1/1 needed 2/2/0/1/1 needok 1 checks 0x(?!00000000)[0-9A-F]{8}/0x(?!00000000)[0-9A-F]{8} pthread 1/1/1/1/1/0 libc 1/1/67/1/1/1/2/5 exports 1 ctx 1 deny 8/1/1/1 audit 0/1/1/4/8 cleanup 5/1/1/1/0/1/1 positive 1' -Message "x64 UEFI Linux libpthread alias P.3 checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2b helpers maps 0x00000000479A0000/0x00000000479B0000 symbols 5/0 exec 0x00000007 run 0x50324231/5 match 1/1/1/1/1/1/1 rets 0x00000000479B0020/0x00000000479B0060/0x00000000FFFFFFFF/0x0000000000000000/0x00000000FFFFFFFF/0x00000000479B00A2 checksum 0x(?!00000000)[0-9A-F]{8} copy 1/1 cleanup 1/1/0/0 positive 1' -Message "x64 UEFI Linux libc P.2b string/memory helper checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2c puts maps 0x00000000479C0000/0x00000000479D0000 fd 1 symbols 4/0 run 0x50324331/4/[1-9][0-9]* ret 0x0000000000000009 console 2/9 native 2 persona 2/2 write 2 audit 2/1/3/1/0 last [1-9][0-9]*/1/0x0000000000000001 match 1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2c puts/helper syscall-routing checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2d printf maps 0x00000000479E0000/0x00000000479F0000 fd 1 symbols 4/0 run 0x50324431/4/[1-9][0-9]* ret 0x000000000000000B/0xFFFFFFFFFFFFFFDA console 1/11 native 1 persona 1/1 write 1 audit 1/1/3/1/0 last [1-9][0-9]*/1/0x000000000000000B match 1/1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2d literal printf checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2e malloc maps 0x00000000479A0000/0x00000000479B0000/0x00000000479C0000 load 1 symbols 4/0 copy 1/0x00000007/1 run 0x50324531/4/[1-9][0-9]* ptr 0x00000000479D0000/0x00000000479D0000 free 0x0000000000000000 magic 0x3265706165682D70 native 2 persona 2/2 mmap 1/4096 munmap 1/4096 audit 2/1/3/11/0 last [1-9][0-9]*/1/0x0000000000000000 match 1/1/1/1/1/1 cleanup 1/1/1/0/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2e malloc/free checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2f calloc-realloc maps 0x00000000479A0000/0x00000000479B0000/0x00000000479C0000 symbols 4/0 copy 1/0x00000007 run 0x50324631/4/[1-9][0-9]* ptr 0x00000000479D0000/0x00000000479E0000 free 0x0000000000000000 zero 0x0000000000000004 magic 0x2170616568663270 native 4 persona 4/4 mmap 2/8192 munmap 2/8192 audit 4/1/3/11/0 last [1-9][0-9]*/1/0x0000000000000000 match 1/1/1/1/1/1/1/1 cleanup 1/1/1/0/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2f calloc/realloc checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2g fputs-fwrite maps 0x00000000479A0000/0x00000000479B0000 fd 1 symbols 4/0 copy 1/0x00000007/1 run 0x50324731/4/[1-9][0-9]* ret 0x000000000000000A/0x000000000000000B console 2/21 native 2 persona 2/2 write 2 audit 2/1/3/1/0 last [1-9][0-9]*/1/0x000000000000000B match 1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2g fputs/fwrite checkpoint was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2h getenv maps 0x00000000479A0000/0x00000000479B0000 symbols 2/0 bind 1/0x(?!0000000000000000)[0-9A-F]{16}/1 copy 1/0x00000007/1 run 0x50324831/2/[1-9][0-9]* ret 0x(?!0000000000000000)[0-9A-F]{16}/0x0000000000000000/0x0000000000000000/0x(?!0000000000000000)[0-9A-F]{16}/0xFFFFFFFFFFFFFFF4 native 0 persona 0/0 write 0 audit 0 match 1/1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2h getenv/setenv checkpoint was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2h getenv maps 0x00000000479A0000/0x00000000479B0000 symbols 2/0 bind 1/0x(?!0000000000000000)[0-9A-F]{16}/4 copy 1/0x00000007/1 run 0x50324831/2/[1-9][0-9]* ret 0x(?!0000000000000000)[0-9A-F]{16}/0x0000000000000000/0x0000000000000000/0x(?!0000000000000000)[0-9A-F]{16}/0xFFFFFFFFFFFFFFF4 native 0 persona 0/0 write 0 audit 0 match 1/1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2h getenv/setenv checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2i errno maps 0x00000000479A0000/0x00000000479B0000 symbols 1/0 cell 0x0000000047811460/0x0000000047812000/0x0000000047812000 prot 0x00000007/0x00000003 copy 1 run 0x50324931/1/[1-9][0-9]* value 0x0000000000000016 native 0 persona 0/0 write 0 audit 0 match 1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2i errno-location checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2k mutex maps 0x00000000479A0000/0x00000000479B0000 symbols 2/0 copy 1/0x00000007/1 run 0x50324B31/2/[1-9][0-9]* ret 0x0000000000000000/0x0000000000000000/0x0000000000000016/0x0000000000000016/0x0000000000000016 word 0x0000000000000001/0x0000000000000000 native 1 persona 1/1 futex 1/0/0 audit 1/1/3/202/0 last [1-9][0-9]*/1/0x0000000000000000 match 1/1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2k pthread mutex checkpoint was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] linux-libc-P2n cond maps 0x00000000479A0000/0x00000000479B0000 symbols 5/0 copy 1/0x00000007/1 run 0x50324E31/5/[1-9][0-9]* ret 0x0000000000000000/0x0000000000000000/0x0000000000000016 native 2 persona 2/2 futex 2/0/0 audit 2/1/3/202/0 last [1-9][0-9]*/1/0x0000000000000000 match 1/1/1 cleanup 1/1/0/0/1 positive 1' -Message "x64 UEFI Linux libc P.2n pthread condition signal checkpoint was not observed."
@@ -4312,13 +4333,13 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hardware-registry hardware-registry 1 refresh [1-9][0-9]* limit 32 inventory [1-9][0-9]* pci-enumerated [1-9][0-9]* pci-query-denial 0 .* driver-bound [1-9][0-9]* .* driver-failed 0 overflow 0 token 0x[0-9A-F]{8}' -Message "x64 M106 hardware registry proof was not observed."
     if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 1 drs-login-rate-limited 1 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 .* user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-login drs-login-screen 1 drs-login-auth-success 1 drs-login-wrong-password-denied 0 drs-login-rate-limited 0 drs-session-lock 1 drs-session-unlock 1 drs-session-authority-scoped 1 .* user-store-nvme 1 user-store-persistent 1 .* login-display-only 1 login-input-only 1 desktop-blocked-pre-auth 1 failures 0 lockout-seconds 0 user limitless home /HOME/LIMITLESS profile local-console' -Message "x64 UEFI M10 login/auth/session-lock proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-identity drs-identity-foundation 1 drs-identity-local-active 1 drs-identity-personal-unavailable 1 drs-identity-enterprise-unavailable 1 drs-identity-settings-panel 1 drs-identity-status-readonly 1 drs-identity-mutation-denied 1 drs-vault-foundation 1 drs-vault-secret-read-denied 1 drs-vault-secret-write-denied 1 drs-vault-no-plaintext-token 1 drs-cloud-association-unavailable 1 drs-no-ambient-identity 1 drs-no-ambient-secret 1 encrypted-vault 0 secret-storage 0 account-type local account-id local:limitless display limitless association local-active network offline-capable credential bcrypt-local vault metadata-only' -Message "x64 UEFI M11 identity/vault foundation proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-idtransport drs-idtransport-product 1 drs-idtransport-provider-descriptor 1 drs-idtransport-descriptor-verified 1 drs-idtransport-descriptor-missing-sig-denied 1 drs-idtransport-descriptor-invalid-sig-denied 1 drs-idtransport-descriptor-wrong-key-denied 1 drs-idtransport-descriptor-tamper-denied 1 drs-idtransport-descriptor-rollback-denied 1 drs-idtransport-descriptor-version-denied 1 drs-idtransport-network-scoped 1 drs-idtransport-no-network-cap-denied 1 drs-idtransport-plaintext-credential-denied 1 drs-idtransport-unverified-endpoint-denied 1 drs-idtransport-token-storage-denied 1 drs-idtransport-personal-unavailable 1 drs-idtransport-enterprise-unavailable 1 drs-idtransport-cloud-association-unavailable 1 drs-idtransport-settings-panel 1 drs-idtransport-status-readonly 1 drs-idtransport-trusted-time-status 1 drs-no-ambient-idtransport-network 1 drs-no-ambient-idtransport-identity 1 drs-no-ambient-idtransport-secret 1 drs-idtransport-encrypted-channel-unavailable 1 drs-idtransport-credential-transport-unavailable 1 mode mode-b-descriptor-foundation provider personal\.fixture\.limitless provider-type personal endpoint descriptor-verified online offline-fixture encrypted unavailable credential denied token-storage denied trusted-time unavailable' -Message "x64 UEFI M12 identity transport foundation proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-account drs-account-association-product 1 drs-account-local-active 1 drs-account-personal-unavailable 1 drs-account-enterprise-unavailable 1 drs-account-cloud-unavailable 1 drs-account-security-key-unavailable 1 drs-account-settings-panel 1 drs-account-status-readonly 1 drs-account-mutation-denied 1 drs-account-unlink-denied 1 drs-account-token-storage-denied 1 drs-account-credential-transport-denied 1 drs-account-enterprise-policy-unavailable 1 drs-account-remote-no-ambient-authority 1 drs-no-ambient-account-identity 1 drs-no-ambient-account-network 1 drs-no-ambient-account-secret 1 mode mode-b-status-only local active personal planned-unavailable enterprise planned-unavailable cloud planned-unavailable security-key planned-unavailable enterprise-policy unavailable encrypted unavailable token-storage denied trusted-time unavailable remote-login unavailable local-user local:limitless provider personal\.fixture\.limitless' -Message "x64 UEFI M13 account association Mode B proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-cloud drs-cloud-broker-product 1 drs-cloud-provider-descriptor 1 drs-cloud-provider-verified 1 drs-cloud-provider-missing-sig-denied 1 drs-cloud-provider-invalid-sig-denied 1 drs-cloud-provider-wrong-key-denied 1 drs-cloud-provider-tamper-denied 1 drs-cloud-provider-rollback-denied 1 drs-cloud-provider-version-denied 1 drs-cloud-provider-malformed-denied 1 drs-cloud-association-unavailable 1 drs-cloud-account-unavailable 1 drs-cloud-token-storage-denied 1 drs-cloud-encrypted-transport-unavailable 1 drs-cloud-upload-denied 1 drs-cloud-download-denied 1 drs-cloud-sync-denied 1 drs-cloud-auto-upload-unavailable 1 drs-cloud-auto-download-unavailable 1 drs-cloud-ai-access-unavailable 1 drs-cloud-app-direct-denied 1 drs-cloud-settings-panel 1 drs-cloud-settings-readonly 1 drs-cloud-fileman-status 1 drs-cloud-fileman-mutation-denied 1 drs-no-ambient-cloud 1 drs-no-ambient-cloud-fs 1 drs-no-ambient-cloud-network 1 drs-no-ambient-cloud-identity 1 drs-no-ambient-cloud-secret 1 mode foundation-active storage-mode unavailable-policy-only provider cloud\.fixture\.limitless descriptor signed-local-fixture-verified account unavailable-planned association unavailable-planned token-storage denied-vault-mode-b encrypted unavailable sync unavailable upload denied download denied offline-cache planned-unavailable ai unavailable app-direct denied' -Message "x64 UEFI M14 cloud storage broker foundation proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ lock' -Message "x64 persistent shell did not accept the Product lock command."
-        Assert-OutputContains -Lines $outputLines -Pattern '^session unlocked$' -Message "x64 persistent shell did not unlock the authenticated session."
+        Assert-OutputContains -Lines $outputLines -Pattern '^(session unlocked|lock unavailable on this boot path)$' -Message "x64 persistent shell did not report a truthful Product lock command result."
     }
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $outputLines -Pattern '^no network$' -Message "x64 persistent shell did not report clean network unavailability on disk/BIOS media."

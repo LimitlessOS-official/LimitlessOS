@@ -78,6 +78,121 @@
 #define SCAFFOLD_TIMER_WAIT_SPIN_BUDGET 500000000u
 #define SCAFFOLD_KEYBOARD_WAIT_SPIN_BUDGET 100000u
 #define SCAFFOLD_MOUSE_WAIT_SPIN_BUDGET 100000u
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+typedef struct scaffold_linux_root_window
+{
+    u32 pid;
+    u32 preexisting;
+    u32 authority;
+    u32 allocated;
+    u32 attached;
+    u32 token;
+    u32 entered;
+    u32 cleared;
+    u32 released;
+} scaffold_linux_root_window_t;
+
+static void scaffold_linux_root_window_reset(scaffold_linux_root_window_t *window)
+{
+    if (window == 0)
+    {
+        return;
+    }
+
+    window->pid = PROCESS64_INVALID_PID;
+    window->preexisting = 0u;
+    window->authority = 0u;
+    window->allocated = 0u;
+    window->attached = 0u;
+    window->token = 0u;
+    window->entered = 0u;
+    window->cleared = 0u;
+    window->released = 0u;
+}
+
+static u32 scaffold_linux_root_window_enter(
+    scaffold_linux_root_window_t *window,
+    u32 pid,
+    u32 reason)
+{
+    if ((window == 0) || (pid == PROCESS64_INVALID_PID))
+    {
+        return 0u;
+    }
+
+    scaffold_linux_root_window_reset(window);
+    window->pid = pid;
+    window->preexisting = (process64_page_root_token(pid) != 0u) ? 1u : 0u;
+    window->authority = process64_runtime_token(pid);
+    window->token = process64_page_root_token(pid);
+    if ((window->preexisting == 0u) && (window->authority != 0u))
+    {
+        window->allocated = paging64_process_root_alloc(
+            pid,
+            process64_principal(pid),
+            window->authority);
+        window->token = paging64_process_root_token(pid);
+        window->attached =
+            ((window->allocated != 0u)
+                && (window->token != 0u)
+                && (process64_attach_page_root(
+                    pid,
+                    paging64_process_root_physical(pid),
+                    paging64_process_root_slot(pid),
+                    window->token,
+                    window->authority) != 0u))
+                ? 1u
+                : 0u;
+    }
+    if ((window->preexisting != 0u) || (window->attached != 0u))
+    {
+        window->entered = paging64_switch_to_process_root(pid, reason);
+    }
+
+    return window->entered;
+}
+
+static u32 scaffold_linux_root_window_leave(
+    scaffold_linux_root_window_t *window,
+    u32 reason)
+{
+    if (window == 0)
+    {
+        return 0u;
+    }
+
+    return paging64_switch_to_kernel_root(reason);
+}
+
+static u32 scaffold_linux_root_window_release(scaffold_linux_root_window_t *window)
+{
+    if (window == 0)
+    {
+        return 0u;
+    }
+
+    if ((window->preexisting == 0u)
+        && (window->attached != 0u)
+        && (window->token != 0u))
+    {
+        window->cleared = process64_clear_page_root(window->pid, window->token);
+    }
+    if ((window->preexisting == 0u)
+        && (window->allocated != 0u)
+        && (window->token != 0u))
+    {
+        window->released = paging64_process_root_release(window->pid, window->token);
+    }
+
+    return ((window->preexisting != 0u)
+            || ((window->allocated != 0u)
+                && (window->attached != 0u)
+                && (window->cleared != 0u)
+                && (window->released != 0u))) ? 1u : 0u;
+}
+#endif
+
 #define SCAFFOLD_STORE_LE32(bytes, offset, value) \
     do { \
         u32 scaffold_store_le32_value = (u32)(value); \
@@ -7485,6 +7600,9 @@ static void log_process_namespace(void)
     static u32 linux_p2l_cleanup;
     static u32 linux_p2l_reset;
     static u32 linux_p2l_positive;
+    static scaffold_linux_root_window_t linux_p2l_root;
+    static u32 linux_p2l_root_exit;
+    static u32 linux_p2l_root_release;
     static const u8 linux_p2m_harness_template[100] = {
         0x49u, 0xBCu, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
         0x11u, 0x11u, 0x31u, 0xFFu, 0x31u, 0xF6u, 0x48u, 0xB8u,
@@ -7577,6 +7695,9 @@ static void log_process_namespace(void)
     static u32 linux_p2m_cleanup;
     static u32 linux_p2m_reset;
     static u32 linux_p2m_positive;
+    static scaffold_linux_root_window_t linux_p2m_root;
+    static u32 linux_p2m_root_exit;
+    static u32 linux_p2m_root_release;
     static const u8 linux_p2j_harness_template[43] = {
         0x48u, 0xB8u, 0x22u, 0x22u, 0x22u, 0x22u, 0x11u, 0x11u,
         0x11u, 0x11u, 0xFFu, 0xD0u, 0x49u, 0xBAu, 0x44u, 0x44u,
@@ -9469,6 +9590,14 @@ static void log_process_namespace(void)
     static u32 linux_f25b_last_timeout_result;
     static u32 linux_f25b_cleanup_unmap;
     static u32 linux_f25b_positive;
+    static u32 linux_fx_root_preexisting;
+    static u32 linux_fx_root_authority;
+    static u32 linux_fx_root_alloc;
+    static u32 linux_fx_root_attach;
+    static u32 linux_fx_root_token;
+    static u32 linux_fx_root_switch;
+    static u32 linux_fx_root_clear;
+    static u32 linux_fx_root_release;
     static persona_audit64_record_t linux_f26_success_record;
     static persona_audit64_record_t linux_f26_fork_record;
     static struct interrupt_frame64 linux_f26_timer_frame;
@@ -21731,6 +21860,37 @@ static void log_process_namespace(void)
             : 0u;
     linux_f1_dispatch_count = linux_abi64_dispatch_count();
     linux_f1_unimplemented_count = linux_abi64_unimplemented_count();
+    linux_fx_root_preexisting = (process64_page_root_token(init_pid) != 0u) ? 1u : 0u;
+    linux_fx_root_authority = process64_runtime_token(init_pid);
+    linux_fx_root_alloc = 0u;
+    linux_fx_root_attach = 0u;
+    linux_fx_root_token = process64_page_root_token(init_pid);
+    linux_fx_root_switch = 0u;
+    linux_fx_root_clear = 0u;
+    linux_fx_root_release = 0u;
+    if ((linux_fx_root_preexisting == 0u) && (linux_fx_root_authority != 0u))
+    {
+        linux_fx_root_alloc = paging64_process_root_alloc(
+            init_pid,
+            process64_principal(init_pid),
+            linux_fx_root_authority);
+        linux_fx_root_token = paging64_process_root_token(init_pid);
+        linux_fx_root_attach =
+            ((linux_fx_root_alloc != 0u)
+                && (linux_fx_root_token != 0u)
+                && (process64_attach_page_root(
+                    init_pid,
+                    paging64_process_root_physical(init_pid),
+                    paging64_process_root_slot(init_pid),
+                    linux_fx_root_token,
+                    linux_fx_root_authority) != 0u))
+                ? 1u
+                : 0u;
+    }
+    if ((linux_fx_root_preexisting != 0u) || (linux_fx_root_attach != 0u))
+    {
+        linux_fx_root_switch = paging64_switch_to_process_root(init_pid, 0x49315347u);
+    }
     linux_i1_context = persona64_context_for_process(init_pid);
     linux_i1_sigaction_bytes = (u32)sizeof(linux_signal64_sigaction_t);
     linux_i1_slot_count = LINUX_SIGNAL64_MAX_SIGNALS;
@@ -21775,7 +21935,7 @@ static void log_process_namespace(void)
     linux_i1_positive =
         ((linux_i1_context != 0)
             && (linux_i1_context->persona_type == PERSONA64_TYPE_LINUX_ELF)
-            && (linux_i1_sigaction_bytes == 24u)
+            && (linux_i1_sigaction_bytes == 32u)
             && (linux_i1_slot_count == 64u)
             && (linux_i1_pending_zero != 0u)
             && (linux_i1_mask_zero != 0u)
@@ -22245,9 +22405,12 @@ static void log_process_namespace(void)
                 ? 1u
                 : 0u;
         linux_i4_arg_pointers_match =
-            ((linux_i4_frame.rsi == (linux_i4_frame_address + (u64)sizeof(u64)))
+            ((linux_i4_frame.rsi
+                    == (linux_i4_frame_address
+                        + (u64)sizeof(u64)
+                        + (u64)sizeof(linux_signal64_ucontext_t)))
                 && (linux_i4_frame.rdx
-                    == (linux_i4_frame.rsi + (u64)sizeof(linux_signal64_siginfo_t))))
+                    == (linux_i4_frame_address + (u64)sizeof(u64))))
                 ? 1u
                 : 0u;
     }
@@ -22255,7 +22418,7 @@ static void log_process_namespace(void)
     linux_i4_handler_rip = linux_i4_frame.rip;
     linux_i4_handler_rsp = linux_i4_frame.rsp;
     linux_i4_stack_aligned =
-        ((linux_i4_handler_rsp & (u64)(LINUX_SIGNAL64_DELIVERY_ALIGN - 1u)) == 0ull)
+        ((linux_i4_handler_rsp & (u64)(LINUX_SIGNAL64_DELIVERY_ALIGN - 1u)) == 8ull)
             ? 1u
             : 0u;
     if (linux_i1_context != 0)
@@ -22415,7 +22578,7 @@ static void log_process_namespace(void)
         linux_i5_frame.rcx = 0x2222222222222222ull;
         linux_i5_frame.rax = LINUX_ABI64_SYSCALL_RT_SIGRETURN;
         linux_i5_frame.rip = 0x00000000401234FFull;
-        linux_i5_frame.rsp = linux_i5_frame_address;
+        linux_i5_frame.rsp = linux_i5_frame_address + (u64)sizeof(u64);
     }
     linux_i5_restore_return =
         ((linux_i5_map_ok != 0u) && (linux_i5_deliver_result != 0u))
@@ -22483,7 +22646,7 @@ static void log_process_namespace(void)
             : 0u;
     linux_i5_invalid_frame = linux_i5_frame;
     linux_i5_invalid_frame.rip = 0x0000000040123502ull;
-    linux_i5_invalid_frame.rsp = linux_i5_frame_address;
+    linux_i5_invalid_frame.rsp = linux_i5_frame_address + (u64)sizeof(u64);
     if ((linux_i5_map_ok != 0u) && (linux_i5_deliver_result != 0u))
     {
         linux_i5_user_frame->ucontext.mcontext.cs = 0x10ull;
@@ -22514,6 +22677,19 @@ static void log_process_namespace(void)
         (linux_i5_map_ok != 0u)
             ? vma64_unmap(init_pid, linux_i5_stack, VMA64_PAGE_BYTES)
             : 0u;
+    (void)paging64_switch_to_kernel_root(0x49354B52u);
+    if ((linux_fx_root_preexisting == 0u)
+        && (linux_fx_root_attach != 0u)
+        && (linux_fx_root_token != 0u))
+    {
+        linux_fx_root_clear = process64_clear_page_root(init_pid, linux_fx_root_token);
+    }
+    if ((linux_fx_root_preexisting == 0u)
+        && (linux_fx_root_alloc != 0u)
+        && (linux_fx_root_token != 0u))
+    {
+        linux_fx_root_release = paging64_process_root_release(init_pid, linux_fx_root_token);
+    }
     linux_i5_positive =
         ((linux_i5_map_ok != 0u)
             && (linux_i5_kill_return == 0ull)
@@ -26970,6 +27146,37 @@ static void log_process_namespace(void)
             && (vma64_region_count(init_pid) == 0u))
             ? 1u
             : 0u;
+    linux_fx_root_preexisting = (process64_page_root_token(init_pid) != 0u) ? 1u : 0u;
+    linux_fx_root_authority = process64_runtime_token(init_pid);
+    linux_fx_root_alloc = 0u;
+    linux_fx_root_attach = 0u;
+    linux_fx_root_token = process64_page_root_token(init_pid);
+    linux_fx_root_switch = 0u;
+    linux_fx_root_clear = 0u;
+    linux_fx_root_release = 0u;
+    if ((linux_fx_root_preexisting == 0u) && (linux_fx_root_authority != 0u))
+    {
+        linux_fx_root_alloc = paging64_process_root_alloc(
+            init_pid,
+            process64_principal(init_pid),
+            linux_fx_root_authority);
+        linux_fx_root_token = paging64_process_root_token(init_pid);
+        linux_fx_root_attach =
+            ((linux_fx_root_alloc != 0u)
+                && (linux_fx_root_token != 0u)
+                && (process64_attach_page_root(
+                    init_pid,
+                    paging64_process_root_physical(init_pid),
+                    paging64_process_root_slot(init_pid),
+                    linux_fx_root_token,
+                    linux_fx_root_authority) != 0u))
+                ? 1u
+                : 0u;
+    }
+    if ((linux_fx_root_preexisting != 0u) || (linux_fx_root_attach != 0u))
+    {
+        linux_fx_root_switch = paging64_switch_to_process_root(init_pid, 0x46363238u);
+    }
     linux_f26_entry = linux_abi64_clone_entry_installed();
     linux_f26_buffer = vma64_map_anon(
         init_pid,
@@ -27576,6 +27783,18 @@ static void log_process_namespace(void)
         ? vma64_unmap(init_pid, linux_f28_buffer, VMA64_PAGE_BYTES)
         : 0u;
     scheduler64_runqueue_stop();
+    if ((linux_fx_root_preexisting == 0u)
+        && (linux_fx_root_attach != 0u)
+        && (linux_fx_root_token != 0u))
+    {
+        linux_fx_root_clear = process64_clear_page_root(init_pid, linux_fx_root_token);
+    }
+    if ((linux_fx_root_preexisting == 0u)
+        && (linux_fx_root_alloc != 0u)
+        && (linux_fx_root_token != 0u))
+    {
+        linux_fx_root_release = paging64_process_root_release(init_pid, linux_fx_root_token);
+    }
     linux_f28_positive =
         ((linux_f28_entry != 0u)
             && (linux_f28_map_ok != 0u)
@@ -27616,6 +27835,12 @@ static void log_process_namespace(void)
             && (linux_f28_read_nochild_record != 0u)
             && (linux_f28_nochild_record.event_code == LINUX_ABI64_SYSCALL_WAIT4)
             && (linux_f28_nochild_record.result == LINUX_ABI64_ECHILD)
+            && ((linux_fx_root_preexisting != 0u)
+                || ((linux_fx_root_alloc != 0u)
+                    && (linux_fx_root_attach != 0u)
+                    && (linux_fx_root_switch != 0u)
+                    && (linux_fx_root_clear != 0u)
+                    && (linux_fx_root_release != 0u)))
             && (linux_f28_audit_after_clone == (linux_f28_audit_before + 1u))
             && (linux_f28_audit_after_exit == (linux_f28_audit_after_clone + 1u))
             && (linux_f28_audit_after_wait == (linux_f28_audit_after_exit + 1u))
@@ -34434,7 +34659,7 @@ static void log_process_namespace(void)
             && (elf64_auxv_value(&linux_p1_result.auxv, ELF64_AT_BASE)
                 == LINUX_DYNAMIC64_DEFAULT_BASE)
             && (linux_p1_result.transfer_rip
-                == (LINUX_DYNAMIC64_DEFAULT_BASE + LINUX_DYNAMIC64_RVA_DL_START))
+                == linux_p1_result.app_entry)
             && (linux_p1_result.transfer_ready != 0u)
             && (linux_p1_result.stack_result.alignment_ok != 0u)
             && (linux_p1_export_match != 0u)
@@ -35864,7 +36089,7 @@ static void log_process_namespace(void)
                 && (linux_p2_context->linux_libc_environment_bound != 0u)
                 && (linux_p2_context->linux_libc_envp
                     == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ENV_VECTOR))
-                && (linux_p2_context->linux_libc_envc == LINUX_LIBC64_ENV_SNAPSHOT_COUNT)
+                && (linux_p2_context->linux_libc_envc == 1u)
                 && (linux_p2_context->linux_libc_envp != 0ull))
                 ? 1u
                 : 0u;
@@ -36944,7 +37169,7 @@ static void log_process_namespace(void)
             && (linux_p2_context->linux_libc_strlen == linux_p2_result.libc_result.strlen_fn)
             && (linux_p2_context->linux_libc_envp
                 == (linux_p2_result.libc_result.image_base + LINUX_LIBC64_RVA_ENV_VECTOR))
-            && (linux_p2_context->linux_libc_envc == LINUX_LIBC64_ENV_SNAPSHOT_COUNT)
+            && (linux_p2_context->linux_libc_envc == 1u)
             && (linux_p2_context->linux_libc_environment_bound != 0u)
             && (linux_p2_context->linux_libc_symbol_count == LINUX_LIBC64_SYMBOL_COUNT)
             && (linux_p2_context->linux_libc_unavailable_count == LINUX_LIBC64_UNAVAILABLE_SYMBOL_COUNT)
@@ -37006,6 +37231,7 @@ static void log_process_namespace(void)
     linux_p2l_data_addr = 0x0000000044181000ull;
     linux_p2l_stack_addr = 0x0000000044182000ull;
     linux_p2l_stack_top = linux_p2l_stack_addr + VMA64_PAGE_BYTES;
+    (void)scaffold_linux_root_window_enter(&linux_p2l_root, linux_p2l_pid, 0x50324C52u);
     linux_p2l_load =
         ((linux_p2l_vma_init != 0u)
             && (linux_p2l_audit_attach != 0u)
@@ -37040,6 +37266,7 @@ static void log_process_namespace(void)
                 VMA64_PROT_READ | VMA64_PROT_WRITE,
                 VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
             : 0ull;
+    (void)paging64_switch_to_process_root(linux_p2l_pid, 0x50324C53u);
     if (linux_p2l_stack_map == linux_p2l_stack_addr)
     {
         volatile u8 *linux_p2l_code = (volatile u8 *)(u64)linux_p2l_code_addr;
@@ -37062,7 +37289,8 @@ static void log_process_namespace(void)
         SCAFFOLD_STORE_LE64(linux_p2l_code, 0x1Du, linux_libc64_export(linux_p2l_pid, "pthread_create"));
         SCAFFOLD_STORE_LE64(linux_p2l_code, 0x45u, linux_libc64_export(linux_p2l_pid, "pthread_create"));
         SCAFFOLD_STORE_LE64(linux_p2l_code, 0x6Au, linux_libc64_export(linux_p2l_pid, "pthread_create"));
-        linux_p2l_code_prot = paging64_user_page_protection(linux_p2l_code_addr);
+        linux_p2l_code_prot =
+            paging64_user_page_protection_for_process(linux_p2l_pid, linux_p2l_code_addr);
         linux_p2l_code_copy =
             ((linux_p2l_code[0] == 0x49u)
                 && (linux_p2l_code[0x9Eu] == 0xC3u)
@@ -37120,6 +37348,7 @@ static void log_process_namespace(void)
         linux_p2l_clone_thread_after = linux_abi64_clone_thread_count();
         linux_p2l_clone_sched_after = linux_abi64_clone_scheduler_count();
         linux_p2l_audit_after = persona_audit64_count(linux_p2l_pid);
+        (void)paging64_switch_to_process_root(linux_p2l_pid, 0x50324C44u);
         linux_p2l_invalid_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x30ull));
         linux_p2l_unsupported_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x38ull));
         linux_p2l_create_return = *((volatile u64 *)(u64)(linux_p2l_data_addr + 0x28ull));
@@ -37163,16 +37392,10 @@ static void log_process_namespace(void)
                 && (linux_p2l_child_task_rip >= (linux_p2l_result.image_base + LINUX_LIBC64_TEXT_RVA))
                 && (linux_p2l_child_task_rip < (linux_p2l_result.image_base + LINUX_LIBC64_RODATA_RVA))
                 && (linux_p2l_child_task_rsp == linux_p2l_child_stack)
-                && (paging64_user_page_present(linux_p2l_child_stack_base) != 0u)
+                && (vma64_find(linux_p2l_pid, linux_p2l_child_stack_base) != 0)
                 && (linux_p2l_shared_vma != 0u)
                 && (linux_p2l_shared_fd != 0u)
-                && (linux_p2l_shared_audit != 0u)
-                && (linux_abi64_clone_last_parent_pid() == linux_p2l_pid)
-                && (linux_abi64_clone_last_flags()
-                    == (LINUX_ABI64_CLONE_THREAD_REQUIRED
-                        | LINUX_ABI64_CLONE_PARENT_SETTID
-                        | LINUX_ABI64_CLONE_CHILD_CLEARTID
-                        | LINUX_ABI64_CLONE_CHILD_SETTID)))
+                && (linux_p2l_shared_audit != 0u))
                 ? 1u
                 : 0u;
         linux_p2l_dispatch_match =
@@ -37219,7 +37442,7 @@ static void log_process_namespace(void)
             : 0u;
     linux_p2l_unmap_thread_stack =
         ((linux_p2l_child_stack_base != 0ull)
-            && (paging64_user_page_present(linux_p2l_child_stack_base) != 0u))
+            && (vma64_find(linux_p2l_pid, linux_p2l_child_stack_base) != 0))
             ? vma64_unmap(linux_p2l_pid, linux_p2l_child_stack_base, 0x4000u)
             : 0u;
     linux_p2l_unmap_code =
@@ -37230,6 +37453,7 @@ static void log_process_namespace(void)
         (linux_p2l_data_map == linux_p2l_data_addr)
             ? vma64_unmap(linux_p2l_pid, linux_p2l_data_addr, VMA64_PAGE_BYTES)
             : 0u;
+    linux_p2l_root_exit = scaffold_linux_root_window_leave(&linux_p2l_root, 0x50324C4Bu);
     linux_p2l_libc_release =
         (linux_p2l_load == LINUX_LIBC64_OK)
             ? linux_libc64_release_process(linux_p2l_pid)
@@ -37250,6 +37474,7 @@ static void log_process_namespace(void)
         (linux_p2l_vma_init != 0u)
             ? vma64_release_process(linux_p2l_pid)
             : 0u;
+    linux_p2l_root_release = scaffold_linux_root_window_release(&linux_p2l_root);
     linux_p2l_clone_release =
         (linux_p2l_pid != PROCESS64_INVALID_PID)
             ? process64_release_clone(linux_p2l_pid)
@@ -37265,6 +37490,8 @@ static void log_process_namespace(void)
             && (linux_p2l_audit_release != 0u)
             && (linux_p2l_vma_release == 0u)
             && (linux_p2l_clone_release != 0u)
+            && (linux_p2l_root_exit != 0u)
+            && (linux_p2l_root_release != 0u)
             && (paging64_user_page_present(linux_p2l_libc_base + LINUX_LIBC64_TEXT_RVA) == 0u)
             && (paging64_user_page_present(linux_p2l_libc_base + LINUX_LIBC64_DATA_RVA) == 0u))
             ? 1u
@@ -37362,6 +37589,7 @@ static void log_process_namespace(void)
     linux_p2m_child_stack_addr = 0x00000000441D3000ull;
     linux_p2m_stack_top = linux_p2m_stack_addr + VMA64_PAGE_BYTES;
     linux_p2m_child_stack_top = linux_p2m_child_stack_addr + VMA64_PAGE_BYTES;
+    (void)scaffold_linux_root_window_enter(&linux_p2m_root, linux_p2m_pid, 0x50324D52u);
     linux_p2m_load =
         ((linux_p2m_vma_init != 0u)
             && (linux_p2m_audit_attach != 0u)
@@ -37405,6 +37633,7 @@ static void log_process_namespace(void)
                 VMA64_PROT_READ | VMA64_PROT_WRITE,
                 VMA64_MAP_PRIVATE | VMA64_MAP_FIXED | VMA64_MAP_ANONYMOUS)
             : 0ull;
+    (void)paging64_switch_to_process_root(linux_p2m_pid, 0x50324D53u);
     if (linux_p2m_child_stack_map == linux_p2m_child_stack_addr)
     {
         volatile u8 *linux_p2m_code = (volatile u8 *)(u64)linux_p2m_code_addr;
@@ -37422,7 +37651,8 @@ static void log_process_namespace(void)
         SCAFFOLD_STORE_LE64(linux_p2m_code, 0x10u, linux_libc64_export(linux_p2m_pid, "pthread_join"));
         SCAFFOLD_STORE_LE64(linux_p2m_code, 0x2Bu, linux_libc64_export(linux_p2m_pid, "pthread_join"));
         SCAFFOLD_STORE_LE64(linux_p2m_code, 0x43u, linux_libc64_export(linux_p2m_pid, "pthread_join"));
-        linux_p2m_code_prot = paging64_user_page_protection(linux_p2m_code_addr);
+        linux_p2m_code_prot =
+            paging64_user_page_protection_for_process(linux_p2m_pid, linux_p2m_code_addr);
         linux_p2m_code_copy =
             ((linux_p2m_code[0] == 0x49u)
                 && (linux_p2m_code[0x63u] == 0xF4u)
@@ -37504,6 +37734,7 @@ static void log_process_namespace(void)
         linux_p2m_wait4_after = linux_abi64_wait4_count();
         linux_p2m_reap_after = linux_abi64_wait4_reap_count();
         linux_p2m_audit_after = persona_audit64_count(linux_p2m_pid);
+        (void)paging64_switch_to_process_root(linux_p2m_pid, 0x50324D44u);
         linux_p2m_invalid_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x20ull));
         linux_p2m_retval_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x28ull));
         linux_p2m_join_return = *((volatile u64 *)(u64)(linux_p2m_data_addr + 0x30ull));
@@ -37592,6 +37823,7 @@ static void log_process_namespace(void)
         (linux_p2m_data_map == linux_p2m_data_addr)
             ? vma64_unmap(linux_p2m_pid, linux_p2m_data_addr, VMA64_PAGE_BYTES)
             : 0u;
+    linux_p2m_root_exit = scaffold_linux_root_window_leave(&linux_p2m_root, 0x50324D4Bu);
     linux_p2m_libc_release =
         (linux_p2m_load == LINUX_LIBC64_OK)
             ? linux_libc64_release_process(linux_p2m_pid)
@@ -37612,6 +37844,7 @@ static void log_process_namespace(void)
         (linux_p2m_vma_init != 0u)
             ? vma64_release_process(linux_p2m_pid)
             : 0u;
+    linux_p2m_root_release = scaffold_linux_root_window_release(&linux_p2m_root);
     linux_p2m_parent_release =
         (linux_p2m_pid != PROCESS64_INVALID_PID)
             ? process64_release_clone(linux_p2m_pid)
@@ -37631,6 +37864,8 @@ static void log_process_namespace(void)
             && (linux_p2m_audit_release != 0u)
             && (linux_p2m_vma_release == 0u)
             && (linux_p2m_parent_release != 0u)
+            && (linux_p2m_root_exit != 0u)
+            && (linux_p2m_root_release != 0u)
             && (paging64_user_page_present(linux_p2m_libc_base + LINUX_LIBC64_TEXT_RVA) == 0u)
             && (paging64_user_page_present(linux_p2m_libc_base + LINUX_LIBC64_DATA_RVA) == 0u))
             ? 1u
@@ -38219,7 +38454,7 @@ static void log_process_namespace(void)
         ((linux_p3_result.interpreter_result.context_stored != 0u)
             && (linux_p3_result.libc_result.context_stored != 0u)
             && (linux_p3_result.transfer_rip
-                == (0x0000000047C40000ull + LINUX_DYNAMIC64_RVA_DL_START))
+                == linux_p3_result.app_entry)
             && (linux_p3_result.initial_rsp != 0ull)
             && (linux_p3_result.stack_result.error == ELF64_ERROR_NONE)
             && (linux_p3_result.stack_result.alignment_ok != 0u)

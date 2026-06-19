@@ -136,6 +136,28 @@ static u64 linux_dynamic64_align_up(u64 value, u64 alignment)
     return (value + alignment - 1ull) & ~(alignment - 1ull);
 }
 
+static const char *linux_dynamic64_kernel_cstr(const char *text)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u64 address;
+
+    if (text == 0)
+    {
+        return 0;
+    }
+
+    address = (u64)text;
+    if ((address >= 0x0000000000010000ull)
+        && (address < 0x0000000002000000ull))
+    {
+        address += 0xFFFFFFFF80000000ull;
+    }
+    return (const char *)address;
+#else
+    return text;
+#endif
+}
+
 static u32 linux_dynamic64_name_matches(
     const char *left,
     u32 left_length,
@@ -149,6 +171,8 @@ static u32 linux_dynamic64_name_matches(
         return 0u;
     }
 
+    left = linux_dynamic64_kernel_cstr(left);
+    right = linux_dynamic64_kernel_cstr(right);
     for (index = 0u; index < left_length; ++index)
     {
         if (left[index] != right[index])
@@ -164,6 +188,7 @@ static u32 linux_dynamic64_cstring_length(const char *text, u32 max_bytes)
 {
     u32 index;
 
+    text = linux_dynamic64_kernel_cstr(text);
     if (text == 0)
     {
         return 0u;
@@ -178,6 +203,20 @@ static u32 linux_dynamic64_cstring_length(const char *text, u32 max_bytes)
     }
 
     return max_bytes;
+}
+
+static u32 linux_dynamic64_user_page_present(u32 pid, u64 virtual_address)
+{
+    return (paging64_process_root_physical(pid) != 0ull)
+        ? paging64_user_page_present_for_process(pid, virtual_address)
+        : paging64_user_page_present(virtual_address);
+}
+
+static u32 linux_dynamic64_user_page_protection(u32 pid, u64 virtual_address)
+{
+    return (paging64_process_root_physical(pid) != 0ull)
+        ? paging64_user_page_protection_for_process(pid, virtual_address)
+        : paging64_user_page_protection(virtual_address);
 }
 
 static void linux_dynamic64_copy_bytes(u8 *target, const char *source, u32 length)
@@ -1375,11 +1414,16 @@ u32 linux_dynamic64_prepare(
     out_result->transfer_rip = out_result->app_entry;
     out_result->transfer_rsp = out_result->initial_rsp;
     out_result->transfer_ready =
-        ((paging64_user_page_present(out_result->transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull)) != 0u)
-            && ((paging64_user_page_protection(out_result->transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull))
+        ((linux_dynamic64_user_page_present(
+                pid,
+                out_result->transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull)) != 0u)
+            && ((linux_dynamic64_user_page_protection(
+                    pid,
+                    out_result->transfer_rip & ~((u64)VMA64_PAGE_BYTES - 1ull))
                     & PAGING64_USER_PROT_EXECUTE) != 0u)
-            && (paging64_user_page_present(stack_base) != 0u)
-            && ((paging64_user_page_protection(stack_base) & PAGING64_USER_PROT_WRITE) != 0u))
+            && (linux_dynamic64_user_page_present(pid, stack_base) != 0u)
+            && ((linux_dynamic64_user_page_protection(pid, stack_base)
+                    & PAGING64_USER_PROT_WRITE) != 0u))
             ? 1u
             : 0u;
     if (out_result->transfer_ready == 0u)
