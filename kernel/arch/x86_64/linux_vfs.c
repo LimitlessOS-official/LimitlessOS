@@ -604,6 +604,9 @@ u32 linux_vfs64_read_file_all(
     u32 *bytes_out)
 {
     linux_vfs64_result_t result;
+    u32 fd_number;
+    u32 bytes_read;
+    u32 close_ok;
 
     if (bytes_out != 0)
     {
@@ -624,10 +627,33 @@ u32 linux_vfs64_read_file_all(
         || (((result.provider != LINUX_VFS64_PROVIDER_NVME)
                 || (result.node_type != LINUX_VFS64_NODE_NVME_FILE))
             && ((result.provider != LINUX_VFS64_PROVIDER_BIN)
-                || (result.node_type != LINUX_VFS64_NODE_BIN_APPLET))))
+                || (result.node_type != LINUX_VFS64_NODE_BIN_APPLET))
+            && ((result.provider != LINUX_VFS64_PROVIDER_RAMFS)
+                || (result.node_type != LINUX_VFS64_NODE_RAMFS_PATH))))
     {
         ++g_linux_vfs64_denial_count;
         return 0u;
+    }
+
+    if (result.provider == LINUX_VFS64_PROVIDER_RAMFS)
+    {
+        fd_number = linux_vfs64_open(pid, path, path_byte_count, 0u, 0u);
+        if (fd_number == FD64_INVALID_FD)
+        {
+            ++g_linux_vfs64_denial_count;
+            return 0u;
+        }
+
+        bytes_read = linux_vfs64_read_fd(pid, fd_number, output, output_capacity);
+        close_ok = fd64_close(pid, fd_number);
+        if ((bytes_read == LINUX_VFS64_INVALID_RESULT) || (close_ok == 0u))
+        {
+            ++g_linux_vfs64_denial_count;
+            return 0u;
+        }
+
+        *bytes_out = bytes_read;
+        return 1u;
     }
 
     return linux_vfs64_nvme_read_all(
