@@ -40,7 +40,11 @@ struct capability64_record
 
 enum
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    CAPABILITY64_TABLE_LIMIT = 64,
+#else
     CAPABILITY64_TABLE_LIMIT = 32,
+#endif
     CAPABILITY64_HANDLE_BASE = 0x6400u
 };
 
