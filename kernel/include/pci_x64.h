@@ -33,6 +33,9 @@
 #define PCI64_VMD_MMIO_FLAG_NESTED_ENUM_REQUIRED 0x00000100u
 #define PCI64_VMD_MMIO_FLAG_NO_DRIVER_BOUND 0x00000200u
 
+#define PCI64_VMD_NESTED_STATUS_NOT_APPLICABLE 0x00000000u
+#define PCI64_VMD_NESTED_STATUS_ENUM_UNAVAILABLE 0x00000001u
+
 #define PCI64_LPSS_I2C_MMIO_FLAG_PRESENT 0x00000001u
 #define PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR 0x00000002u
 #define PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR 0x00000004u
@@ -94,6 +97,11 @@ u32 pci64_first_vmd_candidate_mmio_base_high(u32 hardware_capability_handle, u32
 u32 pci64_first_vmd_candidate_mmio_span_hint(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_first_vmd_candidate_mmio_flags(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_first_vmd_candidate_mmio_token(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_plan(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_enumerated(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_nvme_count(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_status(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_token(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_query_count(void);
 u32 pci64_denial_count(void);
 u32 pci64_ecam_rsdp_found(void);

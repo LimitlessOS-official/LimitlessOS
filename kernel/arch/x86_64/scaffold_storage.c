@@ -783,6 +783,16 @@ static void log_pci_storage_surface(void)
     write_hex_u32(pci64_first_vmd_candidate_mmio_flags(cap, owner));
     write_string(" vmd-mmio-token ");
     write_hex_u32(pci64_first_vmd_candidate_mmio_token(cap, owner));
+    write_string(" vmd-nested-plan ");
+    write_dec_u32(pci64_vmd_nested_plan(cap, owner));
+    write_string(" vmd-nested-enum ");
+    write_dec_u32(pci64_vmd_nested_enumerated(cap, owner));
+    write_string(" vmd-nested-nvme ");
+    write_dec_u32(pci64_vmd_nested_nvme_count(cap, owner));
+    write_string(" vmd-nested-status ");
+    write_dec_u32(pci64_vmd_nested_status(cap, owner));
+    write_string(" vmd-nested-token ");
+    write_hex_u32(pci64_vmd_nested_token(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

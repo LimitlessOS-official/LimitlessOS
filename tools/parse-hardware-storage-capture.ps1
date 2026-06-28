@@ -121,6 +121,18 @@ function Classify-StorageCapture
             if ((Has-Field -Fields $Fields -Name "vmd-mmio-flags") -and (((Get-FieldValue -Fields $Fields -Name "vmd-mmio-flags") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-mmio-flags") -eq $InvalidU32))) {
                 return New-Classification -Stage "pci-vmd-mmio-flags" -Detail "The VMD-class candidate MMIO flags were missing or invalid."
             }
+            if (Has-Field -Fields $Fields -Name "vmd-nested-plan") {
+                if ((Get-FieldValue -Fields $Fields -Name "vmd-nested-plan") -ne 1) {
+                    return New-Classification -Stage "pci-vmd-nested-plan" -Detail "VMD MMIO preflight succeeded enough to identify the candidate, but no nested-enumeration plan was exported."
+                }
+                if ((Get-FieldValue -Fields $Fields -Name "vmd-nested-enum") -ne 1) {
+                    return New-Classification -Stage "pci-vmd-nested-enumeration" -Detail "VMD MMIO preflight is available, but the nested PCI domain has not been enumerated."
+                }
+                if ((Get-FieldValue -Fields $Fields -Name "vmd-nested-nvme") -eq 0) {
+                    return New-Classification -Stage "pci-vmd-nested-nvme-class" -Detail "The VMD nested PCI domain was enumerated, but no child NVMe controller was reported."
+                }
+                return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A child NVMe controller was reported behind VMD, but the regular NVMe driver has not been bound through the nested path."
+            }
             return New-Classification -Stage "pci-nvme-hidden-by-vmd" -Detail "PCI storage exists, but direct NVMe is absent and an Intel VMD-class candidate is present."
         }
         if ((Has-Field -Fields $Fields -Name "pci-intel-system") -and ((Get-FieldValue -Fields $Fields -Name "pci-intel-system") -ne 0)) {
