@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, and M136 storage diagnostic playbooks are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, and M137 NVMe PCI identity telemetry are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -2513,6 +2513,40 @@ failed: 0
 The strengthened fixture suite requires every synthetic storage classification to carry a populated diagnostic plan, so missing telemetry, legacy captures, NVMe discovery/readiness/Identify/queue/read failures, GPT/FAT failures, capability failures, `/APPS` failures, staged artifact mismatches, and `storage-ready` all remain deterministic.
 
 M136 non-claims: no kernel code changed, no physical MSI transcript was newly supplied, and no storage hardware support is certified. It makes the next real transcript more directly actionable while preserving the rule that hardware claims require hardware evidence. Accepted evidence preserves BIOS reserve `101` sectors and UEFI reserve `749,408` bytes.
+
+## M137 NVMe PCI Identity Telemetry
+
+M137 adds the missing PCI identity layer to the hardware storage evidence path. The UEFI Product `hwval`, `drs-nvme-pci`, and `drs-nvme-triage` outputs now include PCI storage count, NVMe count, first NVMe BDF, vendor/device, class/prog-if/revision, BAR0/BAR1, MMIO base low/high, span, flags, and token. The brokered PCI scaffold line also proves those values through the driver-host hardware capability, and the QEMU verifier rejects sentinel NVMe identity values on the UEFI Product path.
+
+Accepted commands:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m137-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m137-storage-target-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+hardware-storage-analysis-fixtures: 35/35
+failed: 0
+
+m134-storage-target-fixtures: 4/4
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+[x64] drs-nvme-pci nvme-pci-diag 1 pci-storage 2 pci-nvme 1 nvme-pci 0x00000200 nvme-vendor-device 0x00101B36 nvme-class 0x01080202 nvme-bar0 0x00008004 nvme-bar1 0x000000C0 nvme-mmio-low 0x00008000 nvme-mmio-high 0x000000C0 nvme-mmio-span 16384 nvme-mmio-flags 0x000001BF nvme-mmio-token 0x51B13EF6
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 pci-storage 2 pci-nvme 1 nvme-pci 0x00000200 nvme-vendor-device 0x00101B36 nvme-class 0x01080202 nvme-bar0 0x00008004 nvme-bar1 0x000000C0 nvme-mmio-low 0x00008000 nvme-mmio-high 0x000000C0 nvme-mmio-span 16384 nvme-mmio-flags 0x000001BF nvme-mmio-token 0x51B13EF6 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 ...
+```
+
+The storage capture analyzer now carries the new PCI fields in `key_fields`, and its `nvme-controller-discovery` diagnostic plan requires them so the next real MSI transcript can identify whether the first failure is PCI enumeration, NVMe controller readiness, GPT/FAT, scoped filesystem authority, `/APPS` visibility, or staged dynamic artifacts.
+
+M137 non-claims: no physical MSI transcript was newly supplied, and no new real hardware storage-driver pass is certified. This milestone adds precise UEFI Product telemetry for the next hardware run. Accepted evidence preserves BIOS reserve `101` sectors and UEFI reserve `744,672` bytes.
 
 Later targets are:
 

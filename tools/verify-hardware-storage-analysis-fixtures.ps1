@@ -18,6 +18,18 @@ New-Item -ItemType Directory -Force -Path $analysisDir | Out-Null
 $fieldOrder = @(
     "storage-triage",
     "nvme-found",
+    "pci-storage",
+    "pci-nvme",
+    "nvme-pci",
+    "nvme-vendor-device",
+    "nvme-class",
+    "nvme-bar0",
+    "nvme-bar1",
+    "nvme-mmio-low",
+    "nvme-mmio-high",
+    "nvme-mmio-span",
+    "nvme-mmio-flags",
+    "nvme-mmio-token",
     "nvme-ready",
     "nvme-identify",
     "ioq",
@@ -62,6 +74,18 @@ $fieldOrder = @(
 $baseFields = @{
     "storage-triage" = "1"
     "nvme-found" = "1"
+    "pci-storage" = "1"
+    "pci-nvme" = "1"
+    "nvme-pci" = "0x00000400"
+    "nvme-vendor-device" = "0x001F1AF4"
+    "nvme-class" = "0x01080200"
+    "nvme-bar0" = "0xC0008004"
+    "nvme-bar1" = "0x00000000"
+    "nvme-mmio-low" = "0xC0008000"
+    "nvme-mmio-high" = "0x00000000"
+    "nvme-mmio-span" = "8192"
+    "nvme-mmio-flags" = "0x000001FF"
+    "nvme-mmio-token" = "0xA93E3D7A"
     "nvme-ready" = "1"
     "nvme-identify" = "1"
     "ioq" = "1"

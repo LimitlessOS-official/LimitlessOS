@@ -454,6 +454,20 @@ static void shell64_write_decimal_field(
     length = shell64_format_decimal_u32(buffer, value);
     (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
 }
+
+static void shell64_write_hex32_field(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *label,
+    u32 value)
+{
+    char buffer[10];
+    u32 length;
+
+    (void)shell64_write_text(console_capability_handle, owner_id, label);
+    length = shell64_format_hex32(buffer, value);
+    (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
+}
 #endif
 
 static u32 shell64_write_hex32_line(
@@ -827,7 +841,41 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 dynldlimit_match;
     u32 ldlimit_match;
     u32 stage_match;
+    u32 hardware_capability;
+    u32 pci_storage_count;
+    u32 pci_nvme_count;
+    u32 pci_nvme_address;
+    u32 pci_nvme_vendor_device;
+    u32 pci_nvme_class;
+    u32 pci_nvme_bar0;
+    u32 pci_nvme_bar1;
+    u32 pci_nvme_mmio_base_low;
+    u32 pci_nvme_mmio_base_high;
+    u32 pci_nvme_mmio_span_hint;
+    u32 pci_nvme_mmio_flags;
+    u32 pci_nvme_mmio_token;
     u32 token = 2166136261u;
+
+    hardware_capability = capability64_grant_service(
+        SERVICE_ENDPOINT_CLASS_HARDWARE,
+        CAPABILITY64_RIGHT_QUERY,
+        owner_id);
+    pci_storage_count = pci64_storage_count(hardware_capability, owner_id);
+    pci_nvme_count = pci64_nvme_count(hardware_capability, owner_id);
+    pci_nvme_address = pci64_first_nvme_address(hardware_capability, owner_id);
+    pci_nvme_vendor_device = pci64_first_nvme_vendor_device(hardware_capability, owner_id);
+    pci_nvme_class = pci64_first_nvme_class(hardware_capability, owner_id);
+    pci_nvme_bar0 = pci64_first_nvme_bar0(hardware_capability, owner_id);
+    pci_nvme_bar1 = pci64_first_nvme_bar1(hardware_capability, owner_id);
+    pci_nvme_mmio_base_low = pci64_first_nvme_mmio_base_low(hardware_capability, owner_id);
+    pci_nvme_mmio_base_high = pci64_first_nvme_mmio_base_high(hardware_capability, owner_id);
+    pci_nvme_mmio_span_hint = pci64_first_nvme_mmio_span_hint(hardware_capability, owner_id);
+    pci_nvme_mmio_flags = pci64_first_nvme_mmio_flags(hardware_capability, owner_id);
+    pci_nvme_mmio_token = pci64_first_nvme_mmio_token(hardware_capability, owner_id);
+    if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
+    {
+        (void)capability64_revoke(hardware_capability, owner_id);
+    }
 
     rw_cap_present = (mmio64_nvme_rw_capability() != CAPABILITY64_INVALID_HANDLE) ? 1u : 0u;
     apps_stat_ok = mmio64_nvme_fat_shell_stat_path(
@@ -869,6 +917,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
         && ((ldlimit_expected == 0u) || (ldlimit_match != 0u))) ? 1u : 0u;
 
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_found());
+    token = shell64_storage_triage_mix(token, pci_storage_count);
+    token = shell64_storage_triage_mix(token, pci_nvme_count);
+    token = shell64_storage_triage_mix(token, pci_nvme_address);
+    token = shell64_storage_triage_mix(token, pci_nvme_vendor_device);
+    token = shell64_storage_triage_mix(token, pci_nvme_class);
+    token = shell64_storage_triage_mix(token, pci_nvme_mmio_flags);
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_identify());
     token = shell64_storage_triage_mix(token, mmio64_nvme_read_ioq_created());
@@ -893,6 +947,18 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
 
     (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-triage storage-triage 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-found ", mmio64_nvme_probe_found());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-pci ", pci_nvme_address);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-vendor-device ", pci_nvme_vendor_device);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-class ", pci_nvme_class);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-bar0 ", pci_nvme_bar0);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-bar1 ", pci_nvme_bar1);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-low ", pci_nvme_mmio_base_low);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-high ", pci_nvme_mmio_base_high);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-mmio-span ", pci_nvme_mmio_span_hint);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-flags ", pci_nvme_mmio_flags);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-token ", pci_nvme_mmio_token);
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", mmio64_nvme_probe_ready());
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-identify ", mmio64_nvme_probe_identify());
     shell64_write_decimal_field(console_capability_handle, owner_id, " ioq ", mmio64_nvme_read_ioq_created());
@@ -940,12 +1006,36 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 network_online = (virtio_net64_dhcp_ack() != 0u) ? 1u : 0u;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     u32 hardware_capability;
+    u32 pci_storage_count;
+    u32 pci_nvme_count;
+    u32 pci_nvme_address;
+    u32 pci_nvme_vendor_device;
+    u32 pci_nvme_class;
+    u32 pci_nvme_bar0;
+    u32 pci_nvme_bar1;
+    u32 pci_nvme_mmio_base_low;
+    u32 pci_nvme_mmio_base_high;
+    u32 pci_nvme_mmio_span_hint;
+    u32 pci_nvme_mmio_flags;
+    u32 pci_nvme_mmio_token;
 
     hardware_capability = capability64_grant_service(
         SERVICE_ENDPOINT_CLASS_HARDWARE,
         CAPABILITY64_RIGHT_QUERY,
         owner_id);
     hardware64_registry_refresh(hardware_capability, owner_id);
+    pci_storage_count = pci64_storage_count(hardware_capability, owner_id);
+    pci_nvme_count = pci64_nvme_count(hardware_capability, owner_id);
+    pci_nvme_address = pci64_first_nvme_address(hardware_capability, owner_id);
+    pci_nvme_vendor_device = pci64_first_nvme_vendor_device(hardware_capability, owner_id);
+    pci_nvme_class = pci64_first_nvme_class(hardware_capability, owner_id);
+    pci_nvme_bar0 = pci64_first_nvme_bar0(hardware_capability, owner_id);
+    pci_nvme_bar1 = pci64_first_nvme_bar1(hardware_capability, owner_id);
+    pci_nvme_mmio_base_low = pci64_first_nvme_mmio_base_low(hardware_capability, owner_id);
+    pci_nvme_mmio_base_high = pci64_first_nvme_mmio_base_high(hardware_capability, owner_id);
+    pci_nvme_mmio_span_hint = pci64_first_nvme_mmio_span_hint(hardware_capability, owner_id);
+    pci_nvme_mmio_flags = pci64_first_nvme_mmio_flags(hardware_capability, owner_id);
+    pci_nvme_mmio_token = pci64_first_nvme_mmio_token(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1161,6 +1251,32 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme detected: ", mmio64_nvme_probe_found());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme ready: ", mmio64_nvme_probe_ready());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci storage controllers: ", pci_storage_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci nvme controllers: ", pci_nvme_count);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme first bdf: ", pci_nvme_address);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme vendor/device: ", pci_nvme_vendor_device);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme class: ", pci_nvme_class);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme bar0: ", pci_nvme_bar0);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme bar1: ", pci_nvme_bar1);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio base low: ", pci_nvme_mmio_base_low);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio base high: ", pci_nvme_mmio_base_high);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci nvme mmio span: ", pci_nvme_mmio_span_hint);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio flags: ", pci_nvme_mmio_flags);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio token: ", pci_nvme_mmio_token);
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-pci ", pci_nvme_address);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-vendor-device ", pci_nvme_vendor_device);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-class ", pci_nvme_class);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-bar0 ", pci_nvme_bar0);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-bar1 ", pci_nvme_bar1);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-low ", pci_nvme_mmio_base_low);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-high ", pci_nvme_mmio_base_high);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-mmio-span ", pci_nvme_mmio_span_hint);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-flags ", pci_nvme_mmio_flags);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-token ", pci_nvme_mmio_token);
+    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme probe unavailable: ", mmio64_nvme_probe_unavailable());
