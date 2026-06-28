@@ -334,6 +334,7 @@ static u32 g_display_context_menu_y = 0u;
 static u32 g_display_context_menu_target = 0u;
 static u32 g_display_context_menu_kind = 0u;
 static u32 g_display_fileman_selected_index = 0u;
+static u32 g_display_fileman_window_cursor = 0u;
 static u32 g_display_settings_selected_index = 0u;
 static u32 g_display_installer_step_index = 0u;
 static u32 g_display_terminal_action_count = 0u;
@@ -3752,6 +3753,7 @@ static void display64_fileman_set_path(const char *path)
 {
     (void)display64_fileman_copy_cstr(g_display_fileman_current_path, sizeof(g_display_fileman_current_path), path);
     g_display_fileman_selected_index = 0u;
+    g_display_fileman_window_cursor = 0u;
     g_display_fileman_preview_bytes = 0u;
     g_display_fileman_preview_size = 0u;
     g_display_fileman_preview[0] = 0u;
@@ -3843,6 +3845,7 @@ static void display64_fileman_parent_path(void)
 
     g_display_fileman_current_path[path_bytes - 1u] = 0u;
     g_display_fileman_selected_index = 0u;
+    g_display_fileman_window_cursor = 0u;
     g_display_fileman_preview_bytes = 0u;
     g_display_fileman_preview_size = 0u;
     g_display_fileman_preview[0] = 0u;
@@ -3862,9 +3865,49 @@ static const char *display64_fileman_type_text(u32 entry_type)
     return "entry";
 }
 
+static u32 display64_fileman_find_previous_cursor(u32 target_cursor)
+{
+    mmio64_nvme_fat_dirent_t entry;
+    u32 cursor = 0u;
+    u32 previous = 0u;
+    u32 result;
+    u32 guard;
+
+    if (target_cursor == 0u)
+    {
+        return 0u;
+    }
+
+    for (guard = 0u; guard < 128u; ++guard)
+    {
+        result = mmio64_nvme_fat_shell_read_dirent(
+            g_display_fileman_current_path,
+            display64_fileman_cstr_bytes(g_display_fileman_current_path, sizeof(g_display_fileman_current_path)),
+            cursor,
+            PRINCIPAL64_ID_CONSOLE_CLIENT,
+            &entry);
+        if (result != MMIO64_NVME_FAT_READDIR_OK)
+        {
+            return 0u;
+        }
+        if (entry.next_cursor == target_cursor)
+        {
+            return cursor;
+        }
+        if ((entry.next_cursor == 0u) || (entry.next_cursor == cursor))
+        {
+            return previous;
+        }
+        previous = cursor;
+        cursor = entry.next_cursor;
+    }
+
+    return 0u;
+}
+
 static void display64_fileman_refresh(void)
 {
-    u32 cursor = 0u;
+    u32 cursor;
     u32 index;
     u32 result;
 
@@ -3879,6 +3922,7 @@ static void display64_fileman_refresh(void)
         return;
     }
 
+    cursor = g_display_fileman_window_cursor;
     for (index = 0u; index < DISPLAY64_FILEMAN_MAX_ENTRIES; ++index)
     {
         result = mmio64_nvme_fat_shell_read_dirent(
@@ -3889,6 +3933,13 @@ static void display64_fileman_refresh(void)
             &g_display_fileman_entries[index]);
         if (result == MMIO64_NVME_FAT_READDIR_EOF)
         {
+            if ((index == 0u) && (g_display_fileman_window_cursor != 0u))
+            {
+                g_display_fileman_window_cursor = 0u;
+                cursor = 0u;
+                --index;
+                continue;
+            }
             break;
         }
         if (result != MMIO64_NVME_FAT_READDIR_OK)
@@ -4000,6 +4051,7 @@ static void display64_fileman_open_selected_if_directory(void)
     }
     g_display_fileman_current_path[g_display_fileman_selected_index] = 0u;
     g_display_fileman_selected_index = 0u;
+    g_display_fileman_window_cursor = 0u;
     g_display_fileman_preview_bytes = 0u;
     g_display_fileman_preview_size = 0u;
     g_display_fileman_preview[0] = 0u;
@@ -4144,7 +4196,8 @@ static void display64_fileman_delete_selected(void)
     }
 
     entry = &g_display_fileman_entries[g_display_fileman_selected_index];
-    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    if ((entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+        && (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
     {
         ++g_display_fileman_backend_delete_denial_count;
         g_display_fileman_last_delete_status = 2u;
@@ -4178,6 +4231,7 @@ static void display64_fileman_delete_selected(void)
     {
         ++g_display_fileman_backend_delete_count;
         g_display_fileman_last_delete_status = 1u;
+        g_display_fileman_window_cursor = 0u;
         display64_fileman_clear_delete_confirm();
         display64_fileman_refresh();
         return;
@@ -4211,6 +4265,7 @@ static void display64_fileman_commit_create_folder(void)
     {
         ++g_display_fileman_backend_mkdir_count;
         g_display_fileman_last_mutation_status = 1u;
+        g_display_fileman_window_cursor = 0u;
         display64_fileman_clear_delete_confirm();
         display64_fileman_clear_edit();
         display64_fileman_refresh();
@@ -4272,6 +4327,7 @@ static void display64_fileman_commit_rename_selected(void)
     {
         ++g_display_fileman_backend_rename_count;
         g_display_fileman_last_mutation_status = 3u;
+        g_display_fileman_window_cursor = 0u;
         display64_fileman_clear_delete_confirm();
         display64_fileman_clear_edit();
         display64_fileman_refresh();
@@ -4340,6 +4396,7 @@ static void display64_fileman_commit_move_selected(void)
     {
         ++g_display_fileman_backend_move_count;
         g_display_fileman_last_mutation_status = 5u;
+        g_display_fileman_window_cursor = 0u;
         display64_fileman_clear_delete_confirm();
         display64_fileman_clear_edit();
         display64_fileman_refresh();
@@ -4372,7 +4429,8 @@ static void display64_fileman_commit_copy_selected(void)
     }
 
     entry = &g_display_fileman_entries[g_display_fileman_selected_index];
-    if (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    if ((entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+        && (entry->entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
     {
         ++g_display_fileman_backend_copy_denial_count;
         g_display_fileman_last_mutation_status = 9u;
@@ -4394,6 +4452,7 @@ static void display64_fileman_commit_copy_selected(void)
     {
         ++g_display_fileman_backend_copy_count;
         g_display_fileman_last_mutation_status = 8u;
+        g_display_fileman_window_cursor = 0u;
         display64_fileman_clear_delete_confirm();
         display64_fileman_clear_edit();
         display64_fileman_refresh();
@@ -6383,10 +6442,21 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
             {
                 ++g_display_fileman_selected_index;
             }
+            else if ((g_display_fileman_entry_count == DISPLAY64_FILEMAN_MAX_ENTRIES)
+                && (g_display_fileman_entries[0].next_cursor != 0u))
+            {
+                g_display_fileman_window_cursor = g_display_fileman_entries[0].next_cursor;
+                display64_fileman_refresh();
+            }
         }
         else if (g_display_fileman_selected_index > 0u)
         {
             --g_display_fileman_selected_index;
+        }
+        else if (g_display_fileman_window_cursor != 0u)
+        {
+            g_display_fileman_window_cursor = display64_fileman_find_previous_cursor(g_display_fileman_window_cursor);
+            display64_fileman_refresh();
         }
         display64_fileman_preview_selected();
         ++g_display_gui_scroll_count;
@@ -6559,6 +6629,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_context_menu_target = 0u;
     g_display_context_menu_kind = 0u;
     g_display_fileman_selected_index = 0u;
+    g_display_fileman_window_cursor = 0u;
     g_display_settings_selected_index = 0u;
     g_display_installer_step_index = 0u;
     g_display_terminal_action_count = 0u;
