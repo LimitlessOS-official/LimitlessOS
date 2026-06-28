@@ -2320,6 +2320,111 @@ static u32 shell64_read_file(
     return total_bytes;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_list_fat_path(
+    u32 console_capability_handle,
+    u32 token_start,
+    u32 token_length,
+    u32 owner_id,
+    u32 *handled)
+{
+    mmio64_nvme_fat_dirent_t entry;
+    mmio64_nvme_fat_stat_t stat;
+    u32 path_length;
+    u32 cursor = 0u;
+    u32 result;
+    u32 entries = 0u;
+
+    if (handled == 0)
+    {
+        return 0u;
+    }
+    *handled = 0u;
+
+    if (token_length == 0u)
+    {
+        return 0u;
+    }
+    if (shell64_token_is_root(token_start, token_length))
+    {
+        g_shell64_path_b[0] = (u8)'/';
+        g_shell64_path_b[1] = 0u;
+        path_length = 1u;
+    }
+    else
+    {
+        path_length = shell64_normalize_path(token_start, token_length, g_shell64_path_b);
+        if (path_length == 0u)
+        {
+            return 0u;
+        }
+    }
+
+    if (mmio64_nvme_fat_shell_stat_path(g_shell64_path_b, path_length, owner_id, &stat) == 0u)
+    {
+        return 0u;
+    }
+    *handled = 1u;
+    if (stat.entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+    {
+        (void)shell64_write(console_capability_handle, owner_id, g_shell64_line + token_start, token_length);
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+        return 1u;
+    }
+    if (stat.entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "list failed\n");
+    }
+
+    for (;;)
+    {
+        result = mmio64_nvme_fat_shell_read_dirent(
+            g_shell64_path_b,
+            path_length,
+            cursor,
+            owner_id,
+            &entry);
+        if (result == MMIO64_NVME_FAT_READDIR_EOF)
+        {
+            break;
+        }
+        if (result != MMIO64_NVME_FAT_READDIR_OK)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "list failed\n");
+        }
+        if ((entry.name_byte_count == 1u) && (entry.name[0] == (u8)'.'))
+        {
+            cursor = entry.next_cursor;
+            continue;
+        }
+        if ((entry.name_byte_count == 2u)
+            && (entry.name[0] == (u8)'.')
+            && (entry.name[1] == (u8)'.'))
+        {
+            cursor = entry.next_cursor;
+            continue;
+        }
+        if (entry.name_byte_count != 0u)
+        {
+            (void)shell64_write(
+                console_capability_handle,
+                owner_id,
+                entry.name,
+                entry.name_byte_count);
+            if (entry.entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+            {
+                (void)shell64_write_text(console_capability_handle, owner_id, "/");
+            }
+            (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+            ++entries;
+        }
+        cursor = entry.next_cursor;
+    }
+
+    return entries;
+}
+#endif
+
 static u32 shell64_list_path(
     u32 console_capability_handle,
     u32 root_capability_handle,
@@ -2328,13 +2433,30 @@ static u32 shell64_list_path(
     u32 owner_id)
 {
     u32 borrowed_root;
-    u32 dir_capability = shell64_open_path(
+    u32 dir_capability;
+    u32 byte_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 fat_handled = 0u;
+    u32 fat_entries;
+
+    fat_entries = shell64_list_fat_path(
+        console_capability_handle,
+        token_start,
+        token_length,
+        owner_id,
+        &fat_handled);
+    if (fat_handled != 0u)
+    {
+        return fat_entries;
+    }
+#endif
+
+    dir_capability = shell64_open_path(
         root_capability_handle,
         token_start,
         token_length,
         owner_id,
         &borrowed_root);
-    u32 byte_count;
 
     if (dir_capability == FS64_INVALID_HANDLE)
     {
