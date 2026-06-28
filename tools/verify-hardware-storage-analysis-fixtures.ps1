@@ -220,9 +220,28 @@ foreach ($fixture in $fixtures) {
     $analysis = Get-Content -Raw -Path $analysisPath | ConvertFrom-Json
     $actualStage = [string]$analysis.stage
     $expectedExitCode = if ($fixture.expected_stage -eq "storage-ready") { 0 } else { 2 }
-    $pass = (($actualStage -eq $fixture.expected_stage) -and ($exitCode -eq $expectedExitCode))
+    $diagnostic = $analysis.PSObject.Properties["diagnostic"]
+    $diagnosticStage = ""
+    $diagnosticComponent = ""
+    $diagnosticFirstCheck = ""
+    $diagnosticAcceptanceSignal = ""
+    $diagnosticRequiredFields = @()
+    if ($null -ne $diagnostic) {
+        $diagnosticStage = [string]$diagnostic.Value.stage
+        $diagnosticComponent = [string]$diagnostic.Value.component
+        $diagnosticFirstCheck = [string]$diagnostic.Value.first_check
+        $diagnosticAcceptanceSignal = [string]$diagnostic.Value.acceptance_signal
+        $diagnosticRequiredFields = @($diagnostic.Value.required_fields)
+    }
+
+    $diagnosticPass = (($diagnosticStage -eq $fixture.expected_stage) -and
+        (-not [string]::IsNullOrWhiteSpace($diagnosticComponent)) -and
+        (-not [string]::IsNullOrWhiteSpace($diagnosticFirstCheck)) -and
+        (-not [string]::IsNullOrWhiteSpace($diagnosticAcceptanceSignal)) -and
+        ($diagnosticRequiredFields.Count -ne 0))
+    $pass = (($actualStage -eq $fixture.expected_stage) -and ($exitCode -eq $expectedExitCode) -and $diagnosticPass)
     if (-not $pass) {
-        $failures += ("{0}: expected stage {1}/exit {2}, observed stage {3}/exit {4}" -f $fixture.name, $fixture.expected_stage, $expectedExitCode, $actualStage, $exitCode)
+        $failures += ("{0}: expected stage {1}/exit {2}/diagnostic true, observed stage {3}/exit {4}/diagnostic {5}" -f $fixture.name, $fixture.expected_stage, $expectedExitCode, $actualStage, $exitCode, $diagnosticPass)
     }
 
     $results += [PSCustomObject]@{
@@ -233,6 +252,8 @@ foreach ($fixture in $fixtures) {
         actual_exit_code = $exitCode
         pass = $pass
         next_target = [string]$analysis.next_target
+        diagnostic_component = $diagnosticComponent
+        diagnostic_required_fields = $diagnosticRequiredFields.Count
     }
 }
 
