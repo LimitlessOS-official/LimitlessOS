@@ -686,6 +686,12 @@ static void log_mouse_surface(void)
         " drs-mouse-",
         fields,
         (u32)(sizeof(fields) / sizeof(fields[0])));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_labeled_dec_u32(" drs-wm-resize ", display64_wm_resize_count());
+    write_labeled_dec_u32(" drs-wm-minimize ", display64_wm_minimize_count());
+    write_labeled_dec_u32(" drs-wm-restore ", display64_wm_restore_count());
+    write_labeled_dec_u32(" drs-wm-zorder ", display64_wm_zorder_count());
+#endif
     write_line("");
 }
 
@@ -769,6 +775,11 @@ static void log_gui_interactive_surface(void)
     write_labeled_dec_u32(" drs-gui-installer-opened ", display64_gui_installer_opened());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     write_labeled_dec_u32(" drs-gui-right-click ", display64_gui_right_click_count());
+    write_labeled_dec_u32(" drs-gui-context-action ", display64_gui_context_menu_action_count());
+    write_labeled_dec_u32(" wm-resize ", display64_wm_resize_count());
+    write_labeled_dec_u32(" wm-minimize ", display64_wm_minimize_count());
+    write_labeled_dec_u32(" wm-restore ", display64_wm_restore_count());
+    write_labeled_dec_u32(" wm-zorder ", display64_wm_zorder_count());
     write_labeled_dec_u32(" drs-gui-scroll ", display64_gui_scroll_count());
     write_labeled_dec_u32(" terminal-actions ", display64_gui_terminal_action_count());
     write_labeled_dec_u32(" terminal-scroll ", display64_gui_terminal_scroll_count());

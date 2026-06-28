@@ -157,6 +157,8 @@
 #define DISPLAY64_GUI_REGION_SETTINGS_ROW 14u
 #define DISPLAY64_GUI_REGION_INSTALLER_ACTION 15u
 #define DISPLAY64_GUI_REGION_TERMINAL_ACTION 16u
+#define DISPLAY64_GUI_REGION_RESIZE 17u
+#define DISPLAY64_GUI_REGION_MINIMIZE 18u
 #define DISPLAY64_GUI_INPUT_PATH_TOKEN 0x494E5054u
 #define DISPLAY64_GUI_DISPLAY_PATH_TOKEN 0x44495350u
 #define DISPLAY64_GUI_FS_PATH_TOKEN 0x46535041u
@@ -186,6 +188,9 @@
 #define DISPLAY64_SETTINGS_POINTER_FAST 3u
 #define DISPLAY64_TERMINAL_SCROLL_STEP_BYTES 512u
 #define DISPLAY64_TERMINAL_SELECTION_BYTES 128u
+#define DISPLAY64_WM_MIN_WINDOW_WIDTH 180u
+#define DISPLAY64_WM_MIN_WINDOW_HEIGHT 120u
+#define DISPLAY64_WM_RESIZE_GRIP 18u
 #define DISPLAY64_LOGIN_STATE_SETUP 1u
 #define DISPLAY64_LOGIN_STATE_LOGIN 2u
 #define DISPLAY64_LOGIN_STATE_ACCEPTED 3u
@@ -271,6 +276,9 @@ struct display64_window
     const char *title;
     u32 visible;
     u32 focused;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 minimized;
+#endif
     u32 z;
 };
 static struct display64_window g_display_windows[DISPLAY64_WM_MAX_WINDOWS];
@@ -285,6 +293,10 @@ static u32 g_display_wm_dragging = 0u;
 static u32 g_display_wm_drag_handle = 0u;
 static u32 g_display_wm_drag_offset_x = 0u;
 static u32 g_display_wm_drag_offset_y = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_wm_resizing = 0u;
+static u32 g_display_wm_resize_handle = 0u;
+#endif
 static u32 g_display_wm_last_buttons = 0u;
 static u32 g_display_desktop_active = 0u;
 static u32 g_display_desktop_taskbar_count = 0u;
@@ -351,6 +363,11 @@ static u32 g_display_context_menu_x = 0u;
 static u32 g_display_context_menu_y = 0u;
 static u32 g_display_context_menu_target = 0u;
 static u32 g_display_context_menu_kind = 0u;
+static u32 g_display_context_menu_action_count = 0u;
+static u32 g_display_wm_resize_count = 0u;
+static u32 g_display_wm_minimize_count = 0u;
+static u32 g_display_wm_restore_count = 0u;
+static u32 g_display_wm_zorder_count = 0u;
 static u32 g_display_settings_loaded = 0u;
 static u32 g_display_settings_theme = DISPLAY64_SETTINGS_THEME_DARK;
 static u32 g_display_settings_pointer_speed = DISPLAY64_SETTINGS_POINTER_NORMAL;
@@ -3626,6 +3643,9 @@ static struct display64_window *display64_wm_hit_window(u32 x, u32 y)
     {
         struct display64_window *window = &g_display_windows[index];
         if ((window->visible != 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            && (window->minimized == 0u)
+#endif
             && display64_point_in_rect(x, y, window->x, window->y, window->width, window->height)
             && (window->z >= best_z))
         {
@@ -3655,7 +3675,11 @@ static u32 display64_wm_top_visible_handle(void)
 
     for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
     {
-        if ((g_display_windows[index].visible != 0u) && (g_display_windows[index].z >= best_z))
+        if ((g_display_windows[index].visible != 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            && (g_display_windows[index].minimized == 0u)
+#endif
+            && (g_display_windows[index].z >= best_z))
         {
             best_handle = g_display_windows[index].handle;
             best_z = g_display_windows[index].z;
@@ -3672,6 +3696,9 @@ static struct display64_window *display64_wm_focused_window(void)
     for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
     {
         if ((g_display_windows[index].visible != 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            && (g_display_windows[index].minimized == 0u)
+#endif
             && (g_display_windows[index].focused != 0u))
         {
             return &g_display_windows[index];
@@ -3700,6 +3727,9 @@ static u32 display64_wm_has_unfocused_terminal(u32 focused_handle)
     for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
     {
         if ((g_display_windows[index].visible != 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            && (g_display_windows[index].minimized == 0u)
+#endif
             && (g_display_windows[index].handle != focused_handle)
             && display64_wm_window_is_terminal(&g_display_windows[index]))
         {
@@ -3779,6 +3809,9 @@ static u32 display64_wm_create_window(const char *title, u32 x, u32 y, u32 width
             g_display_windows[index].title = title;
             g_display_windows[index].visible = 1u;
             g_display_windows[index].focused = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            g_display_windows[index].minimized = 0u;
+#endif
             g_display_windows[index].z = g_display_wm_next_z++;
             ++g_display_wm_window_count;
             return g_display_windows[index].handle;
@@ -3803,8 +3836,18 @@ static void display64_wm_focus_window(u32 handle)
     {
         g_display_windows[index].focused = 0u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (window->minimized != 0u)
+    {
+        window->minimized = 0u;
+        ++g_display_wm_restore_count;
+    }
+#endif
     window->focused = 1u;
     window->z = g_display_wm_next_z++;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    ++g_display_wm_zorder_count;
+#endif
     ++g_display_wm_focus_count;
 }
 
@@ -3884,6 +3927,9 @@ static void display64_wm_destroy_window(u32 handle)
     display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
     window->visible = 0u;
     window->focused = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    window->minimized = 0u;
+#endif
     if (handle == g_display_desktop_fileman_handle)
     {
         g_display_desktop_fileman_handle = 0u;
@@ -3914,16 +3960,110 @@ static void display64_wm_destroy_window(u32 handle)
     }
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_wm_minimize_window(u32 handle)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+    u32 replacement;
+
+    if (window == 0)
+    {
+        return;
+    }
+
+    display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
+    window->minimized = 1u;
+    window->focused = 0u;
+    ++g_display_wm_minimize_count;
+    if (handle == g_display_wm_shell_handle)
+    {
+        g_display_wm_shell_handle = 0u;
+    }
+
+    replacement = display64_wm_top_visible_handle();
+    if (replacement != 0u)
+    {
+        display64_wm_focus_and_route_console(replacement);
+    }
+}
+
+static void display64_wm_resize_window(u32 handle, u32 width, u32 height)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+    u32 max_w;
+    u32 max_h;
+
+    if ((window == 0) || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
+    max_w = (g_display_boot_info->framebuffer_width > window->x)
+        ? (g_display_boot_info->framebuffer_width - window->x)
+        : DISPLAY64_WM_MIN_WINDOW_WIDTH;
+    max_h = (g_display_boot_info->framebuffer_height > window->y)
+        ? (g_display_boot_info->framebuffer_height - window->y)
+        : DISPLAY64_WM_MIN_WINDOW_HEIGHT;
+    if (width < DISPLAY64_WM_MIN_WINDOW_WIDTH)
+    {
+        width = DISPLAY64_WM_MIN_WINDOW_WIDTH;
+    }
+    if (height < DISPLAY64_WM_MIN_WINDOW_HEIGHT)
+    {
+        height = DISPLAY64_WM_MIN_WINDOW_HEIGHT;
+    }
+    window->width = display64_min_u32(width, max_w);
+    window->height = display64_min_u32(height, max_h);
+    display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
+    if (display64_wm_window_is_terminal(window))
+    {
+        g_display_wm_shell_handle = window->handle;
+        display64_wm_configure_console(window);
+    }
+    ++g_display_wm_resize_count;
+}
+
+static int display64_wm_resize_hit(const struct display64_window *window, u32 x, u32 y)
+{
+    if ((window == 0) || (window->minimized != 0u))
+    {
+        return 0;
+    }
+    if ((window->width <= DISPLAY64_WM_RESIZE_GRIP)
+        || (window->height <= DISPLAY64_WM_RESIZE_GRIP))
+    {
+        return 0;
+    }
+
+    return display64_point_in_rect(
+        x,
+        y,
+        window->x + window->width - DISPLAY64_WM_RESIZE_GRIP,
+        window->y + window->height - DISPLAY64_WM_RESIZE_GRIP,
+        DISPLAY64_WM_RESIZE_GRIP,
+        DISPLAY64_WM_RESIZE_GRIP);
+}
+#endif
+
 static void display64_wm_present_window(u32 handle)
 {
     struct display64_window *window = display64_wm_find_window(handle);
     u32 title_rgb;
     u32 close_x;
     u32 close_y;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 minimize_x;
+#endif
     u32 content_y;
     u32 content_h;
 
-    if ((window == 0) || (g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    if ((window == 0)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || (window->minimized != 0u)
+#endif
+        || (g_display_compositor_active == 0u)
+        || !display64_has_framebuffer())
     {
         return;
     }
@@ -3966,8 +4106,13 @@ static void display64_wm_present_window(u32 handle)
         DISPLAY64_FONT_TRANSPARENT);
     close_x = (window->width > 32u) ? (window->x + window->width - 24u) : window->x;
     close_y = window->y + ((DISPLAY64_WM_TITLE_HEIGHT - 16u) / 2u);
+    minimize_x = (close_x > 24u) ? (close_x - 22u) : close_x;
+    display64_compositor_fill_circle_16(minimize_x, close_y, DISPLAY64_RGB_SURFACE_BORDER);
+    display64_compositor_fill_rect(minimize_x + 5u, close_y + 10u, 6u, 2u, DISPLAY64_RGB_TEXT_SECONDARY);
     display64_compositor_fill_circle_16(close_x, close_y, DISPLAY64_RGB_SURFACE_BORDER);
     (void)display64_draw_font_text(close_x + 5u, close_y + 4u, "X", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_CLOSE, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_rect(window->x + window->width - 12u, window->y + window->height - 4u, 8u, 1u, DISPLAY64_RGB_SURFACE_BORDER_STRONG);
+    display64_compositor_fill_rect(window->x + window->width - 8u, window->y + window->height - 8u, 4u, 1u, DISPLAY64_RGB_SURFACE_BORDER_STRONG);
 #else
     title_rgb = (window->focused != 0u) ? DISPLAY64_RGB_ACCENT : DISPLAY64_RGB_TITLE_UNFOCUSED;
     display64_compositor_fill_rect(window->x, window->y, window->width, window->height, DISPLAY64_RGB_SURFACE);
@@ -5921,6 +6066,9 @@ static void display64_desktop_draw_windows_by_z(void)
         for (index = 0u; index < DISPLAY64_WM_MAX_WINDOWS; ++index)
         {
             if ((g_display_windows[index].visible != 0u)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                && (g_display_windows[index].minimized == 0u)
+#endif
                 && (g_display_windows[index].z > last_z)
                 && (g_display_windows[index].z < best_z))
             {
@@ -6587,6 +6735,54 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         }
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_wm_resizing != 0u)
+    {
+        if (left != 0u)
+        {
+            struct display64_window *resized_window = display64_wm_find_window(g_display_wm_resize_handle);
+            if (resized_window != 0)
+            {
+                u32 new_w = (x > resized_window->x) ? (x - resized_window->x + 4u) : DISPLAY64_WM_MIN_WINDOW_WIDTH;
+                u32 new_h = (y > resized_window->y) ? (y - resized_window->y + 4u) : DISPLAY64_WM_MIN_WINDOW_HEIGHT;
+                z_before = display64_wm_window_z(g_display_wm_resize_handle);
+                display64_wm_resize_window(g_display_wm_resize_handle, new_w, new_h);
+                display64_desktop_redraw();
+                display64_gui_record_event(
+                    x,
+                    y,
+                    DISPLAY64_GUI_REGION_RESIZE,
+                    g_display_wm_resize_handle,
+                    focus_before,
+                    display64_wm_focused_handle(),
+                    z_before,
+                    display64_wm_window_z(g_display_wm_resize_handle));
+            }
+            g_display_wm_last_buttons = buttons;
+            return 1u;
+        }
+
+        if (released != 0u)
+        {
+            u32 resize_handle = g_display_wm_resize_handle;
+            z_before = display64_wm_window_z(resize_handle);
+            g_display_wm_resizing = 0u;
+            g_display_wm_resize_handle = 0u;
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_RESIZE,
+                resize_handle,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                display64_wm_window_z(resize_handle));
+            g_display_wm_last_buttons = buttons;
+            return 1u;
+        }
+    }
+#endif
+
     if (pressed != 0u)
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -6598,6 +6794,7 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
             g_display_context_menu_open = 0u;
             if (menu_action != 0u)
             {
+                ++g_display_context_menu_action_count;
                 if (kind == 1u)
                 {
                     if (menu_action == 1u)
@@ -6768,9 +6965,51 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
             {
                 u32 close_x = (window->width > 28u) ? (window->x + window->width - 22u) : window->x;
                 u32 close_y = window->y + 7u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                u32 minimize_x = (close_x > 22u) ? (close_x - 22u) : close_x;
+#endif
                 u32 region = DISPLAY64_GUI_REGION_BODY;
                 g_display_desktop_launcher_open = 0u;
                 z_before = window->z;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                if (display64_point_in_rect(x, y, minimize_x, close_y, 14u, 14u))
+                {
+                    u32 target_handle = window->handle;
+                    display64_wm_minimize_window(target_handle);
+                    display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_MINIMIZE,
+                        target_handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        display64_wm_window_z(target_handle));
+                    g_display_wm_last_buttons = buttons;
+                    return 1u;
+                }
+
+                if (display64_wm_resize_hit(window, x, y) != 0)
+                {
+                    display64_wm_focus_and_route_console(window->handle);
+                    g_display_wm_resizing = 1u;
+                    g_display_wm_resize_handle = window->handle;
+                    display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_RESIZE,
+                        window->handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        display64_wm_window_z(window->handle));
+                    g_display_wm_last_buttons = buttons;
+                    return 1u;
+                }
+#endif
 
                 if ((window->handle == g_display_desktop_settings_handle)
                     && (display64_desktop_settings_lock_hit(window, x, y) != 0))
@@ -7309,6 +7548,10 @@ void display64_init(const struct boot_info *boot_info)
     g_display_wm_drag_handle = 0u;
     g_display_wm_drag_offset_x = 0u;
     g_display_wm_drag_offset_y = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_wm_resizing = 0u;
+    g_display_wm_resize_handle = 0u;
+#endif
     g_display_wm_last_buttons = 0u;
     g_display_desktop_active = 0u;
     g_display_desktop_taskbar_count = 0u;
@@ -7375,6 +7618,11 @@ void display64_init(const struct boot_info *boot_info)
     g_display_context_menu_y = 0u;
     g_display_context_menu_target = 0u;
     g_display_context_menu_kind = 0u;
+    g_display_context_menu_action_count = 0u;
+    g_display_wm_resize_count = 0u;
+    g_display_wm_minimize_count = 0u;
+    g_display_wm_restore_count = 0u;
+    g_display_wm_zorder_count = 0u;
     g_display_settings_loaded = 0u;
     g_display_settings_theme = DISPLAY64_SETTINGS_THEME_DARK;
     g_display_settings_pointer_speed = DISPLAY64_SETTINGS_POINTER_NORMAL;
@@ -7451,6 +7699,9 @@ void display64_init(const struct boot_info *boot_info)
         g_display_windows[window_index].handle = 0u;
         g_display_windows[window_index].visible = 0u;
         g_display_windows[window_index].focused = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_display_windows[window_index].minimized = 0u;
+#endif
         g_display_windows[window_index].z = 0u;
     }
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -8174,6 +8425,28 @@ u32 display64_wm_present_count(void)
     return g_display_wm_present_count;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_wm_resize_count(void)
+{
+    return g_display_wm_resize_count;
+}
+
+u32 display64_wm_minimize_count(void)
+{
+    return g_display_wm_minimize_count;
+}
+
+u32 display64_wm_restore_count(void)
+{
+    return g_display_wm_restore_count;
+}
+
+u32 display64_wm_zorder_count(void)
+{
+    return g_display_wm_zorder_count;
+}
+#endif
+
 u32 display64_desktop_init_done(void)
 {
     return g_display_desktop_active;
@@ -8363,6 +8636,11 @@ u32 display64_gui_assistant_opened(void)
 u32 display64_gui_right_click_count(void)
 {
     return g_display_gui_right_click_count;
+}
+
+u32 display64_gui_context_menu_action_count(void)
+{
+    return g_display_context_menu_action_count;
 }
 
 u32 display64_gui_scroll_count(void)
