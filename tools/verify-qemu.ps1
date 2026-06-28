@@ -843,6 +843,22 @@ function Send-QemuKeyboardProbe
                 $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
                 & $drainQmp
                 Start-Sleep -Milliseconds 260
+                if ($guiAttempt -eq 0) {
+                    $settingsX = [Math]::Max(40, $frameWidth - 368 - 344 + 40)
+                    & $sendMoveTo 22 $launcherY
+                    & $sendClick
+                    & $sendMoveTo 170 $settingsIconY
+                    & $sendClick
+                    Start-Sleep -Milliseconds 180
+                    & $sendMoveTo $settingsX 532
+                    & $sendClick
+                    & $sendMoveTo $settingsX 576
+                    & $sendClick
+                    & $sendMoveTo $settingsX 664
+                    & $sendClick
+                    & $sendMoveTo $settingsX 708
+                    & $sendClick
+                }
                 & $sendMoveTo 22 $launcherY
                 & $sendClick
                 & $sendMoveTo 70 $fileIconY
@@ -3055,6 +3071,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 UEFI Settings persisted workflow proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 UEFI virtio-net brokered ARP proof was not observed."
         }
@@ -3073,6 +3090,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 Product Settings persisted workflow proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }

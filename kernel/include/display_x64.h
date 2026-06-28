@@ -153,6 +153,14 @@ u32 display64_gui_fileman_backend_move_denial_count(void);
 u32 display64_gui_fileman_backend_edit_count(void);
 u32 display64_gui_fileman_backend_edit_commit_count(void);
 u32 display64_gui_settings_action_count(void);
+u32 display64_gui_settings_load_count(void);
+u32 display64_gui_settings_save_count(void);
+u32 display64_gui_settings_save_denial_count(void);
+u32 display64_gui_settings_export_count(void);
+u32 display64_gui_settings_export_denial_count(void);
+u32 display64_gui_settings_theme(void);
+u32 display64_gui_settings_pointer_speed(void);
+u32 display64_gui_settings_key_repeat(void);
 u32 display64_gui_installer_action_count(void);
 #endif
 u32 display64_gui_unfocused_key_denied(void);

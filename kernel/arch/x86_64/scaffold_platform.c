@@ -791,6 +791,14 @@ static void log_gui_interactive_surface(void)
     write_labeled_dec_u32(" fileman-edit ", display64_gui_fileman_backend_edit_count());
     write_labeled_dec_u32(" fileman-edit-commit ", display64_gui_fileman_backend_edit_commit_count());
     write_labeled_dec_u32(" settings-actions ", display64_gui_settings_action_count());
+    write_labeled_dec_u32(" settings-load ", display64_gui_settings_load_count());
+    write_labeled_dec_u32(" settings-save ", display64_gui_settings_save_count());
+    write_labeled_dec_u32(" settings-save-denial ", display64_gui_settings_save_denial_count());
+    write_labeled_dec_u32(" settings-export ", display64_gui_settings_export_count());
+    write_labeled_dec_u32(" settings-export-denial ", display64_gui_settings_export_denial_count());
+    write_labeled_dec_u32(" settings-theme ", display64_gui_settings_theme());
+    write_labeled_dec_u32(" settings-pointer ", display64_gui_settings_pointer_speed());
+    write_labeled_dec_u32(" settings-keyrepeat ", display64_gui_settings_key_repeat());
     write_labeled_dec_u32(" installer-actions ", display64_gui_installer_action_count());
 #endif
     write_labeled_dec_u32(" drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
