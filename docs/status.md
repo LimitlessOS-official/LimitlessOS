@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-28
 
 ## Accepted Baseline
 
@@ -15,6 +15,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M127 is `FAT backend completion`. Product UEFI now supports bounded recursive FAT directory copy through the same scoped shell/NVMe authority as the existing write, append, copy, rename, move, and recursive delete paths. Directory copies create fresh FAT directory clusters, copy each file into a fresh cluster chain, walk bounded child entries, deny root/self/descendant copy traps, preserve visible long-name entries through the existing LFN creation path, and expose both startup proof and user-shell proof through `hwval`. The M127 QEMU Product proof created a nested tree, copied it with `copy rsrc rdst`, listed `rdst` and `rdst/subdir`, read back `nested-data` and `long-data` from the copied tree, and completed `linux /APPS/BUSYBOX echo fat-recursive-copy-proof` with `exit 0`, `low-compat 0`, `syscall-root-repair 0`, and `page-faults 0`. Final reserves: BIOS `101` sectors, UEFI `758,304` bytes.
 
 M125 is `MSI dynamic handoff capture classification`. `tools\verify-msi-hardware-handoff.ps1` now parses a real `linux /APPS/DYNLDLIMIT` transcript when `-CapturePath` is supplied and records `dynamic-handoff-*` fields alongside the existing storage/display analysis. It distinguishes source-2 boot-media handoff success, dynamic runtime failure after source 2, clean dynamic exit 0, old `NVMe FAT unavailable` behavior, missing `drs-realbin` telemetry, wrong source, and source-2 boot-media read failure. The handoff fixture suite now covers 11 cases, including four capture-side dynamic outcomes. No kernel code changed; BIOS remains at 101 reserve sectors and UEFI reserve remains 788,512 bytes.
 

@@ -1178,6 +1178,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw delete verified: ", mmio64_nvme_rw_shell_delete_verified());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw mkdir: ", mmio64_nvme_rw_shell_mkdir());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw copy: ", mmio64_nvme_rw_shell_copy());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw recursive copy: ", mmio64_nvme_rw_shell_recursive_copy());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw rename: ", mmio64_nvme_rw_shell_rename());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw move: ", mmio64_nvme_rw_shell_move());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme rw recursive delete: ", mmio64_nvme_rw_shell_recursive_delete());
@@ -1190,6 +1191,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "nvme fat recursive delete proof: ",
         mmio64_nvme_fat_recursive_delete_proof());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "nvme fat recursive copy proof: ",
+        mmio64_nvme_fat_recursive_copy_proof());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow count: ", mmio64_nvme_fat_dir_grow_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow cluster: ", mmio64_nvme_fat_dir_grow_cluster());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow denials: ", mmio64_nvme_fat_dir_grow_denial());
