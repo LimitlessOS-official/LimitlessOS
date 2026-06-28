@@ -99,6 +99,9 @@ function Classify-StorageCapture
         if ((Has-Field -Fields $Fields -Name "pci-raid") -and ((Get-FieldValue -Fields $Fields -Name "pci-raid") -ne 0)) {
             return New-Classification -Stage "pci-nvme-hidden-by-raid" -Detail "PCI storage exists, but direct NVMe is hidden behind a RAID/RST-class storage controller."
         }
+        if ((Has-Field -Fields $Fields -Name "pci-vmd") -and ((Get-FieldValue -Fields $Fields -Name "pci-vmd") -ne 0)) {
+            return New-Classification -Stage "pci-nvme-hidden-by-vmd" -Detail "PCI storage exists, but direct NVMe is absent and an Intel VMD-class candidate is present."
+        }
         if ((Has-Field -Fields $Fields -Name "pci-intel-system") -and ((Get-FieldValue -Fields $Fields -Name "pci-intel-system") -ne 0)) {
             return New-Classification -Stage "pci-nvme-hidden-by-intel-system" -Detail "PCI storage exists, but direct NVMe is absent and Intel system-class controller candidates are present."
         }

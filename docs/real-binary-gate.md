@@ -2632,6 +2632,49 @@ Representative QEMU telemetry:
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `743,776` bytes. M139 non-claims: no physical MSI transcript was newly supplied, no internal SSD storage-driver pass is certified, no VMD/RST bridge is programmed, and no unsafe storage writes are introduced.
 
+## M140 VMD-Class Storage Target Refinement
+
+M140 narrows the broad M139 Intel system-class evidence into a VMD-class candidate lane. The UEFI Product PCI inventory now records Intel system/other class candidates separately as:
+
+- `pci-vmd`
+- `vmd-pci`
+- `vmd-vendor-device`
+- `vmd-class`
+- `vmd-bar0`
+- `vmd-bar1`
+
+These fields are emitted by `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold proof through the existing hardware-inventory capability authority. The kernel still does not program the VMD candidate, does not enumerate a nested PCI domain, and does not bind the NVMe driver below it.
+
+The hardware storage parser now prioritizes `pci-nvme-hidden-by-vmd` before the broader `pci-nvme-hidden-by-intel-system` stage. The analyzer playbook for that stage points the next driver work at read-only VMD candidate BAR/class validation and nested PCI-domain enumeration before attempting regular NVMe probing.
+
+Accepted commands:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m140-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m140-storage-target-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+hardware-storage-analysis-fixtures: 48/48
+failed: 0
+
+m134-storage-target-fixtures: 7/7
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+[x64] drs-nvme-pci nvme-pci-diag 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 nvme-pci 0x00000200 nvme-vendor-device 0x00101B36 nvme-class 0x01080202 ... vmd-pci 0xFFFFFFFF vmd-vendor-device 0x00000000 vmd-class 0x00000000 vmd-bar0 0x00000000 vmd-bar1 0x00000000
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 ... nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 ... stage-match 1 token 0x870F0BB5
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `743,520` bytes. M140 non-claims: no physical MSI transcript was newly supplied, no VMD storage-driver pass is certified, no nested PCI-domain enumeration is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

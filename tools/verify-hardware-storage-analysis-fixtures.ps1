@@ -23,6 +23,7 @@ $fieldOrder = @(
     "pci-raid",
     "pci-other-storage",
     "pci-intel-system",
+    "pci-vmd",
     "nvme-pci",
     "nvme-vendor-device",
     "nvme-class",
@@ -43,6 +44,11 @@ $fieldOrder = @(
     "intel-system-class",
     "intel-system-bar0",
     "intel-system-bar1",
+    "vmd-pci",
+    "vmd-vendor-device",
+    "vmd-class",
+    "vmd-bar0",
+    "vmd-bar1",
     "nvme-ready",
     "nvme-identify",
     "ioq",
@@ -92,6 +98,7 @@ $baseFields = @{
     "pci-raid" = "0"
     "pci-other-storage" = "0"
     "pci-intel-system" = "0"
+    "pci-vmd" = "0"
     "nvme-pci" = "0x00000400"
     "nvme-vendor-device" = "0x001F1AF4"
     "nvme-class" = "0x01080200"
@@ -112,6 +119,11 @@ $baseFields = @{
     "intel-system-class" = "0x00000000"
     "intel-system-bar0" = "0x00000000"
     "intel-system-bar1" = "0x00000000"
+    "vmd-pci" = "0xFFFFFFFF"
+    "vmd-vendor-device" = "0x00000000"
+    "vmd-class" = "0x00000000"
+    "vmd-bar0" = "0x00000000"
+    "vmd-bar1" = "0x00000000"
     "nvme-ready" = "1"
     "nvme-identify" = "1"
     "ioq" = "1"
@@ -195,6 +207,7 @@ $fixtures = @(
     (New-Fixture -Name "legacy-realbin-unavailable" -ExpectedStage "legacy-realbin-unavailable" -Mode "legacy"),
     (New-Fixture -Name "pci-storage-discovery" -ExpectedStage "pci-storage-discovery" -Mutations @{ "pci-storage" = "0"; "pci-nvme" = "0"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-hidden-by-raid" -ExpectedStage "pci-nvme-hidden-by-raid" -Mutations @{ "pci-nvme" = "0"; "pci-raid" = "1"; "pci-other-storage" = "1"; "other-storage-pci" = "0x00001700"; "other-storage-vendor-device" = "0x51D38086"; "other-storage-class" = "0x01040000"; "nvme-found" = "0" }),
+    (New-Fixture -Name "pci-nvme-hidden-by-vmd" -ExpectedStage "pci-nvme-hidden-by-vmd" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-hidden-by-intel-system" -ExpectedStage "pci-nvme-hidden-by-intel-system" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "intel-system-pci" = "0x00000E00"; "intel-system-vendor-device" = "0x467F8086"; "intel-system-class" = "0x08800000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-other-storage" -ExpectedStage "pci-nvme-other-storage" -Mutations @{ "pci-nvme" = "0"; "pci-other-storage" = "1"; "other-storage-pci" = "0x00001F00"; "other-storage-vendor-device" = "0x00011234"; "other-storage-class" = "0x01050000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-class" -ExpectedStage "pci-nvme-class" -Mutations @{ "pci-nvme" = "0"; "nvme-found" = "0" }),

@@ -707,6 +707,8 @@ static void log_pci_storage_surface(void)
     write_dec_u32(pci64_other_storage_count(cap, owner));
     write_string(" intel-system ");
     write_dec_u32(pci64_intel_system_count(cap, owner));
+    write_string(" vmd ");
+    write_dec_u32(pci64_vmd_candidate_count(cap, owner));
 #endif
     write_string(" usb ");
     write_dec_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_USB_COUNT, cap, 0u, owner_arg));
@@ -761,6 +763,16 @@ static void log_pci_storage_surface(void)
     write_hex_u32(pci64_first_intel_system_bar0(cap, owner));
     write_string(" intel-system-bar1 ");
     write_hex_u32(pci64_first_intel_system_bar1(cap, owner));
+    write_string(" vmd-addr ");
+    write_hex_u32(pci64_first_vmd_candidate_address(cap, owner));
+    write_string(" vmd-vendor-device ");
+    write_hex_u32(pci64_first_vmd_candidate_vendor_device(cap, owner));
+    write_string(" vmd-class ");
+    write_hex_u32(pci64_first_vmd_candidate_class(cap, owner));
+    write_string(" vmd-bar0 ");
+    write_hex_u32(pci64_first_vmd_candidate_bar0(cap, owner));
+    write_string(" vmd-bar1 ");
+    write_hex_u32(pci64_first_vmd_candidate_bar1(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));
