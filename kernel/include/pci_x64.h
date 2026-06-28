@@ -22,6 +22,17 @@
 #define PCI64_NVME_MMIO_FLAG_ADMIN_ONLY 0x00000080u
 #define PCI64_NVME_MMIO_FLAG_SAFE_NO_IO_QUEUE 0x00000100u
 
+#define PCI64_VMD_MMIO_FLAG_PRESENT 0x00000001u
+#define PCI64_VMD_MMIO_FLAG_MEMORY_BAR 0x00000002u
+#define PCI64_VMD_MMIO_FLAG_64BIT_BAR 0x00000004u
+#define PCI64_VMD_MMIO_FLAG_BASE_NONZERO 0x00000008u
+#define PCI64_VMD_MMIO_FLAG_PAGE_ALIGNED 0x00000010u
+#define PCI64_VMD_MMIO_FLAG_MAPPING_REQUIRED 0x00000020u
+#define PCI64_VMD_MMIO_FLAG_BELOW_4G 0x00000040u
+#define PCI64_VMD_MMIO_FLAG_SAFE_NO_TOUCH 0x00000080u
+#define PCI64_VMD_MMIO_FLAG_NESTED_ENUM_REQUIRED 0x00000100u
+#define PCI64_VMD_MMIO_FLAG_NO_DRIVER_BOUND 0x00000200u
+
 #define PCI64_LPSS_I2C_MMIO_FLAG_PRESENT 0x00000001u
 #define PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR 0x00000002u
 #define PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR 0x00000004u
@@ -78,6 +89,11 @@ u32 pci64_first_vmd_candidate_vendor_device(u32 hardware_capability_handle, u32 
 u32 pci64_first_vmd_candidate_class(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_first_vmd_candidate_bar0(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_first_vmd_candidate_bar1(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_first_vmd_candidate_mmio_base_low(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_first_vmd_candidate_mmio_base_high(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_first_vmd_candidate_mmio_span_hint(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_first_vmd_candidate_mmio_flags(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_first_vmd_candidate_mmio_token(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_query_count(void);
 u32 pci64_denial_count(void);
 u32 pci64_ecam_rsdp_found(void);

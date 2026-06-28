@@ -195,6 +195,11 @@ function New-StorageLine
         "vmd-class" = "0x00000000"
         "vmd-bar0" = "0x00000000"
         "vmd-bar1" = "0x00000000"
+        "vmd-mmio-low" = "0x00000000"
+        "vmd-mmio-high" = "0x00000000"
+        "vmd-mmio-span" = "0"
+        "vmd-mmio-flags" = "0x00000000"
+        "vmd-mmio-token" = "0x00000000"
         "nvme-ready" = "1"
         "nvme-identify" = "1"
         "ioq" = "1"
@@ -344,6 +349,11 @@ $fixtures = @(
             "vmd-class" = "0x08800000";
             "vmd-bar0" = "0xFE010004";
             "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0xFE010000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "65536";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
             "nvme-found" = "0"
         }
         display_mode = "ready"
@@ -351,6 +361,31 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-nvme-hidden-by-vmd"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "storage-pci-vmd-mmio-base"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "pci-vmd" = "1";
+            "vmd-pci" = "0x00000E00";
+            "vmd-vendor-device" = "0x467F8086";
+            "vmd-class" = "0x08800000";
+            "vmd-bar0" = "0xFE010004";
+            "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0x00000000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "65536";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
+            "nvme-found" = "0"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-vmd-mmio-base"
         expected_pass = $false
     },
     [PSCustomObject]@{
