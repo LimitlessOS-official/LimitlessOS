@@ -40,6 +40,7 @@
 #define SHELL64_REDIRECT_INVALID 2u
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #define SHELL64_REDIRECT_BUFFER_BYTES 8192u
+#define SHELL64_FAT_BUFFER_BYTES 8192u
 #endif
 
 static u8 g_shell64_line[SHELL64_MAX_LINE_BYTES + 1u];
@@ -63,6 +64,7 @@ static u32 g_shell64_redirect_commit_count = 0u;
 static u32 g_shell64_redirect_path_length = 0u;
 static u8 g_shell64_redirect_path[SHELL64_MAX_PATH_BYTES];
 static u8 g_shell64_redirect_buffer[SHELL64_REDIRECT_BUFFER_BYTES];
+static u8 g_shell64_fat_buffer[SHELL64_FAT_BUFFER_BYTES];
 static char g_shell64_linux_argv_storage[LINUX_EXEC64_ARG_MAX][SHELL64_MAX_LINE_BYTES + 1u];
 #endif
 
@@ -2410,13 +2412,39 @@ static u32 shell64_stat_path(
     u32 owner_id)
 {
     u32 borrowed_root;
-    u32 node_capability = shell64_open_path(
+    u32 node_capability;
+    u32 byte_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 path_length;
+    mmio64_nvme_fat_stat_t fat_stat;
+
+    path_length = shell64_normalize_path(token_start, token_length, g_shell64_path_a);
+    if ((path_length != 0u)
+        && (mmio64_nvme_fat_shell_stat_path(g_shell64_path_a, path_length, owner_id, &fat_stat) != 0u))
+    {
+        if (fat_stat.entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+        {
+            (void)shell64_write_text(console_capability_handle, owner_id, "type=directory size=");
+        }
+        else if (fat_stat.entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
+        {
+            (void)shell64_write_text(console_capability_handle, owner_id, "type=file size=");
+        }
+        else
+        {
+            (void)shell64_write_text(console_capability_handle, owner_id, "type=unknown size=");
+        }
+        shell64_write_decimal_field(console_capability_handle, owner_id, "", fat_stat.byte_count);
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+#endif
+
+    node_capability = shell64_open_path(
         root_capability_handle,
         token_start,
         token_length,
         owner_id,
         &borrowed_root);
-    u32 byte_count;
 
     if (node_capability == FS64_INVALID_HANDLE)
     {
@@ -2457,6 +2485,18 @@ static u32 shell64_write_file(
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: write <path> <text>\n");
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (mmio64_nvme_fat_shell_write_file(
+            g_shell64_path_a,
+            path_length,
+            g_shell64_line + text_start,
+            text_length,
+            owner_id) != 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+    }
+#endif
 
     (void)fs64_delete_kernel(root_capability_handle, g_shell64_path_a, path_length, owner_id);
     file_capability = fs64_create_kernel(
@@ -2499,16 +2539,77 @@ static u32 shell64_append_file(
     u32 owner_id)
 {
     u32 borrowed_root;
-    u32 file_capability = shell64_open_path(
+    u32 file_capability;
+    u32 file_size = 0u;
+    u32 byte_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 path_length;
+    u32 existing_bytes = 0u;
+    u32 existing_size = 0u;
+    u32 existing_ready = 0u;
+    u32 index;
+#endif
+
+    if (text_length == 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
+    }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    path_length = shell64_normalize_path(token_start, token_length, g_shell64_path_a);
+    if ((path_length == 0u) || shell64_token_is_root(token_start, token_length))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
+    }
+    shell64_zero(g_shell64_fat_buffer, sizeof(g_shell64_fat_buffer));
+    if (mmio64_nvme_fat_shell_read_file_range(
+            g_shell64_path_a,
+            path_length,
+            0u,
+            g_shell64_fat_buffer,
+            sizeof(g_shell64_fat_buffer),
+            owner_id,
+            &existing_bytes,
+            &existing_size) == 0u)
+    {
+        if (mmio64_nvme_fat_shell_read_last_error() == MMIO64_NVME_FAT_SHELL_READ_ERROR_NOT_FOUND)
+        {
+            existing_bytes = 0u;
+            existing_size = 0u;
+            existing_ready = 1u;
+        }
+    }
+    else
+    {
+        existing_ready = 1u;
+    }
+    if ((existing_ready != 0u)
+        && (existing_size == existing_bytes)
+        && ((existing_bytes + text_length) <= sizeof(g_shell64_fat_buffer)))
+    {
+        for (index = 0u; index < text_length; ++index)
+        {
+            g_shell64_fat_buffer[existing_bytes + index] = g_shell64_line[text_start + index];
+        }
+        if (mmio64_nvme_fat_shell_write_file(
+                g_shell64_path_a,
+                path_length,
+                g_shell64_fat_buffer,
+                existing_bytes + text_length,
+                owner_id) != 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+        }
+    }
+#endif
+
+    file_capability = shell64_open_path(
         root_capability_handle,
         token_start,
         token_length,
         owner_id,
         &borrowed_root);
-    u32 file_size = 0u;
-    u32 byte_count;
-
-    if ((borrowed_root != 0u) || (text_length == 0u))
+    if (borrowed_root != 0u)
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
     }
@@ -2562,16 +2663,42 @@ static u32 shell64_copy_file(
     u32 owner_id)
 {
     u32 borrowed_root;
-    u32 source_capability = shell64_open_path(
+    u32 source_capability;
+    u32 destination_path_length;
+    u32 destination_capability;
+    u32 byte_count;
+    u32 written;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 source_path_length;
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    source_path_length = shell64_normalize_path(source_start, source_length, g_shell64_path_a);
+    destination_path_length = shell64_normalize_path(
+        destination_start,
+        destination_length,
+        g_shell64_path_b);
+    if ((source_path_length != 0u)
+        && (destination_path_length != 0u)
+        && (shell64_token_is_root(source_start, source_length) == 0u)
+        && (shell64_token_is_root(destination_start, destination_length) == 0u)
+        && (mmio64_nvme_fat_shell_copy_file(
+                g_shell64_path_a,
+                source_path_length,
+                g_shell64_path_b,
+                destination_path_length,
+                owner_id) != 0u))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+    }
+#endif
+
+    source_capability = shell64_open_path(
         root_capability_handle,
         source_start,
         source_length,
         owner_id,
         &borrowed_root);
-    u32 destination_capability;
-    u32 destination_path_length;
-    u32 byte_count;
-    u32 written;
 
     if ((source_capability == FS64_INVALID_HANDLE) || (borrowed_root != 0u))
     {
@@ -2638,14 +2765,39 @@ static u32 shell64_rename_or_move(
         g_shell64_path_b);
     u32 index;
     u32 result;
+    const char *failure_text = (move != 0) ? "move failed\n" : "rename failed\n";
 
     if ((source_path_length == 0u)
         || (destination_path_length == 0u)
         || shell64_token_is_root(source_start, source_length)
         || shell64_token_is_root(destination_start, destination_length))
     {
-        return shell64_write_text(console_capability_handle, owner_id, "rename failed\n");
+        return shell64_write_text(console_capability_handle, owner_id, failure_text);
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (move != 0)
+    {
+        if (mmio64_nvme_fat_shell_move_file(
+                g_shell64_path_a,
+                source_path_length,
+                g_shell64_path_b,
+                destination_path_length,
+                owner_id) != 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+        }
+    }
+    else if (mmio64_nvme_fat_shell_rename_file(
+            g_shell64_path_a,
+            source_path_length,
+            g_shell64_path_b,
+            destination_path_length,
+            owner_id) != 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+    }
+#endif
 
     shell64_zero(g_shell64_pair, sizeof(g_shell64_pair));
     for (index = 0u; index < source_path_length; ++index)
@@ -2679,7 +2831,7 @@ static u32 shell64_rename_or_move(
 
     if (result != 1u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "rename failed\n");
+        return shell64_write_text(console_capability_handle, owner_id, failure_text);
     }
 
     return shell64_write_text(console_capability_handle, owner_id, "ok\n");
@@ -2849,12 +3001,25 @@ static u32 shell64_execute_line_inner(
     if (shell64_token_equals(command_start, command_length, "mkdir"))
     {
         u32 directory_capability;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        u32 directory_path_length;
+#endif
 
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
         if (first_length == 0u)
         {
             return shell64_write_text(console_capability_handle, owner_id, "mkdir failed\n");
         }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        directory_path_length = shell64_normalize_path(first_start, first_length, g_shell64_path_a);
+        if ((directory_path_length != 0u)
+            && (shell64_token_is_root(first_start, first_length) == 0u)
+            && (mmio64_nvme_fat_shell_mkdir(g_shell64_path_a, directory_path_length, owner_id) != 0u))
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+        }
+#endif
 
         directory_capability = shell64_create_path(
             root_capability_handle,
@@ -2893,12 +3058,25 @@ static u32 shell64_execute_line_inner(
     {
         u32 borrowed_root;
         u32 existing_capability;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        u32 touch_path_length;
+#endif
 
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
         if (first_length == 0u)
         {
             return shell64_write_text(console_capability_handle, owner_id, "usage: touch <path>\n");
         }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        touch_path_length = shell64_normalize_path(first_start, first_length, g_shell64_path_a);
+        if ((touch_path_length != 0u)
+            && (shell64_token_is_root(first_start, first_length) == 0u)
+            && (mmio64_nvme_fat_shell_touch_file(g_shell64_path_a, touch_path_length, owner_id) != 0u))
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+        }
+#endif
 
         existing_capability = shell64_open_path(
             root_capability_handle,
@@ -2965,13 +3143,31 @@ static u32 shell64_execute_line_inner(
 
     if (shell64_token_equals(command_start, command_length, "delete"))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        u32 delete_path_length;
+#endif
+
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
-        if ((first_length == 0u)
-            || (shell64_delete_path(
+        if (first_length == 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "delete failed\n");
+        }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        delete_path_length = shell64_normalize_path(first_start, first_length, g_shell64_path_a);
+        if ((delete_path_length != 0u)
+            && (shell64_token_is_root(first_start, first_length) == 0u)
+            && (mmio64_nvme_fat_shell_delete_file(g_shell64_path_a, delete_path_length, owner_id) != 0u))
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
+        }
+#endif
+
+        if (shell64_delete_path(
                     root_capability_handle,
                     first_start,
                     first_length,
-                    owner_id) != 1u))
+                    owner_id) != 1u)
         {
             return shell64_write_text(console_capability_handle, owner_id, "delete failed\n");
         }
