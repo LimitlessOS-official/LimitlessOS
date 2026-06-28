@@ -96,6 +96,273 @@ function Get-NextTarget
     }
 }
 
+function New-DiagnosticPlan
+{
+    param(
+        [string]$Stage,
+        [object]$Parsed
+    )
+
+    $commonKernelFiles = @(
+        "kernel/arch/x86_64/scaffold_storage.c",
+        "kernel/arch/x86_64/mmio.c",
+        "kernel/include/mmio_x64.h"
+    )
+
+    switch ($Stage) {
+        "storage-ready" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "storage-ready"
+                required_fields = @("nvme-found", "nvme-ready", "nvme-identify", "ioq", "read-status", "gpt-signature", "fat-located", "apps-stat", "stage-match")
+                first_check = "No storage fix is indicated by this transcript. Move to the next classifier-reported hardware or runtime target."
+                kernel_files = @()
+                acceptance_signal = "A real hardware transcript keeps storage-ready with stage-match 1 and linux /APPS/DYNLDLIMIT reports source 2."
+            }
+        }
+        "legacy-realbin-unavailable" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "capture-version"
+                required_fields = @("drs-nvme-triage", "drs-realbin")
+                first_check = "Repeat the capture with the current staged handoff image; this transcript predates the storage triage line."
+                kernel_files = @()
+                acceptance_signal = "hwval includes one drs-nvme-triage line before linux /APPS/DYNLDLIMIT is run."
+            }
+        }
+        "missing-storage-triage" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "capture-procedure"
+                required_fields = @("drs-nvme-triage")
+                first_check = "Run hwval on the physical machine and capture the full terminal output before running the Linux command."
+                kernel_files = @("kernel/arch/x86_64/scaffold_platform.c", "kernel/arch/x86_64/scaffold_storage.c")
+                acceptance_signal = "The capture contains a parseable drs-nvme-triage line."
+            }
+        }
+        "nvme-controller-discovery" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-enumeration"
+                required_fields = @("nvme-found", "storage-triage", "token")
+                first_check = "Inspect PCI class/subclass/prog-if matching, BAR0 discovery, MMIO mapping, and whether the controller is hidden behind VMD/RAID firmware mode."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "nvme-found 1 appears on the physical transcript."
+            }
+        }
+        "nvme-controller-ready" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-controller-enable"
+                required_fields = @("nvme-found", "nvme-ready")
+                first_check = "Trace CC.EN/CSTS.RDY reset and enable sequencing, timeout budget, CAP fields, memory page size selection, and doorbell stride."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "nvme-ready 1 appears after nvme-found 1."
+            }
+        }
+        "nvme-identify" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-admin-identify"
+                required_fields = @("nvme-ready", "nvme-identify")
+                first_check = "Inspect admin queue allocation, PRP buffer addressability, Identify opcode construction, completion status, and namespace selection."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "nvme-identify 1 appears and model/firmware fields are stable in the lower-level probe log."
+            }
+        }
+        "nvme-io-queue" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-io-queue"
+                required_fields = @("nvme-identify", "ioq")
+                first_check = "Inspect IO submission/completion queue creation commands, queue IDs, sizes, physical contiguity, and doorbell writes."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "ioq 1 appears before any read-issued check."
+            }
+        }
+        "nvme-read-issue" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-read-submit"
+                required_fields = @("ioq", "read-issued")
+                first_check = "Inspect namespace read command construction, LBA/count, PRP list selection, queue tail update, and submission doorbell."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "read-issued 1 appears."
+            }
+        }
+        "nvme-read-completion" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-completion-poll"
+                required_fields = @("read-issued", "read-completed")
+                first_check = "Inspect completion polling, phase tag handling, CQ head update, interrupt masking assumptions, and timeout budget."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "read-completed 1 appears."
+            }
+        }
+        "nvme-read-status" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "nvme-read-status"
+                required_fields = @("read-completed", "read-status")
+                first_check = "Decode the NVMe completion status and verify namespace ID, LBA, transfer length, PRP alignment, and controller data constraints."
+                kernel_files = $commonKernelFiles
+                acceptance_signal = "read-status 0 appears with read-completed 1."
+            }
+        }
+        "gpt-signature" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "gpt-header"
+                required_fields = @("read-status", "gpt-signature")
+                first_check = "Verify LBA0/LBA1 content from the physical media, USB image writing mode, sector size assumptions, and GPT header signature parsing."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "gpt-signature 1 appears after read-status 0."
+            }
+        }
+        "gpt-partition-table" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "gpt-partition-scan"
+                required_fields = @("gpt-signature", "gpt-partitions")
+                first_check = "Inspect GPT entry array location, entry size/count, partition type GUID filtering, and bounds against the reported namespace size."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "gpt-partitions is nonzero."
+            }
+        }
+        "fat32-partition" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat32-partition-selection"
+                required_fields = @("gpt-partitions", "fat32-start", "fat32-sectors")
+                first_check = "Inspect FAT32 partition type recognition, basic-data GUID fallback, and partition geometry export."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "fat32-start and fat32-sectors are both nonzero."
+            }
+        }
+        "fat32-vbr" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat32-vbr"
+                required_fields = @("fat32-start", "gpt-vbr")
+                first_check = "Inspect the VBR sector read, 0x55AA signature, jump/OEM tolerance, bytes-per-sector, and FAT32 signature assumptions."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "gpt-vbr 1 appears."
+            }
+        }
+        "fat32-bpb" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat32-bpb"
+                required_fields = @("gpt-vbr", "fat-bpb")
+                first_check = "Inspect BPB fields: bytes per sector, sectors per cluster, reserved sectors, FAT count, FAT size, root cluster, and total sectors."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "fat-bpb 1 appears."
+            }
+        }
+        "fat32-mount" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat32-mount"
+                required_fields = @("fat-bpb", "fat-located")
+                first_check = "Inspect FAT geometry construction, root directory cluster read, FAT cache setup, and cluster-to-LBA math."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "fat-located 1 appears."
+            }
+        }
+        "fat32-unavailable" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat-source-availability"
+                required_fields = @("fat-located", "fat-unavailable")
+                first_check = "Inspect source availability propagation from FAT mount into shell/Linux launcher authority."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/shell.c", "kernel/arch/x86_64/linux_exec.c")
+                acceptance_signal = "fat-unavailable 0 appears after fat-located 1."
+            }
+        }
+        "fat32-error" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat-error"
+                required_fields = @("fat-error")
+                first_check = "Decode fat-error and inspect the exact parser rejection before changing driver behavior."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "fat-error 0 appears."
+            }
+        }
+        "storage-capability" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "storage-authority"
+                required_fields = @("rw-cap")
+                first_check = "Inspect scoped shell NVMe read/write authority creation; do not add ambient storage access."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/auth.c", "kernel/arch/x86_64/shell.c")
+                acceptance_signal = "rw-cap 1 appears."
+            }
+        }
+        "storage-capability-delegation" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "storage-authority-delegation"
+                required_fields = @("rw-cap", "rw-delegated")
+                first_check = "Inspect capability owner/token delegation from shell scope to the NVMe FAT reader."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/auth.c", "kernel/arch/x86_64/linux_exec.c")
+                acceptance_signal = "rw-delegated 1 appears."
+            }
+        }
+        "storage-capability-error" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "storage-authority-error"
+                required_fields = @("rw-error")
+                first_check = "Decode rw-error and inspect owner/token mismatch, stale capability, revoked capability, or missing delegation."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/auth.c")
+                acceptance_signal = "rw-error 0 appears."
+            }
+        }
+        "apps-directory-stat" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat-directory-lookup"
+                required_fields = @("apps-stat")
+                first_check = "Inspect FAT path normalization, root directory lookup, 8.3/LFN matching, and /APPS staging in the image."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/linux_vfs.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "apps-stat 1 appears."
+            }
+        }
+        "apps-directory-type" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat-directory-type"
+                required_fields = @("apps-stat", "apps-type")
+                first_check = "Inspect FAT attribute translation so /APPS is reported as a directory."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/linux_vfs.c")
+                acceptance_signal = "apps-type 2 appears."
+            }
+        }
+        "apps-directory-read" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "fat-directory-iteration"
+                required_fields = @("apps-dirent", "apps-dir-result")
+                first_check = "Inspect directory iterator cluster walking, deleted/LFN entry skipping, and first visible dirent export."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/linux_vfs.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "apps-dirent 1 appears."
+            }
+        }
+        default {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "staged-artifact-or-unknown"
+                required_fields = @("boot-staged", "boot-app-bytes", "boot-interp-bytes", "dynldlimit-stat", "dynldlimit-bytes", "ldlimit-stat", "ldlimit-bytes", "stage-match")
+                first_check = "Inspect boot-media staging, NVMe /APPS visibility, expected byte counts, and stage-match fields for this stage."
+                kernel_files = @("kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/linux_exec.c", "kernel/arch/x86_64/uefi_app.c")
+                acceptance_signal = "The failing staged-artifact field flips to its expected value and stage-match becomes 1."
+            }
+        }
+    }
+}
+
 function Get-ManifestValue
 {
     param(
@@ -163,6 +430,7 @@ $stage = [string]$parsed.classification.stage
 $pass = [bool]$parsed.classification.pass
 $detail = [string]$parsed.classification.detail
 $nextTarget = Get-NextTarget -Stage $stage
+$diagnostic = New-DiagnosticPlan -Stage $stage -Parsed $parsed
 
 $analysis = [PSCustomObject]@{
     tool = "analyze-hardware-storage-capture"
@@ -176,6 +444,7 @@ $analysis = [PSCustomObject]@{
     stage = $stage
     detail = $detail
     next_target = $nextTarget
+    diagnostic = $diagnostic
     key_fields = [PSCustomObject]@{
         nvme_found = Get-Field -Fields $parsed.fields -Name "nvme-found"
         nvme_ready = Get-Field -Fields $parsed.fields -Name "nvme-ready"
@@ -209,6 +478,11 @@ $fieldAppsStat = Get-Field -Fields $parsed.fields -Name "apps-stat"
 $fieldDynldlimitStat = Get-Field -Fields $parsed.fields -Name "dynldlimit-stat"
 $fieldLdlimitStat = Get-Field -Fields $parsed.fields -Name "ldlimit-stat"
 $fieldStageMatch = Get-Field -Fields $parsed.fields -Name "stage-match"
+$diagnosticRequiredFieldLines = @($diagnostic.required_fields | ForEach-Object { "- $_" })
+$diagnosticKernelFileLines = @($diagnostic.kernel_files | ForEach-Object { "- $_" })
+if ($diagnosticKernelFileLines.Count -eq 0) {
+    $diagnosticKernelFileLines = @("- none")
+}
 
 $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encoding Ascii
 
@@ -251,6 +525,22 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "| dynldlimit-stat | $fieldDynldlimitStat |",
     "| ldlimit-stat | $fieldLdlimitStat |",
     "| stage-match | $fieldStageMatch |",
+    "",
+    "## Diagnostic Plan",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    "| Component | $($diagnostic.component) |",
+    "| First check | $($diagnostic.first_check) |",
+    "| Acceptance signal | $($diagnostic.acceptance_signal) |",
+    "",
+    "### Required Telemetry Fields",
+    "",
+    $diagnosticRequiredFieldLines,
+    "",
+    "### Code Areas",
+    "",
+    $diagnosticKernelFileLines,
     "",
     "## Raw Triage Line",
     "",
