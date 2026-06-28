@@ -60,6 +60,15 @@ function Get-NextTarget
         "storage-ready" { return "Storage is healthy. Next target: run linux /APPS/DYNLDLIMIT on hardware and capture drs-realbin telemetry." }
         "legacy-realbin-unavailable" { return "Capture is from an older image. Next target: boot the M113 staged ISO and run hwval before linux /APPS/DYNLDLIMIT." }
         "missing-storage-triage" { return "No storage triage line was captured. Next target: run hwval on an M110-or-newer Product UEFI image and capture the full output." }
+        "pci-storage-discovery" { return "Driver target: PCI enumeration did not expose any storage-class controller; inspect ECAM/legacy config access and firmware storage mode." }
+        "pci-nvme-class" { return "Driver target: PCI storage exists but no NVMe class device was found; inspect class-code matching, VMD/RAID mode, and controller hiding." }
+        "pci-nvme-bdf" { return "Driver target: NVMe class count is nonzero but first BDF export failed; inspect first-NVMe cache population and capability owner path." }
+        "pci-nvme-identity" { return "Driver target: first NVMe BDF exists but vendor/device is zero; inspect PCI config reads for the selected BDF." }
+        "pci-nvme-class-code" { return "Driver target: first NVMe class telemetry is inconsistent; inspect class/subclass/prog-if decoding." }
+        "pci-nvme-bar0" { return "Driver target: first NVMe BAR0 is missing or invalid; inspect PCI BAR sizing/reading and memory BAR filtering." }
+        "pci-nvme-mmio-base" { return "Driver target: NVMe BAR exists but MMIO base is invalid; inspect BAR mask, 64-bit BAR pairing, and mapped base selection." }
+        "pci-nvme-mmio-span" { return "Driver target: NVMe MMIO span is zero; inspect BAR size probing or conservative span fallback." }
+        "pci-nvme-mmio-flags" { return "Driver target: NVMe MMIO flags are invalid; inspect MMIO candidate planning and capability-token export." }
         "nvme-controller-discovery" { return "Driver target: PCI/NVMe enumeration, class-code match, BAR mapping, and controller register visibility." }
         "nvme-controller-ready" { return "Driver target: NVMe reset/enable sequence and CSTS.RDY timeout handling on the physical controller." }
         "nvme-identify" { return "Driver target: admin queue setup, Identify command submission, PRP buffer mapping, and completion status." }
@@ -138,6 +147,96 @@ function New-DiagnosticPlan
                 first_check = "Run hwval on the physical machine and capture the full terminal output before running the Linux command."
                 kernel_files = @("kernel/arch/x86_64/scaffold_platform.c", "kernel/arch/x86_64/scaffold_storage.c")
                 acceptance_signal = "The capture contains a parseable drs-nvme-triage line."
+            }
+        }
+        "pci-storage-discovery" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-storage-enumeration"
+                required_fields = @("pci-storage", "pci-nvme", "nvme-found")
+                first_check = "Inspect ECAM/MCFG discovery, fallback PCI config access, and whether firmware exposes the internal storage controller as PCI storage-class hardware."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c")
+                acceptance_signal = "pci-storage becomes nonzero in hwval and drs-nvme-triage."
+            }
+        }
+        "pci-nvme-class" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-class-match"
+                required_fields = @("pci-storage", "pci-nvme", "nvme-class", "nvme-found")
+                first_check = "Inspect class/subclass/prog-if matching and firmware storage mode; Intel VMD or RAID mode may hide the NVMe controller behind a different PCI device."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c")
+                acceptance_signal = "pci-nvme becomes nonzero and nvme-class has class 0x0108."
+            }
+        }
+        "pci-nvme-bdf" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-bdf-export"
+                required_fields = @("pci-nvme", "nvme-pci", "nvme-found")
+                first_check = "Inspect first-NVMe cache population and the capability owner used by pci64_first_nvme_address."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/shell.c")
+                acceptance_signal = "nvme-pci is not 0xFFFFFFFF when pci-nvme is nonzero."
+            }
+        }
+        "pci-nvme-identity" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-identity-read"
+                required_fields = @("nvme-pci", "nvme-vendor-device")
+                first_check = "Inspect PCI config vendor/device reads for the selected BDF and reject all-zero identity before attempting MMIO."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "nvme-vendor-device is nonzero for the selected BDF."
+            }
+        }
+        "pci-nvme-class-code" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-class-code"
+                required_fields = @("nvme-pci", "nvme-class")
+                first_check = "Inspect class code packing and ensure base class 0x01 and subclass 0x08 are preserved in nvme-class."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "nvme-class matches 0x0108xxxx for the selected BDF."
+            }
+        }
+        "pci-nvme-bar0" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-bar0"
+                required_fields = @("nvme-pci", "nvme-bar0")
+                first_check = "Inspect PCI BAR0 reads, memory-vs-IO BAR filtering, all-ones rejection, and 64-bit BAR pairing."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "nvme-bar0 is neither zero nor 0xFFFFFFFF."
+            }
+        }
+        "pci-nvme-mmio-base" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-mmio-base"
+                required_fields = @("nvme-bar0", "nvme-bar1", "nvme-mmio-low", "nvme-mmio-high")
+                first_check = "Inspect BAR masking, low/high 64-bit base construction, and rejection of zero/all-ones MMIO base values."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/paging.c")
+                acceptance_signal = "nvme-mmio-low is a usable nonzero/non-sentinel MMIO base."
+            }
+        }
+        "pci-nvme-mmio-span" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-mmio-span"
+                required_fields = @("nvme-mmio-low", "nvme-mmio-span")
+                first_check = "Inspect BAR size probing and the conservative fallback span used when firmware or hardware will not tolerate sizing writes."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "nvme-mmio-span is nonzero."
+            }
+        }
+        "pci-nvme-mmio-flags" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-nvme-mmio-flags"
+                required_fields = @("nvme-mmio-low", "nvme-mmio-flags", "nvme-mmio-token")
+                first_check = "Inspect MMIO candidate planning, BAR validity flags, mapping safety flags, and token generation for the selected NVMe controller."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/scaffold_storage.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "nvme-mmio-flags and nvme-mmio-token are nonzero and non-sentinel."
             }
         }
         "nvme-controller-discovery" {
