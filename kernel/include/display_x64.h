@@ -91,6 +91,12 @@ u32 display64_wm_init_done(void);
 u32 display64_wm_window_created_count(void);
 u32 display64_wm_focus_count(void);
 u32 display64_wm_present_count(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_wm_resize_count(void);
+u32 display64_wm_minimize_count(void);
+u32 display64_wm_restore_count(void);
+u32 display64_wm_zorder_count(void);
+#endif
 void display64_desktop_probe(void);
 u32 display64_desktop_init_done(void);
 u32 display64_desktop_taskbar_count(void);
@@ -131,6 +137,7 @@ u32 display64_gui_installer_opened(void);
 u32 display64_gui_assistant_opened(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 u32 display64_gui_right_click_count(void);
+u32 display64_gui_context_menu_action_count(void);
 u32 display64_gui_scroll_count(void);
 u32 display64_gui_terminal_action_count(void);
 u32 display64_gui_terminal_scroll_count(void);
