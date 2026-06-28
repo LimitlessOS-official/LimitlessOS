@@ -1190,6 +1190,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "nvme fat recursive delete proof: ",
         mmio64_nvme_fat_recursive_delete_proof());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow count: ", mmio64_nvme_fat_dir_grow_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow cluster: ", mmio64_nvme_fat_dir_grow_cluster());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow denials: ", mmio64_nvme_fat_dir_grow_denial());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme fat dir grow tombstones: ", mmio64_nvme_fat_dir_grow_tombstone());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw mutation denials: ", mmio64_nvme_rw_shell_mutation_denial());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme rw error: ", mmio64_nvme_rw_error());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "boot media linux staged: ", boot_media64_available());

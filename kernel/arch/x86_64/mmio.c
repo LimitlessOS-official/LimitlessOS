@@ -3477,6 +3477,10 @@ static u32 g_nvme_fat_copy_proof = 0u;
 static u32 g_nvme_fat_rename_proof = 0u;
 static u32 g_nvme_fat_move_proof = 0u;
 static u32 g_nvme_fat_recursive_delete_proof = 0u;
+static u32 g_nvme_fat_dir_grow_count = 0u;
+static u32 g_nvme_fat_dir_grow_cluster = 0u;
+static u32 g_nvme_fat_dir_grow_denial = 0u;
+static u32 g_nvme_fat_dir_grow_tombstone = 0u;
 #endif
 static u32 g_nvme_fat_flushes = 0u;
 static u32 g_nvme_fat_fs_delegation = 0u;
@@ -12967,6 +12971,10 @@ static void mmio64_reset_nvme_fat(void)
     g_nvme_fat_rename_proof = 0u;
     g_nvme_fat_move_proof = 0u;
     g_nvme_fat_recursive_delete_proof = 0u;
+    g_nvme_fat_dir_grow_count = 0u;
+    g_nvme_fat_dir_grow_cluster = 0u;
+    g_nvme_fat_dir_grow_denial = 0u;
+    g_nvme_fat_dir_grow_tombstone = 0u;
 #endif
     g_nvme_fat_flushes = 0u;
     g_nvme_fat_fs_delegation = 0u;
@@ -16174,6 +16182,189 @@ static u32 mmio64_fat32_find_free_cluster(
     return 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 mmio64_fat32_zero_cluster_for_directory(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    u32 cluster)
+{
+    u32 lba;
+    u32 lba_index;
+
+    if ((reader == (Mmio64NvmeFatReader *)0)
+        || (volume == (const Mmio64Fat32Volume *)0)
+        || (cluster < 2u)
+        || (mmio64_fat32_cluster_lba(volume, cluster, &lba) == 0u))
+    {
+        return 0u;
+    }
+
+    for (lba_index = 0u; lba_index < volume->lbas_per_cluster; ++lba_index)
+    {
+        mmio64_zero_bytes(g_nvme_io_data_buffer, 512u);
+        if (mmio64_nvme_fat_write_lba(
+                reader,
+                lba + lba_index,
+                MMIO64_NVME_FAT_WRITE_DIR_CID) == 0u)
+        {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+static u32 mmio64_fat32_tombstone_directory_zero_slots(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    u32 directory_cluster)
+{
+    u32 cluster = directory_cluster;
+    u32 next_cluster;
+    u32 visited;
+    u32 lba;
+    u32 lba_index;
+    u32 offset;
+    u32 changed;
+
+    if ((reader == (Mmio64NvmeFatReader *)0)
+        || (volume == (const Mmio64Fat32Volume *)0)
+        || (directory_cluster < 2u))
+    {
+        return 0u;
+    }
+
+    for (visited = 0u; visited < MMIO64_FAT32_CLUSTER_VISIT_LIMIT; ++visited)
+    {
+        if (mmio64_fat32_cluster_lba(volume, cluster, &lba) == 0u)
+        {
+            return 0u;
+        }
+        for (lba_index = 0u; lba_index < volume->lbas_per_cluster; ++lba_index)
+        {
+            if (mmio64_nvme_fat_read_lba(
+                    reader,
+                    lba + lba_index,
+                    MMIO64_NVME_FAT_READ_ROOT_CID) == 0u)
+            {
+                return 0u;
+            }
+
+            changed = 0u;
+            for (offset = 0u; offset < 512u; offset += 32u)
+            {
+                if (g_nvme_io_data_buffer[offset] == 0u)
+                {
+                    g_nvme_io_data_buffer[offset] = 0xE5u;
+                    changed = 1u;
+                    ++g_nvme_fat_dir_grow_tombstone;
+                }
+            }
+            if ((changed != 0u)
+                && (mmio64_nvme_fat_write_lba(
+                        reader,
+                        lba + lba_index,
+                        MMIO64_NVME_FAT_WRITE_DIR_CID) == 0u))
+            {
+                return 0u;
+            }
+        }
+
+        if (mmio64_fat32_next_cluster(reader, volume, cluster, &next_cluster) == 0u)
+        {
+            return 0u;
+        }
+        if (next_cluster >= 0x0FFFFFF8u)
+        {
+            break;
+        }
+        cluster = next_cluster;
+    }
+
+    return 1u;
+}
+
+static u32 mmio64_fat32_grow_directory_cluster_chain(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    u32 directory_cluster,
+    u32 last_cluster,
+    u32 needed_entries,
+    u32 *entry_lba,
+    u32 *entry_offset)
+{
+    u32 entries_per_cluster;
+    u32 candidate;
+    u32 new_cluster = 0u;
+    u32 linked = 0u;
+
+    if ((reader == (Mmio64NvmeFatReader *)0)
+        || (volume == (const Mmio64Fat32Volume *)0)
+        || (entry_lba == (u32 *)0)
+        || (entry_offset == (u32 *)0)
+        || (directory_cluster < 2u)
+        || (last_cluster < 2u)
+        || (needed_entries == 0u)
+        || (volume->lbas_per_cluster == 0u))
+    {
+        ++g_nvme_fat_dir_grow_denial;
+        return 0u;
+    }
+
+    entries_per_cluster = volume->lbas_per_cluster * 16u;
+    if ((entries_per_cluster == 0u) || (needed_entries > entries_per_cluster))
+    {
+        ++g_nvme_fat_dir_grow_denial;
+        return 0u;
+    }
+
+    if (mmio64_fat32_tombstone_directory_zero_slots(
+            reader,
+            volume,
+            directory_cluster) == 0u)
+    {
+        ++g_nvme_fat_dir_grow_denial;
+        return 0u;
+    }
+
+    candidate = last_cluster + 1u;
+    if ((candidate < 2u)
+        || (mmio64_fat32_find_free_cluster(reader, volume, candidate, &new_cluster) == 0u))
+    {
+        if (mmio64_fat32_find_free_cluster(reader, volume, 2u, &new_cluster) == 0u)
+        {
+            ++g_nvme_fat_dir_grow_denial;
+            return 0u;
+        }
+    }
+
+    if ((mmio64_fat32_write_fat_entry(reader, volume, new_cluster, 0x0FFFFFFFu) == 0u)
+        || (mmio64_fat32_zero_cluster_for_directory(reader, volume, new_cluster) == 0u)
+        || (mmio64_fat32_write_fat_entry(reader, volume, last_cluster, new_cluster) == 0u))
+    {
+        (void)mmio64_fat32_write_fat_entry(reader, volume, new_cluster, 0u);
+        ++g_nvme_fat_dir_grow_denial;
+        return 0u;
+    }
+    linked = 1u;
+    if (mmio64_fat32_cluster_lba(volume, new_cluster, entry_lba) == 0u)
+    {
+        if (linked != 0u)
+        {
+            (void)mmio64_fat32_write_fat_entry(reader, volume, last_cluster, 0x0FFFFFFFu);
+        }
+        (void)mmio64_fat32_write_fat_entry(reader, volume, new_cluster, 0u);
+        ++g_nvme_fat_dir_grow_denial;
+        return 0u;
+    }
+
+    *entry_offset = 0u;
+    ++g_nvme_fat_dir_grow_count;
+    g_nvme_fat_dir_grow_cluster = new_cluster;
+    return 1u;
+}
+#endif
+
 static u32 mmio64_fat32_find_free_dir_entries(
     Mmio64NvmeFatReader *reader,
     const Mmio64Fat32Volume *volume,
@@ -16193,6 +16384,19 @@ static u32 mmio64_fat32_find_free_dir_entries(
     u32 run_offset = 0u;
     u8 first;
     u32 free_entry;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 last_cluster = directory_cluster;
+    u32 zero_seen = 0u;
+    u32 run_needs_tombstone = 0u;
+#endif
+
+    if ((needed_entries == 0u)
+        || (entry_lba == (u32 *)0)
+        || (entry_offset == (u32 *)0)
+        || (directory_cluster < 2u))
+    {
+        return 0u;
+    }
 
     for (visited = 0u; visited < MMIO64_FAT32_CLUSTER_VISIT_LIMIT; ++visited)
     {
@@ -16221,10 +16425,23 @@ static u32 mmio64_fat32_find_free_dir_entries(
                     {
                         run_lba = lba + lba_index;
                         run_offset = offset;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                        run_needs_tombstone = zero_seen;
+#endif
                     }
                     ++run_count;
                     if (run_count >= needed_entries)
                     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                        if ((run_needs_tombstone != 0u)
+                            && (mmio64_fat32_tombstone_directory_zero_slots(
+                                    reader,
+                                    volume,
+                                    directory_cluster) == 0u))
+                        {
+                            return 0u;
+                        }
+#endif
                         *entry_lba = run_lba;
                         *entry_offset = run_offset;
                         return 1u;
@@ -16234,6 +16451,12 @@ static u32 mmio64_fat32_find_free_dir_entries(
                 {
                     run_count = 0u;
                 }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                if (first == 0u)
+                {
+                    zero_seen = 1u;
+                }
+#endif
             }
         }
 
@@ -16243,12 +16466,29 @@ static u32 mmio64_fat32_find_free_dir_entries(
         }
         if (next_cluster >= 0x0FFFFFF8u)
         {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            last_cluster = cluster;
+#endif
             break;
         }
         cluster = next_cluster;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        last_cluster = cluster;
+#endif
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    return mmio64_fat32_grow_directory_cluster_chain(
+        reader,
+        volume,
+        directory_cluster,
+        last_cluster,
+        needed_entries,
+        entry_lba,
+        entry_offset);
+#else
     return 0u;
+#endif
 }
 
 static u8 mmio64_fat32_lfn_checksum(const u8 *short_name)
@@ -20671,6 +20911,26 @@ u32 mmio64_nvme_fat_move_proof(void)
 u32 mmio64_nvme_fat_recursive_delete_proof(void)
 {
     return g_nvme_fat_recursive_delete_proof;
+}
+
+u32 mmio64_nvme_fat_dir_grow_count(void)
+{
+    return g_nvme_fat_dir_grow_count;
+}
+
+u32 mmio64_nvme_fat_dir_grow_cluster(void)
+{
+    return g_nvme_fat_dir_grow_cluster;
+}
+
+u32 mmio64_nvme_fat_dir_grow_denial(void)
+{
+    return g_nvme_fat_dir_grow_denial;
+}
+
+u32 mmio64_nvme_fat_dir_grow_tombstone(void)
+{
+    return g_nvme_fat_dir_grow_tombstone;
 }
 #endif
 
