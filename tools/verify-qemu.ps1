@@ -699,6 +699,10 @@ function Send-QemuKeyboardProbe
                     & $sendShiftedKey "4"
                     continue
                 }
+                if ($character -eq '>') {
+                    & $sendShiftedKey "dot"
+                    continue
+                }
                 if (($character -ge 'A') -and ($character -le 'Z')) {
                     & $sendShiftedKey ([string]$character).ToLowerInvariant()
                     continue
