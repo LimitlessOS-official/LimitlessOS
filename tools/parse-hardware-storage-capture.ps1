@@ -100,6 +100,27 @@ function Classify-StorageCapture
             return New-Classification -Stage "pci-nvme-hidden-by-raid" -Detail "PCI storage exists, but direct NVMe is hidden behind a RAID/RST-class storage controller."
         }
         if ((Has-Field -Fields $Fields -Name "pci-vmd") -and ((Get-FieldValue -Fields $Fields -Name "pci-vmd") -ne 0)) {
+            if ((Has-Field -Fields $Fields -Name "vmd-pci") -and ((Get-FieldValue -Fields $Fields -Name "vmd-pci" -Default $InvalidU32) -eq $InvalidU32)) {
+                return New-Classification -Stage "pci-vmd-bdf" -Detail "A VMD-class candidate exists, but its BDF was not exported."
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-vendor-device") -and ((Get-FieldValue -Fields $Fields -Name "vmd-vendor-device") -eq 0)) {
+                return New-Classification -Stage "pci-vmd-identity" -Detail "A VMD-class candidate exists, but its vendor/device ID was not exported."
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-class") -and (((Get-FieldValue -Fields $Fields -Name "vmd-class") -band 0xFFFF0000) -ne 0x08800000)) {
+                return New-Classification -Stage "pci-vmd-class-code" -Detail ("The VMD-class candidate reported unexpected class telemetry 0x{0:X8}." -f (Get-FieldValue -Fields $Fields -Name "vmd-class"))
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-bar0") -and (((Get-FieldValue -Fields $Fields -Name "vmd-bar0") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-bar0") -eq $InvalidU32))) {
+                return New-Classification -Stage "pci-vmd-bar0" -Detail "The VMD-class candidate did not expose a usable BAR0."
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-mmio-low") -and (((Get-FieldValue -Fields $Fields -Name "vmd-mmio-low") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-mmio-low") -eq $InvalidU32))) {
+                return New-Classification -Stage "pci-vmd-mmio-base" -Detail "The VMD-class candidate did not expose a usable MMIO base."
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-mmio-span") -and ((Get-FieldValue -Fields $Fields -Name "vmd-mmio-span") -eq 0)) {
+                return New-Classification -Stage "pci-vmd-mmio-span" -Detail "The VMD-class candidate MMIO span hint was zero."
+            }
+            if ((Has-Field -Fields $Fields -Name "vmd-mmio-flags") -and (((Get-FieldValue -Fields $Fields -Name "vmd-mmio-flags") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-mmio-flags") -eq $InvalidU32))) {
+                return New-Classification -Stage "pci-vmd-mmio-flags" -Detail "The VMD-class candidate MMIO flags were missing or invalid."
+            }
             return New-Classification -Stage "pci-nvme-hidden-by-vmd" -Detail "PCI storage exists, but direct NVMe is absent and an Intel VMD-class candidate is present."
         }
         if ((Has-Field -Fields $Fields -Name "pci-intel-system") -and ((Get-FieldValue -Fields $Fields -Name "pci-intel-system") -ne 0)) {

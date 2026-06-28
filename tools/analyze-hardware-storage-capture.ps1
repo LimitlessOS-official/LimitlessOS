@@ -62,6 +62,13 @@ function Get-NextTarget
         "missing-storage-triage" { return "No storage triage line was captured. Next target: run hwval on an M110-or-newer Product UEFI image and capture the full output." }
         "pci-storage-discovery" { return "Driver target: PCI enumeration did not expose any storage-class controller; inspect ECAM/legacy config access and firmware storage mode." }
         "pci-nvme-hidden-by-raid" { return "Driver target: direct NVMe is hidden behind a RAID/RST-class storage controller; inspect firmware storage mode and plan a scoped RST/VMD path before NVMe probing." }
+        "pci-vmd-bdf" { return "Driver target: VMD candidate count is nonzero but first BDF export failed; inspect VMD candidate cache population and capability owner path." }
+        "pci-vmd-identity" { return "Driver target: VMD candidate BDF exists but vendor/device is zero; inspect PCI config reads for the selected VMD candidate." }
+        "pci-vmd-class-code" { return "Driver target: VMD candidate class telemetry is inconsistent; inspect system-class/subclass decoding." }
+        "pci-vmd-bar0" { return "Driver target: VMD candidate BAR0 is missing or invalid; inspect BAR reading and memory BAR filtering." }
+        "pci-vmd-mmio-base" { return "Driver target: VMD BAR exists but MMIO base is invalid; inspect BAR mask, 64-bit BAR pairing, and mapped base selection." }
+        "pci-vmd-mmio-span" { return "Driver target: VMD MMIO span is zero; inspect conservative VMD span planning." }
+        "pci-vmd-mmio-flags" { return "Driver target: VMD MMIO flags are invalid; inspect VMD MMIO preflight planning and token export." }
         "pci-nvme-hidden-by-vmd" { return "Driver target: direct NVMe is hidden behind an Intel VMD-class candidate; inspect nested PCI domain enumeration before regular NVMe probing." }
         "pci-nvme-hidden-by-intel-system" { return "Driver target: direct NVMe is absent while Intel system-class controller candidates are present; inspect VMD-style controller exposure and nested PCI domain handling." }
         "pci-nvme-other-storage" { return "Driver target: non-AHCI/non-NVMe storage-class hardware is present; inspect the exported class code before choosing AHCI, RAID/RST, or another storage driver path." }
@@ -187,10 +194,80 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-intel-vmd-class"
-                required_fields = @("pci-storage", "pci-nvme", "pci-vmd", "vmd-pci", "vmd-vendor-device", "vmd-class", "vmd-bar0", "vmd-bar1")
-                first_check = "Inspect the VMD candidate BARs and PCI class identity, then implement read-only nested PCI-domain enumeration before attempting to bind the existing NVMe driver below it."
+                required_fields = @("pci-storage", "pci-nvme", "pci-vmd", "vmd-pci", "vmd-vendor-device", "vmd-class", "vmd-bar0", "vmd-bar1", "vmd-mmio-low", "vmd-mmio-high", "vmd-mmio-span", "vmd-mmio-flags", "vmd-mmio-token")
+                first_check = "Inspect the VMD candidate MMIO preflight fields, then implement read-only nested PCI-domain enumeration before attempting to bind the existing NVMe driver below it."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
-                acceptance_signal = "The physical transcript reports direct child NVMe identity behind the VMD candidate, or a precise VMD MMIO/nested-enumeration failure stage."
+                acceptance_signal = "The physical transcript reports direct child NVMe identity behind the VMD candidate, or a precise nested-enumeration failure stage after VMD MMIO preflight succeeds."
+            }
+        }
+        "pci-vmd-bdf" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-bdf-export"
+                required_fields = @("pci-vmd", "vmd-pci")
+                first_check = "Inspect first-VMD candidate cache population and the capability owner used by pci64_first_vmd_candidate_address."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/shell.c")
+                acceptance_signal = "vmd-pci is not 0xFFFFFFFF when pci-vmd is nonzero."
+            }
+        }
+        "pci-vmd-identity" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-identity-read"
+                required_fields = @("vmd-pci", "vmd-vendor-device")
+                first_check = "Inspect PCI config vendor/device reads for the selected VMD candidate and reject all-zero identity before planning MMIO."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-vendor-device is nonzero for the selected VMD candidate."
+            }
+        }
+        "pci-vmd-class-code" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-class-code"
+                required_fields = @("vmd-pci", "vmd-class")
+                first_check = "Inspect VMD candidate class code packing and ensure base class 0x08 and subclass 0x80 are preserved in vmd-class."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-class matches 0x0880xxxx for the selected VMD candidate."
+            }
+        }
+        "pci-vmd-bar0" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-bar0"
+                required_fields = @("vmd-pci", "vmd-bar0")
+                first_check = "Inspect PCI BAR0 reads, memory-vs-IO BAR filtering, all-ones rejection, and 64-bit BAR pairing for the VMD candidate."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-bar0 is neither zero nor 0xFFFFFFFF."
+            }
+        }
+        "pci-vmd-mmio-base" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-mmio-base"
+                required_fields = @("vmd-bar0", "vmd-bar1", "vmd-mmio-low", "vmd-mmio-high")
+                first_check = "Inspect VMD BAR masking, low/high 64-bit base construction, and rejection of zero/all-ones MMIO base values."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/paging.c")
+                acceptance_signal = "vmd-mmio-low is a usable nonzero/non-sentinel MMIO base."
+            }
+        }
+        "pci-vmd-mmio-span" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-mmio-span"
+                required_fields = @("vmd-mmio-low", "vmd-mmio-span")
+                first_check = "Inspect the conservative VMD span hint used before any nested-domain mapping or controller register access is attempted."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-mmio-span is nonzero."
+            }
+        }
+        "pci-vmd-mmio-flags" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-mmio-flags"
+                required_fields = @("vmd-mmio-low", "vmd-mmio-flags", "vmd-mmio-token")
+                first_check = "Inspect VMD MMIO preflight flags, no-touch safety flags, nested-enumeration-required flags, and token generation."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/scaffold_storage.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-mmio-flags and vmd-mmio-token are nonzero and non-sentinel."
             }
         }
         "pci-nvme-hidden-by-intel-system" {

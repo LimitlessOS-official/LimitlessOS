@@ -2675,6 +2675,69 @@ Representative QEMU telemetry:
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `743,520` bytes. M140 non-claims: no physical MSI transcript was newly supplied, no VMD storage-driver pass is certified, no nested PCI-domain enumeration is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
 
+## M141 VMD MMIO Preflight Telemetry
+
+M141 extends the M140 VMD candidate lane with bounded MMIO preflight telemetry. The kernel still does not map, program, or bind the VMD candidate; it only decodes the first candidate BAR0/BAR1 into a no-touch plan that future nested-enumeration work can consume.
+
+New fields are:
+
+- `vmd-mmio-low`
+- `vmd-mmio-high`
+- `vmd-mmio-span`
+- `vmd-mmio-flags`
+- `vmd-mmio-token`
+
+The flag word records whether the candidate is present, whether BAR0 is a memory BAR, whether it is 64-bit, whether the base is nonzero and page-aligned, whether a future mapping would be required, whether the candidate is below 4 GiB, and the explicit pre-driver safety state: safe-no-touch, nested-enumeration-required, and no-driver-bound. These fields are emitted by `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold proof through the existing hardware-inventory capability authority.
+
+The hardware storage parser now reports precise VMD preflight stages before the broader hidden-by-VMD result:
+
+- `pci-vmd-bdf`
+- `pci-vmd-identity`
+- `pci-vmd-class-code`
+- `pci-vmd-bar0`
+- `pci-vmd-mmio-base`
+- `pci-vmd-mmio-span`
+- `pci-vmd-mmio-flags`
+- `pci-nvme-hidden-by-vmd`
+
+Accepted commands:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m141-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m141-storage-target-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+hardware-storage-analysis-fixtures: 55/55
+failed: 0
+
+m134-storage-target-fixtures: 8/8
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+pci vmd first bdf: 0xFFFFFFFF
+pci vmd vendor/device: 0x00000000
+pci vmd class: 0x00000000
+pci vmd bar0: 0x00000000
+pci vmd bar1: 0x00000000
+pci vmd mmio base low: 0x00000000
+pci vmd mmio base high: 0x00000000
+pci vmd mmio span: 0
+pci vmd mmio flags: 0x00000380
+pci vmd mmio token: 0x1036CD8E
+[x64] drs-nvme-pci nvme-pci-diag 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 nvme-pci 0x00000200 nvme-vendor-device 0x00101B36 nvme-class 0x01080202 nvme-bar0 0x00008004 nvme-bar1 0x000000C0 nvme-mmio-low 0x00008000 nvme-mmio-high 0x000000C0 nvme-mmio-span 16384 nvme-mmio-flags 0x000001BF nvme-mmio-token 0x51B13EF6 other-storage-pci 0xFFFFFFFF other-storage-vendor-device 0x00000000 other-storage-class 0x00000000 other-storage-bar0 0x00000000 other-storage-bar1 0x00000000 intel-system-pci 0xFFFFFFFF intel-system-vendor-device 0x00000000 intel-system-class 0x00000000 intel-system-bar0 0x00000000 intel-system-bar1 0x00000000 vmd-pci 0xFFFFFFFF vmd-vendor-device 0x00000000 vmd-class 0x00000000 vmd-bar0 0x00000000 vmd-bar1 0x00000000 vmd-mmio-low 0x00000000 vmd-mmio-high 0x00000000 vmd-mmio-span 0 vmd-mmio-flags 0x00000380 vmd-mmio-token 0x1036CD8E
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 ... vmd-pci 0xFFFFFFFF vmd-vendor-device 0x00000000 vmd-class 0x00000000 vmd-bar0 0x00000000 vmd-bar1 0x00000000 vmd-mmio-low 0x00000000 vmd-mmio-high 0x00000000 vmd-mmio-span 0 vmd-mmio-flags 0x00000380 vmd-mmio-token 0x1036CD8E ... stage-match 1 token 0x6B0E9592
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `739,136` bytes. M141 non-claims: no physical MSI transcript was newly supplied, no VMD storage-driver pass is certified, no VMD MMIO mapping/programming is implemented, no nested PCI-domain enumeration is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

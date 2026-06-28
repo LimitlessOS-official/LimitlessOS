@@ -773,6 +773,16 @@ static void log_pci_storage_surface(void)
     write_hex_u32(pci64_first_vmd_candidate_bar0(cap, owner));
     write_string(" vmd-bar1 ");
     write_hex_u32(pci64_first_vmd_candidate_bar1(cap, owner));
+    write_string(" vmd-mmio-low ");
+    write_hex_u32(pci64_first_vmd_candidate_mmio_base_low(cap, owner));
+    write_string(" vmd-mmio-high ");
+    write_hex_u32(pci64_first_vmd_candidate_mmio_base_high(cap, owner));
+    write_string(" vmd-mmio-span ");
+    write_dec_u32(pci64_first_vmd_candidate_mmio_span_hint(cap, owner));
+    write_string(" vmd-mmio-flags ");
+    write_hex_u32(pci64_first_vmd_candidate_mmio_flags(cap, owner));
+    write_string(" vmd-mmio-token ");
+    write_hex_u32(pci64_first_vmd_candidate_mmio_token(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

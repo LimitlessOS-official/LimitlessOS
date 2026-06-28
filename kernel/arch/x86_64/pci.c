@@ -85,6 +85,7 @@ enum
     PCI_VIRTIO_CAP_DEVICE_CFG = 4u,
     PCI_AHCI_MMIO_SPAN_HINT = 0x00002000u,
     PCI_NVME_MMIO_SPAN_HINT = 0x00004000u,
+    PCI_VMD_MMIO_SPAN_HINT = 0x00010000u,
     PCI_XHCI_MMIO_SPAN_HINT = 0x00010000u,
     PCI_LPSS_I2C_MMIO_SPAN_HINT = 0x00001000u,
     PCI_VIRTIO_NET_MMIO_SPAN_HINT = 0x00004000u,
@@ -148,6 +149,11 @@ static u32 g_first_vmd_candidate_vendor_device = 0u;
 static u32 g_first_vmd_candidate_class = 0u;
 static u32 g_first_vmd_candidate_bar0 = 0u;
 static u32 g_first_vmd_candidate_bar1 = 0u;
+static u32 g_first_vmd_candidate_mmio_base_low = 0u;
+static u32 g_first_vmd_candidate_mmio_base_high = 0u;
+static u32 g_first_vmd_candidate_mmio_span_hint = 0u;
+static u32 g_first_vmd_candidate_mmio_flags = 0u;
+static u32 g_first_vmd_candidate_mmio_token = 0u;
 #endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
@@ -994,6 +1000,75 @@ static void pci64_update_nvme_mmio_plan(void)
         g_first_nvme_mmio_token);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void pci64_update_vmd_mmio_plan(void)
+{
+    u32 bar0 = g_first_vmd_candidate_bar0;
+    u32 bar1 = g_first_vmd_candidate_bar1;
+    u32 flags = PCI64_VMD_MMIO_FLAG_SAFE_NO_TOUCH
+        | PCI64_VMD_MMIO_FLAG_NESTED_ENUM_REQUIRED
+        | PCI64_VMD_MMIO_FLAG_NO_DRIVER_BOUND;
+    u32 base_low = 0u;
+    u32 base_high = 0u;
+    u32 token = 2166136261u;
+
+    if (g_vmd_candidate_count != 0u)
+    {
+        flags |= PCI64_VMD_MMIO_FLAG_PRESENT;
+    }
+
+    if ((bar0 != 0u) && (bar0 != 0xFFFFFFFFu) && ((bar0 & PCI_BAR_IO_SPACE) == 0u))
+    {
+        flags |= PCI64_VMD_MMIO_FLAG_MEMORY_BAR | PCI64_VMD_MMIO_FLAG_MAPPING_REQUIRED;
+        base_low = bar0 & PCI_BAR_MEMORY_BASE_MASK;
+        if ((bar0 & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT)
+        {
+            flags |= PCI64_VMD_MMIO_FLAG_64BIT_BAR;
+            base_high = bar1;
+        }
+        if ((base_low != 0u) || (base_high != 0u))
+        {
+            flags |= PCI64_VMD_MMIO_FLAG_BASE_NONZERO;
+        }
+        if ((base_low & 0x00000FFFu) == 0u)
+        {
+            flags |= PCI64_VMD_MMIO_FLAG_PAGE_ALIGNED;
+        }
+        if (base_high == 0u)
+        {
+            flags |= PCI64_VMD_MMIO_FLAG_BELOW_4G;
+        }
+    }
+
+    token ^= g_first_vmd_candidate_address;
+    token *= 16777619u;
+    token ^= g_first_vmd_candidate_vendor_device;
+    token *= 16777619u;
+    token ^= g_first_vmd_candidate_class;
+    token *= 16777619u;
+    token ^= bar0;
+    token *= 16777619u;
+    token ^= bar1;
+    token *= 16777619u;
+    token ^= base_low;
+    token *= 16777619u;
+    token ^= base_high;
+    token *= 16777619u;
+    token ^= PCI_VMD_MMIO_SPAN_HINT;
+    token *= 16777619u;
+    token ^= flags;
+    token *= 16777619u;
+
+    g_first_vmd_candidate_mmio_base_low = base_low;
+    g_first_vmd_candidate_mmio_base_high = base_high;
+    g_first_vmd_candidate_mmio_span_hint = (base_low != 0u || base_high != 0u)
+        ? PCI_VMD_MMIO_SPAN_HINT
+        : 0u;
+    g_first_vmd_candidate_mmio_flags = flags;
+    g_first_vmd_candidate_mmio_token = token;
+}
+#endif
+
 static void pci64_update_xhci_mmio_plan(void)
 {
     u32 flags = XHCI64_MMIO_FLAG_BROKER_PRIVATE;
@@ -1438,6 +1513,11 @@ void pci64_init(const struct boot_info *boot_info)
     g_first_vmd_candidate_class = 0u;
     g_first_vmd_candidate_bar0 = 0u;
     g_first_vmd_candidate_bar1 = 0u;
+    g_first_vmd_candidate_mmio_base_low = 0u;
+    g_first_vmd_candidate_mmio_base_high = 0u;
+    g_first_vmd_candidate_mmio_span_hint = 0u;
+    g_first_vmd_candidate_mmio_flags = 0u;
+    g_first_vmd_candidate_mmio_token = 0u;
 #endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
@@ -1545,6 +1625,9 @@ void pci64_init(const struct boot_info *boot_info)
 
     pci64_update_ahci_mmio_plan();
     pci64_update_nvme_mmio_plan();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    pci64_update_vmd_mmio_plan();
+#endif
     pci64_update_xhci_mmio_plan();
     pci64_update_lpss_i2c_mmio_plan();
     pci64_update_virtio_net_mmio_plan();
@@ -1783,6 +1866,31 @@ u32 pci64_first_vmd_candidate_bar0(u32 hardware_capability_handle, u32 owner_id)
 u32 pci64_first_vmd_candidate_bar1(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_bar1);
+}
+
+u32 pci64_first_vmd_candidate_mmio_base_low(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_mmio_base_low);
+}
+
+u32 pci64_first_vmd_candidate_mmio_base_high(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_mmio_base_high);
+}
+
+u32 pci64_first_vmd_candidate_mmio_span_hint(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_mmio_span_hint);
+}
+
+u32 pci64_first_vmd_candidate_mmio_flags(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_mmio_flags);
+}
+
+u32 pci64_first_vmd_candidate_mmio_token(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_vmd_candidate_mmio_token);
 }
 #endif
 
