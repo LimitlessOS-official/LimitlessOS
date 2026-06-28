@@ -554,6 +554,19 @@ static u32 input64_mouse_enqueue_delta(s32 dx, s32 dy, u32 buttons)
     struct input64_mouse_event event;
     u32 next_buttons = buttons & 0x7u;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (display64_gui_settings_pointer_speed() >= 3u)
+    {
+        dx *= 2;
+        dy *= 2;
+    }
+    else if (display64_gui_settings_pointer_speed() <= 1u)
+    {
+        dx /= 2;
+        dy /= 2;
+    }
+#endif
+
     if ((dx == 0) && (dy == 0) && (next_buttons == g_mouse_buttons))
     {
         return 0u;
