@@ -2792,6 +2792,58 @@ pci vmd nested token: 0xDCF21C01
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `738,880` bytes. M142 non-claims: no physical MSI transcript was newly supplied, no VMD storage-driver pass is certified, no VMD MMIO mapping/programming is implemented, no nested PCI-domain enumeration is implemented, no child NVMe discovery behind VMD is implemented, no VMD storage binding is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
 
+## M143 VMD Read-Only Nested Config Scan
+
+M143 implements the first bounded VMD nested-domain scan. When the VMD MMIO preflight reports a usable candidate, the kernel maps a 64 KiB VMD config-window slice and performs read-only PCI config reads across the first nested bus, devices 0-1, functions 0-7. The scan records whether enumeration ran, whether a child NVMe-class device was observed, and the first child identity fields. It performs no VMD programming, no controller reset, no NVMe binding, no storage read/write through VMD, and no unsafe hardware writes.
+
+New fields added to `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold proof:
+
+- `vmd-nested-pci`
+- `vmd-nested-vendor-device`
+- `vmd-nested-class`
+- `vmd-nested-bar0`
+- `vmd-nested-bar1`
+
+The storage analyzer now requires child identity fields for the nested VMD stages so hardware captures can distinguish "scan ran but no child NVMe" from "child NVMe exists but binding is still missing".
+
+Accepted commands:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m143-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m143-storage-target-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+hardware-storage-analysis-fixtures: 58/58
+failed: 0
+
+m134-storage-target-fixtures: 8/8
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+pci vmd nested plan: 0
+pci vmd nested enum: 0
+pci vmd nested nvme: 0
+pci vmd nested status: 0
+pci vmd nested token: 0xBC821C7A
+pci vmd nested first bdf: 0xFFFFFFFF
+pci vmd nested vendor/device: 0x00000000
+pci vmd nested class: 0x00000000
+pci vmd nested bar0: 0x00000000
+pci vmd nested bar1: 0x00000000
+[x64] drs-nvme-pci nvme-pci-diag 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-token 0xBC821C7A vmd-nested-pci 0xFFFFFFFF vmd-nested-vendor-device 0x00000000 vmd-nested-class 0x00000000 vmd-nested-bar0 0x00000000 vmd-nested-bar1 0x00000000
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 pci-vmd 0 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-token 0xBC821C7A vmd-nested-pci 0xFFFFFFFF vmd-nested-vendor-device 0x00000000 vmd-nested-class 0x00000000 vmd-nested-bar0 0x00000000 vmd-nested-bar1 0x00000000 ... stage-match 1 token 0x1DF0A4DF
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `738,528` bytes. M143 non-claims: no physical MSI transcript was newly supplied, no full VMD bus enumeration is claimed, no VMD MMIO programming is implemented, no child NVMe binding is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

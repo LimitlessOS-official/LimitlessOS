@@ -288,8 +288,8 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-enumeration"
-                required_fields = @("pci-vmd", "vmd-mmio-low", "vmd-mmio-flags", "vmd-nested-plan", "vmd-nested-enum", "vmd-nested-status", "vmd-nested-token")
-                first_check = "Implement a capability-scoped, read-only VMD nested PCI-domain enumerator that maps only the planned VMD window and exports child BDF/class identity without programming storage registers."
+                required_fields = @("pci-vmd", "vmd-mmio-low", "vmd-mmio-flags", "vmd-nested-plan", "vmd-nested-enum", "vmd-nested-status", "vmd-nested-token", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class")
+                first_check = "Inspect the capability-scoped, read-only VMD nested PCI-domain scan; it maps only the bounded VMD config window and exports child BDF/class identity without programming storage registers."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/paging.c", "kernel/arch/x86_64/mmio.c")
                 acceptance_signal = "The physical transcript advances from vmd-nested-enum 0 to vmd-nested-enum 1 and reports either child NVMe count or a precise nested class-scan failure."
             }
@@ -298,8 +298,8 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-class"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-status", "vmd-nested-token")
-                first_check = "Inspect the nested PCI class-code scan under the VMD domain and compare the child class/prog-if packing against direct NVMe matching."
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-status", "vmd-nested-token", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class")
+                first_check = "Inspect the bounded read-only nested PCI class-code scan under the VMD domain and compare the first child class/prog-if packing against direct NVMe matching."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
                 acceptance_signal = "vmd-nested-nvme becomes nonzero when a child NVMe controller is present behind VMD."
             }
@@ -308,7 +308,7 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-bind"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "nvme-found")
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-bar0", "vmd-nested-bar1", "nvme-found")
                 first_check = "Bind the existing NVMe controller path to the child controller identity exported by VMD nested enumeration, preserving the scoped storage authority model."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
                 acceptance_signal = "nvme-found 1 appears for a controller reached through VMD and the transcript proceeds to nvme-ready or a precise NVMe controller stage."
