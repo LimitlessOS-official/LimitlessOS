@@ -21,6 +21,16 @@ enum
 static u32 g_write_count = 0u;
 static u32 g_byte_count = 0u;
 static u32 g_denial_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_capture_active = 0u;
+static u32 g_capture_owner = 0u;
+static u32 g_capture_capability = CAPABILITY64_INVALID_HANDLE;
+static u8 *g_capture_buffer = (u8 *)0;
+static u32 g_capture_capacity = 0u;
+static u32 g_capture_offset = 0u;
+static u32 g_capture_truncated = 0u;
+static u32 g_capture_writes = 0u;
+#endif
 #ifndef LIMITLESS_X64_UEFI_KERNEL
 static volatile u16 *const g_console64_vga = (volatile u16 *)(u64)0x00000000000B8000ull;
 static u32 g_vga_row = 0u;
@@ -186,12 +196,113 @@ void console64_init(void)
     g_write_count = 0u;
     g_byte_count = 0u;
     g_denial_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_capture_active = 0u;
+    g_capture_owner = 0u;
+    g_capture_capability = CAPABILITY64_INVALID_HANDLE;
+    g_capture_buffer = (u8 *)0;
+    g_capture_capacity = 0u;
+    g_capture_offset = 0u;
+    g_capture_truncated = 0u;
+    g_capture_writes = 0u;
+#endif
 #ifndef LIMITLESS_X64_UEFI_KERNEL
     g_vga_row = 0u;
     g_vga_column = 0u;
     g_vga_color = 0x1Fu;
 #endif
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 console64_capture_append(const u8 *bytes, u32 byte_count)
+{
+    u32 index;
+    u32 writable = byte_count;
+
+    if ((g_capture_active == 0u) || (bytes == (const u8 *)0))
+    {
+        return 0u;
+    }
+    if ((g_capture_offset + writable) > g_capture_capacity)
+    {
+        writable = g_capture_capacity - g_capture_offset;
+        g_capture_truncated = 1u;
+    }
+    for (index = 0u; index < writable; ++index)
+    {
+        g_capture_buffer[g_capture_offset + index] = bytes[index];
+    }
+    g_capture_offset += writable;
+    ++g_capture_writes;
+    return writable;
+}
+
+u32 console64_capture_begin(
+    u32 console_capability_handle,
+    u32 owner_id,
+    u8 *buffer,
+    u32 byte_capacity)
+{
+    u32 endpoint;
+
+    if ((g_capture_active != 0u)
+        || (buffer == (u8 *)0)
+        || (byte_capacity == 0u))
+    {
+        ++g_denial_count;
+        return 0u;
+    }
+
+    endpoint = capability64_route(
+        console_capability_handle,
+        CAPABILITY64_RIGHT_SEND,
+        owner_id);
+    if (endpoint != services64_resolve_endpoint_class(SERVICE_ENDPOINT_CLASS_CONSOLE))
+    {
+        ++g_denial_count;
+        return 0u;
+    }
+
+    g_capture_active = 1u;
+    g_capture_owner = owner_id;
+    g_capture_capability = console_capability_handle;
+    g_capture_buffer = buffer;
+    g_capture_capacity = byte_capacity;
+    g_capture_offset = 0u;
+    g_capture_truncated = 0u;
+    g_capture_writes = 0u;
+    return 1u;
+}
+
+u32 console64_capture_end(
+    u32 console_capability_handle,
+    u32 owner_id,
+    u32 *bytes_captured,
+    u32 *truncated)
+{
+    if ((g_capture_active == 0u)
+        || (console_capability_handle != g_capture_capability)
+        || (owner_id != g_capture_owner)
+        || (bytes_captured == (u32 *)0)
+        || (truncated == (u32 *)0))
+    {
+        ++g_denial_count;
+        return 0u;
+    }
+
+    *bytes_captured = g_capture_offset;
+    *truncated = g_capture_truncated;
+    g_capture_active = 0u;
+    g_capture_owner = 0u;
+    g_capture_capability = CAPABILITY64_INVALID_HANDLE;
+    g_capture_buffer = (u8 *)0;
+    g_capture_capacity = 0u;
+    g_capture_offset = 0u;
+    g_capture_truncated = 0u;
+    g_capture_writes = 0u;
+    return 1u;
+}
+#endif
 
 u32 console64_write(u32 console_capability_handle, u64 input_address, u32 byte_count, u32 owner_id)
 {
@@ -222,6 +333,15 @@ u32 console64_write(u32 console_capability_handle, u64 input_address, u32 byte_c
     }
 
     bytes = (const u8 *)input_address;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_capture_active != 0u)
+    {
+        (void)console64_capture_append(bytes, byte_count);
+        ++g_write_count;
+        g_byte_count += byte_count;
+        return byte_count;
+    }
+#endif
     for (index = 0u; index < byte_count; ++index)
     {
         console64_debug_write_char((char)bytes[index]);
@@ -264,6 +384,15 @@ u32 console64_write_kernel(
         return CONSOLE64_INVALID_RESULT;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_capture_active != 0u)
+    {
+        (void)console64_capture_append(input, byte_count);
+        ++g_write_count;
+        g_byte_count += byte_count;
+        return byte_count;
+    }
+#endif
     for (index = 0u; index < byte_count; ++index)
     {
         console64_debug_write_char((char)input[index]);

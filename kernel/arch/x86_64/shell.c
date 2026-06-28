@@ -3034,6 +3034,10 @@ u32 shell64_execute_line(
     u32 redirect_append = 0u;
     u32 redirect_parse;
     u32 redirect_started = 0u;
+    u32 redirect_linux = 0u;
+    u32 capture_started = 0u;
+    u32 capture_bytes = 0u;
+    u32 capture_truncated = 0u;
     u32 cursor = 0u;
     u32 command_start = 0u;
     u32 command_length;
@@ -3078,14 +3082,7 @@ u32 shell64_execute_line(
             ++g_shell64_redirect_denial_count;
             return shell64_write_text(console_capability_handle, owner_id, "redirect syntax error\n");
         }
-        if (shell64_token_equals(command_start, command_length, "linux"))
-        {
-            ++g_shell64_redirect_denial_count;
-            return shell64_write_text(
-                console_capability_handle,
-                owner_id,
-                "redirect unavailable for linux until fd-backed exec stdout is implemented\n");
-        }
+        redirect_linux = shell64_token_equals(command_start, command_length, "linux");
         if (shell64_begin_redirect(
                 root_capability_handle,
                 redirect_path_start,
@@ -3096,6 +3093,20 @@ u32 shell64_execute_line(
             return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
         }
         redirect_started = 1u;
+        if (redirect_linux != 0u)
+        {
+            if (console64_capture_begin(
+                    console_capability_handle,
+                    owner_id,
+                    g_shell64_redirect_buffer + g_shell64_redirect_offset,
+                    SHELL64_REDIRECT_BUFFER_BYTES - g_shell64_redirect_offset) == 0u)
+            {
+                shell64_end_redirect(owner_id);
+                ++g_shell64_redirect_denial_count;
+                return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
+            }
+            capture_started = 1u;
+        }
     }
 #endif
 
@@ -3106,6 +3117,33 @@ u32 shell64_execute_line(
         owner_id);
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (capture_started != 0u)
+    {
+        if (console64_capture_end(
+                console_capability_handle,
+                owner_id,
+                &capture_bytes,
+                &capture_truncated) == 0u)
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_path_length = 0u;
+            g_shell64_redirect_offset = 0u;
+        }
+        else if (capture_truncated != 0u)
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_last_result = capture_bytes;
+            g_shell64_redirect_path_length = 0u;
+            g_shell64_redirect_offset = 0u;
+        }
+        else
+        {
+            g_shell64_redirect_offset += capture_bytes;
+            g_shell64_redirect_byte_count += capture_bytes;
+            ++g_shell64_redirect_write_count;
+            g_shell64_redirect_last_result = capture_bytes;
+        }
+    }
     if (redirect_started != 0u)
     {
         shell64_end_redirect(owner_id);
