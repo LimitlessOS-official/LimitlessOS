@@ -847,6 +847,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 pci_raid_count;
     u32 pci_other_storage_count;
     u32 pci_intel_system_count;
+    u32 pci_vmd_candidate_count;
     u32 pci_nvme_address;
     u32 pci_nvme_vendor_device;
     u32 pci_nvme_class;
@@ -867,6 +868,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 pci_intel_system_class;
     u32 pci_intel_system_bar0;
     u32 pci_intel_system_bar1;
+    u32 pci_vmd_candidate_address;
+    u32 pci_vmd_candidate_vendor_device;
+    u32 pci_vmd_candidate_class;
+    u32 pci_vmd_candidate_bar0;
+    u32 pci_vmd_candidate_bar1;
     u32 token = 2166136261u;
 
     hardware_capability = capability64_grant_service(
@@ -878,6 +884,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     pci_raid_count = pci64_raid_count(hardware_capability, owner_id);
     pci_other_storage_count = pci64_other_storage_count(hardware_capability, owner_id);
     pci_intel_system_count = pci64_intel_system_count(hardware_capability, owner_id);
+    pci_vmd_candidate_count = pci64_vmd_candidate_count(hardware_capability, owner_id);
     pci_nvme_address = pci64_first_nvme_address(hardware_capability, owner_id);
     pci_nvme_vendor_device = pci64_first_nvme_vendor_device(hardware_capability, owner_id);
     pci_nvme_class = pci64_first_nvme_class(hardware_capability, owner_id);
@@ -898,6 +905,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     pci_intel_system_class = pci64_first_intel_system_class(hardware_capability, owner_id);
     pci_intel_system_bar0 = pci64_first_intel_system_bar0(hardware_capability, owner_id);
     pci_intel_system_bar1 = pci64_first_intel_system_bar1(hardware_capability, owner_id);
+    pci_vmd_candidate_address = pci64_first_vmd_candidate_address(hardware_capability, owner_id);
+    pci_vmd_candidate_vendor_device = pci64_first_vmd_candidate_vendor_device(hardware_capability, owner_id);
+    pci_vmd_candidate_class = pci64_first_vmd_candidate_class(hardware_capability, owner_id);
+    pci_vmd_candidate_bar0 = pci64_first_vmd_candidate_bar0(hardware_capability, owner_id);
+    pci_vmd_candidate_bar1 = pci64_first_vmd_candidate_bar1(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -948,6 +960,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, pci_raid_count);
     token = shell64_storage_triage_mix(token, pci_other_storage_count);
     token = shell64_storage_triage_mix(token, pci_intel_system_count);
+    token = shell64_storage_triage_mix(token, pci_vmd_candidate_count);
     token = shell64_storage_triage_mix(token, pci_nvme_address);
     token = shell64_storage_triage_mix(token, pci_nvme_vendor_device);
     token = shell64_storage_triage_mix(token, pci_nvme_class);
@@ -981,6 +994,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-raid ", pci_raid_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-other-storage ", pci_other_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-intel-system ", pci_intel_system_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-vmd ", pci_vmd_candidate_count);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-pci ", pci_nvme_address);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-vendor-device ", pci_nvme_vendor_device);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-class ", pci_nvme_class);
@@ -1001,6 +1015,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-class ", pci_intel_system_class);
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-bar0 ", pci_intel_system_bar0);
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-bar1 ", pci_intel_system_bar1);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-pci ", pci_vmd_candidate_address);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-vendor-device ", pci_vmd_candidate_vendor_device);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-class ", pci_vmd_candidate_class);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-bar0 ", pci_vmd_candidate_bar0);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-bar1 ", pci_vmd_candidate_bar1);
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", mmio64_nvme_probe_ready());
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-identify ", mmio64_nvme_probe_identify());
     shell64_write_decimal_field(console_capability_handle, owner_id, " ioq ", mmio64_nvme_read_ioq_created());
@@ -1053,6 +1072,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 pci_raid_count;
     u32 pci_other_storage_count;
     u32 pci_intel_system_count;
+    u32 pci_vmd_candidate_count;
     u32 pci_nvme_address;
     u32 pci_nvme_vendor_device;
     u32 pci_nvme_class;
@@ -1073,6 +1093,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 pci_intel_system_class;
     u32 pci_intel_system_bar0;
     u32 pci_intel_system_bar1;
+    u32 pci_vmd_candidate_address;
+    u32 pci_vmd_candidate_vendor_device;
+    u32 pci_vmd_candidate_class;
+    u32 pci_vmd_candidate_bar0;
+    u32 pci_vmd_candidate_bar1;
 
     hardware_capability = capability64_grant_service(
         SERVICE_ENDPOINT_CLASS_HARDWARE,
@@ -1084,6 +1109,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     pci_raid_count = pci64_raid_count(hardware_capability, owner_id);
     pci_other_storage_count = pci64_other_storage_count(hardware_capability, owner_id);
     pci_intel_system_count = pci64_intel_system_count(hardware_capability, owner_id);
+    pci_vmd_candidate_count = pci64_vmd_candidate_count(hardware_capability, owner_id);
     pci_nvme_address = pci64_first_nvme_address(hardware_capability, owner_id);
     pci_nvme_vendor_device = pci64_first_nvme_vendor_device(hardware_capability, owner_id);
     pci_nvme_class = pci64_first_nvme_class(hardware_capability, owner_id);
@@ -1104,6 +1130,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     pci_intel_system_class = pci64_first_intel_system_class(hardware_capability, owner_id);
     pci_intel_system_bar0 = pci64_first_intel_system_bar0(hardware_capability, owner_id);
     pci_intel_system_bar1 = pci64_first_intel_system_bar1(hardware_capability, owner_id);
+    pci_vmd_candidate_address = pci64_first_vmd_candidate_address(hardware_capability, owner_id);
+    pci_vmd_candidate_vendor_device = pci64_first_vmd_candidate_vendor_device(hardware_capability, owner_id);
+    pci_vmd_candidate_class = pci64_first_vmd_candidate_class(hardware_capability, owner_id);
+    pci_vmd_candidate_bar0 = pci64_first_vmd_candidate_bar0(hardware_capability, owner_id);
+    pci_vmd_candidate_bar1 = pci64_first_vmd_candidate_bar1(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1324,6 +1355,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci raid controllers: ", pci_raid_count);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci other storage controllers: ", pci_other_storage_count);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci intel system candidates: ", pci_intel_system_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd candidates: ", pci_vmd_candidate_count);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme first bdf: ", pci_nvme_address);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme vendor/device: ", pci_nvme_vendor_device);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme class: ", pci_nvme_class);
@@ -1344,12 +1376,18 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci intel system class: ", pci_intel_system_class);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci intel system bar0: ", pci_intel_system_bar0);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci intel system bar1: ", pci_intel_system_bar1);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd first bdf: ", pci_vmd_candidate_address);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd vendor/device: ", pci_vmd_candidate_vendor_device);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd class: ", pci_vmd_candidate_class);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd bar0: ", pci_vmd_candidate_bar0);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd bar1: ", pci_vmd_candidate_bar1);
     (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-raid ", pci_raid_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-other-storage ", pci_other_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-intel-system ", pci_intel_system_count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pci-vmd ", pci_vmd_candidate_count);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-pci ", pci_nvme_address);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-vendor-device ", pci_nvme_vendor_device);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-class ", pci_nvme_class);
@@ -1370,6 +1408,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-class ", pci_intel_system_class);
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-bar0 ", pci_intel_system_bar0);
     shell64_write_hex32_field(console_capability_handle, owner_id, " intel-system-bar1 ", pci_intel_system_bar1);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-pci ", pci_vmd_candidate_address);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-vendor-device ", pci_vmd_candidate_vendor_device);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-class ", pci_vmd_candidate_class);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-bar0 ", pci_vmd_candidate_bar0);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-bar1 ", pci_vmd_candidate_bar1);
     (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());
