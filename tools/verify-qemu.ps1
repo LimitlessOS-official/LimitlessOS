@@ -659,6 +659,11 @@ function Send-QemuKeyboardProbe
             & $drainQmp
             Start-Sleep -Milliseconds 220
         }
+        $sendWheelUp = {
+            $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}')
+            & $drainQmp
+            Start-Sleep -Milliseconds 160
+        }
         $sendKey = {
             param([string]$Key)
 
@@ -778,6 +783,12 @@ function Send-QemuKeyboardProbe
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
             $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
             $originalCloseX = 32 + $originalTerminalWidth - 15
+            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
+            $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
+            $fileBodyX = $fileWindowX + 16
+            $fileBodyY = 64 + 28 + 14
+            $fileButtonX = $fileBodyX + 53
 
             if ($DebugLogPath.Length -gt 0) {
                 try {
@@ -828,6 +839,12 @@ function Send-QemuKeyboardProbe
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
             $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
             $originalCloseX = 32 + $originalTerminalWidth - 15
+            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
+            $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
+            $fileBodyX = $fileWindowX + 16
+            $fileBodyY = 64 + 28 + 14
+            $fileButtonX = $fileBodyX + 53
             for ($guiAttempt = 0; $guiAttempt -lt 2; $guiAttempt++) {
                 & $sendHome
                 & $sendMoveTo 22 $launcherY
@@ -843,6 +860,16 @@ function Send-QemuKeyboardProbe
                 $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
                 & $drainQmp
                 Start-Sleep -Milliseconds 260
+                & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + 150)) ($newTerminalY + 116)
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}')
+                & $drainQmp
+                Start-Sleep -Milliseconds 120
+                & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + 330)) ($newTerminalY + 172)
+                Start-Sleep -Milliseconds 120
+                $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
+                & $drainQmp
+                Start-Sleep -Milliseconds 220
+                & $sendWheelUp
                 if ($guiAttempt -eq 0) {
                     $settingsX = [Math]::Max(40, $frameWidth - 368 - 344 + 40)
                     & $sendMoveTo 22 $launcherY
@@ -864,11 +891,13 @@ function Send-QemuKeyboardProbe
                 & $sendMoveTo 70 $fileIconY
                 & $sendClick
                 if ($guiAttempt -eq 0) {
-                    $fileManagerX = [Math]::Max(24, $frameWidth - 368 - 344 + 69)
-                    & $sendMoveTo $fileManagerX 248
+                    & $sendMoveTo $fileButtonX ($fileBodyY + 142)
                     & $sendClick
-                    & $sendMoveTo $fileManagerX 272
-                    & $sendClick
+                    foreach ($folderClickY in @(162, 166, 170)) {
+                        & $sendMoveTo $fileButtonX ($fileBodyY + $folderClickY)
+                        & $sendClick
+                    }
+                    Start-Sleep -Milliseconds 120
                     & $sendKey "ret"
                     & $sendKey "z"
                 }
@@ -3070,7 +3099,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 UEFI font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [1-9][0-9]* terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 UEFI Settings persisted workflow proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 UEFI virtio-net brokered ARP proof was not observed."
@@ -3089,7 +3118,7 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 Product font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [0-9]+ terminal-actions [0-9]+ fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [1-9][0-9]* terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 Product Settings persisted workflow proof was not observed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."

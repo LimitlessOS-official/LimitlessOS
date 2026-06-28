@@ -771,6 +771,12 @@ static void log_gui_interactive_surface(void)
     write_labeled_dec_u32(" drs-gui-right-click ", display64_gui_right_click_count());
     write_labeled_dec_u32(" drs-gui-scroll ", display64_gui_scroll_count());
     write_labeled_dec_u32(" terminal-actions ", display64_gui_terminal_action_count());
+    write_labeled_dec_u32(" terminal-scroll ", display64_gui_terminal_scroll_count());
+    write_labeled_dec_u32(" terminal-scroll-offset ", display64_gui_terminal_scroll_offset());
+    write_labeled_dec_u32(" terminal-selection ", display64_gui_terminal_selection_count());
+    write_labeled_dec_u32(" terminal-copy ", display64_gui_terminal_copy_count());
+    write_labeled_dec_u32(" terminal-copied-bytes ", display64_gui_terminal_copied_bytes());
+    write_labeled_dec_u32(" terminal-cursor ", display64_gui_terminal_cursor_draw_count());
     write_labeled_dec_u32(" fileman-actions ", display64_gui_fileman_action_count());
     write_labeled_dec_u32(" fileman-refresh ", display64_gui_fileman_backend_refresh_count());
     write_labeled_dec_u32(" fileman-preview ", display64_gui_fileman_backend_preview_count());
