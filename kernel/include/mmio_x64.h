@@ -7415,6 +7415,12 @@ u32 mmio64_nvme_fat_shell_read_file_range(
     u32 owner_id,
     u32 *bytes_read,
     u32 *file_size_out);
+u32 mmio64_nvme_fat_shell_append_file(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 *data,
+    u32 byte_count,
+    u32 owner_id);
 u32 mmio64_nvme_fat_shell_touch_file(
     const u8 *path,
     u32 path_byte_count,
