@@ -1683,7 +1683,7 @@ static void shell64_end_redirect(u32 owner_id)
 {
     u32 commit_ok;
 
-    if ((g_shell64_redirect_path_length != 0u) && (g_shell64_redirect_offset != 0u))
+    if (g_shell64_redirect_path_length != 0u)
     {
         commit_ok = mmio64_nvme_fat_shell_write_file(
             g_shell64_redirect_path,

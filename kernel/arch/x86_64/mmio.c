@@ -15588,9 +15588,14 @@ static u32 mmio64_fat32_read_file_crc(
 
     *bytes_read = 0u;
     *checksum = 0u;
-    if ((start_cluster < 2u) || (file_size == 0u))
+    if ((file_size != 0u) && (start_cluster < 2u))
     {
         return 0u;
+    }
+    if (file_size == 0u)
+    {
+        *checksum = crc ^ 0xFFFFFFFFu;
+        return 1u;
     }
 
     for (visited = 0u;
@@ -16881,7 +16886,7 @@ static u32 mmio64_nvme_rw_update_file_entry(
 {
     if ((reader == (Mmio64NvmeFatReader *)0)
         || (location == (const Mmio64Fat32EntryLocation *)0)
-        || (first_cluster < 2u)
+        || ((byte_count != 0u) && (first_cluster < 2u))
         || (mmio64_nvme_fat_read_lba(
                 reader,
                 location->entry_lba,
@@ -18369,15 +18374,28 @@ static u32 mmio64_nvme_rw_write_existing_file(
     u32 crc = 0u;
 
     if ((location == (const Mmio64Fat32EntryLocation *)0)
-        || (location->cluster < 2u)
         || ((location->attr & 0x10u) != 0u)
-        || (byte_count == 0u)
+        || ((byte_count != 0u) && (data == (const u8 *)0))
         || (byte_count > MMIO64_NVME_RW_SHELL_MAX_FILE_BYTES))
     {
         return 0u;
     }
 
     old_cluster = location->cluster;
+    if (byte_count == 0u)
+    {
+        if (mmio64_nvme_rw_update_file_entry(reader, location, 0u, 0u) == 0u)
+        {
+            return 0u;
+        }
+        if ((old_cluster >= 2u)
+            && (mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, old_cluster) == 0u))
+        {
+            return 0u;
+        }
+        return 1u;
+    }
+
     if (mmio64_nvme_rw_write_data_chain(
             reader,
             volume,
@@ -18394,7 +18412,8 @@ static u32 mmio64_nvme_rw_write_existing_file(
         (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, first_cluster);
         return 0u;
     }
-    if (mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, old_cluster) == 0u)
+    if ((old_cluster >= 2u)
+        && (mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, old_cluster) == 0u))
     {
         return 0u;
     }
@@ -18624,9 +18643,13 @@ static u32 mmio64_nvme_rw_create_file_in_directory(
     u8 lfn_checksum;
 
     if ((directory_cluster < 2u)
-        || (byte_count == 0u)
-        || (byte_count > MMIO64_NVME_RW_SHELL_MAX_FILE_BYTES)
-        || (mmio64_nvme_rw_write_data_chain(
+        || ((byte_count != 0u) && (data == (const u8 *)0))
+        || (byte_count > MMIO64_NVME_RW_SHELL_MAX_FILE_BYTES))
+    {
+        return 0u;
+    }
+    if ((byte_count != 0u)
+        && (mmio64_nvme_rw_write_data_chain(
                 reader,
                 volume,
                 data,
@@ -18643,7 +18666,10 @@ static u32 mmio64_nvme_rw_create_file_in_directory(
     }
     if (leaf_length > MMIO64_NVME_RW_MAX_PATH_BYTES)
     {
-        (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        if (cluster >= 2u)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        }
         return 0u;
     }
     if (mmio64_nvme_rw_make_short_name(leaf, short_name) == 0u)
@@ -18656,13 +18682,19 @@ static u32 mmio64_nvme_rw_create_file_in_directory(
                 leaf_length,
                 short_name) == 0u)
         {
-            (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+            if (cluster >= 2u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+            }
             return 0u;
         }
         lfn_entries = (leaf_length + 12u) / 13u;
         if (lfn_entries == 0u)
         {
-            (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+            if (cluster >= 2u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+            }
             return 0u;
         }
         entry_count = lfn_entries + 1u;
@@ -18680,7 +18712,10 @@ static u32 mmio64_nvme_rw_create_file_in_directory(
                 entry_lba,
                 MMIO64_NVME_FAT_READ_ROOT_CID) == 0u))
     {
-        (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        if (cluster >= 2u)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        }
         return 0u;
     }
     if (lfn_entries != 0u)
@@ -18711,7 +18746,10 @@ static u32 mmio64_nvme_rw_create_file_in_directory(
             entry_lba,
             MMIO64_NVME_FAT_WRITE_DIR_CID) == 0u)
     {
-        (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        if (cluster >= 2u)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(reader, volume, cluster);
+        }
         return 0u;
     }
 
@@ -19234,8 +19272,7 @@ u32 mmio64_nvme_fat_shell_write_file(
     u32 expected_crc;
     u32 ok = 0u;
 
-    if ((data == (const u8 *)0)
-        || (byte_count == 0u)
+    if (((byte_count != 0u) && (data == (const u8 *)0))
         || (byte_count > MMIO64_NVME_RW_SHELL_MAX_FILE_BYTES)
         || (mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
         || (mmio64_nvme_rw_normalize_path(
