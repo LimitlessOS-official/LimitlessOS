@@ -7,8 +7,12 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $OutputDir = Join-Path $root "build\m123-msi-handoff-fixtures"
+    $OutputDir = Join-Path $root "build\m133-msi-handoff-fixtures"
 }
+$handoffMilestone = "M133"
+$handoffStem = "m133"
+$handoffIsoName = "limitlessos-x86_64-$handoffStem-handoff.iso"
+$handoffUefiName = "limitlessos-x86_64-$handoffStem-handoff-uefi.img"
 
 $fixtureRoot = Join-Path $OutputDir "evidence"
 $resultRoot = Join-Path $OutputDir "results"
@@ -59,9 +63,9 @@ function Write-Runbook
     )
 
     $lines = @(
-        "LimitlessOS M121 MSI Hardware Handoff Runbook",
+        "LimitlessOS $handoffMilestone MSI Hardware Handoff Runbook",
         "",
-        "1. Write limitlessos-x86_64-m121-handoff.iso to a USB drive using your normal image writer.",
+        "1. Write $handoffIsoName to a USB drive using your normal image writer.",
         "2. Boot the laptop through the UEFI USB boot entry.",
         "3. At the [x64] shell, run:",
         "",
@@ -113,8 +117,8 @@ function New-EvidenceBundle
     $evidenceDir = Join-Path $fixtureRoot $Name
     New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null
 
-    $isoName = Get-MutationValue -Mutations $Mutations -Name "iso.path" -Default "limitlessos-x86_64-m121-handoff.iso"
-    $uefiName = Get-MutationValue -Mutations $Mutations -Name "uefi_image.path" -Default "limitlessos-x86_64-m121-handoff-uefi.img"
+    $isoName = Get-MutationValue -Mutations $Mutations -Name "iso.path" -Default $handoffIsoName
+    $uefiName = Get-MutationValue -Mutations $Mutations -Name "uefi_image.path" -Default $handoffUefiName
     $appFile = "DYNLDLIMIT"
     $interpFile = "LDLIMIT"
 
@@ -132,7 +136,7 @@ function New-EvidenceBundle
     $interpSha = Get-Sha256 -Path $interpPath
 
     $manifest = [PSCustomObject]@{
-        milestone = Get-MutationValue -Mutations $Mutations -Name "milestone" -Default "M121"
+        milestone = Get-MutationValue -Mutations $Mutations -Name "milestone" -Default $handoffMilestone
         purpose = Get-MutationValue -Mutations $Mutations -Name "purpose" -Default "MSI hardware handoff evidence bundle"
         generated_utc = "2026-06-18T00:00:00Z"
         git_commit = "fixture"
@@ -177,7 +181,7 @@ function New-EvidenceBundle
 
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $evidenceDir "hardware-storage-evidence-manifest.json") -Encoding Ascii
     @(
-        "LimitlessOS M121 MSI hardware handoff evidence bundle",
+        "LimitlessOS $handoffMilestone MSI hardware handoff evidence bundle",
         "dynamic-app-sha256: $appSha",
         "dynamic-interpreter-sha256: $interpSha"
     ) | Set-Content -Path (Join-Path $evidenceDir "hardware-storage-evidence-manifest.txt") -Encoding Ascii
@@ -255,7 +259,7 @@ function Write-ReadyCapture
 
 $fixtures = @(
     [PSCustomObject]@{
-        name = "valid-m121"
+        name = "valid-m133"
         expect_success = $true
         mutations = @{}
         runbook_mode = "valid"
@@ -264,9 +268,9 @@ $fixtures = @(
     [PSCustomObject]@{
         name = "stale-milestone"
         expect_success = $false
-        mutations = @{ "milestone" = "M113" }
+        mutations = @{ "milestone" = "M121" }
         runbook_mode = "valid"
-        expected_error = "manifest milestone must be M121"
+        expected_error = "manifest milestone must be M133"
     },
     [PSCustomObject]@{
         name = "stale-analyzer"
@@ -285,7 +289,7 @@ $fixtures = @(
     [PSCustomObject]@{
         name = "stale-iso-name"
         expect_success = $false
-        mutations = @{ "iso.path" = "limitlessos-x86_64-m113-staged.iso" }
+        mutations = @{ "iso.path" = "limitlessos-x86_64-m121-handoff.iso" }
         runbook_mode = "valid"
         expected_error = "ISO path mismatch"
     },
