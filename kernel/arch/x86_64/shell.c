@@ -35,6 +35,12 @@
 #define SHELL64_CONSOLE_CHUNK_BYTES 512u
 #define SHELL64_KERNEL_HIGH_BASE_HIGH32 0xFFFFFFFFu
 #define SHELL64_KERNEL_HIGH_BASE_LOW32 0x80000000u
+#define SHELL64_REDIRECT_NONE 0u
+#define SHELL64_REDIRECT_FOUND 1u
+#define SHELL64_REDIRECT_INVALID 2u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define SHELL64_REDIRECT_BUFFER_BYTES 8192u
+#endif
 
 static u8 g_shell64_line[SHELL64_MAX_LINE_BYTES + 1u];
 static u8 g_shell64_path_a[SHELL64_MAX_PATH_BYTES];
@@ -43,6 +49,20 @@ static u8 g_shell64_pair[SHELL64_MAX_PATH_BYTES * 2u];
 static u8 g_shell64_io[SHELL64_IO_BYTES];
 static u8 g_shell64_stat[64u];
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_shell64_redirect_active = 0u;
+static u32 g_shell64_redirect_capability = FS64_INVALID_HANDLE;
+static u32 g_shell64_redirect_offset = 0u;
+static u32 g_shell64_redirect_append = 0u;
+static u32 g_shell64_redirect_count = 0u;
+static u32 g_shell64_redirect_append_count = 0u;
+static u32 g_shell64_redirect_write_count = 0u;
+static u32 g_shell64_redirect_byte_count = 0u;
+static u32 g_shell64_redirect_denial_count = 0u;
+static u32 g_shell64_redirect_last_result = 0u;
+static u32 g_shell64_redirect_commit_count = 0u;
+static u32 g_shell64_redirect_path_length = 0u;
+static u8 g_shell64_redirect_path[SHELL64_MAX_PATH_BYTES];
+static u8 g_shell64_redirect_buffer[SHELL64_REDIRECT_BUFFER_BYTES];
 static char g_shell64_linux_argv_storage[LINUX_EXEC64_ARG_MAX][SHELL64_MAX_LINE_BYTES + 1u];
 #endif
 
@@ -160,6 +180,39 @@ static int shell64_address_readable(u64 address, u32 byte_count)
 
 static u32 shell64_write(u32 console_capability_handle, u32 owner_id, const u8 *bytes, u32 byte_count)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 index;
+    u32 writable_bytes;
+
+    if (g_shell64_redirect_active != 0u)
+    {
+        if (bytes == 0)
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_last_result = FS64_INVALID_HANDLE;
+            return 0u;
+        }
+
+        writable_bytes = byte_count;
+        if ((g_shell64_redirect_offset + writable_bytes) > SHELL64_REDIRECT_BUFFER_BYTES)
+        {
+            writable_bytes = SHELL64_REDIRECT_BUFFER_BYTES - g_shell64_redirect_offset;
+            ++g_shell64_redirect_denial_count;
+        }
+
+        for (index = 0u; index < writable_bytes; ++index)
+        {
+            g_shell64_redirect_buffer[g_shell64_redirect_offset + index] = bytes[index];
+        }
+
+        g_shell64_redirect_offset += writable_bytes;
+        g_shell64_redirect_byte_count += writable_bytes;
+        ++g_shell64_redirect_write_count;
+        g_shell64_redirect_last_result = writable_bytes;
+        return writable_bytes;
+    }
+#endif
+
     return console64_write_kernel(console_capability_handle, bytes, byte_count, owner_id);
 }
 
@@ -170,6 +223,39 @@ static u32 shell64_write_text(u32 console_capability_handle, u32 owner_id, const
         owner_id,
         (const u8 *)text,
         shell64_length(text));
+}
+
+static u32 shell64_write_bytes_chunked(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const u8 *bytes,
+    u32 byte_count)
+{
+    u32 offset = 0u;
+    u32 chunk;
+    u32 written;
+
+    if (bytes == (const u8 *)0)
+    {
+        return 0u;
+    }
+
+    while (offset < byte_count)
+    {
+        chunk = byte_count - offset;
+        if (chunk > SHELL64_CONSOLE_CHUNK_BYTES)
+        {
+            chunk = SHELL64_CONSOLE_CHUNK_BYTES;
+        }
+        written = shell64_write(console_capability_handle, owner_id, bytes + offset, chunk);
+        if (written != chunk)
+        {
+            return offset;
+        }
+        offset += written;
+    }
+
+    return offset;
 }
 
 static u32 shell64_login_available(void)
@@ -875,6 +961,20 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "boot path: ",
         (package_signing64_signed() != 0u) ? "UEFI Product" : "BIOS checksum fallback");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirects: ", g_shell64_redirect_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect appends: ", g_shell64_redirect_append_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect writes: ", g_shell64_redirect_write_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect bytes: ", g_shell64_redirect_byte_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect commits: ", g_shell64_redirect_commit_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect denials: ", g_shell64_redirect_denial_count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect last result: ", g_shell64_redirect_last_result);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last error: ", mmio64_nvme_fat_shell_read_last_error());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last bytes: ", mmio64_nvme_fat_shell_read_last_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last capacity: ", mmio64_nvme_fat_shell_read_last_capacity());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last size: ", mmio64_nvme_fat_shell_read_last_size());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last attr: ", mmio64_nvme_fat_shell_read_last_attr());
+#endif
     if (display64_available() != 0u)
     {
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "framebuffer width: ", display64_width());
@@ -1476,13 +1576,259 @@ static u32 shell64_stat_size(const u8 *bytes, u32 byte_count)
     return 0u;
 }
 
-static void shell64_write_newline_if_needed(u32 console_capability_handle, u32 owner_id, u32 byte_count)
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_trim_trailing_spaces(u32 length)
 {
-    if ((byte_count == 0u) || (g_shell64_io[byte_count - 1u] != (u8)'\n'))
+    while ((length != 0u)
+        && ((g_shell64_line[length - 1u] == (u8)' ')
+            || (g_shell64_line[length - 1u] == (u8)'\t')))
     {
-        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+        --length;
     }
+
+    return length;
 }
+
+static u32 shell64_parse_redirection(
+    u32 line_byte_count,
+    u32 *redirect_position,
+    u32 *path_start,
+    u32 *path_length,
+    u32 *append)
+{
+    u32 index;
+    u8 quote = 0u;
+
+    if ((redirect_position == 0) || (path_start == 0) || (path_length == 0) || (append == 0))
+    {
+        return SHELL64_REDIRECT_INVALID;
+    }
+
+    *redirect_position = 0u;
+    *path_start = 0u;
+    *path_length = 0u;
+    *append = 0u;
+
+    for (index = 0u; index < line_byte_count; ++index)
+    {
+        if ((quote != 0u) && (g_shell64_line[index] == quote))
+        {
+            quote = 0u;
+            continue;
+        }
+        if ((quote == 0u)
+            && ((g_shell64_line[index] == (u8)'\'') || (g_shell64_line[index] == (u8)'"')))
+        {
+            quote = g_shell64_line[index];
+            continue;
+        }
+        if ((quote != 0u) || (g_shell64_line[index] != (u8)'>'))
+        {
+            continue;
+        }
+
+        *redirect_position = index;
+        if (((index + 1u) < line_byte_count) && (g_shell64_line[index + 1u] == (u8)'>'))
+        {
+            *append = 1u;
+            index += 2u;
+        }
+        else
+        {
+            *append = 0u;
+            ++index;
+        }
+
+        while ((index < line_byte_count)
+            && ((g_shell64_line[index] == (u8)' ') || (g_shell64_line[index] == (u8)'\t')))
+        {
+            ++index;
+        }
+
+        *path_start = index;
+        while ((index < line_byte_count)
+            && (g_shell64_line[index] != (u8)' ')
+            && (g_shell64_line[index] != (u8)'\t')
+            && (g_shell64_line[index] != (u8)'>'))
+        {
+            ++index;
+        }
+
+        *path_length = index - *path_start;
+        if (*path_length == 0u)
+        {
+            return SHELL64_REDIRECT_INVALID;
+        }
+
+        while ((index < line_byte_count)
+            && ((g_shell64_line[index] == (u8)' ') || (g_shell64_line[index] == (u8)'\t')))
+        {
+            ++index;
+        }
+
+        if (index != line_byte_count)
+        {
+            return SHELL64_REDIRECT_INVALID;
+        }
+
+        return SHELL64_REDIRECT_FOUND;
+    }
+
+    return SHELL64_REDIRECT_NONE;
+}
+
+static void shell64_end_redirect(u32 owner_id)
+{
+    u32 commit_ok;
+
+    if ((g_shell64_redirect_path_length != 0u) && (g_shell64_redirect_offset != 0u))
+    {
+        commit_ok = mmio64_nvme_fat_shell_write_file(
+            g_shell64_redirect_path,
+            g_shell64_redirect_path_length,
+            g_shell64_redirect_buffer,
+            g_shell64_redirect_offset,
+            owner_id);
+        if (commit_ok != 0u)
+        {
+            ++g_shell64_redirect_commit_count;
+            g_shell64_redirect_last_result = g_shell64_redirect_offset;
+        }
+        else
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_last_result = 0u;
+        }
+    }
+
+    if (g_shell64_redirect_capability != FS64_INVALID_HANDLE)
+    {
+        (void)fs64_revoke(g_shell64_redirect_capability, owner_id);
+    }
+
+    g_shell64_redirect_active = 0u;
+    g_shell64_redirect_capability = FS64_INVALID_HANDLE;
+    g_shell64_redirect_offset = 0u;
+    g_shell64_redirect_append = 0u;
+    g_shell64_redirect_path_length = 0u;
+    shell64_zero(g_shell64_redirect_path, sizeof(g_shell64_redirect_path));
+    shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+}
+
+static u32 shell64_begin_redirect(
+    u32 root_capability_handle,
+    u32 token_start,
+    u32 token_length,
+    u32 append,
+    u32 owner_id)
+{
+    u32 path_length;
+    u32 file_capability;
+    u32 existing_bytes = 0u;
+    u32 existing_size = 0u;
+
+    if (g_shell64_redirect_active != 0u)
+    {
+        shell64_end_redirect(owner_id);
+    }
+
+    path_length = shell64_normalize_path(token_start, token_length, g_shell64_redirect_path);
+    if ((path_length == 0u) || shell64_token_is_root(token_start, token_length))
+    {
+        ++g_shell64_redirect_denial_count;
+        g_shell64_redirect_last_result = FS64_INVALID_HANDLE;
+        return 0u;
+    }
+
+    if (append != 0u)
+    {
+        file_capability = fs64_open_kernel(root_capability_handle, g_shell64_redirect_path, path_length, owner_id);
+        if (file_capability == FS64_INVALID_HANDLE)
+        {
+            file_capability = fs64_create_kernel(
+                root_capability_handle,
+                g_shell64_redirect_path,
+                path_length,
+                RAMFS_NODE_FILE,
+                owner_id);
+        }
+    }
+    else
+    {
+        (void)fs64_delete_kernel(root_capability_handle, g_shell64_redirect_path, path_length, owner_id);
+        file_capability = fs64_create_kernel(
+            root_capability_handle,
+            g_shell64_redirect_path,
+            path_length,
+            RAMFS_NODE_FILE,
+            owner_id);
+    }
+
+    if (file_capability == FS64_INVALID_HANDLE)
+    {
+        ++g_shell64_redirect_denial_count;
+        g_shell64_redirect_last_result = FS64_INVALID_HANDLE;
+        return 0u;
+    }
+
+    if (append != 0u)
+    {
+        if (mmio64_nvme_fat_shell_read_file_range(
+                g_shell64_redirect_path,
+                path_length,
+                0u,
+                g_shell64_redirect_buffer,
+                sizeof(g_shell64_redirect_buffer),
+                owner_id,
+                &existing_bytes,
+                &existing_size) != 0u)
+        {
+            if (existing_size > existing_bytes)
+            {
+                ++g_shell64_redirect_denial_count;
+                (void)fs64_revoke(file_capability, owner_id);
+                g_shell64_redirect_capability = FS64_INVALID_HANDLE;
+                g_shell64_redirect_path_length = 0u;
+                shell64_zero(g_shell64_redirect_path, sizeof(g_shell64_redirect_path));
+                shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+                return 0u;
+            }
+            g_shell64_redirect_offset = existing_bytes;
+        }
+        else
+        {
+            existing_bytes = fs64_read_kernel(
+                file_capability,
+                g_shell64_redirect_buffer,
+                0u,
+                sizeof(g_shell64_redirect_buffer),
+                owner_id);
+            if (existing_bytes == FS64_INVALID_HANDLE)
+            {
+                existing_bytes = 0u;
+            }
+            g_shell64_redirect_offset = existing_bytes;
+        }
+    }
+    else
+    {
+        shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+        g_shell64_redirect_offset = 0u;
+    }
+
+    g_shell64_redirect_capability = file_capability;
+    g_shell64_redirect_path_length = path_length;
+    g_shell64_redirect_active = 1u;
+    g_shell64_redirect_append = (append != 0u) ? 1u : 0u;
+    ++g_shell64_redirect_count;
+    if (append != 0u)
+    {
+        ++g_shell64_redirect_append_count;
+    }
+    g_shell64_redirect_last_result = 0u;
+    return 1u;
+}
+#endif
 
 static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 token_start, u32 token_length)
 {
@@ -1800,6 +2146,108 @@ static u32 shell64_info(u32 console_capability_handle, u32 owner_id, u32 token_s
     return shell64_print_usage(console_capability_handle, owner_id, token_start, token_length);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_read_fat_file(
+    u32 console_capability_handle,
+    u32 token_start,
+    u32 token_length,
+    u32 owner_id,
+    u32 *handled)
+{
+    u32 path_length;
+    u32 offset = 0u;
+    u32 byte_count = 0u;
+    u32 file_size = 0u;
+    u32 total_bytes = 0u;
+    u8 last_byte = 0u;
+
+    if (handled == 0)
+    {
+        return 0u;
+    }
+    *handled = 0u;
+
+    path_length = shell64_normalize_path(token_start, token_length, g_shell64_path_b);
+    if ((path_length == 0u) || shell64_token_is_root(token_start, token_length))
+    {
+        return 0u;
+    }
+
+    shell64_zero(g_shell64_io, sizeof(g_shell64_io));
+    if (mmio64_nvme_fat_shell_read_file(
+            g_shell64_path_b,
+            path_length,
+            g_shell64_io,
+            sizeof(g_shell64_io),
+            owner_id,
+            &byte_count) != 0u)
+    {
+        *handled = 1u;
+        if (byte_count != 0u)
+        {
+            (void)shell64_write_bytes_chunked(console_capability_handle, owner_id, g_shell64_io, byte_count);
+            if (g_shell64_io[byte_count - 1u] != (u8)'\n')
+            {
+                (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+            }
+        }
+        return byte_count;
+    }
+    if (mmio64_nvme_fat_shell_read_last_error() != MMIO64_NVME_FAT_SHELL_READ_ERROR_TOO_LARGE)
+    {
+        return 0u;
+    }
+
+    for (;;)
+    {
+        shell64_zero(g_shell64_io, sizeof(g_shell64_io));
+        if (mmio64_nvme_fat_shell_read_file_range(
+                g_shell64_path_b,
+                path_length,
+                offset,
+                g_shell64_io,
+                sizeof(g_shell64_io),
+                owner_id,
+                &byte_count,
+                &file_size) == 0u)
+        {
+            if (offset == 0u)
+            {
+                return 0u;
+            }
+            *handled = 1u;
+            return shell64_write_text(console_capability_handle, owner_id, "read failed\n");
+        }
+
+        *handled = 1u;
+        if (byte_count == 0u)
+        {
+            if (offset < file_size)
+            {
+                return shell64_write_text(console_capability_handle, owner_id, "read failed\n");
+            }
+            break;
+        }
+
+        (void)shell64_write_bytes_chunked(console_capability_handle, owner_id, g_shell64_io, byte_count);
+        offset += byte_count;
+        total_bytes += byte_count;
+        last_byte = g_shell64_io[byte_count - 1u];
+        if (offset >= file_size)
+        {
+            break;
+        }
+    }
+
+    if ((total_bytes > 0u) && (last_byte != (u8)'\n'))
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    return total_bytes;
+}
+#endif
+
 static u32 shell64_read_file(
     u32 console_capability_handle,
     u32 root_capability_handle,
@@ -1808,33 +2256,66 @@ static u32 shell64_read_file(
     u32 owner_id)
 {
     u32 borrowed_root;
-    u32 file_capability = shell64_open_path(
+    u32 file_capability;
+    u32 byte_count;
+    u32 total_bytes = 0u;
+    u32 offset = 0u;
+    u8 last_byte = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 fat_handled = 0u;
+    u32 fat_bytes;
+
+    fat_bytes = shell64_read_fat_file(
+        console_capability_handle,
+        token_start,
+        token_length,
+        owner_id,
+        &fat_handled);
+    if (fat_handled != 0u)
+    {
+        return fat_bytes;
+    }
+#endif
+
+    file_capability = shell64_open_path(
         root_capability_handle,
         token_start,
         token_length,
         owner_id,
         &borrowed_root);
-    u32 byte_count;
 
     if ((file_capability == FS64_INVALID_HANDLE) || (borrowed_root != 0u))
     {
         return shell64_write_text(console_capability_handle, owner_id, "not found\n");
     }
 
-    shell64_zero(g_shell64_io, sizeof(g_shell64_io));
-    byte_count = fs64_read_kernel(file_capability, g_shell64_io, 0u, 256u, owner_id);
-    (void)fs64_revoke(file_capability, owner_id);
-    if (byte_count == FS64_INVALID_HANDLE)
+    for (;;)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "read failed\n");
+        shell64_zero(g_shell64_io, sizeof(g_shell64_io));
+        byte_count = fs64_read_kernel(file_capability, g_shell64_io, offset, sizeof(g_shell64_io), owner_id);
+        if (byte_count == FS64_INVALID_HANDLE)
+        {
+            (void)fs64_revoke(file_capability, owner_id);
+            return shell64_write_text(console_capability_handle, owner_id, "read failed\n");
+        }
+        if (byte_count == 0u)
+        {
+            break;
+        }
+
+        (void)shell64_write_bytes_chunked(console_capability_handle, owner_id, g_shell64_io, byte_count);
+        offset += byte_count;
+        total_bytes += byte_count;
+        last_byte = g_shell64_io[byte_count - 1u];
     }
 
-    if (byte_count > 0u)
+    (void)fs64_revoke(file_capability, owner_id);
+
+    if ((total_bytes > 0u) && (last_byte != (u8)'\n'))
     {
-        (void)shell64_write(console_capability_handle, owner_id, g_shell64_io, byte_count);
-        shell64_write_newline_if_needed(console_capability_handle, owner_id, byte_count);
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     }
-    return byte_count;
+    return total_bytes;
 }
 
 static u32 shell64_list_path(
@@ -1872,7 +2353,7 @@ static u32 shell64_list_path(
 
     if (byte_count > 0u)
     {
-        (void)shell64_write(console_capability_handle, owner_id, g_shell64_io, byte_count);
+        (void)shell64_write_bytes_chunked(console_capability_handle, owner_id, g_shell64_io, byte_count);
     }
 
     return byte_count;
@@ -2204,10 +2685,9 @@ static u32 shell64_rename_or_move(
     return shell64_write_text(console_capability_handle, owner_id, "ok\n");
 }
 
-u32 shell64_execute_line(
+static u32 shell64_execute_line_inner(
     u32 console_capability_handle,
     u32 root_capability_handle,
-    u64 line_address,
     u32 line_byte_count,
     u32 owner_id)
 {
@@ -2218,22 +2698,6 @@ u32 shell64_execute_line(
     u32 first_length;
     u32 second_start = 0u;
     u32 second_length;
-
-    if (line_byte_count > SHELL64_MAX_LINE_BYTES)
-    {
-        return SHELL64_INVALID_RESULT;
-    }
-
-    if (!shell64_address_readable(line_address, line_byte_count))
-    {
-        return SHELL64_INVALID_RESULT;
-    }
-
-    shell64_zero(g_shell64_line, sizeof(g_shell64_line));
-    if (line_byte_count > 0u)
-    {
-        shell64_copy(g_shell64_line, (const u8 *)line_address, line_byte_count);
-    }
 
     command_length = shell64_next_token(&cursor, line_byte_count, &command_start);
     if (command_length == 0u)
@@ -2250,6 +2714,9 @@ u32 shell64_execute_line(
         }
         (void)shell64_write_builtins_line(console_capability_handle, owner_id);
         (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write\n");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_text(console_capability_handle, owner_id, "Redirection: command > path replaces file; command >> path appends built-in output\n");
+#endif
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
@@ -2550,4 +3017,100 @@ u32 shell64_execute_line(
     }
 
     return shell64_write_text(console_capability_handle, owner_id, "unknown command\n");
+}
+
+u32 shell64_execute_line(
+    u32 console_capability_handle,
+    u32 root_capability_handle,
+    u64 line_address,
+    u32 line_byte_count,
+    u32 owner_id)
+{
+    u32 effective_line_byte_count = line_byte_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 redirect_position = 0u;
+    u32 redirect_path_start = 0u;
+    u32 redirect_path_length = 0u;
+    u32 redirect_append = 0u;
+    u32 redirect_parse;
+    u32 redirect_started = 0u;
+    u32 cursor = 0u;
+    u32 command_start = 0u;
+    u32 command_length;
+#endif
+    u32 result;
+
+    if (line_byte_count > SHELL64_MAX_LINE_BYTES)
+    {
+        return SHELL64_INVALID_RESULT;
+    }
+
+    if (!shell64_address_readable(line_address, line_byte_count))
+    {
+        return SHELL64_INVALID_RESULT;
+    }
+
+    shell64_zero(g_shell64_line, sizeof(g_shell64_line));
+    if (line_byte_count > 0u)
+    {
+        shell64_copy(g_shell64_line, (const u8 *)line_address, line_byte_count);
+    }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    redirect_parse = shell64_parse_redirection(
+        line_byte_count,
+        &redirect_position,
+        &redirect_path_start,
+        &redirect_path_length,
+        &redirect_append);
+    if (redirect_parse == SHELL64_REDIRECT_INVALID)
+    {
+        ++g_shell64_redirect_denial_count;
+        return shell64_write_text(console_capability_handle, owner_id, "redirect syntax error\n");
+    }
+
+    if (redirect_parse == SHELL64_REDIRECT_FOUND)
+    {
+        effective_line_byte_count = shell64_trim_trailing_spaces(redirect_position);
+        command_length = shell64_next_token(&cursor, effective_line_byte_count, &command_start);
+        if (command_length == 0u)
+        {
+            ++g_shell64_redirect_denial_count;
+            return shell64_write_text(console_capability_handle, owner_id, "redirect syntax error\n");
+        }
+        if (shell64_token_equals(command_start, command_length, "linux"))
+        {
+            ++g_shell64_redirect_denial_count;
+            return shell64_write_text(
+                console_capability_handle,
+                owner_id,
+                "redirect unavailable for linux until fd-backed exec stdout is implemented\n");
+        }
+        if (shell64_begin_redirect(
+                root_capability_handle,
+                redirect_path_start,
+                redirect_path_length,
+                redirect_append,
+                owner_id) == 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
+        }
+        redirect_started = 1u;
+    }
+#endif
+
+    result = shell64_execute_line_inner(
+        console_capability_handle,
+        root_capability_handle,
+        effective_line_byte_count,
+        owner_id);
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (redirect_started != 0u)
+    {
+        shell64_end_redirect(owner_id);
+    }
+#endif
+
+    return result;
 }
