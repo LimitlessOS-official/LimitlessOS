@@ -40,7 +40,6 @@
 #define SHELL64_REDIRECT_INVALID 2u
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #define SHELL64_REDIRECT_BUFFER_BYTES 8192u
-#define SHELL64_FAT_BUFFER_BYTES 8192u
 #endif
 
 static u8 g_shell64_line[SHELL64_MAX_LINE_BYTES + 1u];
@@ -64,7 +63,6 @@ static u32 g_shell64_redirect_commit_count = 0u;
 static u32 g_shell64_redirect_path_length = 0u;
 static u8 g_shell64_redirect_path[SHELL64_MAX_PATH_BYTES];
 static u8 g_shell64_redirect_buffer[SHELL64_REDIRECT_BUFFER_BYTES];
-static u8 g_shell64_fat_buffer[SHELL64_FAT_BUFFER_BYTES];
 static char g_shell64_linux_argv_storage[LINUX_EXEC64_ARG_MAX][SHELL64_MAX_LINE_BYTES + 1u];
 #endif
 
@@ -2666,10 +2664,6 @@ static u32 shell64_append_file(
     u32 byte_count;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     u32 path_length;
-    u32 existing_bytes = 0u;
-    u32 existing_size = 0u;
-    u32 existing_ready = 0u;
-    u32 index;
 #endif
 
     if (text_length == 0u)
@@ -2683,45 +2677,14 @@ static u32 shell64_append_file(
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
     }
-    shell64_zero(g_shell64_fat_buffer, sizeof(g_shell64_fat_buffer));
-    if (mmio64_nvme_fat_shell_read_file_range(
+    if (mmio64_nvme_fat_shell_append_file(
             g_shell64_path_a,
             path_length,
-            0u,
-            g_shell64_fat_buffer,
-            sizeof(g_shell64_fat_buffer),
-            owner_id,
-            &existing_bytes,
-            &existing_size) == 0u)
+            g_shell64_line + text_start,
+            text_length,
+            owner_id) != 0u)
     {
-        if (mmio64_nvme_fat_shell_read_last_error() == MMIO64_NVME_FAT_SHELL_READ_ERROR_NOT_FOUND)
-        {
-            existing_bytes = 0u;
-            existing_size = 0u;
-            existing_ready = 1u;
-        }
-    }
-    else
-    {
-        existing_ready = 1u;
-    }
-    if ((existing_ready != 0u)
-        && (existing_size == existing_bytes)
-        && ((existing_bytes + text_length) <= sizeof(g_shell64_fat_buffer)))
-    {
-        for (index = 0u; index < text_length; ++index)
-        {
-            g_shell64_fat_buffer[existing_bytes + index] = g_shell64_line[text_start + index];
-        }
-        if (mmio64_nvme_fat_shell_write_file(
-                g_shell64_path_a,
-                path_length,
-                g_shell64_fat_buffer,
-                existing_bytes + text_length,
-                owner_id) != 0u)
-        {
-            return shell64_write_text(console_capability_handle, owner_id, "ok\n");
-        }
+        return shell64_write_text(console_capability_handle, owner_id, "ok\n");
     }
 #endif
 
