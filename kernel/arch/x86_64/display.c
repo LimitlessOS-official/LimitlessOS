@@ -184,6 +184,8 @@
 #define DISPLAY64_SETTINGS_POINTER_SLOW 1u
 #define DISPLAY64_SETTINGS_POINTER_NORMAL 2u
 #define DISPLAY64_SETTINGS_POINTER_FAST 3u
+#define DISPLAY64_TERMINAL_SCROLL_STEP_BYTES 512u
+#define DISPLAY64_TERMINAL_SELECTION_BYTES 128u
 #endif
 
 static struct boot_info g_display_boot_info_storage;
@@ -357,6 +359,19 @@ static u32 g_display_fileman_window_cursor = 0u;
 static u32 g_display_settings_selected_index = 0u;
 static u32 g_display_installer_step_index = 0u;
 static u32 g_display_terminal_action_count = 0u;
+static u32 g_display_terminal_scroll_offset = 0u;
+static u32 g_display_terminal_scroll_count = 0u;
+static u32 g_display_terminal_selection_active = 0u;
+static u32 g_display_terminal_selection_anchor_x = 0u;
+static u32 g_display_terminal_selection_anchor_y = 0u;
+static u32 g_display_terminal_selection_x = 0u;
+static u32 g_display_terminal_selection_y = 0u;
+static u32 g_display_terminal_selection_count = 0u;
+static u32 g_display_terminal_copy_count = 0u;
+static u32 g_display_terminal_selection_bytes = 0u;
+static u32 g_display_terminal_copied_bytes = 0u;
+static u32 g_display_terminal_cursor_draw_count = 0u;
+static u8 g_display_terminal_selection_buffer[DISPLAY64_TERMINAL_SELECTION_BYTES];
 static u32 g_display_fileman_action_count = 0u;
 static u32 g_display_settings_action_count = 0u;
 static u32 g_display_installer_action_count = 0u;
@@ -1935,34 +1950,52 @@ static void display64_console_replay_append(const u8 *bytes, u32 byte_count)
             ++g_display_console_replay_overflow;
         }
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if ((byte_count != 0u) && (g_display_terminal_scroll_offset != 0u))
+    {
+        g_display_terminal_scroll_offset = 0u;
+    }
+#endif
 }
 
 static u32 display64_console_replay_render(u32 *token)
 {
     u32 drawn = 0u;
+    u32 render_count;
 
     if ((g_display_console_replay_count == 0u) || !display64_has_framebuffer())
     {
         return 0u;
     }
 
+    render_count = g_display_console_replay_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_terminal_scroll_offset >= render_count)
+    {
+        render_count = 1u;
+    }
+    else
+    {
+        render_count -= g_display_terminal_scroll_offset;
+    }
+#endif
     g_display_text_x = g_display_console_x;
     g_display_text_y = g_display_console_y;
     g_display_console_line_dirty = 0u;
 
-    if ((g_display_console_replay_head + g_display_console_replay_count)
+    if ((g_display_console_replay_head + render_count)
         <= DISPLAY64_CONSOLE_REPLAY_BYTES)
     {
         drawn += display64_render_text_bytes(
             &g_display_console_replay[g_display_console_replay_head],
-            g_display_console_replay_count,
+            render_count,
             token,
             1u);
     }
     else
     {
         u32 first_count = DISPLAY64_CONSOLE_REPLAY_BYTES - g_display_console_replay_head;
-        u32 second_count = g_display_console_replay_count - first_count;
+        u32 second_count = render_count - first_count;
         drawn += display64_render_text_bytes(
             &g_display_console_replay[g_display_console_replay_head],
             first_count,
@@ -1977,6 +2010,156 @@ static u32 display64_console_replay_render(u32 *token)
 
     return drawn;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static int display64_point_in_rect(u32 x, u32 y, u32 rect_x, u32 rect_y, u32 rect_w, u32 rect_h);
+static void display64_compositor_fill_rect(u32 x, u32 y, u32 width, u32 height, u32 rgb);
+static void display64_compositor_fill_round_rect_4(u32 x, u32 y, u32 width, u32 height, u32 rgb);
+static u32 display64_draw_font_text(
+    u32 x,
+    u32 y,
+    const char *text,
+    u32 size,
+    u32 rgb,
+    u32 background_rgb);
+
+static u8 display64_console_replay_byte_at(u32 offset)
+{
+    u32 index;
+
+    if (offset >= g_display_console_replay_count)
+    {
+        return 0u;
+    }
+
+    index = (g_display_console_replay_head + offset) % DISPLAY64_CONSOLE_REPLAY_BYTES;
+    return g_display_console_replay[index];
+}
+
+static u32 display64_terminal_selection_span_bytes(void)
+{
+    u32 min_x = display64_min_u32(g_display_terminal_selection_anchor_x, g_display_terminal_selection_x);
+    u32 max_x = (g_display_terminal_selection_anchor_x > g_display_terminal_selection_x)
+        ? g_display_terminal_selection_anchor_x
+        : g_display_terminal_selection_x;
+    u32 min_y = display64_min_u32(g_display_terminal_selection_anchor_y, g_display_terminal_selection_y);
+    u32 max_y = (g_display_terminal_selection_anchor_y > g_display_terminal_selection_y)
+        ? g_display_terminal_selection_anchor_y
+        : g_display_terminal_selection_y;
+    u32 columns = ((max_x - min_x) / display64_font_advance()) + 1u;
+    u32 rows = ((max_y - min_y) / display64_line_advance()) + 1u;
+    u32 bytes = columns * rows;
+
+    if (bytes == 0u)
+    {
+        bytes = 1u;
+    }
+    if (bytes > DISPLAY64_TERMINAL_SELECTION_BYTES)
+    {
+        bytes = DISPLAY64_TERMINAL_SELECTION_BYTES;
+    }
+
+    return bytes;
+}
+
+static void display64_terminal_copy_selection(void)
+{
+    u32 bytes = display64_terminal_selection_span_bytes();
+    u32 start = (g_display_console_replay_count > bytes)
+        ? (g_display_console_replay_count - bytes)
+        : 0u;
+    u32 index;
+
+    for (index = 0u; index < bytes; ++index)
+    {
+        g_display_terminal_selection_buffer[index] =
+            display64_console_replay_byte_at(start + index);
+    }
+    g_display_terminal_selection_bytes = bytes;
+    g_display_terminal_copied_bytes = bytes;
+    ++g_display_terminal_copy_count;
+}
+
+static u32 display64_terminal_point_in_content(const struct display64_window *window, u32 x, u32 y)
+{
+    u32 content_x;
+    u32 content_y;
+    u32 content_w;
+    u32 content_h;
+
+    if (window == 0)
+    {
+        return 0u;
+    }
+
+    content_x = window->x + 8u;
+    content_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 8u;
+    content_w = (window->width > 16u) ? (window->width - 16u) : 0u;
+    content_h = (window->height > (DISPLAY64_WM_TITLE_HEIGHT + 16u))
+        ? (window->height - DISPLAY64_WM_TITLE_HEIGHT - 16u)
+        : 0u;
+    return display64_point_in_rect(x, y, content_x, content_y, content_w, content_h);
+}
+
+static void display64_terminal_draw_overlay(const struct display64_window *window)
+{
+    u32 badge_x;
+    u32 badge_y;
+    u32 selection_x;
+    u32 selection_y;
+    u32 selection_w;
+    u32 selection_h;
+
+    if ((window == 0) || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    badge_x = window->x + 12u;
+    badge_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 10u;
+    display64_compositor_fill_round_rect_4(badge_x, badge_y, 108u, 18u, DISPLAY64_RGB_SURFACE_HIGH);
+    (void)display64_draw_font_text(
+        badge_x + 8u,
+        badge_y + 5u,
+        "Scrollback",
+        DISPLAY64_FONT_SMALL,
+        DISPLAY64_RGB_TEXT_SECONDARY,
+        DISPLAY64_FONT_TRANSPARENT);
+
+    if ((g_display_terminal_selection_active != 0u) || (g_display_terminal_copied_bytes != 0u))
+    {
+        selection_x = display64_min_u32(g_display_terminal_selection_anchor_x, g_display_terminal_selection_x);
+        selection_y = display64_min_u32(g_display_terminal_selection_anchor_y, g_display_terminal_selection_y);
+        selection_w = ((g_display_terminal_selection_anchor_x > g_display_terminal_selection_x)
+                ? (g_display_terminal_selection_anchor_x - g_display_terminal_selection_x)
+                : (g_display_terminal_selection_x - g_display_terminal_selection_anchor_x))
+            + display64_font_advance();
+        selection_h = ((g_display_terminal_selection_anchor_y > g_display_terminal_selection_y)
+                ? (g_display_terminal_selection_anchor_y - g_display_terminal_selection_y)
+                : (g_display_terminal_selection_y - g_display_terminal_selection_anchor_y))
+            + display64_line_advance();
+        display64_compositor_fill_rect(selection_x, selection_y, selection_w, 1u, DISPLAY64_RGB_HIGHLIGHT);
+        display64_compositor_fill_rect(selection_x, selection_y + selection_h - 1u, selection_w, 1u, DISPLAY64_RGB_HIGHLIGHT);
+        display64_compositor_fill_rect(selection_x, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
+        display64_compositor_fill_rect(selection_x + selection_w - 1u, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
+        (void)display64_draw_font_text(
+            badge_x + 116u,
+            badge_y + 5u,
+            "Copied",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_APP_TERMINAL,
+            DISPLAY64_FONT_TRANSPARENT);
+    }
+
+    display64_compositor_fill_rect(
+        g_display_text_x,
+        g_display_text_y,
+        2u,
+        display64_line_advance(),
+        DISPLAY64_RGB_APP_TERMINAL);
+    ++g_display_terminal_cursor_draw_count;
+}
+#endif
 
 static u32 display64_diag_append_char(char *buffer, u32 cursor, u32 capacity, char value)
 {
@@ -5536,6 +5719,9 @@ static void display64_desktop_present_window_content(u32 handle)
     {
         display64_wm_configure_console(window);
         (void)display64_console_replay_render(&token);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        display64_terminal_draw_overlay(window);
+#endif
     }
 }
 
@@ -6133,6 +6319,49 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
     }
 #endif
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_terminal_selection_active != 0u)
+    {
+        struct display64_window *selected_window = display64_wm_find_window(g_display_wm_shell_handle);
+        if (left != 0u)
+        {
+            g_display_terminal_selection_x = x;
+            g_display_terminal_selection_y = y;
+            g_display_terminal_selection_bytes = display64_terminal_selection_span_bytes();
+            display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TERMINAL_ACTION,
+                (selected_window != 0) ? selected_window->handle : 0u,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                (selected_window != 0) ? display64_wm_window_z(selected_window->handle) : 0u);
+            g_display_wm_last_buttons = buttons;
+            return 1u;
+        }
+        if (released != 0u)
+        {
+            display64_terminal_copy_selection();
+            g_display_terminal_selection_active = 0u;
+            ++g_display_terminal_action_count;
+            display64_desktop_redraw();
+            display64_gui_record_event(
+                x,
+                y,
+                DISPLAY64_GUI_REGION_TERMINAL_ACTION,
+                (selected_window != 0) ? selected_window->handle : 0u,
+                focus_before,
+                display64_wm_focused_handle(),
+                z_before,
+                (selected_window != 0) ? display64_wm_window_z(selected_window->handle) : 0u);
+            g_display_wm_last_buttons = buttons;
+            return 1u;
+        }
+    }
+#endif
+
     if (g_display_wm_dragging != 0u)
     {
         if (left != 0u)
@@ -6563,6 +6792,32 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                     g_display_wm_last_buttons = buttons;
                     return 1u;
                 }
+
+                if (display64_wm_window_is_terminal(window)
+                    && (display64_terminal_point_in_content(window, x, y) != 0u))
+                {
+                    display64_wm_focus_and_route_console(window->handle);
+                    g_display_terminal_selection_active = 1u;
+                    g_display_terminal_selection_anchor_x = x;
+                    g_display_terminal_selection_anchor_y = y;
+                    g_display_terminal_selection_x = x;
+                    g_display_terminal_selection_y = y;
+                    g_display_terminal_selection_bytes = 1u;
+                    ++g_display_terminal_selection_count;
+                    ++g_display_terminal_action_count;
+                    display64_desktop_redraw();
+                    display64_gui_record_event(
+                        x,
+                        y,
+                        DISPLAY64_GUI_REGION_TERMINAL_ACTION,
+                        window->handle,
+                        focus_before,
+                        display64_wm_focused_handle(),
+                        z_before,
+                        display64_wm_window_z(window->handle));
+                    g_display_wm_last_buttons = buttons;
+                    return 1u;
+                }
 #endif
 
                 if (display64_point_in_rect(x, y, close_x, close_y, 14u, 14u))
@@ -6705,6 +6960,37 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
         {
             --g_display_settings_scroll_index;
         }
+        ++g_display_gui_scroll_count;
+        display64_wm_focus_and_route_console(window->handle);
+        display64_desktop_redraw();
+        return 1u;
+    }
+    if ((window != 0) && display64_wm_window_is_terminal(window))
+    {
+        if (wheel_delta > 0)
+        {
+            u32 max_offset = (g_display_console_replay_count > 1u)
+                ? (g_display_console_replay_count - 1u)
+                : 0u;
+            if (g_display_terminal_scroll_offset < max_offset)
+            {
+                g_display_terminal_scroll_offset += DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
+                if (g_display_terminal_scroll_offset > max_offset)
+                {
+                    g_display_terminal_scroll_offset = max_offset;
+                }
+            }
+        }
+        else if (g_display_terminal_scroll_offset > DISPLAY64_TERMINAL_SCROLL_STEP_BYTES)
+        {
+            g_display_terminal_scroll_offset -= DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
+        }
+        else
+        {
+            g_display_terminal_scroll_offset = 0u;
+        }
+        ++g_display_terminal_scroll_count;
+        ++g_display_terminal_action_count;
         ++g_display_gui_scroll_count;
         display64_wm_focus_and_route_console(window->handle);
         display64_desktop_redraw();
@@ -6921,6 +7207,18 @@ void display64_init(const struct boot_info *boot_info)
     g_display_settings_selected_index = 0u;
     g_display_installer_step_index = 0u;
     g_display_terminal_action_count = 0u;
+    g_display_terminal_scroll_offset = 0u;
+    g_display_terminal_scroll_count = 0u;
+    g_display_terminal_selection_active = 0u;
+    g_display_terminal_selection_anchor_x = 0u;
+    g_display_terminal_selection_anchor_y = 0u;
+    g_display_terminal_selection_x = 0u;
+    g_display_terminal_selection_y = 0u;
+    g_display_terminal_selection_count = 0u;
+    g_display_terminal_copy_count = 0u;
+    g_display_terminal_selection_bytes = 0u;
+    g_display_terminal_copied_bytes = 0u;
+    g_display_terminal_cursor_draw_count = 0u;
     g_display_fileman_action_count = 0u;
     g_display_settings_action_count = 0u;
     g_display_installer_action_count = 0u;
@@ -7885,6 +8183,36 @@ u32 display64_gui_scroll_count(void)
 u32 display64_gui_terminal_action_count(void)
 {
     return g_display_terminal_action_count;
+}
+
+u32 display64_gui_terminal_scroll_count(void)
+{
+    return g_display_terminal_scroll_count;
+}
+
+u32 display64_gui_terminal_scroll_offset(void)
+{
+    return g_display_terminal_scroll_offset;
+}
+
+u32 display64_gui_terminal_selection_count(void)
+{
+    return g_display_terminal_selection_count;
+}
+
+u32 display64_gui_terminal_copy_count(void)
+{
+    return g_display_terminal_copy_count;
+}
+
+u32 display64_gui_terminal_copied_bytes(void)
+{
+    return g_display_terminal_copied_bytes;
+}
+
+u32 display64_gui_terminal_cursor_draw_count(void)
+{
+    return g_display_terminal_cursor_draw_count;
 }
 
 u32 display64_gui_fileman_action_count(void)
