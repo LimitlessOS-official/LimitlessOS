@@ -793,6 +793,16 @@ static void log_pci_storage_surface(void)
     write_dec_u32(pci64_vmd_nested_status(cap, owner));
     write_string(" vmd-nested-token ");
     write_hex_u32(pci64_vmd_nested_token(cap, owner));
+    write_string(" vmd-nested-pci ");
+    write_hex_u32(pci64_vmd_nested_first_address(cap, owner));
+    write_string(" vmd-nested-vendor-device ");
+    write_hex_u32(pci64_vmd_nested_first_vendor_device(cap, owner));
+    write_string(" vmd-nested-class ");
+    write_hex_u32(pci64_vmd_nested_first_class(cap, owner));
+    write_string(" vmd-nested-bar0 ");
+    write_hex_u32(pci64_vmd_nested_first_bar0(cap, owner));
+    write_string(" vmd-nested-bar1 ");
+    write_hex_u32(pci64_vmd_nested_first_bar1(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

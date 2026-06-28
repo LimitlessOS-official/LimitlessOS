@@ -59,6 +59,11 @@ $fieldOrder = @(
     "vmd-nested-nvme",
     "vmd-nested-status",
     "vmd-nested-token",
+    "vmd-nested-pci",
+    "vmd-nested-vendor-device",
+    "vmd-nested-class",
+    "vmd-nested-bar0",
+    "vmd-nested-bar1",
     "nvme-ready",
     "nvme-identify",
     "ioq",
@@ -144,6 +149,11 @@ $baseFields = @{
     "vmd-nested-nvme" = "0"
     "vmd-nested-status" = "0"
     "vmd-nested-token" = "0x00000000"
+    "vmd-nested-pci" = "0xFFFFFFFF"
+    "vmd-nested-vendor-device" = "0x00000000"
+    "vmd-nested-class" = "0x00000000"
+    "vmd-nested-bar0" = "0x00000000"
+    "vmd-nested-bar1" = "0x00000000"
     "nvme-ready" = "1"
     "nvme-identify" = "1"
     "ioq" = "1"
@@ -236,8 +246,8 @@ $fixtures = @(
     (New-Fixture -Name "pci-vmd-mmio-span" -ExpectedStage "pci-vmd-mmio-span" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "0"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-vmd-mmio-flags" -ExpectedStage "pci-vmd-mmio-flags" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x00000000"; "vmd-mmio-token" = "0x94D5D769"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-vmd-nested-plan" -ExpectedStage "pci-vmd-nested-plan" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "0"; "vmd-nested-enum" = "0"; "vmd-nested-nvme" = "0"; "vmd-nested-status" = "0"; "vmd-nested-token" = "0x00000000"; "nvme-found" = "0" }),
-    (New-Fixture -Name "pci-vmd-nested-nvme-class" -ExpectedStage "pci-vmd-nested-nvme-class" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "0"; "vmd-nested-status" = "2"; "vmd-nested-token" = "0xD204D932"; "nvme-found" = "0" }),
-    (New-Fixture -Name "pci-vmd-nested-nvme-bind" -ExpectedStage "pci-vmd-nested-nvme-bind" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "nvme-found" = "0" }),
+    (New-Fixture -Name "pci-vmd-nested-nvme-class" -ExpectedStage "pci-vmd-nested-nvme-class" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "0"; "vmd-nested-status" = "2"; "vmd-nested-token" = "0xD204D932"; "vmd-nested-pci" = "0x00000000"; "vmd-nested-vendor-device" = "0x467F8086"; "vmd-nested-class" = "0x06040000"; "vmd-nested-bar0" = "0x00000000"; "vmd-nested-bar1" = "0x00000000"; "nvme-found" = "0" }),
+    (New-Fixture -Name "pci-vmd-nested-nvme-bind" -ExpectedStage "pci-vmd-nested-nvme-bind" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "65536"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-hidden-by-intel-system" -ExpectedStage "pci-nvme-hidden-by-intel-system" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "intel-system-pci" = "0x00000E00"; "intel-system-vendor-device" = "0x467F8086"; "intel-system-class" = "0x08800000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-other-storage" -ExpectedStage "pci-nvme-other-storage" -Mutations @{ "pci-nvme" = "0"; "pci-other-storage" = "1"; "other-storage-pci" = "0x00001F00"; "other-storage-vendor-device" = "0x00011234"; "other-storage-class" = "0x01050000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-class" -ExpectedStage "pci-nvme-class" -Mutations @{ "pci-nvme" = "0"; "nvme-found" = "0" }),
