@@ -144,7 +144,7 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-nvme-enumeration"
-                required_fields = @("nvme-found", "storage-triage", "token")
+                required_fields = @("nvme-found", "pci-storage", "pci-nvme", "nvme-pci", "nvme-vendor-device", "nvme-class", "nvme-mmio-flags", "storage-triage", "token")
                 first_check = "Inspect PCI class/subclass/prog-if matching, BAR0 discovery, MMIO mapping, and whether the controller is hidden behind VMD/RAID firmware mode."
                 kernel_files = $commonKernelFiles
                 acceptance_signal = "nvme-found 1 appears on the physical transcript."
@@ -447,6 +447,12 @@ $analysis = [PSCustomObject]@{
     diagnostic = $diagnostic
     key_fields = [PSCustomObject]@{
         nvme_found = Get-Field -Fields $parsed.fields -Name "nvme-found"
+        pci_storage = Get-Field -Fields $parsed.fields -Name "pci-storage"
+        pci_nvme = Get-Field -Fields $parsed.fields -Name "pci-nvme"
+        nvme_pci = Get-Field -Fields $parsed.fields -Name "nvme-pci"
+        nvme_vendor_device = Get-Field -Fields $parsed.fields -Name "nvme-vendor-device"
+        nvme_class = Get-Field -Fields $parsed.fields -Name "nvme-class"
+        nvme_mmio_flags = Get-Field -Fields $parsed.fields -Name "nvme-mmio-flags"
         nvme_ready = Get-Field -Fields $parsed.fields -Name "nvme-ready"
         nvme_identify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
         ioq = Get-Field -Fields $parsed.fields -Name "ioq"
@@ -467,6 +473,12 @@ $analysisTextPath = Join-Path $OutputDir "hardware-storage-analysis.txt"
 $analysisMarkdownPath = Join-Path $OutputDir "hardware-storage-analysis.md"
 
 $fieldNvmeFound = Get-Field -Fields $parsed.fields -Name "nvme-found"
+$fieldPciStorage = Get-Field -Fields $parsed.fields -Name "pci-storage"
+$fieldPciNvme = Get-Field -Fields $parsed.fields -Name "pci-nvme"
+$fieldNvmePci = Get-Field -Fields $parsed.fields -Name "nvme-pci"
+$fieldNvmeVendorDevice = Get-Field -Fields $parsed.fields -Name "nvme-vendor-device"
+$fieldNvmeClass = Get-Field -Fields $parsed.fields -Name "nvme-class"
+$fieldNvmeMmioFlags = Get-Field -Fields $parsed.fields -Name "nvme-mmio-flags"
 $fieldNvmeReady = Get-Field -Fields $parsed.fields -Name "nvme-ready"
 $fieldNvmeIdentify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
 $fieldIoQueue = Get-Field -Fields $parsed.fields -Name "ioq"
@@ -514,6 +526,12 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "| Field | Value |",
     "| --- | --- |",
     "| nvme-found | $fieldNvmeFound |",
+    "| pci-storage | $fieldPciStorage |",
+    "| pci-nvme | $fieldPciNvme |",
+    "| nvme-pci | $fieldNvmePci |",
+    "| nvme-vendor-device | $fieldNvmeVendorDevice |",
+    "| nvme-class | $fieldNvmeClass |",
+    "| nvme-mmio-flags | $fieldNvmeMmioFlags |",
     "| nvme-ready | $fieldNvmeReady |",
     "| nvme-identify | $fieldNvmeIdentify |",
     "| ioq | $fieldIoQueue |",

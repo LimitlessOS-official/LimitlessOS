@@ -1536,6 +1536,58 @@ u32 pci64_first_ahci_mmio_token(u32 hardware_capability_handle, u32 owner_id)
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_ahci_mmio_token);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 pci64_first_nvme_address(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_address);
+}
+
+u32 pci64_first_nvme_vendor_device(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_vendor_device);
+}
+
+u32 pci64_first_nvme_class(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_class);
+}
+
+u32 pci64_first_nvme_bar0(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_bar0);
+}
+
+u32 pci64_first_nvme_bar1(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_bar1);
+}
+
+u32 pci64_first_nvme_mmio_base_low(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_base_low);
+}
+
+u32 pci64_first_nvme_mmio_base_high(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_base_high);
+}
+
+u32 pci64_first_nvme_mmio_span_hint(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_span_hint);
+}
+
+u32 pci64_first_nvme_mmio_flags(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_flags);
+}
+
+u32 pci64_first_nvme_mmio_token(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_token);
+}
+#endif
+
 u32 pci64_query_count(void)
 {
     return g_query_count;

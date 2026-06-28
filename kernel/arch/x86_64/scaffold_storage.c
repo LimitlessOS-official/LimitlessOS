@@ -712,6 +712,28 @@ static void log_pci_storage_surface(void)
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_FIRST_AHCI_CLASS, cap, 0u, owner_arg));
     write_string(" ahci-bar5 ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_FIRST_AHCI_BAR5, cap, 0u, owner_arg));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string(" nvme-addr ");
+    write_hex_u32(pci64_first_nvme_address(cap, owner));
+    write_string(" nvme-vendor-device ");
+    write_hex_u32(pci64_first_nvme_vendor_device(cap, owner));
+    write_string(" nvme-class ");
+    write_hex_u32(pci64_first_nvme_class(cap, owner));
+    write_string(" nvme-bar0 ");
+    write_hex_u32(pci64_first_nvme_bar0(cap, owner));
+    write_string(" nvme-bar1 ");
+    write_hex_u32(pci64_first_nvme_bar1(cap, owner));
+    write_string(" nvme-mmio-low ");
+    write_hex_u32(pci64_first_nvme_mmio_base_low(cap, owner));
+    write_string(" nvme-mmio-high ");
+    write_hex_u32(pci64_first_nvme_mmio_base_high(cap, owner));
+    write_string(" nvme-mmio-span ");
+    write_dec_u32(pci64_first_nvme_mmio_span_hint(cap, owner));
+    write_string(" nvme-mmio-flags ");
+    write_hex_u32(pci64_first_nvme_mmio_flags(cap, owner));
+    write_string(" nvme-mmio-token ");
+    write_hex_u32(pci64_first_nvme_mmio_token(cap, owner));
+#endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));
     write_string(" mmio-base ");
