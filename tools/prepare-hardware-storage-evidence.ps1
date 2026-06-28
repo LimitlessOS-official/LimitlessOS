@@ -177,6 +177,7 @@ $manifestObject = [PSCustomObject]@{
         command = "hwval"
         required_line = "drs-nvme-triage"
         analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
+        storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts"
         storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
         boot_media_handoff_verifier = "tools\\verify-boot-media-linux-handoff.ps1"
         required_storage_stage = "storage-ready"
@@ -221,9 +222,13 @@ LimitlessOS $handoffMilestone MSI Hardware Handoff Runbook
 4. Capture the full transcript to a text file named msi-hwval-storage.txt.
 5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
 
+   .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts
+
    .\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
 
    .\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts
+
+Use the M134 classifier output first. If it reports target-kind `storage`, implement the reported M134 storage stage. If it reports `display-input` or `dynamic-handoff`, do not guess at NVMe; follow that roadmap target instead.
 
 Pass means the combined analyzer reports:
 

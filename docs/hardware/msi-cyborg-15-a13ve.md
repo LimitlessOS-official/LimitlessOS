@@ -51,7 +51,19 @@ Host-side verifier for the boot-media handoff path:
 
 The verifier intentionally stages tiny invalid ELF-shaped probe payloads. Passing output proves UEFI FAT staging, `boot_info` handoff, shell source selection, and boot-media read telemetry; it does not claim the real dynamic binary completed.
 
-Analyze the evidence bundle and captured transcript from Windows/PowerShell with the combined M118 intake command:
+Analyze the evidence bundle and captured transcript from Windows/PowerShell with the M134 storage target classifier first:
+
+```powershell
+.\tools\classify-m134-storage-target.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
+  -CapturePath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\m134-msi-storage-target `
+  -RequireStagedDynamicArtifacts
+```
+
+Use `target-kind`, `target-stage`, and `next-target` as the next implementation target. If `target-kind` is `storage`, continue M134-M140 storage work on that exact storage stage. If it is `display-input` or `dynamic-handoff`, do not guess at NVMe; follow the reported roadmap target instead.
+
+The older combined M118 intake command remains useful when you need the full storage/display/input breakdown:
 
 ```powershell
 .\tools\analyze-msi-hardware-capture.ps1 `
@@ -104,7 +116,7 @@ The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDL
 dist\m133-msi-hardware-handoff-<timestamp>
 ```
 
-For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then analyze it with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then classify it with `tools\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 
@@ -147,7 +159,8 @@ For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
 - [ ] Save the complete `hwval` transcript.
-- [ ] Analyze the evidence bundle and transcript with `tools\analyze-msi-hardware-capture.ps1`.
+- [ ] Classify the evidence bundle and transcript with `tools\classify-m134-storage-target.ps1`.
+- [ ] If a full breakdown is needed, analyze the evidence bundle and transcript with `tools\analyze-msi-hardware-capture.ps1`.
 - [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
 - [ ] Record the exact shell prompt text.

@@ -225,6 +225,7 @@ $uefiImagePath = Get-ManifestProperty -Object $manifest.uefi_image -Name "path"
 $dynamicAppPath = Get-ManifestProperty -Object $manifest.dynamic_app -Name "path"
 $dynamicInterpPath = Get-ManifestProperty -Object $manifest.dynamic_interpreter -Name "path"
 $expectedAnalyzer = Get-ManifestProperty -Object $manifest.expected_hwval -Name "analyzer"
+$storageTargetClassifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "storage_target_classifier"
 $storageVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "storage_verifier"
 $bootMediaVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "boot_media_handoff_verifier"
 $requiredStorageStage = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_storage_stage"
@@ -251,6 +252,9 @@ if ($dynamicInterpPath -ne "/APPS/LDLIMIT") {
 if ($expectedAnalyzer -ne "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts") {
     throw "MSI hardware handoff verifier: manifest analyzer mismatch: '$expectedAnalyzer'."
 }
+if ($storageTargetClassifier -ne "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts") {
+    throw "MSI hardware handoff verifier: manifest storage target classifier mismatch: '$storageTargetClassifier'."
+}
 if ($storageVerifier -ne "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts") {
     throw "MSI hardware handoff verifier: storage verifier mismatch: '$storageVerifier'."
 }
@@ -266,6 +270,7 @@ if ($requiredBootMediaSource -ne "2") {
 
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*hwval\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run hwval."
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*linux /APPS/DYNLDLIMIT\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run linux /APPS/DYNLDLIMIT."
+Assert-TextContains -Text $runbook -Pattern 'classify-m134-storage-target\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the M134 storage target classifier."
 Assert-TextContains -Text $runbook -Pattern 'analyze-msi-hardware-capture\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the combined MSI analyzer."
 Assert-TextContains -Text $runbook -Pattern 'linux: using UEFI boot-media staged file' -Message "MSI hardware handoff verifier: runbook is missing the boot-media staged-file signal."
 Assert-TextContains -Text $runbook -Pattern 'drs-realbin \.\.\. source 2 \.\.\. boot-media-read 1' -Message "MSI hardware handoff verifier: runbook is missing the source-2 boot-media telemetry expectation."
