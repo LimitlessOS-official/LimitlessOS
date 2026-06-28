@@ -18,6 +18,7 @@ $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $root "dist\hardware-storage-capture.json"
 }
+$InvalidU32 = [uint64]4294967295
 
 function Get-FieldValue
 {
@@ -31,6 +32,16 @@ function Get-FieldValue
         return [uint64]$Fields[$Name]
     }
     return $Default
+}
+
+function Has-Field
+{
+    param(
+        [hashtable]$Fields,
+        [string]$Name
+    )
+
+    return $Fields.ContainsKey($Name)
 }
 
 function Convert-TokenValue
@@ -78,9 +89,36 @@ function Classify-StorageCapture
         [hashtable]$Fields,
         [bool]$RequireStage,
         [uint32]$ExpectedAppBytes,
-        [uint32]$ExpectedInterpBytes
+    [uint32]$ExpectedInterpBytes
     )
 
+    if ((Has-Field -Fields $Fields -Name "pci-storage") -and ((Get-FieldValue -Fields $Fields -Name "pci-storage") -eq 0)) {
+        return New-Classification -Stage "pci-storage-discovery" -Detail "No PCI storage-class controller was discovered."
+    }
+    if ((Has-Field -Fields $Fields -Name "pci-nvme") -and ((Get-FieldValue -Fields $Fields -Name "pci-nvme") -eq 0)) {
+        return New-Classification -Stage "pci-nvme-class" -Detail "PCI storage controllers were discovered, but none matched the NVMe class/prog-if."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-pci") -and ((Get-FieldValue -Fields $Fields -Name "nvme-pci" -Default $InvalidU32) -eq $InvalidU32)) {
+        return New-Classification -Stage "pci-nvme-bdf" -Detail "NVMe class telemetry exists, but the first NVMe BDF was not exported."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-vendor-device") -and ((Get-FieldValue -Fields $Fields -Name "nvme-vendor-device") -eq 0)) {
+        return New-Classification -Stage "pci-nvme-identity" -Detail "The first NVMe controller did not expose a nonzero vendor/device ID."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-class") -and (((Get-FieldValue -Fields $Fields -Name "nvme-class") -band 0xFFFF0000) -ne 0x01080000)) {
+        return New-Classification -Stage "pci-nvme-class-code" -Detail ("The first NVMe controller reported unexpected class telemetry 0x{0:X8}." -f (Get-FieldValue -Fields $Fields -Name "nvme-class"))
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-bar0") -and (((Get-FieldValue -Fields $Fields -Name "nvme-bar0") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "nvme-bar0") -eq $InvalidU32))) {
+        return New-Classification -Stage "pci-nvme-bar0" -Detail "The first NVMe controller did not expose a usable BAR0."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-mmio-low") -and (((Get-FieldValue -Fields $Fields -Name "nvme-mmio-low") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "nvme-mmio-low") -eq $InvalidU32))) {
+        return New-Classification -Stage "pci-nvme-mmio-base" -Detail "The first NVMe controller did not expose a usable MMIO base."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-mmio-span") -and ((Get-FieldValue -Fields $Fields -Name "nvme-mmio-span") -eq 0)) {
+        return New-Classification -Stage "pci-nvme-mmio-span" -Detail "The first NVMe controller MMIO span was zero."
+    }
+    if ((Has-Field -Fields $Fields -Name "nvme-mmio-flags") -and (((Get-FieldValue -Fields $Fields -Name "nvme-mmio-flags") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "nvme-mmio-flags") -eq $InvalidU32))) {
+        return New-Classification -Stage "pci-nvme-mmio-flags" -Detail "The first NVMe controller MMIO flags were missing or invalid."
+    }
     if ((Get-FieldValue -Fields $Fields -Name "nvme-found") -ne 1) {
         return New-Classification -Stage "nvme-controller-discovery" -Detail "NVMe controller was not discovered."
     }

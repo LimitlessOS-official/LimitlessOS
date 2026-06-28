@@ -305,6 +305,16 @@ $fixtures = @(
         expected_pass = $false
     },
     [PSCustomObject]@{
+        name = "storage-pci-nvme-class"
+        storage_mutations = @{ "pci-nvme" = "0"; "nvme-found" = "0" }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-nvme-class"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
         name = "display-after-storage-ready"
         storage_mutations = @{}
         display_mode = "cursor-hidden"
@@ -403,9 +413,9 @@ foreach ($fixture in $fixtures) {
 $summary = [PSCustomObject]@{
     tool = "verify-m134-storage-target-fixtures"
     output_dir = (Resolve-Path $OutputDir).Path
-    total = $results.Count
-    passed = ($results | Where-Object { $_.pass }).Count
-    failed = $failures.Count
+    total = @($results).Count
+    passed = @($results | Where-Object { $_.pass }).Count
+    failed = @($failures).Count
     failures = $failures
     results = $results
 }
@@ -426,7 +436,7 @@ Write-Host "m134-storage-target-fixtures: $($summary.passed)/$($summary.total)"
 Write-Host "  failed: $($summary.failed)"
 Write-Host "  output: $summaryJsonPath"
 
-if ($failures.Count -ne 0) {
+if (@($failures).Count -ne 0) {
     foreach ($failure in $failures) {
         Write-Host "  failure: $failure"
     }
