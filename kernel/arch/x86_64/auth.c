@@ -48,6 +48,10 @@ static u32 g_auth64_login_input_only = 0u;
 static u32 g_auth64_desktop_blocked_pre_auth = 0u;
 static u32 g_auth64_failure_count = 0u;
 static u32 g_auth64_lockout_seconds = 0u;
+static u32 g_auth64_input_wait_count = 0u;
+static u32 g_auth64_hardware_fallback_count = 0u;
+static u32 g_auth64_hardware_recovery_count = 0u;
+static u32 g_auth64_lock_unavailable_count = 0u;
 static u8 g_auth64_username[AUTH64_USERNAME_BYTES];
 static u8 g_auth64_home[48];
 static u8 g_auth64_profile[32];
@@ -380,6 +384,7 @@ static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity
     u32 hardware_fallback = auth64_hardware_input_fallback_enabled();
     u32 start_ticks = pit_get_ticks();
 
+    ++g_auth64_input_wait_count;
     auth64_zero(buffer, capacity);
     for (;;)
     {
@@ -416,6 +421,7 @@ static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity
         {
             if ((pit_get_ticks() - start_ticks) >= AUTH64_HARDWARE_INPUT_TIMEOUT_TICKS)
             {
+                ++g_auth64_hardware_fallback_count;
                 break;
             }
         }
@@ -450,6 +456,7 @@ static u32 auth64_start_hardware_recovery_session(const char *reason)
         return 0u;
     }
 
+    ++g_auth64_hardware_recovery_count;
     g_auth64_login_screen = 1u;
     g_auth64_auth_success = 1u;
     g_auth64_failure_count = 0u;
@@ -654,6 +661,8 @@ u32 auth64_lock_session(void)
 #else
     if ((g_auth64_auth_success == 0u) || (g_auth64_user_store_persistent == 0u))
     {
+        ++g_auth64_lock_unavailable_count;
+        display64_login_screen_draw("Session lock unavailable", "Persistent local account is not available", 0u, 0u);
         return 0u;
     }
 
@@ -702,6 +711,10 @@ u32 auth64_login_input_only(void) { return g_auth64_login_input_only; }
 u32 auth64_desktop_blocked_pre_auth(void) { return g_auth64_desktop_blocked_pre_auth; }
 u32 auth64_failure_count(void) { return g_auth64_failure_count; }
 u32 auth64_lockout_seconds(void) { return g_auth64_lockout_seconds; }
+u32 auth64_input_wait_count(void) { return g_auth64_input_wait_count; }
+u32 auth64_hardware_fallback_count(void) { return g_auth64_hardware_fallback_count; }
+u32 auth64_hardware_recovery_count(void) { return g_auth64_hardware_recovery_count; }
+u32 auth64_lock_unavailable_count(void) { return g_auth64_lock_unavailable_count; }
 const char *auth64_active_user(void) { return (const char *)g_auth64_username; }
 const char *auth64_home_namespace(void) { return (const char *)g_auth64_home; }
 const char *auth64_session_profile(void) { return (const char *)g_auth64_profile; }

@@ -168,6 +168,14 @@ u32 display64_gui_settings_theme(void);
 u32 display64_gui_settings_pointer_speed(void);
 u32 display64_gui_settings_key_repeat(void);
 u32 display64_gui_installer_action_count(void);
+u32 display64_login_present_count(void);
+u32 display64_login_setup_present_count(void);
+u32 display64_login_lock_present_count(void);
+u32 display64_login_unlock_present_count(void);
+u32 display64_login_recovery_present_count(void);
+u32 display64_login_wait_visible_count(void);
+u32 display64_login_safe_path_count(void);
+u32 display64_login_last_state(void);
 #endif
 u32 display64_gui_unfocused_key_denied(void);
 u32 display64_gui_no_ambient_input(void);

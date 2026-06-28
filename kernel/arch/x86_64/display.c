@@ -186,6 +186,14 @@
 #define DISPLAY64_SETTINGS_POINTER_FAST 3u
 #define DISPLAY64_TERMINAL_SCROLL_STEP_BYTES 512u
 #define DISPLAY64_TERMINAL_SELECTION_BYTES 128u
+#define DISPLAY64_LOGIN_STATE_SETUP 1u
+#define DISPLAY64_LOGIN_STATE_LOGIN 2u
+#define DISPLAY64_LOGIN_STATE_ACCEPTED 3u
+#define DISPLAY64_LOGIN_STATE_DENIED 4u
+#define DISPLAY64_LOGIN_STATE_LOCKED 5u
+#define DISPLAY64_LOGIN_STATE_UNLOCKED 6u
+#define DISPLAY64_LOGIN_STATE_RECOVERY 7u
+#define DISPLAY64_LOGIN_STATE_UNAVAILABLE 8u
 #endif
 
 static struct boot_info g_display_boot_info_storage;
@@ -372,6 +380,14 @@ static u32 g_display_terminal_selection_bytes = 0u;
 static u32 g_display_terminal_copied_bytes = 0u;
 static u32 g_display_terminal_cursor_draw_count = 0u;
 static u8 g_display_terminal_selection_buffer[DISPLAY64_TERMINAL_SELECTION_BYTES];
+static u32 g_display_login_present_count = 0u;
+static u32 g_display_login_setup_present_count = 0u;
+static u32 g_display_login_lock_present_count = 0u;
+static u32 g_display_login_unlock_present_count = 0u;
+static u32 g_display_login_recovery_present_count = 0u;
+static u32 g_display_login_wait_visible_count = 0u;
+static u32 g_display_login_safe_path_count = 0u;
+static u32 g_display_login_last_state = 0u;
 static u32 g_display_fileman_action_count = 0u;
 static u32 g_display_settings_action_count = 0u;
 static u32 g_display_installer_action_count = 0u;
@@ -3244,6 +3260,108 @@ u32 display64_compositor_update_cursor(u32 cursor_x, u32 cursor_y, u32 buttons)
     return 1u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_login_text_equal(const char *left, const char *right)
+{
+    u32 index = 0u;
+
+    if ((left == (const char *)0) || (right == (const char *)0))
+    {
+        return 0u;
+    }
+
+    while ((left[index] != '\0') && (right[index] != '\0'))
+    {
+        if (left[index] != right[index])
+        {
+            return 0u;
+        }
+        ++index;
+    }
+
+    return (left[index] == '\0') && (right[index] == '\0');
+}
+
+static u32 display64_login_classify_state(const char *title, const char *message)
+{
+    if (display64_login_text_equal(title, "First-run setup") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_SETUP;
+    }
+    if (display64_login_text_equal(title, "Login accepted") != 0u)
+    {
+        if (display64_login_text_equal(message, "Hardware input recovery session") != 0u)
+        {
+            return DISPLAY64_LOGIN_STATE_RECOVERY;
+        }
+        return DISPLAY64_LOGIN_STATE_ACCEPTED;
+    }
+    if (display64_login_text_equal(title, "Login denied") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_DENIED;
+    }
+    if (display64_login_text_equal(title, "Login locked") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_LOCKED;
+    }
+    if (display64_login_text_equal(title, "Session locked") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_LOCKED;
+    }
+    if (display64_login_text_equal(title, "Session unlocked") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_UNLOCKED;
+    }
+    if (display64_login_text_equal(title, "Session lock unavailable") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_UNAVAILABLE;
+    }
+    if (display64_login_text_equal(message, "Using default local console account") != 0u)
+    {
+        return DISPLAY64_LOGIN_STATE_RECOVERY;
+    }
+
+    return DISPLAY64_LOGIN_STATE_LOGIN;
+}
+
+static void display64_login_record_state(u32 state)
+{
+    ++g_display_login_present_count;
+    g_display_login_last_state = state;
+    if (state == DISPLAY64_LOGIN_STATE_SETUP)
+    {
+        ++g_display_login_setup_present_count;
+    }
+    if (state == DISPLAY64_LOGIN_STATE_LOCKED)
+    {
+        ++g_display_login_lock_present_count;
+    }
+    if (state == DISPLAY64_LOGIN_STATE_UNLOCKED)
+    {
+        ++g_display_login_unlock_present_count;
+    }
+    if (state == DISPLAY64_LOGIN_STATE_RECOVERY)
+    {
+        ++g_display_login_recovery_present_count;
+    }
+    if ((state == DISPLAY64_LOGIN_STATE_SETUP)
+        || (state == DISPLAY64_LOGIN_STATE_LOGIN)
+        || (state == DISPLAY64_LOGIN_STATE_LOCKED))
+    {
+        ++g_display_login_wait_visible_count;
+    }
+    ++g_display_login_safe_path_count;
+}
+
+static void display64_login_draw_state_row(u32 x, u32 y, const char *label, const char *value, u32 accent)
+{
+    display64_compositor_fill_round_rect_4(x, y, 456u, 26u, DISPLAY64_RGB_SURFACE_HIGH);
+    display64_compositor_fill_rect(x + 8u, y + 7u, 3u, 12u, accent);
+    (void)display64_draw_font_text(x + 20u, y + 7u, label, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(x + 132u, y + 7u, value, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+}
+#endif
+
 void display64_font_probe(void)
 {
     if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
@@ -3271,6 +3389,11 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     u32 button_y;
     u32 button_text_x;
     u32 button_text_y;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 state;
+    const char *button_text = "Continue";
+    u32 accent = DISPLAY64_RGB_ACCENT;
+#endif
 #if !defined(LIMITLESS_X64_UEFI_KERNEL) || !LIMITLESS_X64_UEFI_KERNEL
     u32 inset;
     u32 red;
@@ -3283,35 +3406,76 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
         return;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    state = display64_login_classify_state(title, message);
+    display64_login_record_state(state);
+    if ((state == DISPLAY64_LOGIN_STATE_LOCKED) || (state == DISPLAY64_LOGIN_STATE_DENIED))
+    {
+        accent = DISPLAY64_RGB_WARNING;
+    }
+    else if (state == DISPLAY64_LOGIN_STATE_UNLOCKED)
+    {
+        accent = DISPLAY64_RGB_APP_FILES;
+        button_text = "Resume";
+    }
+    else if (state == DISPLAY64_LOGIN_STATE_UNAVAILABLE)
+    {
+        accent = DISPLAY64_RGB_DISABLED_TEXT;
+        button_text = "Dismiss";
+    }
+    else if ((state == DISPLAY64_LOGIN_STATE_ACCEPTED) || (state == DISPLAY64_LOGIN_STATE_RECOVERY))
+    {
+        button_text = "Start session";
+    }
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    panel_w = display64_min_u32(560u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
+    panel_h = 430u;
+#else
     panel_w = display64_min_u32(520u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
     panel_h = 344u;
+#endif
     panel_x = (g_display_boot_info->framebuffer_width > panel_w) ? ((g_display_boot_info->framebuffer_width - panel_w) / 2u) : 0u;
     panel_y = (g_display_boot_info->framebuffer_height > panel_h) ? ((g_display_boot_info->framebuffer_height - panel_h) / 2u) : 0u;
     field_x = panel_x + 34u;
     field_w = (panel_w > 68u) ? (panel_w - 68u) : panel_w;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    username_y = panel_y + 238u;
+    password_y = panel_y + 298u;
+    button_y = panel_y + 350u;
+#else
     username_y = panel_y + 186u;
     password_y = panel_y + 246u;
     button_y = panel_y + 286u;
+#endif
 
     display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, g_display_boot_info->framebuffer_height, DISPLAY64_RGB_DESKTOP_BG);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, 4u, DISPLAY64_RGB_ACCENT);
+    display64_compositor_fill_rect(0u, 0u, g_display_boot_info->framebuffer_width, 4u, accent);
+    display64_compositor_fill_rect(0u, 4u, 5u, g_display_boot_info->framebuffer_height - 4u, DISPLAY64_RGB_SURFACE_BORDER);
     display64_compositor_draw_surface(panel_x, panel_y, panel_w, panel_h, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 2u);
-    display64_compositor_draw_badge(panel_x + 34u, panel_y + 78u, 104u, "Local auth", DISPLAY64_RGB_ACCENT);
+    display64_compositor_fill_rect(panel_x, panel_y, 5u, panel_h, accent);
+    display64_compositor_draw_badge(panel_x + 34u, panel_y + 72u, 104u, "Local auth", accent);
+    display64_compositor_draw_badge(panel_x + 148u, panel_y + 72u, 112u, "Scoped input", DISPLAY64_RGB_FOCUS_BLUE);
+    display64_compositor_draw_badge(panel_x + 270u, panel_y + 72u, 122u, "No ambient fs", DISPLAY64_RGB_APP_SETTINGS);
     (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 108u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(panel_x + 34u, panel_y + 132u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 104u, title, DISPLAY64_FONT_NORMAL, accent, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(panel_x + 34u, panel_y + 128u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Status", "visible blocking state", accent);
+    display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Fallback", "hardware input recovery is bounded", DISPLAY64_RGB_FOCUS_BLUE);
 
-    (void)display64_draw_font_text(field_x, panel_y + 166u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(field_x, panel_y + 218u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, username_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_SURFACE_BORDER, 0u);
     (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "limitless", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
-    (void)display64_draw_font_text(field_x, panel_y + 226u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_FOCUS_BLUE, 0u);
-    display64_compositor_fill_rect(field_x + 1u, password_y + 1u, field_w - 2u, 2u, DISPLAY64_RGB_FOCUS_BLUE);
+    (void)display64_draw_font_text(field_x, panel_y + 278u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, accent, 0u);
+    display64_compositor_fill_rect(field_x + 1u, password_y + 1u, field_w - 2u, 2u, accent);
     (void)display64_draw_font_text(field_x + 12u, password_y + 7u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
-    display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 34u, DISPLAY64_RGB_ACCENT);
+    display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 34u, accent);
+    (void)display64_draw_font_text(field_x, panel_y + 398u, "Pre-auth desktop, filesystem, and network actions stay blocked.", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
 #else
     inset = 8u;
     red = 0x10u;
@@ -3351,19 +3515,37 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
 
     display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 32u, DISPLAY64_RGB_ACCENT);
 #endif
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    button_text_x = (field_w > display64_font_text_advance(button_text, DISPLAY64_FONT_NORMAL))
+        ? (field_x + ((field_w - display64_font_text_advance(button_text, DISPLAY64_FONT_NORMAL)) / 2u))
+        : field_x;
+#else
     button_text_x = (field_w > display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL))
         ? (field_x + ((field_w - display64_font_text_advance("Login", DISPLAY64_FONT_NORMAL)) / 2u))
         : field_x;
+#endif
     button_text_y = button_y + 8u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)display64_draw_font_text(button_text_x, button_text_y, button_text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+#else
     (void)display64_draw_font_text(button_text_x, button_text_y, "Login", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+#endif
 
     if (failures != 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        display64_draw_label_value(field_x, panel_y + 388u, "Failed attempts ", failures, DISPLAY64_RGB_WARNING);
+#else
         display64_draw_label_value(field_x, panel_y + 326u, "Failed attempts ", failures, DISPLAY64_RGB_WARNING);
+#endif
     }
     if (lockout_seconds != 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        display64_draw_label_value(panel_x + 260u, panel_y + 388u, "Lockout ", lockout_seconds, DISPLAY64_RGB_WARNING);
+#else
         display64_draw_label_value(panel_x + 260u, panel_y + 326u, "Lockout ", lockout_seconds, DISPLAY64_RGB_WARNING);
+#endif
     }
 
     (void)display64_compositor_present();
@@ -7219,6 +7401,14 @@ void display64_init(const struct boot_info *boot_info)
     g_display_terminal_selection_bytes = 0u;
     g_display_terminal_copied_bytes = 0u;
     g_display_terminal_cursor_draw_count = 0u;
+    g_display_login_present_count = 0u;
+    g_display_login_setup_present_count = 0u;
+    g_display_login_lock_present_count = 0u;
+    g_display_login_unlock_present_count = 0u;
+    g_display_login_recovery_present_count = 0u;
+    g_display_login_wait_visible_count = 0u;
+    g_display_login_safe_path_count = 0u;
+    g_display_login_last_state = 0u;
     g_display_fileman_action_count = 0u;
     g_display_settings_action_count = 0u;
     g_display_installer_action_count = 0u;
@@ -8358,6 +8548,46 @@ u32 display64_gui_settings_key_repeat(void)
 u32 display64_gui_installer_action_count(void)
 {
     return g_display_installer_action_count;
+}
+
+u32 display64_login_present_count(void)
+{
+    return g_display_login_present_count;
+}
+
+u32 display64_login_setup_present_count(void)
+{
+    return g_display_login_setup_present_count;
+}
+
+u32 display64_login_lock_present_count(void)
+{
+    return g_display_login_lock_present_count;
+}
+
+u32 display64_login_unlock_present_count(void)
+{
+    return g_display_login_unlock_present_count;
+}
+
+u32 display64_login_recovery_present_count(void)
+{
+    return g_display_login_recovery_present_count;
+}
+
+u32 display64_login_wait_visible_count(void)
+{
+    return g_display_login_wait_visible_count;
+}
+
+u32 display64_login_safe_path_count(void)
+{
+    return g_display_login_safe_path_count;
+}
+
+u32 display64_login_last_state(void)
+{
+    return g_display_login_last_state;
 }
 #endif
 

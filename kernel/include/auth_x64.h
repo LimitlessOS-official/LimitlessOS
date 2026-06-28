@@ -24,6 +24,12 @@ u32 auth64_login_input_only(void);
 u32 auth64_desktop_blocked_pre_auth(void);
 u32 auth64_failure_count(void);
 u32 auth64_lockout_seconds(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 auth64_input_wait_count(void);
+u32 auth64_hardware_fallback_count(void);
+u32 auth64_hardware_recovery_count(void);
+u32 auth64_lock_unavailable_count(void);
+#endif
 const char *auth64_active_user(void);
 const char *auth64_home_namespace(void);
 const char *auth64_session_profile(void);

@@ -846,6 +846,20 @@ static void log_login_surface(void)
     write_labeled_dec_u32(" desktop-blocked-pre-auth ", auth64_desktop_blocked_pre_auth());
     write_labeled_dec_u32(" failures ", auth64_failure_count());
     write_labeled_dec_u32(" lockout-seconds ", auth64_lockout_seconds());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_labeled_dec_u32(" input-waits ", auth64_input_wait_count());
+    write_labeled_dec_u32(" hardware-fallbacks ", auth64_hardware_fallback_count());
+    write_labeled_dec_u32(" hardware-recovery ", auth64_hardware_recovery_count());
+    write_labeled_dec_u32(" lock-unavailable ", auth64_lock_unavailable_count());
+    write_labeled_dec_u32(" login-present ", display64_login_present_count());
+    write_labeled_dec_u32(" login-setup-visible ", display64_login_setup_present_count());
+    write_labeled_dec_u32(" login-lock-visible ", display64_login_lock_present_count());
+    write_labeled_dec_u32(" login-unlock-visible ", display64_login_unlock_present_count());
+    write_labeled_dec_u32(" login-recovery-visible ", display64_login_recovery_present_count());
+    write_labeled_dec_u32(" login-wait-visible ", display64_login_wait_visible_count());
+    write_labeled_dec_u32(" login-safe-path ", display64_login_safe_path_count());
+    write_labeled_dec_u32(" login-last-state ", display64_login_last_state());
+#endif
     write_string(" user ");
     write_string(auth64_active_user());
     write_string(" home ");
