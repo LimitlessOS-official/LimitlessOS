@@ -700,6 +700,14 @@ static void log_pci_storage_surface(void)
     write_dec_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_AHCI_COUNT, cap, 0u, owner_arg));
     write_string(" nvme ");
     write_dec_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_NVME_COUNT, cap, 0u, owner_arg));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string(" raid ");
+    write_dec_u32(pci64_raid_count(cap, owner));
+    write_string(" other-storage ");
+    write_dec_u32(pci64_other_storage_count(cap, owner));
+    write_string(" intel-system ");
+    write_dec_u32(pci64_intel_system_count(cap, owner));
+#endif
     write_string(" usb ");
     write_dec_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_USB_COUNT, cap, 0u, owner_arg));
     write_string(" display ");
@@ -733,6 +741,26 @@ static void log_pci_storage_surface(void)
     write_hex_u32(pci64_first_nvme_mmio_flags(cap, owner));
     write_string(" nvme-mmio-token ");
     write_hex_u32(pci64_first_nvme_mmio_token(cap, owner));
+    write_string(" other-storage-addr ");
+    write_hex_u32(pci64_first_other_storage_address(cap, owner));
+    write_string(" other-storage-vendor-device ");
+    write_hex_u32(pci64_first_other_storage_vendor_device(cap, owner));
+    write_string(" other-storage-class ");
+    write_hex_u32(pci64_first_other_storage_class(cap, owner));
+    write_string(" other-storage-bar0 ");
+    write_hex_u32(pci64_first_other_storage_bar0(cap, owner));
+    write_string(" other-storage-bar1 ");
+    write_hex_u32(pci64_first_other_storage_bar1(cap, owner));
+    write_string(" intel-system-addr ");
+    write_hex_u32(pci64_first_intel_system_address(cap, owner));
+    write_string(" intel-system-vendor-device ");
+    write_hex_u32(pci64_first_intel_system_vendor_device(cap, owner));
+    write_string(" intel-system-class ");
+    write_hex_u32(pci64_first_intel_system_class(cap, owner));
+    write_string(" intel-system-bar0 ");
+    write_hex_u32(pci64_first_intel_system_bar0(cap, owner));
+    write_string(" intel-system-bar1 ");
+    write_hex_u32(pci64_first_intel_system_bar1(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

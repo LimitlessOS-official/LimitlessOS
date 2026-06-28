@@ -2585,6 +2585,53 @@ failed: 0
 
 M138 non-claims: no physical MSI transcript was newly supplied, and no new real hardware storage-driver pass is certified. This milestone narrows the next hardware failure report so implementation starts at the exact PCI/NVMe boundary rather than a broad discovery bucket. Accepted evidence preserves BIOS reserve `101` sectors and UEFI reserve `744,672` bytes.
 
+## M139 VMD/RST Storage Visibility Classification
+
+M139 extends the M137/M138 hardware storage intake so the next physical MSI transcript can distinguish plain direct-NVMe absence from likely bridge/firmware hiding. The UEFI Product PCI inventory now records:
+
+- direct NVMe controller count and first NVMe identity, unchanged
+- RAID-class storage controller count as `pci-raid`
+- non-AHCI/non-NVMe storage controller count and first identity as `pci-other-storage`, `other-storage-pci`, `other-storage-vendor-device`, `other-storage-class`, `other-storage-bar0`, and `other-storage-bar1`
+- Intel system-class controller candidate count and first identity as `pci-intel-system`, `intel-system-pci`, `intel-system-vendor-device`, `intel-system-class`, `intel-system-bar0`, and `intel-system-bar1`
+
+These fields are emitted by `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold line under the same hardware-inventory capability authority as the existing PCI fields. The implementation does not touch VMD/RST controller registers and does not claim a VMD, RAID, or nested PCI-domain driver.
+
+The hardware storage parser now classifies three new first-failure stages before falling back to the generic `pci-nvme-class` bucket:
+
+- `pci-nvme-hidden-by-raid`
+- `pci-nvme-hidden-by-intel-system`
+- `pci-nvme-other-storage`
+
+`tools\analyze-hardware-storage-capture.ps1` has diagnostic playbooks for each stage, including required telemetry fields, first checks, kernel-file pointers, and acceptance signals. `tools\verify-m134-storage-target-fixtures.ps1` now proves a full handoff/classifier run routes `pci-nvme-hidden-by-intel-system` as a storage target.
+
+Accepted commands:
+
+```powershell
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m139-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m139-storage-target-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+hardware-storage-analysis-fixtures: 47/47
+failed: 0
+
+m134-storage-target-fixtures: 6/6
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+[x64] drs-nvme-pci nvme-pci-diag 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 nvme-pci 0x00000200 nvme-vendor-device 0x00101B36 nvme-class 0x01080202 nvme-bar0 0x00008004 nvme-bar1 0x000000C0 nvme-mmio-low 0x00008000 nvme-mmio-high 0x000000C0 nvme-mmio-span 16384 nvme-mmio-flags 0x000001BF nvme-mmio-token 0x51B13EF6 other-storage-pci 0xFFFFFFFF other-storage-vendor-device 0x00000000 other-storage-class 0x00000000 other-storage-bar0 0x00000000 other-storage-bar1 0x00000000 intel-system-pci 0xFFFFFFFF intel-system-vendor-device 0x00000000 intel-system-class 0x00000000 intel-system-bar0 0x00000000 intel-system-bar1 0x00000000
+[x64] drs-nvme-triage storage-triage 1 nvme-found 1 pci-storage 2 pci-nvme 1 pci-raid 0 pci-other-storage 0 pci-intel-system 0 ... nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 ... stage-match 1 token 0xE385EA53
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `743,776` bytes. M139 non-claims: no physical MSI transcript was newly supplied, no internal SSD storage-driver pass is certified, no VMD/RST bridge is programmed, and no unsafe storage writes are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

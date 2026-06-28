@@ -61,6 +61,9 @@ function Get-NextTarget
         "legacy-realbin-unavailable" { return "Capture is from an older image. Next target: boot the M113 staged ISO and run hwval before linux /APPS/DYNLDLIMIT." }
         "missing-storage-triage" { return "No storage triage line was captured. Next target: run hwval on an M110-or-newer Product UEFI image and capture the full output." }
         "pci-storage-discovery" { return "Driver target: PCI enumeration did not expose any storage-class controller; inspect ECAM/legacy config access and firmware storage mode." }
+        "pci-nvme-hidden-by-raid" { return "Driver target: direct NVMe is hidden behind a RAID/RST-class storage controller; inspect firmware storage mode and plan a scoped RST/VMD path before NVMe probing." }
+        "pci-nvme-hidden-by-intel-system" { return "Driver target: direct NVMe is absent while Intel system-class controller candidates are present; inspect VMD-style controller exposure and nested PCI domain handling." }
+        "pci-nvme-other-storage" { return "Driver target: non-AHCI/non-NVMe storage-class hardware is present; inspect the exported class code before choosing AHCI, RAID/RST, or another storage driver path." }
         "pci-nvme-class" { return "Driver target: PCI storage exists but no NVMe class device was found; inspect class-code matching, VMD/RAID mode, and controller hiding." }
         "pci-nvme-bdf" { return "Driver target: NVMe class count is nonzero but first BDF export failed; inspect first-NVMe cache population and capability owner path." }
         "pci-nvme-identity" { return "Driver target: first NVMe BDF exists but vendor/device is zero; inspect PCI config reads for the selected BDF." }
@@ -163,10 +166,40 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-nvme-class-match"
-                required_fields = @("pci-storage", "pci-nvme", "nvme-class", "nvme-found")
+                required_fields = @("pci-storage", "pci-nvme", "pci-raid", "pci-other-storage", "pci-intel-system", "nvme-class", "nvme-found")
                 first_check = "Inspect class/subclass/prog-if matching and firmware storage mode; Intel VMD or RAID mode may hide the NVMe controller behind a different PCI device."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c")
                 acceptance_signal = "pci-nvme becomes nonzero and nvme-class has class 0x0108."
+            }
+        }
+        "pci-nvme-hidden-by-raid" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-raid-rst-class"
+                required_fields = @("pci-storage", "pci-nvme", "pci-raid", "pci-other-storage", "other-storage-pci", "other-storage-vendor-device", "other-storage-class")
+                first_check = "Confirm whether firmware storage mode is RAID/RST and whether the controller exposes direct NVMe children only behind a vendor storage bridge."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c", "kernel/arch/x86_64/mmio.c")
+                acceptance_signal = "Either firmware exposes a direct pci-nvme controller, or a bounded RAID/RST/VMD bridge path exports an NVMe namespace without unsafe writes."
+            }
+        }
+        "pci-nvme-hidden-by-intel-system" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-intel-system-vmd-candidate"
+                required_fields = @("pci-storage", "pci-nvme", "pci-intel-system", "intel-system-pci", "intel-system-vendor-device", "intel-system-class")
+                first_check = "Inspect the Intel system-class device identity and BARs; if it is VMD-like, enumerate its downstream domain before attempting the regular NVMe path."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c")
+                acceptance_signal = "The physical transcript either shows pci-nvme 1 after nested enumeration or reports a precise unsupported VMD/RST bridge stage with identity fields."
+            }
+        }
+        "pci-nvme-other-storage" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-other-storage-class"
+                required_fields = @("pci-storage", "pci-nvme", "pci-other-storage", "other-storage-pci", "other-storage-vendor-device", "other-storage-class")
+                first_check = "Decode the non-AHCI/non-NVMe storage subclass and decide whether the next driver target is RAID/RST, storage bridge enumeration, or a different controller family."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/scaffold_storage.c")
+                acceptance_signal = "The next capture no longer stops at generic pci-nvme-class and instead reaches direct NVMe, AHCI, or a named bridge-driver stage."
             }
         }
         "pci-nvme-bdf" {

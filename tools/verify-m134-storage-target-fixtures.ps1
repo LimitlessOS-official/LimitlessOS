@@ -166,6 +166,9 @@ function New-StorageLine
         "nvme-found" = "1"
         "pci-storage" = "1"
         "pci-nvme" = "1"
+        "pci-raid" = "0"
+        "pci-other-storage" = "0"
+        "pci-intel-system" = "0"
         "nvme-pci" = "0x00000400"
         "nvme-vendor-device" = "0x001F1AF4"
         "nvme-class" = "0x01080200"
@@ -176,6 +179,16 @@ function New-StorageLine
         "nvme-mmio-span" = "8192"
         "nvme-mmio-flags" = "0x000001FF"
         "nvme-mmio-token" = "0xA93E3D7A"
+        "other-storage-pci" = "0xFFFFFFFF"
+        "other-storage-vendor-device" = "0x00000000"
+        "other-storage-class" = "0x00000000"
+        "other-storage-bar0" = "0x00000000"
+        "other-storage-bar1" = "0x00000000"
+        "intel-system-pci" = "0xFFFFFFFF"
+        "intel-system-vendor-device" = "0x00000000"
+        "intel-system-class" = "0x00000000"
+        "intel-system-bar0" = "0x00000000"
+        "intel-system-bar1" = "0x00000000"
         "nvme-ready" = "1"
         "nvme-identify" = "1"
         "ioq" = "1"
@@ -312,6 +325,23 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-nvme-class"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "storage-pci-nvme-hidden-by-intel-system"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "intel-system-pci" = "0x00000E00";
+            "intel-system-vendor-device" = "0x467F8086";
+            "intel-system-class" = "0x08800000";
+            "nvme-found" = "0"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-nvme-hidden-by-intel-system"
         expected_pass = $false
     },
     [PSCustomObject]@{
