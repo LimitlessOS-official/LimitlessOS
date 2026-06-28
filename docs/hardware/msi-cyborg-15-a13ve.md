@@ -24,14 +24,14 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the M121 handoff bundle:
+Next hardware evidence to capture with the M133 handoff bundle:
 
 ```text
 hwval
 linux /APPS/DYNLDLIMIT
 ```
 
-Record the full `drs-nvme-triage` line from `hwval` and the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the M121 staged image.
+Record the full `drs-nvme-triage` line from `hwval` and the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the M133 staged image.
 
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
@@ -55,7 +55,7 @@ Analyze the evidence bundle and captured transcript from Windows/PowerShell with
 
 ```powershell
 .\tools\analyze-msi-hardware-capture.ps1 `
-  -EvidenceDir .\dist\m121-msi-hardware-handoff-<timestamp> `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
   -CapturePath .\dist\msi-hwval-storage.txt `
   -OutputDir .\dist\msi-hardware-analysis `
   -RequireStagedDynamicArtifacts
@@ -65,7 +65,7 @@ The combined analyzer checks the evidence bundle hashes/reserves first, runs the
 
 Before a physical capture handoff, `tools\verify-msi-hardware-analysis-fixtures.ps1` can be run as a host-side regression check for the combined analyzer ordering.
 
-The M121/M122 handoff verifier also has fixture coverage:
+The M133 handoff verifier also has fixture coverage:
 
 ```powershell
 .\tools\verify-msi-hardware-handoff-fixtures.ps1
@@ -77,11 +77,11 @@ Before writing the USB stick, verify the current handoff bundle itself:
 
 ```powershell
 .\tools\verify-msi-hardware-handoff.ps1 `
-  -EvidenceDir .\dist\m121-msi-hardware-handoff-<timestamp> `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
   -RequireStagedDynamicArtifacts
 ```
 
-This checks the bundle hashes/reserves, the M121 manifest contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` runbook, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
+This checks the bundle hashes/reserves, the M133 manifest contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` runbook, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
 
 When a capture is supplied, the verifier also classifies the dynamic command itself. Use `dynamic-handoff-stage` as the dynamic launch target:
 
@@ -92,19 +92,19 @@ When a capture is supplied, the verifier also classifies the dynamic command its
 - `dynamic-handoff-missing-realbin`: the transcript did not capture usable `drs-realbin` telemetry for `/APPS/DYNLDLIMIT`.
 - `dynamic-handoff-boot-media-read`: source 2 was selected but boot-media read success was not proven.
 
-M121 packages this handoff into a timestamped evidence directory:
+M133 packages this handoff into a timestamped evidence directory:
 
 ```powershell
 .\tools\prepare-hardware-storage-evidence.ps1
 ```
 
-The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, `README-HARDWARE-STORAGE.txt`, and an embedded `msi-handoff-verification` result proving the package still matches the current source-2 handoff contract. The accepted M121 bundle shape is:
+The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, `README-HARDWARE-STORAGE.txt`, and an embedded `msi-handoff-verification` result proving the package still matches the current source-2 handoff contract. The accepted M133 bundle shape is:
 
 ```text
-dist\m121-msi-hardware-handoff-20260617-225629
+dist\m133-msi-hardware-handoff-<timestamp>
 ```
 
-For the next physical run, write `limitlessos-x86_64-m121-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then analyze it with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then analyze it with `tools\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts`.
 
 ## Safety Rules
 

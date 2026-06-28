@@ -15,6 +15,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$handoffMilestone = "M133"
+$handoffStem = "m133"
+$handoffIsoName = "limitlessos-x86_64-$handoffStem-handoff.iso"
+$handoffUefiName = "limitlessos-x86_64-$handoffStem-handoff-uefi.img"
 
 function Assert-FileExists
 {
@@ -226,16 +230,16 @@ $bootMediaVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name
 $requiredStorageStage = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_storage_stage"
 $requiredBootMediaSource = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_boot_media_linux_source"
 
-if ($milestone -ne "M121") {
-    throw "MSI hardware handoff verifier: manifest milestone must be M121, observed '$milestone'."
+if ($milestone -ne $handoffMilestone) {
+    throw "MSI hardware handoff verifier: manifest milestone must be $handoffMilestone, observed '$milestone'."
 }
 if ($purpose -ne "MSI hardware handoff evidence bundle") {
     throw "MSI hardware handoff verifier: manifest purpose mismatch: '$purpose'."
 }
-if ($isoPath -ne "limitlessos-x86_64-m121-handoff.iso") {
+if ($isoPath -ne $handoffIsoName) {
     throw "MSI hardware handoff verifier: ISO path mismatch: '$isoPath'."
 }
-if ($uefiImagePath -ne "limitlessos-x86_64-m121-handoff-uefi.img") {
+if ($uefiImagePath -ne $handoffUefiName) {
     throw "MSI hardware handoff verifier: UEFI image path mismatch: '$uefiImagePath'."
 }
 if ($dynamicAppPath -ne "/APPS/DYNLDLIMIT") {
@@ -355,6 +359,7 @@ $verification = [PSCustomObject]@{
 
 $verificationJsonPath = Join-Path $OutputDir "msi-hardware-handoff-verification.json"
 $verificationTextPath = Join-Path $OutputDir "msi-hardware-handoff-verification.txt"
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPath -Encoding Ascii
 
 @(
