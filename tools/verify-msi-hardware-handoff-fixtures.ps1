@@ -79,6 +79,8 @@ function Write-Runbook
         "4. Capture the full transcript to a text file named msi-hwval-storage.txt.",
         "5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:",
         "",
+        "   .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts",
+        "",
         "   .\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts",
         "",
         "Pass means the combined analyzer reports:",
@@ -172,6 +174,7 @@ function New-EvidenceBundle
             command = "hwval"
             required_line = "drs-nvme-triage"
             analyzer = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.analyzer" -Default "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
+            storage_target_classifier = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.storage_target_classifier" -Default "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts"
             storage_verifier = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.storage_verifier" -Default "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
             boot_media_handoff_verifier = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.boot_media_handoff_verifier" -Default "tools\\verify-boot-media-linux-handoff.ps1"
             required_storage_stage = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.required_storage_stage" -Default "storage-ready"
@@ -278,6 +281,13 @@ $fixtures = @(
         mutations = @{ "expected_hwval.analyzer" = "tools\\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts" }
         runbook_mode = "valid"
         expected_error = "manifest analyzer mismatch"
+    },
+    [PSCustomObject]@{
+        name = "missing-storage-target-classifier"
+        expect_success = $false
+        mutations = @{ "expected_hwval.storage_target_classifier" = "" }
+        runbook_mode = "valid"
+        expected_error = "manifest storage target classifier mismatch"
     },
     [PSCustomObject]@{
         name = "missing-source2"

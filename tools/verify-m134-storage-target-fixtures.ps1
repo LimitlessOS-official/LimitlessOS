@@ -101,6 +101,7 @@ function New-EvidenceBundle
             command = "hwval"
             required_line = "drs-nvme-triage"
             analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
+            storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts"
             storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
             boot_media_handoff_verifier = "tools\\verify-boot-media-linux-handoff.ps1"
             required_storage_stage = "storage-ready"
@@ -140,6 +141,8 @@ function New-EvidenceBundle
         "linux /APPS/DYNLDLIMIT",
         "",
         "Analyze with:",
+        "",
+        ".\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts",
         "",
         ".\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts",
         "",
