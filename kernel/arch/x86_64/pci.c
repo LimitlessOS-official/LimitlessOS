@@ -29,8 +29,10 @@ enum
     PCI_CLASS_STORAGE = 0x01u,
     PCI_CLASS_NETWORK = 0x02u,
     PCI_CLASS_DISPLAY = 0x03u,
+    PCI_CLASS_SYSTEM = 0x08u,
     PCI_CLASS_SERIAL_BUS = 0x0Cu,
     PCI_SUBCLASS_IDE = 0x01u,
+    PCI_SUBCLASS_RAID = 0x04u,
     PCI_SUBCLASS_AHCI = 0x06u,
     PCI_SUBCLASS_NVME = 0x08u,
     PCI_SUBCLASS_USB = 0x03u,
@@ -99,6 +101,11 @@ static u32 g_storage_count = 0u;
 static u32 g_ide_count = 0u;
 static u32 g_ahci_count = 0u;
 static u32 g_nvme_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_raid_count = 0u;
+static u32 g_other_storage_count = 0u;
+static u32 g_intel_system_count = 0u;
+#endif
 static u32 g_usb_count = 0u;
 static u32 g_usb_uhci_count = 0u;
 static u32 g_usb_ohci_count = 0u;
@@ -123,6 +130,18 @@ static u32 g_first_nvme_mmio_base_high = 0u;
 static u32 g_first_nvme_mmio_span_hint = 0u;
 static u32 g_first_nvme_mmio_flags = 0u;
 static u32 g_first_nvme_mmio_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_first_other_storage_address = 0xFFFFFFFFu;
+static u32 g_first_other_storage_vendor_device = 0u;
+static u32 g_first_other_storage_class = 0u;
+static u32 g_first_other_storage_bar0 = 0u;
+static u32 g_first_other_storage_bar1 = 0u;
+static u32 g_first_intel_system_address = 0xFFFFFFFFu;
+static u32 g_first_intel_system_vendor_device = 0u;
+static u32 g_first_intel_system_class = 0u;
+static u32 g_first_intel_system_bar0 = 0u;
+static u32 g_first_intel_system_bar1 = 0u;
+#endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
 static u32 g_first_xhci_class = 0u;
@@ -643,7 +662,44 @@ static void pci64_note_function(u32 bus, u32 device, u32 function)
                 g_first_nvme_bar1 = bar1;
             }
         }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        else
+        {
+            ++g_other_storage_count;
+            if (subclass == PCI_SUBCLASS_RAID)
+            {
+                ++g_raid_count;
+            }
+
+            if (g_first_other_storage_address == 0xFFFFFFFFu)
+            {
+                bar0 = pci64_read_config(bus, device, function, 0x10u);
+                bar1 = pci64_read_config(bus, device, function, 0x14u);
+                g_first_other_storage_address = (bus << 16) | (device << 8) | function;
+                g_first_other_storage_vendor_device = vendor_device;
+                g_first_other_storage_class = class_register;
+                g_first_other_storage_bar0 = bar0;
+                g_first_other_storage_bar1 = bar1;
+            }
+        }
+#endif
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    else if ((class_code == PCI_CLASS_SYSTEM) && (vendor == PCI_INTEL_VENDOR))
+    {
+        ++g_intel_system_count;
+        if (g_first_intel_system_address == 0xFFFFFFFFu)
+        {
+            bar0 = pci64_read_config(bus, device, function, 0x10u);
+            bar1 = pci64_read_config(bus, device, function, 0x14u);
+            g_first_intel_system_address = (bus << 16) | (device << 8) | function;
+            g_first_intel_system_vendor_device = vendor_device;
+            g_first_intel_system_class = class_register;
+            g_first_intel_system_bar0 = bar0;
+            g_first_intel_system_bar1 = bar1;
+        }
+    }
+#endif
     else if ((class_code == PCI_CLASS_SERIAL_BUS) && (subclass == PCI_SUBCLASS_USB))
     {
         ++g_usb_count;
@@ -1314,6 +1370,11 @@ void pci64_init(const struct boot_info *boot_info)
     g_ide_count = 0u;
     g_ahci_count = 0u;
     g_nvme_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_raid_count = 0u;
+    g_other_storage_count = 0u;
+    g_intel_system_count = 0u;
+#endif
     g_usb_count = 0u;
     g_usb_uhci_count = 0u;
     g_usb_ohci_count = 0u;
@@ -1338,6 +1399,18 @@ void pci64_init(const struct boot_info *boot_info)
     g_first_nvme_mmio_span_hint = 0u;
     g_first_nvme_mmio_flags = 0u;
     g_first_nvme_mmio_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_first_other_storage_address = 0xFFFFFFFFu;
+    g_first_other_storage_vendor_device = 0u;
+    g_first_other_storage_class = 0u;
+    g_first_other_storage_bar0 = 0u;
+    g_first_other_storage_bar1 = 0u;
+    g_first_intel_system_address = 0xFFFFFFFFu;
+    g_first_intel_system_vendor_device = 0u;
+    g_first_intel_system_class = 0u;
+    g_first_intel_system_bar0 = 0u;
+    g_first_intel_system_bar1 = 0u;
+#endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
     g_first_xhci_class = 0u;
@@ -1481,6 +1554,23 @@ u32 pci64_nvme_count(u32 hardware_capability_handle, u32 owner_id)
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_nvme_count);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 pci64_raid_count(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_raid_count);
+}
+
+u32 pci64_other_storage_count(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_other_storage_count);
+}
+
+u32 pci64_intel_system_count(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_intel_system_count);
+}
+#endif
+
 u32 pci64_usb_count(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_usb_count);
@@ -1585,6 +1675,56 @@ u32 pci64_first_nvme_mmio_flags(u32 hardware_capability_handle, u32 owner_id)
 u32 pci64_first_nvme_mmio_token(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_nvme_mmio_token);
+}
+
+u32 pci64_first_other_storage_address(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_other_storage_address);
+}
+
+u32 pci64_first_other_storage_vendor_device(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_other_storage_vendor_device);
+}
+
+u32 pci64_first_other_storage_class(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_other_storage_class);
+}
+
+u32 pci64_first_other_storage_bar0(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_other_storage_bar0);
+}
+
+u32 pci64_first_other_storage_bar1(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_other_storage_bar1);
+}
+
+u32 pci64_first_intel_system_address(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_intel_system_address);
+}
+
+u32 pci64_first_intel_system_vendor_device(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_intel_system_vendor_device);
+}
+
+u32 pci64_first_intel_system_class(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_intel_system_class);
+}
+
+u32 pci64_first_intel_system_bar0(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_intel_system_bar0);
+}
+
+u32 pci64_first_intel_system_bar1(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_first_intel_system_bar1);
 }
 #endif
 

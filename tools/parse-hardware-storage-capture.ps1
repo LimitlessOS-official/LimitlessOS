@@ -96,6 +96,15 @@ function Classify-StorageCapture
         return New-Classification -Stage "pci-storage-discovery" -Detail "No PCI storage-class controller was discovered."
     }
     if ((Has-Field -Fields $Fields -Name "pci-nvme") -and ((Get-FieldValue -Fields $Fields -Name "pci-nvme") -eq 0)) {
+        if ((Has-Field -Fields $Fields -Name "pci-raid") -and ((Get-FieldValue -Fields $Fields -Name "pci-raid") -ne 0)) {
+            return New-Classification -Stage "pci-nvme-hidden-by-raid" -Detail "PCI storage exists, but direct NVMe is hidden behind a RAID/RST-class storage controller."
+        }
+        if ((Has-Field -Fields $Fields -Name "pci-intel-system") -and ((Get-FieldValue -Fields $Fields -Name "pci-intel-system") -ne 0)) {
+            return New-Classification -Stage "pci-nvme-hidden-by-intel-system" -Detail "PCI storage exists, but direct NVMe is absent and Intel system-class controller candidates are present."
+        }
+        if ((Has-Field -Fields $Fields -Name "pci-other-storage") -and ((Get-FieldValue -Fields $Fields -Name "pci-other-storage") -ne 0)) {
+            return New-Classification -Stage "pci-nvme-other-storage" -Detail "PCI storage exists, but direct NVMe is absent and only non-AHCI/non-NVMe storage-class controllers were exported."
+        }
         return New-Classification -Stage "pci-nvme-class" -Detail "PCI storage controllers were discovered, but none matched the NVMe class/prog-if."
     }
     if ((Has-Field -Fields $Fields -Name "nvme-pci") -and ((Get-FieldValue -Fields $Fields -Name "nvme-pci" -Default $InvalidU32) -eq $InvalidU32)) {
