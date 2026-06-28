@@ -16768,6 +16768,11 @@ static u32 mmio64_fat32_create_directory_reference(
     u32 attr,
     u32 start_cluster,
     u32 size);
+static u32 mmio64_fat32_copy_file_path(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    const u8 *source_path,
+    const u8 *destination_path);
 
 static u32 mmio64_nvme_rw_write_data_chain(
     Mmio64NvmeFatReader *reader,
@@ -16892,6 +16897,173 @@ static u32 mmio64_nvme_rw_update_file_entry(
         reader,
         location->entry_lba,
         MMIO64_NVME_FAT_WRITE_DIR_CID);
+}
+
+static u32 mmio64_fat32_copy_cluster_chain(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    u32 source_cluster,
+    u32 source_size,
+    u32 *first_cluster_out)
+{
+    u64 cluster_bytes =
+        (u64)volume->bytes_per_sector * (u64)volume->sectors_per_cluster;
+    u32 remaining = source_size;
+    u32 current_source = source_cluster;
+    u32 current_destination = 0u;
+    u32 first_destination = 0u;
+    u32 previous_destination = 0u;
+    u32 candidate = MMIO64_NVME_RW_FIRST_CLUSTER;
+    u32 source_lba;
+    u32 destination_lba;
+    u32 next_source;
+    u32 lba_index;
+    u32 take;
+    u32 visited;
+
+    if ((reader == (Mmio64NvmeFatReader *)0)
+        || (volume == (const Mmio64Fat32Volume *)0)
+        || (first_cluster_out == (u32 *)0)
+        || (source_cluster < 2u)
+        || (source_size == 0u)
+        || (cluster_bytes == 0ull)
+        || (cluster_bytes > 0x100000ull))
+    {
+        return 0u;
+    }
+
+    *first_cluster_out = 0u;
+    for (visited = 0u;
+        (remaining != 0u) && (visited < MMIO64_FAT32_READ_CLUSTER_VISIT_LIMIT);
+        ++visited)
+    {
+        if ((mmio64_fat32_cluster_lba(volume, current_source, &source_lba) == 0u)
+            || (mmio64_fat32_find_free_cluster(
+                    reader,
+                    volume,
+                    candidate,
+                    &current_destination) == 0u)
+            || (mmio64_fat32_write_fat_entry(
+                    reader,
+                    volume,
+                    current_destination,
+                    0x0FFFFFFFu) == 0u)
+            || (mmio64_fat32_cluster_lba(volume, current_destination, &destination_lba) == 0u))
+        {
+            if (first_destination != 0u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                    reader,
+                    volume,
+                    first_destination);
+            }
+            return 0u;
+        }
+
+        if (first_destination == 0u)
+        {
+            first_destination = current_destination;
+        }
+        else if (mmio64_fat32_write_fat_entry(
+                    reader,
+                    volume,
+                    previous_destination,
+                    current_destination) == 0u)
+        {
+            (void)mmio64_fat32_write_fat_entry(reader, volume, current_destination, 0u);
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                reader,
+                volume,
+                first_destination);
+            return 0u;
+        }
+
+        for (lba_index = 0u; lba_index < volume->lbas_per_cluster; ++lba_index)
+        {
+            if (mmio64_nvme_fat_read_lba(
+                    reader,
+                    source_lba + lba_index,
+                    MMIO64_NVME_FAT_READ_DATA_CID) == 0u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                    reader,
+                    volume,
+                    first_destination);
+                return 0u;
+            }
+
+            take = (remaining < 512u) ? remaining : 512u;
+            if (take < 512u)
+            {
+                mmio64_zero_bytes(g_nvme_io_data_buffer + take, 512u - take);
+            }
+            if (mmio64_nvme_fat_write_lba(
+                    reader,
+                    destination_lba + lba_index,
+                    MMIO64_NVME_FAT_WRITE_DATA_CID) == 0u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                    reader,
+                    volume,
+                    first_destination);
+                return 0u;
+            }
+            if (remaining > 512u)
+            {
+                remaining -= 512u;
+            }
+            else
+            {
+                remaining = 0u;
+            }
+        }
+
+        previous_destination = current_destination;
+        if (current_destination == 0xFFFFFFFFu)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                reader,
+                volume,
+                first_destination);
+            return 0u;
+        }
+        candidate = current_destination + 1u;
+        if (remaining != 0u)
+        {
+            if (mmio64_fat32_next_cluster(reader, volume, current_source, &next_source) == 0u)
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                    reader,
+                    volume,
+                    first_destination);
+                return 0u;
+            }
+            if ((next_source < 2u) || (next_source >= 0x0FFFFFF8u))
+            {
+                (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                    reader,
+                    volume,
+                    first_destination);
+                return 0u;
+            }
+            current_source = next_source;
+        }
+    }
+
+    if (remaining != 0u)
+    {
+        if (first_destination != 0u)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                reader,
+                volume,
+                first_destination);
+        }
+        return 0u;
+    }
+
+    *first_cluster_out = first_destination;
+    return 1u;
 }
 
 static u32 mmio64_fat32_tombstone_directory_range(
@@ -17497,6 +17669,92 @@ static u32 mmio64_fat32_move_path_file(
 
     return ((mmio64_fat32_find_path_location(reader, volume, source_path, &existing) == 0u)
         && (mmio64_fat32_find_path_location(reader, volume, destination_path, &existing) != 0u))
+        ? 1u
+        : 0u;
+}
+
+static u32 mmio64_fat32_copy_file_path(
+    Mmio64NvmeFatReader *reader,
+    const Mmio64Fat32Volume *volume,
+    const u8 *source_path,
+    const u8 *destination_path)
+{
+    u8 parent[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    u8 leaf[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    Mmio64Fat32EntryLocation source;
+    Mmio64Fat32EntryLocation existing;
+    u32 parent_cluster = 0u;
+    u32 parent_size = 0u;
+    u32 parent_attr = 0u;
+    u32 copied_cluster = 0u;
+
+    if ((source_path == (const u8 *)0)
+        || (destination_path == (const u8 *)0)
+        || (mmio64_fat32_find_path_location(reader, volume, source_path, &source) == 0u)
+        || ((source.attr & 0x10u) != 0u)
+        || ((source.size != 0u) && (source.cluster < 2u))
+        || (mmio64_fat32_find_path_location(reader, volume, destination_path, &existing) != 0u)
+        || (mmio64_nvme_rw_split_parent_leaf(
+                destination_path,
+                parent,
+                sizeof(parent),
+                leaf,
+                sizeof(leaf)) == 0u))
+    {
+        return 0u;
+    }
+
+    if ((parent[0] == (u8)'/') && (parent[1] == 0u))
+    {
+        parent_cluster = volume->root_cluster;
+    }
+    else if ((mmio64_fat32_find_path(
+                reader,
+                volume,
+                parent,
+                &parent_cluster,
+                &parent_size,
+                &parent_attr) == 0u)
+        || ((parent_attr & 0x10u) == 0u)
+        || (parent_cluster < 2u))
+    {
+        return 0u;
+    }
+
+    if ((source.size != 0u)
+        && (mmio64_fat32_copy_cluster_chain(
+                reader,
+                volume,
+                source.cluster,
+                source.size,
+                &copied_cluster) == 0u))
+    {
+        return 0u;
+    }
+
+    if (mmio64_fat32_create_directory_reference(
+            reader,
+            volume,
+            parent_cluster,
+            leaf,
+            source.attr,
+            copied_cluster,
+            source.size) == 0u)
+    {
+        if (copied_cluster != 0u)
+        {
+            (void)mmio64_fat32_free_cluster_chain_for_mutation(
+                reader,
+                volume,
+                copied_cluster);
+        }
+        return 0u;
+    }
+
+    return ((mmio64_fat32_find_path_location(reader, volume, destination_path, &existing) != 0u)
+        && ((existing.attr & 0x10u) == 0u)
+        && (existing.size == source.size)
+        && ((source.size == 0u) || (existing.cluster >= 2u)))
         ? 1u
         : 0u;
 }
@@ -19252,51 +19510,56 @@ u32 mmio64_nvme_fat_shell_copy_file(
     u32 destination_path_byte_count,
     u32 owner_id)
 {
-    u32 bytes_read = 0u;
+    u8 normalized_source[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    u8 normalized_destination[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    Mmio64NvmeFatReader reader;
+    Mmio64Fat32Volume volume;
+    Mmio64Fat32EntryLocation location;
+    u32 doorbell_page = 0u;
     u32 ok;
 
-    if ((source_path == (const u8 *)0)
-        || (destination_path == (const u8 *)0)
-        || (source_path_byte_count == 0u)
-        || (destination_path_byte_count == 0u)
-        || (mmio64_nvme_rw_shell_authorized(owner_id) == 0u))
+    if ((mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
+        || (mmio64_nvme_rw_normalize_path(
+                source_path,
+                source_path_byte_count,
+                normalized_source,
+                sizeof(normalized_source)) == 0u)
+        || (mmio64_nvme_rw_normalize_path(
+                destination_path,
+                destination_path_byte_count,
+                normalized_destination,
+                sizeof(normalized_destination)) == 0u)
+        || (mmio64_nvme_fat_open_runtime(&reader, &volume, &doorbell_page) == 0u))
     {
         ++g_nvme_rw_shell_mutation_denial;
         g_nvme_rw_error = 36u;
         return 0u;
     }
 
-    ok = mmio64_nvme_fat_shell_read_file(
-        source_path,
-        source_path_byte_count,
-        g_nvme_rw_shell_copy_buffer,
-        sizeof(g_nvme_rw_shell_copy_buffer),
-        owner_id,
-        &bytes_read);
-    if ((ok == 0u) || (bytes_read == 0u))
-    {
-        ++g_nvme_rw_shell_mutation_denial;
-        g_nvme_rw_error = 36u;
-        return 0u;
-    }
-
-    ok = mmio64_nvme_fat_shell_write_file(
-        destination_path,
-        destination_path_byte_count,
-        g_nvme_rw_shell_copy_buffer,
-        bytes_read,
-        owner_id);
-    if (ok != 0u)
+    ok = mmio64_fat32_copy_file_path(
+        &reader,
+        &volume,
+        normalized_source,
+        normalized_destination);
+    if ((ok != 0u)
+        && (mmio64_fat32_find_path_location(
+                &reader,
+                &volume,
+                normalized_destination,
+                &location) != 0u)
+        && ((location.attr & 0x10u) == 0u))
     {
         g_nvme_rw_shell_copy = 1u;
         ++g_nvme_rw_audit_count;
         ++g_nvme_rw_commit_count;
         g_nvme_rw_error = 0u;
+        mmio64_nvme_fat_close_runtime(&reader, &volume, doorbell_page);
         return 1u;
     }
 
     ++g_nvme_rw_shell_mutation_denial;
     g_nvme_rw_error = 36u;
+    mmio64_nvme_fat_close_runtime(&reader, &volume, doorbell_page);
     return 0u;
 }
 
