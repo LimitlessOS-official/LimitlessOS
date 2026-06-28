@@ -200,6 +200,11 @@ function New-StorageLine
         "vmd-mmio-span" = "0"
         "vmd-mmio-flags" = "0x00000000"
         "vmd-mmio-token" = "0x00000000"
+        "vmd-nested-plan" = "0"
+        "vmd-nested-enum" = "0"
+        "vmd-nested-nvme" = "0"
+        "vmd-nested-status" = "0"
+        "vmd-nested-token" = "0x00000000"
         "nvme-ready" = "1"
         "nvme-identify" = "1"
         "ioq" = "1"
@@ -354,13 +359,18 @@ $fixtures = @(
             "vmd-mmio-span" = "65536";
             "vmd-mmio-flags" = "0x000003FF";
             "vmd-mmio-token" = "0x94D5D769";
+            "vmd-nested-plan" = "1";
+            "vmd-nested-enum" = "0";
+            "vmd-nested-nvme" = "0";
+            "vmd-nested-status" = "1";
+            "vmd-nested-token" = "0xD204D931";
             "nvme-found" = "0"
         }
         display_mode = "ready"
         dynamic_mode = "source2-exit0"
         expected_exit_code = 2
         expected_kind = "storage"
-        expected_stage = "pci-nvme-hidden-by-vmd"
+        expected_stage = "pci-vmd-nested-enumeration"
         expected_pass = $false
     },
     [PSCustomObject]@{
