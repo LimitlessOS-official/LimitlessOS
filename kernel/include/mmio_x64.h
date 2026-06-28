@@ -7528,6 +7528,10 @@ u32 mmio64_nvme_fat_copy_proof(void);
 u32 mmio64_nvme_fat_rename_proof(void);
 u32 mmio64_nvme_fat_move_proof(void);
 u32 mmio64_nvme_fat_recursive_delete_proof(void);
+u32 mmio64_nvme_fat_dir_grow_count(void);
+u32 mmio64_nvme_fat_dir_grow_cluster(void);
+u32 mmio64_nvme_fat_dir_grow_denial(void);
+u32 mmio64_nvme_fat_dir_grow_tombstone(void);
 #endif
 u32 mmio64_nvme_fat_flushes(void);
 u32 mmio64_nvme_fat_fs_delegation(void);
