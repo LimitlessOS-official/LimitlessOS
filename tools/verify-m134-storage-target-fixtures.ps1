@@ -310,7 +310,11 @@ function New-StorageLine
         "token" = "0x75BC2409"
     }
     foreach ($key in $Mutations.Keys) {
-        $fields[$key] = [string]$Mutations[$key]
+        if ([string]$Mutations[$key] -eq "__REMOVE__") {
+            $fields.Remove($key)
+        } else {
+            $fields[$key] = [string]$Mutations[$key]
+        }
     }
 
     $parts = @()
@@ -936,6 +940,28 @@ $fixtures = @(
         expected_pass = $false
     },
     [PSCustomObject]@{
+        name = "storage-missing-nvme-controller-snapshot"
+        storage_mutations = @{
+            "nvme-probe-error" = "__REMOVE__"
+            "nvme-regs" = "__REMOVE__"
+            "nvme-cap-low" = "__REMOVE__"
+            "nvme-cap-high" = "__REMOVE__"
+            "nvme-vs" = "__REMOVE__"
+            "nvme-cc" = "__REMOVE__"
+            "nvme-csts" = "__REMOVE__"
+            "nvme-dstrd-bytes" = "__REMOVE__"
+            "nvme-doorbell-page" = "__REMOVE__"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "nvme-controller-snapshot-missing"
+        expected_roadmap = "M134"
+        expected_pass = $false
+        expected_nvme_snapshot = $false
+    },
+    [PSCustomObject]@{
         name = "storage-ready"
         storage_mutations = @{}
         display_mode = "ready"
@@ -1021,14 +1047,30 @@ foreach ($fixture in $fixtures) {
         ($actualKind -eq [string]$fixture.expected_kind) -and
         ($actualStage -eq [string]$fixture.expected_stage) -and
         ($actualRoadmap -eq [string]$fixture.expected_roadmap) -and
-        ($actualPass -eq [bool]$fixture.expected_pass) -and
-        ($actualNvmeProbeError -eq "0") -and
-        ($actualNvmeRegs -eq "1") -and
-        ($actualNvmeCapLow -eq "0x00003FFF") -and
-        ($actualNvmeCapHigh -eq "0x00000030") -and
-        ($actualNvmeVersion -eq "0x00010400") -and
-        ($actualNvmeCc -eq "0x00460001") -and
-        ($actualNvmeCsts -eq "0x00000001"))
+        ($actualPass -eq [bool]$fixture.expected_pass))
+    $expectNvmeSnapshot = $true
+    if ($fixture.PSObject.Properties["expected_nvme_snapshot"] -ne $null) {
+        $expectNvmeSnapshot = [bool]$fixture.expected_nvme_snapshot
+    }
+    if ($expectNvmeSnapshot) {
+        $passed = ($passed -and
+            ($actualNvmeProbeError -eq "0") -and
+            ($actualNvmeRegs -eq "1") -and
+            ($actualNvmeCapLow -eq "0x00003FFF") -and
+            ($actualNvmeCapHigh -eq "0x00000030") -and
+            ($actualNvmeVersion -eq "0x00010400") -and
+            ($actualNvmeCc -eq "0x00460001") -and
+            ($actualNvmeCsts -eq "0x00000001"))
+    } else {
+        $passed = ($passed -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeProbeError)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeRegs)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCapLow)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCapHigh)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeVersion)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCc)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCsts)))
+    }
     if ($fixture.PSObject.Properties["expected_vmd_kind"]) {
         $passed = ($passed -and
             ($actualVmdKind -eq [string]$fixture.expected_vmd_kind) -and

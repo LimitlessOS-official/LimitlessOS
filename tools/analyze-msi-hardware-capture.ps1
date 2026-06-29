@@ -109,14 +109,16 @@ $storageVerification = Read-JsonFile `
 $storageCaptureAnalysis = $null
 $storageCaptureStage = Get-PropertyText -Object $storageVerification -Name "capture_stage"
 $storageCapturePass = [bool]$storageVerification.capture_pass
-$storageNextTarget = ""
+$storageNextTarget = Get-PropertyText -Object $storageVerification -Name "capture_next_target"
 $storageCaptureAnalysisDir = Get-PropertyText -Object $storageVerification -Name "capture_analysis_dir"
 if (-not [string]::IsNullOrWhiteSpace($storageCaptureAnalysisDir)) {
     $nestedStorageJsonPath = Join-Path $storageCaptureAnalysisDir "hardware-storage-analysis.json"
     $storageCaptureAnalysis = Read-JsonFile `
         -Path $nestedStorageJsonPath `
         -Message "MSI hardware analyzer: nested storage analyzer did not produce $nestedStorageJsonPath"
-    $storageNextTarget = Get-PropertyText -Object $storageCaptureAnalysis -Name "next_target"
+    if ([string]::IsNullOrWhiteSpace($storageNextTarget)) {
+        $storageNextTarget = Get-PropertyText -Object $storageCaptureAnalysis -Name "next_target"
+    }
 }
 
 $displayArgs = @{

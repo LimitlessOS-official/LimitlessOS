@@ -249,7 +249,7 @@ function Write-ReadyCapture
         [string]$DynamicMode
     )
 
-    $storageLine = "[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 1 dynldlimit-bytes 15680 ldlimit-stat 1 ldlimit-bytes 16704 boot-staged 1 boot-app-bytes 15680 boot-interp-bytes 16704 boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x75BC2409"
+    $storageLine = "[x64] drs-nvme-triage storage-triage 1 nvme-found 1 nvme-probe-error 0 nvme-regs 1 nvme-cap-low 0x00003FFF nvme-cap-high 0x00000030 nvme-vs 0x00010400 nvme-cc 0x00460001 nvme-csts 0x00000001 nvme-dstrd-bytes 4 nvme-doorbell-page 1 nvme-ready 1 nvme-identify 1 ioq 1 read-issued 1 read-completed 1 read-status 0 gpt-signature 1 gpt-partitions 6 fat32-start 2048 fat32-sectors 8192 gpt-vbr 1 fat-bpb 1 fat-located 1 fat-unavailable 0 fat-error 0 rw-cap 1 rw-delegated 1 rw-error 0 apps-stat 1 apps-type 2 apps-dirent 1 apps-dir-result 1 busybox-stat 0 busybox-bytes 0 dynldlimit-stat 1 dynldlimit-bytes 15680 ldlimit-stat 1 ldlimit-bytes 16704 boot-staged 1 boot-app-bytes 15680 boot-interp-bytes 16704 boot-status 0 stage-expected 1 dynldlimit-expected 1 ldlimit-expected 1 dynldlimit-match 1 ldlimit-match 1 stage-match 1 token 0x75BC2409"
     $displayLine = "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
     $uiLine = "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
     $guiLine = "[x64] drs-gui drs-gui-interactive 1 drs-gui-click-hit 1 drs-gui-launcher-open 1 drs-gui-terminal-open 1 drs-gui-fileman-open 1 drs-gui-settings-open 1 drs-gui-installer-open 1 drs-gui-right-click 1 drs-gui-context-action 1 drs-gui-scroll 2 terminal-scroll 1 terminal-selection 2 terminal-copy 1 terminal-cursor 1 wm-resize 1 wm-minimize 1 wm-restore 1 wm-z-order 2 fileman-refresh 1 fileman-write 1 fileman-delete 1 fileman-mkdir 1 fileman-copy 1 fileman-rename 1 fileman-move 1 fileman-edit 1 settings-load 1 settings-save 1 settings-export 1 no-ambient-input 1 no-ambient-display 1 no-ambient-fs 1 target-window 1 target-region 1 focus-before 1 focus-after 2 z-before 1 z-after 2 key-target-window 1 unfocused-key-denials 1 input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041"
@@ -458,6 +458,15 @@ $captureFixtures = @(
         expected_stage = "dynamic-runtime-exit0"
         expected_dynamic_pass = $true
         remove_gui = $true
+    },
+    [PSCustomObject]@{
+        name = "capture-missing-nvme-controller-snapshot"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_stage = "dynamic-runtime-exit0"
+        expected_dynamic_pass = $true
+        expected_storage_stage = "nvme-controller-snapshot-missing"
+        remove_nvme_controller_snapshot = $true
     }
 )
 
@@ -471,6 +480,28 @@ foreach ($fixture in $captureFixtures) {
     if (($fixture.PSObject.Properties["remove_gui"] -ne $null) -and [bool]$fixture.remove_gui) {
         $withoutGui = @(Get-Content -Path $capturePath | Where-Object { $_ -notmatch 'drs-gui' })
         $withoutGui | Set-Content -Path $capturePath -Encoding Ascii
+    }
+    if (($fixture.PSObject.Properties["remove_nvme_controller_snapshot"] -ne $null) -and [bool]$fixture.remove_nvme_controller_snapshot) {
+        $snapshotFields = @(
+            "nvme-probe-error",
+            "nvme-regs",
+            "nvme-cap-low",
+            "nvme-cap-high",
+            "nvme-vs",
+            "nvme-cc",
+            "nvme-csts",
+            "nvme-dstrd-bytes",
+            "nvme-doorbell-page"
+        )
+        $withoutSnapshot = @()
+        foreach ($line in (Get-Content -Path $capturePath)) {
+            $updatedLine = $line
+            foreach ($field in $snapshotFields) {
+                $updatedLine = $updatedLine -replace ("\s+" + [regex]::Escape($field) + "\s+\S+"), ""
+            }
+            $withoutSnapshot += $updatedLine
+        }
+        $withoutSnapshot | Set-Content -Path $capturePath -Encoding Ascii
     }
 
     $consoleText = ""
@@ -494,10 +525,12 @@ foreach ($fixture in $captureFixtures) {
     $verificationPath = Join-Path $fixtureOutputDir "msi-hardware-handoff-verification.json"
     $actualStage = ""
     $actualDynamicPass = $false
+    $actualStorageStage = ""
     if (Test-Path $verificationPath) {
         $verification = Get-Content -Raw -Path $verificationPath | ConvertFrom-Json
         $actualStage = [string]$verification.dynamic_handoff_stage
         $actualDynamicPass = [bool]$verification.dynamic_handoff_pass
+        $actualStorageStage = [string]$verification.storage_capture_stage
         if (($fixture.PSObject.Properties["remove_gui"] -ne $null) -and [bool]$fixture.remove_gui) {
             $actualDynamicPass = ($actualDynamicPass -and (-not [bool]$verification.gui_interaction_pass))
         }
@@ -506,8 +539,11 @@ foreach ($fixture in $captureFixtures) {
     $passed = (([uint32]$exitCode -eq [uint32]$fixture.expected_exit_code) -and
         ($actualStage -eq [string]$fixture.expected_stage) -and
         ($actualDynamicPass -eq [bool]$fixture.expected_dynamic_pass))
+    if ($fixture.PSObject.Properties["expected_storage_stage"] -ne $null) {
+        $passed = ($passed -and ($actualStorageStage -eq [string]$fixture.expected_storage_stage))
+    }
     if (-not $passed) {
-        $failures += ("{0}: expected exit/stage/pass {1}/{2}/{3}, observed {4}/{5}/{6}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_stage, $fixture.expected_dynamic_pass, $exitCode, $actualStage, $actualDynamicPass)
+        $failures += ("{0}: expected exit/stage/pass/storage {1}/{2}/{3}/{4}, observed {5}/{6}/{7}/{8}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_stage, $fixture.expected_dynamic_pass, $(if ($fixture.PSObject.Properties["expected_storage_stage"] -ne $null) { $fixture.expected_storage_stage } else { "" }), $exitCode, $actualStage, $actualDynamicPass, $actualStorageStage)
     }
 
     $results += [PSCustomObject]@{
