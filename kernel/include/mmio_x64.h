@@ -7503,6 +7503,14 @@ u32 mmio64_vmd_nvme_bind_token(void);
 u32 mmio64_vmd_nvme_bind_count(void);
 u32 mmio64_vmd_nvme_bind_denial_count(void);
 u32 mmio64_vmd_nvme_bind_unavailable_count(void);
+u32 mmio64_nvme_probe_register_snapshot(void);
+u32 mmio64_nvme_probe_cap_low(void);
+u32 mmio64_nvme_probe_cap_high(void);
+u32 mmio64_nvme_probe_version(void);
+u32 mmio64_nvme_probe_cc(void);
+u32 mmio64_nvme_probe_csts(void);
+u32 mmio64_nvme_probe_dstrd_bytes(void);
+u32 mmio64_nvme_probe_doorbell_page(void);
 #endif
 u64 mmio64_nvme_probe_bar0(void);
 u32 mmio64_nvme_probe_ready(void);

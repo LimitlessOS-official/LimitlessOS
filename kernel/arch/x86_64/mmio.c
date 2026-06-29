@@ -120,6 +120,7 @@ enum
     MMIO64_NVME_READY_SPIN_BUDGET = 100000000u,
     MMIO64_NVME_REG_CAP_LOW = 0x00u,
     MMIO64_NVME_REG_CAP_HIGH = 0x04u,
+    MMIO64_NVME_REG_VS = 0x08u,
     MMIO64_NVME_REG_CC = 0x14u,
     MMIO64_NVME_REG_CSTS = 0x1Cu,
     MMIO64_NVME_REG_AQA = 0x24u,
@@ -3430,6 +3431,16 @@ static u32 g_nvme_probe_read_authority = 0u;
 static u32 g_nvme_probe_fs_authority = 0u;
 static u32 g_nvme_probe_result_token = 0u;
 static u32 g_nvme_probe_error = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_nvme_probe_register_snapshot = 0u;
+static u32 g_nvme_probe_cap_low = 0u;
+static u32 g_nvme_probe_cap_high = 0u;
+static u32 g_nvme_probe_version = 0u;
+static u32 g_nvme_probe_cc = 0u;
+static u32 g_nvme_probe_csts = 0u;
+static u32 g_nvme_probe_dstrd_bytes = 0u;
+static u32 g_nvme_probe_doorbell_page = 0u;
+#endif
 static u32 g_nvme_read_token = 0u;
 static u32 g_nvme_read_ioq_created = 0u;
 static u32 g_nvme_read_issued = 0u;
@@ -13108,6 +13119,16 @@ static void mmio64_reset_nvme_probe(void)
     g_nvme_probe_fs_authority = 0u;
     g_nvme_probe_result_token = 0u;
     g_nvme_probe_error = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_nvme_probe_register_snapshot = 0u;
+    g_nvme_probe_cap_low = 0u;
+    g_nvme_probe_cap_high = 0u;
+    g_nvme_probe_version = 0u;
+    g_nvme_probe_cc = 0u;
+    g_nvme_probe_csts = 0u;
+    g_nvme_probe_dstrd_bytes = 0u;
+    g_nvme_probe_doorbell_page = 0u;
+#endif
     mmio64_zero_bytes((u8 *)g_nvme_admin_submission_queue, MMIO64_NVME_ADMIN_QUEUE_PAGE_BYTES);
     mmio64_zero_bytes((u8 *)g_nvme_admin_completion_queue, MMIO64_NVME_ADMIN_QUEUE_PAGE_BYTES);
     mmio64_zero_bytes((u8 *)g_nvme_identify_buffer, MMIO64_NVME_IDENTIFY_BYTES);
@@ -13523,6 +13544,23 @@ static void mmio64_nvme_write_reg32(volatile u32 *registers, u32 offset, u32 val
     mmio64_nvme_fence();
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void mmio64_nvme_record_probe_registers(
+    volatile u32 *registers,
+    u32 doorbell_stride,
+    u32 doorbell_page)
+{
+    g_nvme_probe_register_snapshot = 1u;
+    g_nvme_probe_cap_low = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CAP_LOW);
+    g_nvme_probe_cap_high = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CAP_HIGH);
+    g_nvme_probe_version = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_VS);
+    g_nvme_probe_cc = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CC);
+    g_nvme_probe_csts = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CSTS);
+    g_nvme_probe_dstrd_bytes = doorbell_stride;
+    g_nvme_probe_doorbell_page = doorbell_page;
+}
+#endif
+
 static void mmio64_nvme_copy_identify_string(
     char *destination,
     u32 destination_bytes,
@@ -13799,6 +13837,7 @@ u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id)
     u64 cq_physical;
     u64 identify_physical;
     u32 page_count;
+    u32 cap_low;
     u32 cap_high;
     u32 doorbell_stride;
     u32 sq_tail_offset;
@@ -13840,12 +13879,23 @@ u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id)
     }
 
     registers = (volatile u32 *)(u64)MMIO64_NVME_MAP_VIRTUAL_BASE;
-    (void)mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CAP_LOW);
+    cap_low = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CAP_LOW);
+    (void)cap_low;
     cap_high = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CAP_HIGH);
     doorbell_stride = 4u << (cap_high & 0x0Fu);
     sq_tail_offset = MMIO64_NVME_DOORBELL_BASE;
     cq_head_offset = MMIO64_NVME_DOORBELL_BASE + doorbell_stride;
     doorbell_page = cq_head_offset / MMIO64_PAGE_BYTES;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_nvme_probe_register_snapshot = 1u;
+    g_nvme_probe_cap_low = cap_low;
+    g_nvme_probe_cap_high = cap_high;
+    g_nvme_probe_version = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_VS);
+    g_nvme_probe_cc = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CC);
+    g_nvme_probe_csts = mmio64_nvme_reg32(registers, MMIO64_NVME_REG_CSTS);
+    g_nvme_probe_dstrd_bytes = doorbell_stride;
+    g_nvme_probe_doorbell_page = doorbell_page;
+#endif
     if ((sq_tail_offset >= g_nvme_span)
         || (cq_head_offset >= g_nvme_span)
         || (doorbell_page >= page_count))
@@ -14000,9 +14050,16 @@ u32 mmio64_probe_nvme_controller(u32 hardware_capability_handle, u32 owner_id)
 
     if (success == 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        mmio64_nvme_record_probe_registers(registers, doorbell_stride, doorbell_page);
+#endif
         g_nvme_probe_error = (error != 0u) ? error : 11u;
         return MMIO64_INVALID_RESULT;
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    mmio64_nvme_record_probe_registers(registers, doorbell_stride, doorbell_page);
+#endif
 
     mmio64_nvme_copy_identify_string(
         g_nvme_probe_model,
@@ -21078,6 +21135,46 @@ u32 mmio64_vmd_nvme_bind_denial_count(void)
 u32 mmio64_vmd_nvme_bind_unavailable_count(void)
 {
     return g_vmd_nvme_bind_unavailable_count;
+}
+
+u32 mmio64_nvme_probe_register_snapshot(void)
+{
+    return g_nvme_probe_register_snapshot;
+}
+
+u32 mmio64_nvme_probe_cap_low(void)
+{
+    return g_nvme_probe_cap_low;
+}
+
+u32 mmio64_nvme_probe_cap_high(void)
+{
+    return g_nvme_probe_cap_high;
+}
+
+u32 mmio64_nvme_probe_version(void)
+{
+    return g_nvme_probe_version;
+}
+
+u32 mmio64_nvme_probe_cc(void)
+{
+    return g_nvme_probe_cc;
+}
+
+u32 mmio64_nvme_probe_csts(void)
+{
+    return g_nvme_probe_csts;
+}
+
+u32 mmio64_nvme_probe_dstrd_bytes(void)
+{
+    return g_nvme_probe_dstrd_bytes;
+}
+
+u32 mmio64_nvme_probe_doorbell_page(void)
+{
+    return g_nvme_probe_doorbell_page;
 }
 #endif
 

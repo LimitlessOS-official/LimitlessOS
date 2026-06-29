@@ -907,6 +907,19 @@ static void log_pci_storage_surface(void)
     write_hex_u32(mmio64_nvme_candidate_bdf());
     write_string(" drs-nvme-candidate-token ");
     write_hex_u32(mmio64_nvme_candidate_token());
+    write_labeled_dec_u32(" drs-nvme-regs ", mmio64_nvme_probe_register_snapshot());
+    write_string(" drs-nvme-cap-low ");
+    write_hex_u32(mmio64_nvme_probe_cap_low());
+    write_string(" drs-nvme-cap-high ");
+    write_hex_u32(mmio64_nvme_probe_cap_high());
+    write_string(" drs-nvme-vs ");
+    write_hex_u32(mmio64_nvme_probe_version());
+    write_string(" drs-nvme-cc ");
+    write_hex_u32(mmio64_nvme_probe_cc());
+    write_string(" drs-nvme-csts ");
+    write_hex_u32(mmio64_nvme_probe_csts());
+    write_labeled_dec_u32(" drs-nvme-dstrd-bytes ", mmio64_nvme_probe_dstrd_bytes());
+    write_labeled_dec_u32(" drs-nvme-doorbell-page ", mmio64_nvme_probe_doorbell_page());
 #endif
     write_labeled_dec_u32(" drs-nvme-probe-ready ", mmio64_nvme_probe_ready());
     write_labeled_dec_u32(" drs-nvme-probe-identify ", mmio64_nvme_probe_identify());
