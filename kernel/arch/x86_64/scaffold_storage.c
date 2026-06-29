@@ -843,6 +843,20 @@ static void log_pci_storage_surface(void)
     write_dec_u32(pci64_vmd_nested_register_status(cap, owner));
     write_string(" vmd-nested-register-token ");
     write_hex_u32(pci64_vmd_nested_register_token(cap, owner));
+    write_string(" vmd-nested-driver-plan-result ");
+    write_hex_u32(pci64_stage_vmd_nested_driver_plan(cap, owner));
+    write_string(" vmd-nested-driver-plan-state ");
+    write_dec_u32(pci64_vmd_nested_driver_plan_state(cap, owner));
+    write_string(" vmd-nested-driver-plan-flags ");
+    write_hex_u32(pci64_vmd_nested_driver_plan_flags(cap, owner));
+    write_string(" vmd-nested-driver-plan-token ");
+    write_hex_u32(pci64_vmd_nested_driver_plan_token(cap, owner));
+    write_string(" vmd-nested-driver-plan-stage-count ");
+    write_dec_u32(pci64_vmd_nested_driver_plan_stage_count());
+    write_string(" vmd-nested-driver-plan-denials ");
+    write_dec_u32(pci64_vmd_nested_driver_plan_denial_count());
+    write_string(" vmd-nested-driver-plan-unavailable ");
+    write_dec_u32(pci64_vmd_nested_driver_plan_unavailable_count());
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

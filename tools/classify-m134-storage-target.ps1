@@ -313,6 +313,8 @@ $vmdHandoffKind = ""
 $vmdHandoffStage = ""
 $vmdRegisterCandidate = ""
 $vmdRegisterStatus = ""
+$vmdDriverPlanState = ""
+$vmdDriverPlanToken = ""
 $vmdCandidateSource = ""
 $vmdCandidateDeferred = ""
 if ($null -ne $vmdHandoff) {
@@ -320,6 +322,8 @@ if ($null -ne $vmdHandoff) {
     $vmdHandoffStage = [string]$vmdHandoff.stage
     $vmdRegisterCandidate = [string]$vmdHandoff.nested_register_candidate
     $vmdRegisterStatus = [string]$vmdHandoff.nested_register_status
+    $vmdDriverPlanState = [string]$vmdHandoff.nested_driver_plan_state
+    $vmdDriverPlanToken = [string]$vmdHandoff.nested_driver_plan_token
     $vmdCandidateSource = [string]$vmdHandoff.nvme_candidate_source
     $vmdCandidateDeferred = [string]$vmdHandoff.nvme_candidate_deferred
 }
@@ -345,6 +349,8 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "dynamic-handoff-stage: $($report.dynamic_handoff.stage)",
     "vmd-handoff-kind: $vmdHandoffKind",
     "vmd-handoff-stage: $vmdHandoffStage",
+    "vmd-handoff-driver-plan-state: $vmdDriverPlanState",
+    "vmd-handoff-driver-plan-token: $vmdDriverPlanToken",
     "bios-sector-reserve: $biosReserve",
     "uefi-byte-reserve: $uefiReserve",
     "output-json: $reportJsonPath"
@@ -399,6 +405,8 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Stage | $vmdHandoffStage |",
     "| Register candidate | $vmdRegisterCandidate |",
     "| Register status | $vmdRegisterStatus |",
+    "| Driver plan state | $vmdDriverPlanState |",
+    "| Driver plan token | $vmdDriverPlanToken |",
     "| Candidate source | $vmdCandidateSource |",
     "| Candidate deferred | $vmdCandidateDeferred |"
 ) | Set-Content -Path $reportMarkdownPath -Encoding Ascii

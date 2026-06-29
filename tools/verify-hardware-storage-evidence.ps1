@@ -229,9 +229,13 @@ $verificationTextPath = Join-Path $OutputDir "hardware-storage-evidence-verifica
 $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPath -Encoding Ascii
 $captureVmdKind = ""
 $captureVmdStage = ""
+$captureVmdDriverPlanState = ""
+$captureVmdDriverPlanToken = ""
 if ($null -ne $captureAnalysis) {
     $captureVmdKind = [string]$captureAnalysis.vmd_handoff.kind
     $captureVmdStage = [string]$captureAnalysis.vmd_handoff.stage
+    $captureVmdDriverPlanState = [string]$captureAnalysis.vmd_handoff.nested_driver_plan_state
+    $captureVmdDriverPlanToken = [string]$captureAnalysis.vmd_handoff.nested_driver_plan_token
 }
 
 @(
@@ -249,6 +253,8 @@ if ($null -ne $captureAnalysis) {
     "capture-stage: $captureStage",
     "capture-vmd-handoff-kind: $captureVmdKind",
     "capture-vmd-handoff-stage: $captureVmdStage",
+    "capture-vmd-driver-plan-state: $captureVmdDriverPlanState",
+    "capture-vmd-driver-plan-token: $captureVmdDriverPlanToken",
     "output-json: $verificationJsonPath"
 ) | Set-Content -Path $verificationTextPath -Encoding Ascii
 

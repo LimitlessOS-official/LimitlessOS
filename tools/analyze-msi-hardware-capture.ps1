@@ -202,8 +202,14 @@ $reportJsonPath = Join-Path $OutputDir "msi-hardware-analysis.json"
 $reportTextPath = Join-Path $OutputDir "msi-hardware-analysis.txt"
 $reportMarkdownPath = Join-Path $OutputDir "msi-hardware-analysis.md"
 $storageVmdKind = ""
+$storageVmdStage = ""
+$storageVmdDriverPlanState = ""
+$storageVmdDriverPlanToken = ""
 if ($null -ne $storageVerification.capture_vmd_handoff) {
     $storageVmdKind = [string]$storageVerification.capture_vmd_handoff.kind
+    $storageVmdStage = [string]$storageVerification.capture_vmd_handoff.stage
+    $storageVmdDriverPlanState = [string]$storageVerification.capture_vmd_handoff.nested_driver_plan_state
+    $storageVmdDriverPlanToken = [string]$storageVerification.capture_vmd_handoff.nested_driver_plan_token
 }
 
 $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding Ascii
@@ -216,6 +222,10 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "storage-bundle-pass: $bundlePass",
     "storage-capture-pass: $storageCapturePass",
     "storage-stage: $storageCaptureStage",
+    "storage-vmd-handoff-kind: $storageVmdKind",
+    "storage-vmd-handoff-stage: $storageVmdStage",
+    "storage-vmd-driver-plan-state: $storageVmdDriverPlanState",
+    "storage-vmd-driver-plan-token: $storageVmdDriverPlanToken",
     "display-input-pass: $displayPass",
     "display-input-stage: $displayStage",
     "bios-sector-reserve: $biosReserve",
@@ -244,6 +254,9 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Capture stage | $storageCaptureStage |",
     "| Next target | $storageNextTarget |",
     "| VMD handoff | $storageVmdKind |",
+    "| VMD handoff stage | $storageVmdStage |",
+    "| VMD driver plan state | $storageVmdDriverPlanState |",
+    "| VMD driver plan token | $storageVmdDriverPlanToken |",
     "| Verification JSON | $storageJsonPath |",
     "",
     "## Display/Input",
