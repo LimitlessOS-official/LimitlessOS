@@ -3407,6 +3407,12 @@ static u32 g_nvme_base_high = 0u;
 static u32 g_nvme_span = 0u;
 static u32 g_nvme_flags = 0u;
 static u32 g_nvme_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_nvme_candidate_source = MMIO64_NVME_CANDIDATE_SOURCE_NONE;
+static u32 g_nvme_candidate_deferred = 0u;
+static u32 g_nvme_candidate_bdf = 0xFFFFFFFFu;
+static u32 g_nvme_candidate_token = 0u;
+#endif
 static u32 g_nvme_probe_found = 0u;
 static u32 g_nvme_probe_ready = 0u;
 static u32 g_nvme_probe_identify = 0u;
@@ -13326,8 +13332,61 @@ void mmio64_register_nvme_candidate(
         source_flags,
         g_nvme_plan_count,
         source_token);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_nvme_candidate_source = (g_nvme_plan_count != 0u)
+        ? MMIO64_NVME_CANDIDATE_SOURCE_DIRECT_PCI
+        : MMIO64_NVME_CANDIDATE_SOURCE_NONE;
+    g_nvme_candidate_deferred = 0u;
+    g_nvme_candidate_bdf = 0xFFFFFFFFu;
+    g_nvme_candidate_token = (g_nvme_candidate_source != MMIO64_NVME_CANDIDATE_SOURCE_NONE)
+        ? mmio64_make_token(
+            g_nvme_base_low,
+            g_nvme_span,
+            g_nvme_flags,
+            g_nvme_candidate_source,
+            g_nvme_token)
+        : 0u;
+#endif
     mmio64_reset_nvme_probe();
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+void mmio64_defer_vmd_nested_nvme_candidate(
+    u32 physical_base_low,
+    u32 physical_base_high,
+    u32 span_bytes,
+    u32 source_flags,
+    u32 source_token,
+    u32 source_bdf)
+{
+    if (g_nvme_plan_count != 0u)
+    {
+        return;
+    }
+
+    g_nvme_base_low = physical_base_low;
+    g_nvme_base_high = physical_base_high;
+    g_nvme_span = span_bytes;
+    g_nvme_flags = source_flags;
+    g_nvme_plan_count = 0u;
+    g_nvme_candidate_source = MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED;
+    g_nvme_candidate_deferred = 1u;
+    g_nvme_candidate_bdf = source_bdf;
+    g_nvme_token = mmio64_make_token(
+        g_nvme_base_low,
+        g_nvme_span,
+        g_nvme_flags,
+        g_nvme_candidate_source,
+        source_token);
+    g_nvme_candidate_token = mmio64_make_token(
+        g_nvme_candidate_bdf,
+        g_nvme_span,
+        g_nvme_flags,
+        g_nvme_candidate_source,
+        g_nvme_token);
+    mmio64_reset_nvme_probe();
+}
+#endif
 
 static int mmio64_authorize_nvme_probe(u32 hardware_capability_handle, u32 owner_id)
 {
@@ -20866,6 +20925,28 @@ u32 mmio64_nvme_probe_found(void)
 {
     return g_nvme_probe_found;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_candidate_source(void)
+{
+    return g_nvme_candidate_source;
+}
+
+u32 mmio64_nvme_candidate_deferred(void)
+{
+    return g_nvme_candidate_deferred;
+}
+
+u32 mmio64_nvme_candidate_bdf(void)
+{
+    return g_nvme_candidate_bdf;
+}
+
+u32 mmio64_nvme_candidate_token(void)
+{
+    return g_nvme_candidate_token;
+}
+#endif
 
 u64 mmio64_nvme_probe_bar0(void)
 {

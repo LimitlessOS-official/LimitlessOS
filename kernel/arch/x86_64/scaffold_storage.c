@@ -743,6 +743,14 @@ static void log_pci_storage_surface(void)
     write_hex_u32(pci64_first_nvme_mmio_flags(cap, owner));
     write_string(" nvme-mmio-token ");
     write_hex_u32(pci64_first_nvme_mmio_token(cap, owner));
+    write_string(" nvme-candidate-source ");
+    write_dec_u32(mmio64_nvme_candidate_source());
+    write_string(" nvme-candidate-deferred ");
+    write_dec_u32(mmio64_nvme_candidate_deferred());
+    write_string(" nvme-candidate-bdf ");
+    write_hex_u32(mmio64_nvme_candidate_bdf());
+    write_string(" nvme-candidate-token ");
+    write_hex_u32(mmio64_nvme_candidate_token());
     write_string(" other-storage-addr ");
     write_hex_u32(pci64_first_other_storage_address(cap, owner));
     write_string(" other-storage-vendor-device ");
@@ -868,6 +876,14 @@ static void log_pci_storage_surface(void)
     write_labeled_dec_u32(" drs-nvme-probe-found ", mmio64_nvme_probe_found());
     write_string(" drs-nvme-probe-bar0 ");
     write_hex_u64(mmio64_nvme_probe_bar0());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_labeled_dec_u32(" drs-nvme-candidate-source ", mmio64_nvme_candidate_source());
+    write_labeled_dec_u32(" drs-nvme-candidate-deferred ", mmio64_nvme_candidate_deferred());
+    write_string(" drs-nvme-candidate-bdf ");
+    write_hex_u32(mmio64_nvme_candidate_bdf());
+    write_string(" drs-nvme-candidate-token ");
+    write_hex_u32(mmio64_nvme_candidate_token());
+#endif
     write_labeled_dec_u32(" drs-nvme-probe-ready ", mmio64_nvme_probe_ready());
     write_labeled_dec_u32(" drs-nvme-probe-identify ", mmio64_nvme_probe_identify());
     write_string(" drs-nvme-probe-model ");

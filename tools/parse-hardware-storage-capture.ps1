@@ -147,6 +147,12 @@ function Classify-StorageCapture
                     return New-Classification -Stage "pci-vmd-nested-nvme-register-candidate" -Detail "A child NVMe controller was reported behind VMD with bind readiness, but no registration candidate was exported."
                 }
                 if ((Has-Field -Fields $Fields -Name "vmd-nested-register-status") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-register-status") -eq 2)) {
+                    if ((Has-Field -Fields $Fields -Name "nvme-candidate-source") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-source") -ne 2)) {
+                        return New-Classification -Stage "pci-vmd-nested-nvme-mmio-source" -Detail "A VMD child NVMe registration candidate was deferred, but the MMIO/NVMe layer did not record it as the deferred VMD source."
+                    }
+                    if ((Has-Field -Fields $Fields -Name "nvme-candidate-deferred") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-deferred") -ne 1)) {
+                        return New-Classification -Stage "pci-vmd-nested-nvme-mmio-deferred" -Detail "A VMD child NVMe registration candidate was deferred, but the MMIO/NVMe layer did not mark the source as deferred."
+                    }
                     return New-Classification -Stage "pci-vmd-nested-nvme-register-deferred" -Detail "A child NVMe controller behind VMD is a registration candidate, but the VMD-backed NVMe driver handoff is intentionally deferred."
                 }
                 return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A child NVMe controller was reported behind VMD, but the regular NVMe driver has not been bound through the nested path."

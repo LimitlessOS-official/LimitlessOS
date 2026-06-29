@@ -3967,6 +3967,12 @@ typedef struct mmio64_nvme_fat_dirent
 #define MMIO64_AHCI_DRIVER_READ_STATUS_LOAD_FULL_TELEMETRY_RENAME 27u
 #define MMIO64_AHCI_DRIVER_READ_STATUS_LOAD_FULL_TELEMETRY_MOVE 28u
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define MMIO64_NVME_CANDIDATE_SOURCE_NONE 0u
+#define MMIO64_NVME_CANDIDATE_SOURCE_DIRECT_PCI 1u
+#define MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED 2u
+#endif
+
 void mmio64_init(void);
 void mmio64_register_ahci_candidate(
     u32 physical_base,
@@ -3979,6 +3985,15 @@ void mmio64_register_nvme_candidate(
     u32 span_bytes,
     u32 source_flags,
     u32 source_token);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+void mmio64_defer_vmd_nested_nvme_candidate(
+    u32 physical_base_low,
+    u32 physical_base_high,
+    u32 span_bytes,
+    u32 source_flags,
+    u32 source_token,
+    u32 source_bdf);
+#endif
 
 u32 mmio64_plan_count(u32 hardware_capability_handle, u32 owner_id);
 u32 mmio64_ahci_base(u32 hardware_capability_handle, u32 owner_id);
@@ -7460,6 +7475,12 @@ u32 mmio64_nvme_m5_write_boot_marker(
     u32 *bytes_written,
     u32 *checksum_out);
 u32 mmio64_nvme_probe_found(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 mmio64_nvme_candidate_source(void);
+u32 mmio64_nvme_candidate_deferred(void);
+u32 mmio64_nvme_candidate_bdf(void);
+u32 mmio64_nvme_candidate_token(void);
+#endif
 u64 mmio64_nvme_probe_bar0(void);
 u32 mmio64_nvme_probe_ready(void);
 u32 mmio64_nvme_probe_identify(void);
