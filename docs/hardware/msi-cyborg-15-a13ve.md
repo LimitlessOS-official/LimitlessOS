@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M18.1 physical validation in progress; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open.
+Status: M154 handoff media ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the M153 GUI telemetry requirement.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,14 +24,14 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the M133 handoff bundle:
+Next hardware evidence to capture with the current M153-verified handoff bundle:
 
 ```text
 hwval
 linux /APPS/DYNLDLIMIT
 ```
 
-Record the full `drs-nvme-triage` line from `hwval` and the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the M133 staged image.
+Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M152-or-newer Product image.
 
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
@@ -58,10 +58,19 @@ Analyze the evidence bundle and captured transcript from Windows/PowerShell with
   -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
   -CapturePath .\dist\msi-hwval-storage.txt `
   -OutputDir .\dist\m134-msi-storage-target `
-  -RequireStagedDynamicArtifacts
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
 ```
 
 Use `target-kind`, `target-stage`, and `next-target` as the next implementation target. If `target-kind` is `storage`, continue M134-M140 storage work on that exact storage stage. If it is `display-input` or `dynamic-handoff`, do not guess at NVMe; follow the reported roadmap target instead.
+
+The current classifier command requires the `hwval` GUI interaction line. A stale transcript that proves storage/display/dynamic handoff but lacks `drs-gui` reports:
+
+```text
+target-kind: display-input
+target-stage: gui-telemetry-missing
+roadmap-target: M152
+```
 
 The older combined M118 intake command remains useful when you need the full storage/display/input breakdown:
 
@@ -90,10 +99,11 @@ Before writing the USB stick, verify the current handoff bundle itself:
 ```powershell
 .\tools\verify-msi-hardware-handoff.ps1 `
   -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
-  -RequireStagedDynamicArtifacts
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
 ```
 
-This checks the bundle hashes/reserves, the M133 manifest contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` runbook, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
+This checks the bundle hashes/reserves, the M133 media contract, the current M153 runbook contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` instructions, the required `drs-gui` expectation, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
 
 When a capture is supplied, the verifier also classifies the dynamic command itself. Use `dynamic-handoff-stage` as the dynamic launch target:
 
@@ -110,13 +120,22 @@ M133 packages this handoff into a timestamped evidence directory:
 .\tools\prepare-hardware-storage-evidence.ps1
 ```
 
-The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, `README-HARDWARE-STORAGE.txt`, and an embedded `msi-handoff-verification` result proving the package still matches the current source-2 handoff contract. The accepted M133 bundle shape is:
+The bundle contains the staged ISO, UEFI image, `BOOTMAN.TXT`, size map, `DYNLDLIMIT`, `LDLIMIT`, manifest hashes, `README-HARDWARE-STORAGE.txt`, and an embedded `msi-handoff-verification` result proving the package still matches the current source-2 handoff and M153 GUI telemetry contract. The accepted bundle directory shape remains:
 
 ```text
 dist\m133-msi-hardware-handoff-<timestamp>
 ```
 
-For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then classify it with `tools\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts`.
+For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then classify it with:
+
+```powershell
+.\tools\classify-m134-storage-target.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
+  -CapturePath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\m134-msi-storage-target `
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
+```
 
 ## Safety Rules
 
@@ -158,8 +177,8 @@ For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that
 - [ ] Run `ls /`.
 - [ ] Run `pkginfo`.
 - [ ] Run `hwval`.
-- [ ] Save the complete `hwval` transcript.
-- [ ] Classify the evidence bundle and transcript with `tools\classify-m134-storage-target.ps1`.
+- [ ] Save the complete `hwval` transcript, including `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage`.
+- [ ] Classify the evidence bundle and transcript with `tools\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry`.
 - [ ] If a full breakdown is needed, analyze the evidence bundle and transcript with `tools\analyze-msi-hardware-capture.ps1`.
 - [ ] If parsing fails at `legacy-realbin-unavailable`, repeat `hwval` using an M111-or-newer staged image.
 - [ ] Run `net`.
