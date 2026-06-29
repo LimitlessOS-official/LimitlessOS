@@ -1523,6 +1523,18 @@ static void pci64_update_vmd_nested_plan(void)
     register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_span_hint);
     register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_flags);
     g_vmd_nested_register_token = (g_vmd_nested_plan != 0u) ? register_token : 0u;
+    if ((g_nvme_count == 0u)
+        && (g_vmd_nested_register_candidate != 0u)
+        && (g_vmd_nested_register_status == PCI64_VMD_NESTED_REGISTER_STATUS_DEFERRED_NO_DRIVER))
+    {
+        mmio64_defer_vmd_nested_nvme_candidate(
+            g_vmd_nested_mmio_base_low,
+            g_vmd_nested_mmio_base_high,
+            g_vmd_nested_mmio_span_hint,
+            g_vmd_nested_mmio_flags,
+            g_vmd_nested_register_token,
+            g_vmd_nested_first_address);
+    }
 
     token ^= g_vmd_nested_plan;
     token *= 16777619u;

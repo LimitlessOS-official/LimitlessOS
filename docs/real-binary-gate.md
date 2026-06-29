@@ -3078,6 +3078,66 @@ pci vmd nested register token: 0x00000000
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `733,152` bytes. M147 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe registration/bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
 
+## M148 NVMe Candidate Source/Deferred Handoff Telemetry
+
+M148 adds an explicit MMIO/NVMe candidate-source lane after the M147 VMD registration-candidate deferral. The regular direct PCI NVMe path remains the only active controller registration/probe source. A future VMD nested child can now be recorded as a deferred NVMe candidate source without creating an active probe plan, without setting `nvme-found`, and without touching the VMD controller or child NVMe registers.
+
+New fields:
+
+- `nvme-candidate-source`
+- `nvme-candidate-deferred`
+- `nvme-candidate-bdf`
+- `nvme-candidate-token`
+
+Source values:
+
+- `0`: no NVMe candidate source
+- `1`: direct PCI NVMe candidate
+- `2`: VMD nested child NVMe candidate, deferred
+
+The direct PCI registration path records source `1`, deferred `0`, sentinel BDF `0xFFFFFFFF`, and a nonzero token while preserving the existing direct NVMe probe/read/FAT flow. The VMD nested registration-deferral path records source `2`, deferred `1`, the child BDF, and a nonzero token only when no direct PCI NVMe plan exists; it deliberately leaves `g_nvme_plan_count` at zero and keeps `nvme-found 0`.
+
+Host capture routing remains compatible with older M147 transcripts, but when the new fields are present it can now distinguish source/deferred propagation failures before reporting the intentional future handoff target:
+
+- `pci-vmd-nested-nvme-mmio-source`
+- `pci-vmd-nested-nvme-mmio-deferred`
+- `pci-vmd-nested-nvme-register-deferred`
+
+Accepted commands:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m148-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m148-storage-target-fixtures
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+M1 production-slice gate passed for x86_64 (Product profile).
+
+hardware-storage-analysis-fixtures: 63/63
+failed: 0
+
+m134-storage-target-fixtures: 11/11
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+nvme candidate source: 1
+nvme candidate deferred: 0
+nvme candidate bdf: 0xFFFFFFFF
+nvme candidate token: 0x87F22324
+[x64] drs-nvme-pci ... nvme-mmio-token 0x51B13EF6 nvme-candidate-source 1 nvme-candidate-deferred 0 nvme-candidate-bdf 0xFFFFFFFF nvme-candidate-token 0x87F22324 ... vmd-nested-register-candidate 0 vmd-nested-register-status 0 vmd-nested-register-token 0x00000000
+[x64] drs-nvme-triage ... nvme-mmio-token 0x51B13EF6 nvme-candidate-source 1 nvme-candidate-deferred 0 nvme-candidate-bdf 0xFFFFFFFF nvme-candidate-token 0x87F22324 ... nvme-ready 1 nvme-identify 1 read-status 0 fat-located 1 stage-match 1
+[x64] drs-nvme-probe ... drs-nvme-probe-found 1 drs-nvme-probe-bar0 0x000000C000008000 drs-nvme-candidate-source 1 drs-nvme-candidate-deferred 0 drs-nvme-candidate-bdf 0xFFFFFFFF drs-nvme-candidate-token 0x87F22324 drs-nvme-probe-ready 1
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `728,608` bytes. M148 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe registration/bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

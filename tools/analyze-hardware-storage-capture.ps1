@@ -334,10 +334,30 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-register-deferred"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-found")
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-candidate-source", "nvme-candidate-deferred", "nvme-candidate-bdf", "nvme-candidate-token", "nvme-found")
                 first_check = "Implement the VMD-aware NVMe candidate registration handoff only after this deferred state is observed on real hardware; the current milestone intentionally avoids VMD controller probing."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
-                acceptance_signal = "A physical transcript reports vmd-nested-register-candidate 1, vmd-nested-register-status 2, and nvme-found 0, proving the remaining target is the VMD-backed NVMe handoff."
+                acceptance_signal = "A physical transcript reports vmd-nested-register-candidate 1, vmd-nested-register-status 2, nvme-candidate-source 2, nvme-candidate-deferred 1, and nvme-found 0, proving the remaining target is the VMD-backed NVMe handoff."
+            }
+        }
+        "pci-vmd-nested-nvme-mmio-source" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-mmio-source"
+                required_fields = @("vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-candidate-source", "nvme-candidate-deferred", "nvme-candidate-bdf", "nvme-candidate-token", "nvme-found")
+                first_check = "Inspect the handoff from pci64_update_vmd_nested_plan to mmio64_defer_vmd_nested_nvme_candidate; a deferred VMD child must be recorded as source 2 without creating an active NVMe probe plan."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/mmio_x64.h")
+                acceptance_signal = "nvme-candidate-source becomes 2 while nvme-found remains 0 for a VMD child registration candidate."
+            }
+        }
+        "pci-vmd-nested-nvme-mmio-deferred" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-mmio-deferred"
+                required_fields = @("vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-candidate-source", "nvme-candidate-deferred", "nvme-candidate-bdf", "nvme-candidate-token", "nvme-found")
+                first_check = "Inspect mmio64_defer_vmd_nested_nvme_candidate; the VMD child source must be marked deferred so hardware transcripts cannot confuse it with a bound direct PCI NVMe plan."
+                kernel_files = @("kernel/arch/x86_64/mmio.c", "kernel/include/mmio_x64.h")
+                acceptance_signal = "nvme-candidate-deferred becomes 1 while nvme-found remains 0 for a VMD child registration candidate."
             }
         }
         "pci-vmd-nested-nvme-bind-ready" {

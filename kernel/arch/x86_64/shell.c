@@ -904,6 +904,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 pci_vmd_nested_register_candidate;
     u32 pci_vmd_nested_register_status;
     u32 pci_vmd_nested_register_token;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 nvme_candidate_source;
+    u32 nvme_candidate_deferred;
+    u32 nvme_candidate_bdf;
+    u32 nvme_candidate_token;
+#endif
     u32 token = 2166136261u;
 
     hardware_capability = capability64_grant_service(
@@ -972,6 +978,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     pci_vmd_nested_register_candidate = pci64_vmd_nested_register_candidate(hardware_capability, owner_id);
     pci_vmd_nested_register_status = pci64_vmd_nested_register_status(hardware_capability, owner_id);
     pci_vmd_nested_register_token = pci64_vmd_nested_register_token(hardware_capability, owner_id);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    nvme_candidate_source = mmio64_nvme_candidate_source();
+    nvme_candidate_deferred = mmio64_nvme_candidate_deferred();
+    nvme_candidate_bdf = mmio64_nvme_candidate_bdf();
+    nvme_candidate_token = mmio64_nvme_candidate_token();
+#endif
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1051,6 +1063,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, pci_vmd_nested_register_candidate);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_register_status);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_register_token);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    token = shell64_storage_triage_mix(token, nvme_candidate_source);
+    token = shell64_storage_triage_mix(token, nvme_candidate_deferred);
+    token = shell64_storage_triage_mix(token, nvme_candidate_bdf);
+    token = shell64_storage_triage_mix(token, nvme_candidate_token);
+#endif
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_identify());
     token = shell64_storage_triage_mix(token, mmio64_nvme_read_ioq_created());
@@ -1091,6 +1109,12 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-mmio-span ", pci_nvme_mmio_span_hint);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-flags ", pci_nvme_mmio_flags);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-token ", pci_nvme_mmio_token);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-candidate-source ", nvme_candidate_source);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-candidate-deferred ", nvme_candidate_deferred);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-bdf ", nvme_candidate_bdf);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-token ", nvme_candidate_token);
+#endif
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-pci ", pci_other_storage_address);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-vendor-device ", pci_other_storage_vendor_device);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-class ", pci_other_storage_class);
@@ -1246,6 +1270,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 pci_vmd_nested_register_candidate;
     u32 pci_vmd_nested_register_status;
     u32 pci_vmd_nested_register_token;
+    u32 nvme_candidate_source;
+    u32 nvme_candidate_deferred;
+    u32 nvme_candidate_bdf;
+    u32 nvme_candidate_token;
 
     hardware_capability = capability64_grant_service(
         SERVICE_ENDPOINT_CLASS_HARDWARE,
@@ -1314,6 +1342,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     pci_vmd_nested_register_candidate = pci64_vmd_nested_register_candidate(hardware_capability, owner_id);
     pci_vmd_nested_register_status = pci64_vmd_nested_register_status(hardware_capability, owner_id);
     pci_vmd_nested_register_token = pci64_vmd_nested_register_token(hardware_capability, owner_id);
+    nvme_candidate_source = mmio64_nvme_candidate_source();
+    nvme_candidate_deferred = mmio64_nvme_candidate_deferred();
+    nvme_candidate_bdf = mmio64_nvme_candidate_bdf();
+    nvme_candidate_token = mmio64_nvme_candidate_token();
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1545,6 +1577,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci nvme mmio span: ", pci_nvme_mmio_span_hint);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio flags: ", pci_nvme_mmio_flags);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci nvme mmio token: ", pci_nvme_mmio_token);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme candidate source: ", nvme_candidate_source);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme candidate deferred: ", nvme_candidate_deferred);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme candidate bdf: ", nvme_candidate_bdf);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme candidate token: ", nvme_candidate_token);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci other storage first bdf: ", pci_other_storage_address);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci other storage vendor/device: ", pci_other_storage_vendor_device);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci other storage class: ", pci_other_storage_class);
@@ -1608,6 +1644,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-mmio-span ", pci_nvme_mmio_span_hint);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-flags ", pci_nvme_mmio_flags);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-mmio-token ", pci_nvme_mmio_token);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-candidate-source ", nvme_candidate_source);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-candidate-deferred ", nvme_candidate_deferred);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-bdf ", nvme_candidate_bdf);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-token ", nvme_candidate_token);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-pci ", pci_other_storage_address);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-vendor-device ", pci_other_storage_vendor_device);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-class ", pci_other_storage_class);

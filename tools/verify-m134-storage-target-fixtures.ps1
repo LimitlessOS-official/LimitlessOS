@@ -180,6 +180,10 @@ function New-StorageLine
         "nvme-mmio-span" = "8192"
         "nvme-mmio-flags" = "0x000001FF"
         "nvme-mmio-token" = "0xA93E3D7A"
+        "nvme-candidate-source" = "1"
+        "nvme-candidate-deferred" = "0"
+        "nvme-candidate-bdf" = "0xFFFFFFFF"
+        "nvme-candidate-token" = "0xC1480001"
         "other-storage-pci" = "0xFFFFFFFF"
         "other-storage-vendor-device" = "0x00000000"
         "other-storage-class" = "0x00000000"
@@ -574,6 +578,10 @@ $fixtures = @(
             "vmd-nested-register-candidate" = "1";
             "vmd-nested-register-status" = "2";
             "vmd-nested-register-token" = "0xC1470CC4";
+            "nvme-candidate-source" = "2";
+            "nvme-candidate-deferred" = "1";
+            "nvme-candidate-bdf" = "0x00000100";
+            "nvme-candidate-token" = "0xC1480CC4";
             "nvme-found" = "0"
         }
         display_mode = "ready"
