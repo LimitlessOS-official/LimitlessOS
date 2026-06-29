@@ -85,7 +85,7 @@ enum
     PCI_VIRTIO_CAP_DEVICE_CFG = 4u,
     PCI_AHCI_MMIO_SPAN_HINT = 0x00002000u,
     PCI_NVME_MMIO_SPAN_HINT = 0x00004000u,
-    PCI_VMD_MMIO_SPAN_HINT = 0x00010000u,
+    PCI_VMD_MMIO_SPAN_HINT = 0x00100000u,
     PCI_XHCI_MMIO_SPAN_HINT = 0x00010000u,
     PCI_LPSS_I2C_MMIO_SPAN_HINT = 0x00001000u,
     PCI_VIRTIO_NET_MMIO_SPAN_HINT = 0x00004000u,
@@ -101,7 +101,8 @@ enum
     PCI64_VMD_BUS_RESTRICT_128_255 = 1u,
     PCI64_VMD_BUS_RESTRICT_224_255 = 2u,
     PCI64_VMD_NESTED_SCAN_PAGES = 16u,
-    PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT = 2u,
+    PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT = 32u,
+    PCI64_VMD_NESTED_SCAN_BUS_LIMIT = 1u,
     PCI64_VMD_NESTED_MAP_BYTES = PCI64_VMD_NESTED_SCAN_PAGES * 0x1000u
 };
 
@@ -175,6 +176,11 @@ static u32 g_vmd_nested_first_vendor_device = 0u;
 static u32 g_vmd_nested_first_class = 0u;
 static u32 g_vmd_nested_first_bar0 = 0u;
 static u32 g_vmd_nested_first_bar1 = 0u;
+static u32 g_vmd_nested_scan_buses = 0u;
+static u32 g_vmd_nested_scan_devices = 0u;
+static u32 g_vmd_nested_scan_functions = 0u;
+static u32 g_vmd_nested_scan_windows = 0u;
+static u32 g_vmd_nested_scan_truncated = 0u;
 #endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
@@ -1137,13 +1143,15 @@ static u32 pci64_vmd_nested_read_config(
     u32 bus,
     u32 device,
     u32 function,
-    u32 offset)
+    u32 offset,
+    u64 window_base_offset)
 {
     u64 config_offset;
+    u64 window_end;
     volatile u32 *config;
 
     if ((bus < bus_start)
-        || ((bus - bus_start) != 0u)
+        || ((bus - bus_start) >= PCI64_VMD_NESTED_SCAN_BUS_LIMIT)
         || (device >= PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT)
         || (function >= PCI_MAX_FUNCTION)
         || (offset >= 0x1000u))
@@ -1156,12 +1164,15 @@ static u32 pci64_vmd_nested_read_config(
         | (((u64)(device & 0x1Fu)) << 15)
         | (((u64)(function & 0x07u)) << 12)
         | (u64)(offset & 0xFCu);
-    if ((config_offset + sizeof(u32)) > (u64)PCI64_VMD_NESTED_MAP_BYTES)
+    window_end = window_base_offset + (u64)PCI64_VMD_NESTED_MAP_BYTES;
+    if ((window_end <= window_base_offset)
+        || (config_offset < window_base_offset)
+        || ((config_offset + sizeof(u32)) > window_end))
     {
         return 0xFFFFFFFFu;
     }
 
-    config = (volatile u32 *)(u64)(PCI64_VMD_NESTED_MAP_VIRTUAL_BASE + config_offset);
+    config = (volatile u32 *)(u64)(PCI64_VMD_NESTED_MAP_VIRTUAL_BASE + (config_offset - window_base_offset));
     return *config;
 }
 
@@ -1169,6 +1180,9 @@ static void pci64_scan_vmd_nested_config_window(void)
 {
     u32 bus_start;
     u32 bus;
+    u32 window_index;
+    u32 first_device;
+    u32 device_limit;
     u32 device;
     u32 function;
     u32 vendor_device;
@@ -1180,6 +1194,8 @@ static void pci64_scan_vmd_nested_config_window(void)
     u32 bar1;
     u64 physical_base;
     u32 mapped_pages;
+    u64 window_base_offset;
+    u64 window_physical_base;
 
     bus_start = pci64_vmd_nested_bus_start();
     if (bus_start == PCI64_INVALID_RESULT)
@@ -1197,73 +1213,105 @@ static void pci64_scan_vmd_nested_config_window(void)
         mapped_pages = PCI64_VMD_NESTED_SCAN_PAGES;
     }
     if ((mapped_pages == 0u)
-        || ((physical_base & 0xFFFull) != 0ull)
-        || (paging64_install_kernel_mmio_mapping(
-                PCI64_VMD_NESTED_MAP_VIRTUAL_BASE,
-                physical_base,
-                mapped_pages) == 0u))
+        || ((physical_base & 0xFFFull) != 0ull))
     {
         g_vmd_nested_status = PCI64_VMD_NESTED_STATUS_MAP_FAILED;
         return;
     }
 
     bus = bus_start;
-    for (device = 0u; device < PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT; ++device)
+    g_vmd_nested_scan_buses = PCI64_VMD_NESTED_SCAN_BUS_LIMIT;
+    g_vmd_nested_scan_devices = PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT;
+    g_vmd_nested_scan_functions = PCI64_VMD_NESTED_SCAN_BUS_LIMIT
+        * PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT
+        * PCI_MAX_FUNCTION;
+    g_vmd_nested_scan_truncated = 1u;
+
+    for (window_index = 0u;
+        window_index < (PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT / 2u);
+        ++window_index)
     {
-        for (function = 0u; function < PCI_MAX_FUNCTION; ++function)
+        window_base_offset = (u64)window_index * (u64)PCI64_VMD_NESTED_MAP_BYTES;
+        window_physical_base = physical_base + window_base_offset;
+        if (((window_physical_base <= physical_base) && (window_base_offset != 0ull))
+            || (paging64_install_kernel_mmio_mapping(
+                    PCI64_VMD_NESTED_MAP_VIRTUAL_BASE,
+                    window_physical_base,
+                    mapped_pages) == 0u))
         {
-            vendor_device = pci64_vmd_nested_read_config(
-                bus_start,
-                bus,
-                device,
-                function,
-                0x00u);
-            vendor = vendor_device & 0xFFFFu;
-            if ((vendor == PCI_VENDOR_INVALID) || (vendor == 0u))
-            {
-                continue;
-            }
+            g_vmd_nested_status = PCI64_VMD_NESTED_STATUS_MAP_FAILED;
+            return;
+        }
+        ++g_vmd_nested_scan_windows;
 
-            class_register = pci64_vmd_nested_read_config(
-                bus_start,
-                bus,
-                device,
-                function,
-                0x08u);
-            bar0 = pci64_vmd_nested_read_config(
-                bus_start,
-                bus,
-                device,
-                function,
-                0x10u);
-            bar1 = pci64_vmd_nested_read_config(
-                bus_start,
-                bus,
-                device,
-                function,
-                0x14u);
+        first_device = window_index * 2u;
+        device_limit = first_device + 2u;
+        if (device_limit > PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT)
+        {
+            device_limit = PCI64_VMD_NESTED_SCAN_DEVICE_LIMIT;
+        }
 
-            if (g_vmd_nested_first_address == 0xFFFFFFFFu)
+        for (device = first_device; device < device_limit; ++device)
+        {
+            for (function = 0u; function < PCI_MAX_FUNCTION; ++function)
             {
-                g_vmd_nested_first_address = (bus << 16) | (device << 8) | function;
-                g_vmd_nested_first_vendor_device = vendor_device;
-                g_vmd_nested_first_class = class_register;
-                g_vmd_nested_first_bar0 = bar0;
-                g_vmd_nested_first_bar1 = bar1;
-            }
+                vendor_device = pci64_vmd_nested_read_config(
+                    bus_start,
+                    bus,
+                    device,
+                    function,
+                    0x00u,
+                    window_base_offset);
+                vendor = vendor_device & 0xFFFFu;
+                if ((vendor == PCI_VENDOR_INVALID) || (vendor == 0u))
+                {
+                    continue;
+                }
 
-            class_code = (class_register >> 24) & 0xFFu;
-            subclass = (class_register >> 16) & 0xFFu;
-            if ((class_code == PCI_CLASS_STORAGE) && (subclass == PCI_SUBCLASS_NVME))
-            {
-                ++g_vmd_nested_nvme_count;
-                if (g_vmd_nested_first_class != class_register)
+                class_register = pci64_vmd_nested_read_config(
+                    bus_start,
+                    bus,
+                    device,
+                    function,
+                    0x08u,
+                    window_base_offset);
+                bar0 = pci64_vmd_nested_read_config(
+                    bus_start,
+                    bus,
+                    device,
+                    function,
+                    0x10u,
+                    window_base_offset);
+                bar1 = pci64_vmd_nested_read_config(
+                    bus_start,
+                    bus,
+                    device,
+                    function,
+                    0x14u,
+                    window_base_offset);
+
+                if (g_vmd_nested_first_address == 0xFFFFFFFFu)
                 {
                     g_vmd_nested_first_address = (bus << 16) | (device << 8) | function;
                     g_vmd_nested_first_vendor_device = vendor_device;
                     g_vmd_nested_first_class = class_register;
                     g_vmd_nested_first_bar0 = bar0;
                     g_vmd_nested_first_bar1 = bar1;
+                }
+
+                class_code = (class_register >> 24) & 0xFFu;
+                subclass = (class_register >> 16) & 0xFFu;
+                if ((class_code == PCI_CLASS_STORAGE) && (subclass == PCI_SUBCLASS_NVME))
+                {
+                    ++g_vmd_nested_nvme_count;
+                    if (g_vmd_nested_first_class != class_register)
+                    {
+                        g_vmd_nested_first_address = (bus << 16) | (device << 8) | function;
+                        g_vmd_nested_first_vendor_device = vendor_device;
+                        g_vmd_nested_first_class = class_register;
+                        g_vmd_nested_first_bar0 = bar0;
+                        g_vmd_nested_first_bar1 = bar1;
+                    }
                 }
             }
         }
@@ -1292,6 +1340,11 @@ static void pci64_update_vmd_nested_plan(void)
     g_vmd_nested_first_class = 0u;
     g_vmd_nested_first_bar0 = 0u;
     g_vmd_nested_first_bar1 = 0u;
+    g_vmd_nested_scan_buses = 0u;
+    g_vmd_nested_scan_devices = 0u;
+    g_vmd_nested_scan_functions = 0u;
+    g_vmd_nested_scan_windows = 0u;
+    g_vmd_nested_scan_truncated = 0u;
     g_vmd_nested_status = (g_vmd_nested_plan != 0u)
         ? PCI64_VMD_NESTED_STATUS_ENUM_UNAVAILABLE
         : PCI64_VMD_NESTED_STATUS_NOT_APPLICABLE;
@@ -1320,6 +1373,16 @@ static void pci64_update_vmd_nested_plan(void)
     token ^= g_vmd_nested_first_bar0;
     token *= 16777619u;
     token ^= g_vmd_nested_first_bar1;
+    token *= 16777619u;
+    token ^= g_vmd_nested_scan_buses;
+    token *= 16777619u;
+    token ^= g_vmd_nested_scan_devices;
+    token *= 16777619u;
+    token ^= g_vmd_nested_scan_functions;
+    token *= 16777619u;
+    token ^= g_vmd_nested_scan_windows;
+    token *= 16777619u;
+    token ^= g_vmd_nested_scan_truncated;
     token *= 16777619u;
     g_vmd_nested_token = token;
 }
@@ -1784,6 +1847,11 @@ void pci64_init(const struct boot_info *boot_info)
     g_vmd_nested_first_class = 0u;
     g_vmd_nested_first_bar0 = 0u;
     g_vmd_nested_first_bar1 = 0u;
+    g_vmd_nested_scan_buses = 0u;
+    g_vmd_nested_scan_devices = 0u;
+    g_vmd_nested_scan_functions = 0u;
+    g_vmd_nested_scan_windows = 0u;
+    g_vmd_nested_scan_truncated = 0u;
 #endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
@@ -2208,6 +2276,31 @@ u32 pci64_vmd_nested_first_bar0(u32 hardware_capability_handle, u32 owner_id)
 u32 pci64_vmd_nested_first_bar1(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_first_bar1);
+}
+
+u32 pci64_vmd_nested_scan_buses(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_buses);
+}
+
+u32 pci64_vmd_nested_scan_devices(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_devices);
+}
+
+u32 pci64_vmd_nested_scan_functions(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_functions);
+}
+
+u32 pci64_vmd_nested_scan_windows(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_windows);
+}
+
+u32 pci64_vmd_nested_scan_truncated(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_truncated);
 }
 #endif
 

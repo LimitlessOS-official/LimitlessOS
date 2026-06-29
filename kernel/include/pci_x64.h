@@ -111,6 +111,11 @@ u32 pci64_vmd_nested_first_vendor_device(u32 hardware_capability_handle, u32 own
 u32 pci64_vmd_nested_first_class(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_first_bar0(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_first_bar1(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_scan_buses(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_scan_devices(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_scan_functions(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_scan_windows(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_scan_truncated(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_query_count(void);
 u32 pci64_denial_count(void);
 u32 pci64_ecam_rsdp_found(void);

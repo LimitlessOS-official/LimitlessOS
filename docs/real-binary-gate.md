@@ -2844,6 +2844,63 @@ pci vmd nested bar1: 0x00000000
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `738,528` bytes. M143 non-claims: no physical MSI transcript was newly supplied, no full VMD bus enumeration is claimed, no VMD MMIO programming is implemented, no child NVMe binding is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
 
+## M144 VMD Full First-Bus Read-Only Scan
+
+M144 expands the M143 VMD nested config scan from the first two devices to the first full nested PCI config bus. The scanner still uses a single 64 KiB high-half virtual MMIO window, but remaps it across 16 physical chunks of the VMD config aperture to cover one bus, 32 devices, and 8 functions per device. The path remains read-only: it does not program VMD registers, does not reset or enable controllers, does not bind NVMe, and does not perform storage reads/writes through VMD.
+
+New scan-coverage telemetry:
+
+- `vmd-nested-scan-buses`
+- `vmd-nested-scan-devices`
+- `vmd-nested-scan-functions`
+- `vmd-nested-scan-windows`
+- `vmd-nested-scan-truncated`
+
+The VMD nested synthetic fixtures now prove two covered paths:
+
+- no child NVMe after a full first-bus scan: `vmd-nested-scan-buses 1`, `vmd-nested-scan-devices 32`, `vmd-nested-scan-functions 256`, `vmd-nested-scan-windows 16`, `vmd-nested-scan-truncated 1`, `vmd-nested-nvme 0`
+- child NVMe observed but not bound: the same coverage fields plus `vmd-nested-nvme 1`, with the classifier stopping at `pci-vmd-nested-nvme-bind`
+
+Accepted commands:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m144-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m144-storage-target-fixtures
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+M1 production-slice gate passed for x86_64 (Product profile).
+
+hardware-storage-analysis-fixtures: 58/58
+failed: 0
+
+m134-storage-target-fixtures: 8/8
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+pci vmd nested plan: 0
+pci vmd nested enum: 0
+pci vmd nested nvme: 0
+pci vmd nested status: 0
+pci vmd nested first bdf: 0xFFFFFFFF
+pci vmd nested scan buses: 0
+pci vmd nested scan devices: 0
+pci vmd nested scan functions: 0
+pci vmd nested scan windows: 0
+pci vmd nested scan truncated: 0
+[x64] drs-nvme-pci nvme-pci-diag 1 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-token 0xFAE086EE vmd-nested-pci 0xFFFFFFFF vmd-nested-vendor-device 0x00000000 vmd-nested-class 0x00000000 vmd-nested-bar0 0x00000000 vmd-nested-bar1 0x00000000 vmd-nested-scan-buses 0 vmd-nested-scan-devices 0 vmd-nested-scan-functions 0 vmd-nested-scan-windows 0 vmd-nested-scan-truncated 0
+[x64] drs-nvme-triage storage-triage 1 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-token 0xFAE086EE vmd-nested-pci 0xFFFFFFFF vmd-nested-vendor-device 0x00000000 vmd-nested-class 0x00000000 vmd-nested-bar0 0x00000000 vmd-nested-bar1 0x00000000 vmd-nested-scan-buses 0 vmd-nested-scan-devices 0 vmd-nested-scan-functions 0 vmd-nested-scan-windows 0 vmd-nested-scan-truncated 0 ... stage-match 1 token 0xEF62E7C7
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `734,016` bytes. M144 non-claims: no physical MSI transcript was newly supplied, no multi-bus VMD enumeration is claimed, no VMD MMIO programming is implemented, no child NVMe binding is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics

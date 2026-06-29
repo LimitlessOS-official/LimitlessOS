@@ -888,6 +888,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 pci_vmd_nested_class;
     u32 pci_vmd_nested_bar0;
     u32 pci_vmd_nested_bar1;
+    u32 pci_vmd_nested_scan_buses;
+    u32 pci_vmd_nested_scan_devices;
+    u32 pci_vmd_nested_scan_functions;
+    u32 pci_vmd_nested_scan_windows;
+    u32 pci_vmd_nested_scan_truncated;
     u32 token = 2166136261u;
 
     hardware_capability = capability64_grant_service(
@@ -940,6 +945,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     pci_vmd_nested_class = pci64_vmd_nested_first_class(hardware_capability, owner_id);
     pci_vmd_nested_bar0 = pci64_vmd_nested_first_bar0(hardware_capability, owner_id);
     pci_vmd_nested_bar1 = pci64_vmd_nested_first_bar1(hardware_capability, owner_id);
+    pci_vmd_nested_scan_buses = pci64_vmd_nested_scan_buses(hardware_capability, owner_id);
+    pci_vmd_nested_scan_devices = pci64_vmd_nested_scan_devices(hardware_capability, owner_id);
+    pci_vmd_nested_scan_functions = pci64_vmd_nested_scan_functions(hardware_capability, owner_id);
+    pci_vmd_nested_scan_windows = pci64_vmd_nested_scan_windows(hardware_capability, owner_id);
+    pci_vmd_nested_scan_truncated = pci64_vmd_nested_scan_truncated(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1005,6 +1015,9 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, pci_vmd_nested_address);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_vendor_device);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_class);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_scan_buses);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_scan_windows);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_scan_truncated);
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_identify());
     token = shell64_storage_triage_mix(token, mmio64_nvme_read_ioq_created());
@@ -1075,6 +1088,11 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-class ", pci_vmd_nested_class);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bar0 ", pci_vmd_nested_bar0);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bar1 ", pci_vmd_nested_bar1);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-buses ", pci_vmd_nested_scan_buses);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-devices ", pci_vmd_nested_scan_devices);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-functions ", pci_vmd_nested_scan_functions);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-windows ", pci_vmd_nested_scan_windows);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-truncated ", pci_vmd_nested_scan_truncated);
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", mmio64_nvme_probe_ready());
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-identify ", mmio64_nvme_probe_identify());
     shell64_write_decimal_field(console_capability_handle, owner_id, " ioq ", mmio64_nvme_read_ioq_created());
@@ -1168,6 +1186,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 pci_vmd_nested_class;
     u32 pci_vmd_nested_bar0;
     u32 pci_vmd_nested_bar1;
+    u32 pci_vmd_nested_scan_buses;
+    u32 pci_vmd_nested_scan_devices;
+    u32 pci_vmd_nested_scan_functions;
+    u32 pci_vmd_nested_scan_windows;
+    u32 pci_vmd_nested_scan_truncated;
 
     hardware_capability = capability64_grant_service(
         SERVICE_ENDPOINT_CLASS_HARDWARE,
@@ -1220,6 +1243,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     pci_vmd_nested_class = pci64_vmd_nested_first_class(hardware_capability, owner_id);
     pci_vmd_nested_bar0 = pci64_vmd_nested_first_bar0(hardware_capability, owner_id);
     pci_vmd_nested_bar1 = pci64_vmd_nested_first_bar1(hardware_capability, owner_id);
+    pci_vmd_nested_scan_buses = pci64_vmd_nested_scan_buses(hardware_capability, owner_id);
+    pci_vmd_nested_scan_devices = pci64_vmd_nested_scan_devices(hardware_capability, owner_id);
+    pci_vmd_nested_scan_functions = pci64_vmd_nested_scan_functions(hardware_capability, owner_id);
+    pci_vmd_nested_scan_windows = pci64_vmd_nested_scan_windows(hardware_capability, owner_id);
+    pci_vmd_nested_scan_truncated = pci64_vmd_nested_scan_truncated(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1481,6 +1509,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd nested class: ", pci_vmd_nested_class);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd nested bar0: ", pci_vmd_nested_bar0);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd nested bar1: ", pci_vmd_nested_bar1);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested scan buses: ", pci_vmd_nested_scan_buses);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested scan devices: ", pci_vmd_nested_scan_devices);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested scan functions: ", pci_vmd_nested_scan_functions);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested scan windows: ", pci_vmd_nested_scan_windows);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested scan truncated: ", pci_vmd_nested_scan_truncated);
     (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
@@ -1528,6 +1561,11 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-class ", pci_vmd_nested_class);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bar0 ", pci_vmd_nested_bar0);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bar1 ", pci_vmd_nested_bar1);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-buses ", pci_vmd_nested_scan_buses);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-devices ", pci_vmd_nested_scan_devices);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-functions ", pci_vmd_nested_scan_functions);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-windows ", pci_vmd_nested_scan_windows);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-scan-truncated ", pci_vmd_nested_scan_truncated);
     (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());
