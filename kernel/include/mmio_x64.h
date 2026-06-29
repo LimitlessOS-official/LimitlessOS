@@ -3971,6 +3971,18 @@ typedef struct mmio64_nvme_fat_dirent
 #define MMIO64_NVME_CANDIDATE_SOURCE_NONE 0u
 #define MMIO64_NVME_CANDIDATE_SOURCE_DIRECT_PCI 1u
 #define MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED 2u
+#define MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_BOUND 3u
+
+#define MMIO64_VMD_NVME_BIND_STATE_NOT_APPLICABLE 0u
+#define MMIO64_VMD_NVME_BIND_STATE_UNAVAILABLE 1u
+#define MMIO64_VMD_NVME_BIND_STATE_BOUND 2u
+#define MMIO64_VMD_NVME_BIND_FLAG_REQUESTED 0x00000001u
+#define MMIO64_VMD_NVME_BIND_FLAG_CAPABILITY_GATED 0x00000002u
+#define MMIO64_VMD_NVME_BIND_FLAG_DEFERRED_SOURCE 0x00000004u
+#define MMIO64_VMD_NVME_BIND_FLAG_BDF_MATCH 0x00000008u
+#define MMIO64_VMD_NVME_BIND_FLAG_MMIO_READY 0x00000010u
+#define MMIO64_VMD_NVME_BIND_FLAG_BOUND 0x00000020u
+#define MMIO64_VMD_NVME_BIND_FLAG_UNAVAILABLE 0x00000040u
 #endif
 
 void mmio64_init(void);
@@ -3993,6 +4005,11 @@ void mmio64_defer_vmd_nested_nvme_candidate(
     u32 source_flags,
     u32 source_token,
     u32 source_bdf);
+u32 mmio64_bind_vmd_nested_nvme_candidate(
+    u32 hardware_capability_handle,
+    u32 owner_id,
+    u32 source_bdf,
+    u32 source_token);
 #endif
 
 u32 mmio64_plan_count(u32 hardware_capability_handle, u32 owner_id);
@@ -7480,6 +7497,12 @@ u32 mmio64_nvme_candidate_source(void);
 u32 mmio64_nvme_candidate_deferred(void);
 u32 mmio64_nvme_candidate_bdf(void);
 u32 mmio64_nvme_candidate_token(void);
+u32 mmio64_vmd_nvme_bind_state(void);
+u32 mmio64_vmd_nvme_bind_flags(void);
+u32 mmio64_vmd_nvme_bind_token(void);
+u32 mmio64_vmd_nvme_bind_count(void);
+u32 mmio64_vmd_nvme_bind_denial_count(void);
+u32 mmio64_vmd_nvme_bind_unavailable_count(void);
 #endif
 u64 mmio64_nvme_probe_bar0(void);
 u32 mmio64_nvme_probe_ready(void);

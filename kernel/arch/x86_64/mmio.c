@@ -12,6 +12,8 @@
 #include "services.h"
 #include "services_x64.h"
 
+static int mmio64_authorize_nvme_probe(u32 hardware_capability_handle, u32 owner_id);
+
 enum
 {
     MMIO64_PAGE_BYTES = 4096u,
@@ -3412,6 +3414,12 @@ static u32 g_nvme_candidate_source = MMIO64_NVME_CANDIDATE_SOURCE_NONE;
 static u32 g_nvme_candidate_deferred = 0u;
 static u32 g_nvme_candidate_bdf = 0xFFFFFFFFu;
 static u32 g_nvme_candidate_token = 0u;
+static u32 g_vmd_nvme_bind_state = MMIO64_VMD_NVME_BIND_STATE_NOT_APPLICABLE;
+static u32 g_vmd_nvme_bind_flags = 0u;
+static u32 g_vmd_nvme_bind_token = 0u;
+static u32 g_vmd_nvme_bind_count = 0u;
+static u32 g_vmd_nvme_bind_denial_count = 0u;
+static u32 g_vmd_nvme_bind_unavailable_count = 0u;
 #endif
 static u32 g_nvme_probe_found = 0u;
 static u32 g_nvme_probe_ready = 0u;
@@ -13218,6 +13226,18 @@ void mmio64_init(void)
     g_nvme_span = 0u;
     g_nvme_flags = 0u;
     g_nvme_token = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_nvme_candidate_source = MMIO64_NVME_CANDIDATE_SOURCE_NONE;
+    g_nvme_candidate_deferred = 0u;
+    g_nvme_candidate_bdf = 0xFFFFFFFFu;
+    g_nvme_candidate_token = 0u;
+    g_vmd_nvme_bind_state = MMIO64_VMD_NVME_BIND_STATE_NOT_APPLICABLE;
+    g_vmd_nvme_bind_flags = 0u;
+    g_vmd_nvme_bind_token = 0u;
+    g_vmd_nvme_bind_count = 0u;
+    g_vmd_nvme_bind_denial_count = 0u;
+    g_vmd_nvme_bind_unavailable_count = 0u;
+#endif
     mmio64_reset_nvme_probe();
 }
 
@@ -13385,6 +13405,89 @@ void mmio64_defer_vmd_nested_nvme_candidate(
         g_nvme_candidate_source,
         g_nvme_token);
     mmio64_reset_nvme_probe();
+}
+
+u32 mmio64_bind_vmd_nested_nvme_candidate(
+    u32 hardware_capability_handle,
+    u32 owner_id,
+    u32 source_bdf,
+    u32 source_token)
+{
+    u32 flags = MMIO64_VMD_NVME_BIND_FLAG_REQUESTED
+        | MMIO64_VMD_NVME_BIND_FLAG_CAPABILITY_GATED;
+    u32 ready_flags = PCI64_NVME_MMIO_FLAG_PRESENT
+        | PCI64_NVME_MMIO_FLAG_MEMORY_BAR
+        | PCI64_NVME_MMIO_FLAG_BASE_NONZERO
+        | PCI64_NVME_MMIO_FLAG_PAGE_ALIGNED
+        | PCI64_NVME_MMIO_FLAG_MAPPING_REQUIRED
+        | PCI64_NVME_MMIO_FLAG_ADMIN_ONLY
+        | PCI64_NVME_MMIO_FLAG_SAFE_NO_IO_QUEUE;
+
+    if (!mmio64_authorize_nvme_probe(hardware_capability_handle, owner_id))
+    {
+        ++g_vmd_nvme_bind_denial_count;
+        return MMIO64_INVALID_RESULT;
+    }
+
+    g_vmd_nvme_bind_state = MMIO64_VMD_NVME_BIND_STATE_UNAVAILABLE;
+    g_vmd_nvme_bind_token = 0u;
+
+    if ((g_nvme_candidate_source
+            == MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED)
+        && (g_nvme_candidate_deferred != 0u)
+        && (g_nvme_candidate_token != 0u))
+    {
+        flags |= MMIO64_VMD_NVME_BIND_FLAG_DEFERRED_SOURCE;
+    }
+
+    if ((g_nvme_candidate_bdf == source_bdf)
+        && (source_bdf != 0xFFFFFFFFu)
+        && (source_token != 0u))
+    {
+        flags |= MMIO64_VMD_NVME_BIND_FLAG_BDF_MATCH;
+    }
+
+    if (((g_nvme_flags & ready_flags) == ready_flags)
+        && ((g_nvme_base_low != 0u) || (g_nvme_base_high != 0u))
+        && (g_nvme_span >= MMIO64_NVME_MMIO_SPAN_HINT)
+        && (g_nvme_span <= MMIO64_MAX_SAFE_WINDOW_BYTES))
+    {
+        flags |= MMIO64_VMD_NVME_BIND_FLAG_MMIO_READY;
+    }
+
+    if ((flags & (MMIO64_VMD_NVME_BIND_FLAG_DEFERRED_SOURCE
+            | MMIO64_VMD_NVME_BIND_FLAG_BDF_MATCH
+            | MMIO64_VMD_NVME_BIND_FLAG_MMIO_READY))
+        != (MMIO64_VMD_NVME_BIND_FLAG_DEFERRED_SOURCE
+            | MMIO64_VMD_NVME_BIND_FLAG_BDF_MATCH
+            | MMIO64_VMD_NVME_BIND_FLAG_MMIO_READY))
+    {
+        g_vmd_nvme_bind_flags = flags | MMIO64_VMD_NVME_BIND_FLAG_UNAVAILABLE;
+        ++g_vmd_nvme_bind_unavailable_count;
+        return MMIO64_INVALID_RESULT;
+    }
+
+    g_nvme_plan_count = 1u;
+    g_nvme_candidate_source = MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_BOUND;
+    g_nvme_candidate_deferred = 0u;
+    g_nvme_token = mmio64_make_token(
+        g_nvme_base_low,
+        g_nvme_span,
+        g_nvme_flags,
+        g_nvme_candidate_source,
+        source_token);
+    g_nvme_candidate_token = mmio64_make_token(
+        g_nvme_candidate_bdf,
+        g_nvme_span,
+        g_nvme_flags,
+        g_nvme_candidate_source,
+        g_nvme_token);
+    g_vmd_nvme_bind_flags = flags | MMIO64_VMD_NVME_BIND_FLAG_BOUND;
+    g_vmd_nvme_bind_state = MMIO64_VMD_NVME_BIND_STATE_BOUND;
+    g_vmd_nvme_bind_token = g_nvme_candidate_token;
+    ++g_vmd_nvme_bind_count;
+    mmio64_reset_nvme_probe();
+    return g_vmd_nvme_bind_token;
 }
 #endif
 
@@ -20945,6 +21048,36 @@ u32 mmio64_nvme_candidate_bdf(void)
 u32 mmio64_nvme_candidate_token(void)
 {
     return g_nvme_candidate_token;
+}
+
+u32 mmio64_vmd_nvme_bind_state(void)
+{
+    return g_vmd_nvme_bind_state;
+}
+
+u32 mmio64_vmd_nvme_bind_flags(void)
+{
+    return g_vmd_nvme_bind_flags;
+}
+
+u32 mmio64_vmd_nvme_bind_token(void)
+{
+    return g_vmd_nvme_bind_token;
+}
+
+u32 mmio64_vmd_nvme_bind_count(void)
+{
+    return g_vmd_nvme_bind_count;
+}
+
+u32 mmio64_vmd_nvme_bind_denial_count(void)
+{
+    return g_vmd_nvme_bind_denial_count;
+}
+
+u32 mmio64_vmd_nvme_bind_unavailable_count(void)
+{
+    return g_vmd_nvme_bind_unavailable_count;
 }
 #endif
 
