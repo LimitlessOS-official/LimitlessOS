@@ -163,6 +163,20 @@ function Classify-StorageCapture
                         if ((Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-token") -and (((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq $InvalidU32))) {
                             return New-Classification -Stage "pci-vmd-nested-driver-plan" -Detail "A VMD child NVMe no-touch driver plan exists, but its handoff token is invalid."
                         }
+                        if ((Has-Field -Fields $Fields -Name "vmd-nvme-bind-state") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nvme-bind-state") -eq 2)) {
+                            if ((Has-Field -Fields $Fields -Name "nvme-candidate-source") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-source") -ne 3)) {
+                                return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A VMD child NVMe bind reported success, but the MMIO/NVMe candidate source was not promoted to the bound VMD source."
+                            }
+                            if ((Get-FieldValue -Fields $Fields -Name "nvme-found") -ne 1) {
+                                return New-Classification -Stage "nvme-controller-discovery" -Detail "A VMD child NVMe candidate was bound, but the regular NVMe probe did not discover a controller."
+                            }
+                            if ((Get-FieldValue -Fields $Fields -Name "nvme-ready") -ne 1) {
+                                return New-Classification -Stage "nvme-controller-ready" -Detail "A VMD child NVMe candidate was bound and discovered, but the controller did not become ready."
+                            }
+                            if ((Get-FieldValue -Fields $Fields -Name "nvme-identify") -ne 1) {
+                                return New-Classification -Stage "nvme-identify" -Detail "A VMD child NVMe candidate was bound, but Identify did not complete."
+                            }
+                        }
                         return New-Classification -Stage "pci-vmd-nested-driver-plan-staged" -Detail "A child NVMe controller behind VMD has a capability-gated no-touch driver plan staged; actual VMD-backed NVMe binding remains the next implementation target."
                     }
                     return New-Classification -Stage "pci-vmd-nested-nvme-register-deferred" -Detail "A child NVMe controller behind VMD is a registration candidate, but the VMD-backed NVMe driver handoff is intentionally deferred."
@@ -309,6 +323,7 @@ if (-not (Test-Path $InputPath)) {
 
 $lines = @(Get-Content $InputPath)
 $triageLine = @($lines | Where-Object { $_ -match 'drs-nvme-triage' } | Select-Object -Last 1)
+$vmdBindLine = @($lines | Where-Object { $_ -match 'drs-vmd-nvme-bind' } | Select-Object -Last 1)
 $legacyUnavailableLine = @($lines | Where-Object { $_ -match 'drs-realbin-unavailable' } | Select-Object -Last 1)
 
 if ($triageLine.Count -eq 0) {
@@ -331,6 +346,17 @@ if ($triageLine.Count -eq 0) {
 }
 else {
     $fields = Parse-TelemetryFields -Line $triageLine[0]
+    if ($vmdBindLine.Count -ne 0) {
+        $bindFields = Parse-TelemetryFields -Line $vmdBindLine[0]
+        foreach ($key in $bindFields.Keys) {
+            if (($key -eq "candidate-source") -or ($key -eq "candidate-deferred") -or ($key -eq "candidate-bdf") -or ($key -eq "candidate-token")) {
+                $fields["nvme-$key"] = $bindFields[$key]
+            }
+            else {
+                $fields["vmd-nvme-bind-$key"] = $bindFields[$key]
+            }
+        }
+    }
     $classification = Classify-StorageCapture `
         -Fields $fields `
         -RequireStage ([bool]$RequireStagedDynamicArtifacts) `

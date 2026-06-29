@@ -66,12 +66,17 @@ function New-VmdHandoffSummary
     $registerStatus = Get-Field -Fields $Fields -Name "vmd-nested-register-status"
     $driverPlanState = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-state"
     $driverPlanToken = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-token"
+    $driverBindState = Get-Field -Fields $Fields -Name "vmd-nvme-bind-state"
+    $driverBindToken = Get-Field -Fields $Fields -Name "vmd-nvme-bind-token"
     $candidateSource = Get-Field -Fields $Fields -Name "nvme-candidate-source"
     $candidateDeferred = Get-Field -Fields $Fields -Name "nvme-candidate-deferred"
     $kind = "none"
     $stage = "none"
 
-    if ($pciNvme -ne "0") {
+    if (($driverBindState -eq "2") -and ($driverBindToken -ne "0") -and ($driverBindToken -ne "0x00000000")) {
+        $kind = "vmd-nested-bound"
+        $stage = "driver-bound"
+    } elseif ($pciNvme -ne "0") {
         $kind = "direct-nvme"
         $stage = "direct"
     } elseif (($driverPlanState -eq "2") -and ($driverPlanToken -ne "0") -and ($driverPlanToken -ne "0x00000000")) {
@@ -121,6 +126,13 @@ function New-VmdHandoffSummary
         nested_driver_plan_stage_count = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-stage-count"
         nested_driver_plan_denials = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-denials"
         nested_driver_plan_unavailable = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-unavailable"
+        nested_driver_bind_result = Get-Field -Fields $Fields -Name "vmd-nvme-bind-result" -Default "0xFFFFFFFF"
+        nested_driver_bind_state = $driverBindState
+        nested_driver_bind_flags = Get-Field -Fields $Fields -Name "vmd-nvme-bind-flags"
+        nested_driver_bind_token = $driverBindToken
+        nested_driver_bind_count = Get-Field -Fields $Fields -Name "vmd-nvme-bind-count"
+        nested_driver_bind_denials = Get-Field -Fields $Fields -Name "vmd-nvme-bind-denials"
+        nested_driver_bind_unavailable = Get-Field -Fields $Fields -Name "vmd-nvme-bind-unavailable"
         nvme_candidate_source = $candidateSource
         nvme_candidate_deferred = $candidateDeferred
         nvme_candidate_bdf = Get-Field -Fields $Fields -Name "nvme-candidate-bdf" -Default "0xFFFFFFFF"

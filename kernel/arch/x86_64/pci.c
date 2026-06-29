@@ -2649,9 +2649,10 @@ u32 pci64_stage_vmd_nested_driver_plan(u32 hardware_capability_handle, u32 owner
         flags |= PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REGISTER_READY;
     }
 
-    if ((mmio64_nvme_candidate_source()
-            == MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED)
-        && (mmio64_nvme_candidate_deferred() != 0u)
+    if (((mmio64_nvme_candidate_source()
+                == MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED)
+            || (mmio64_nvme_candidate_source()
+                == MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_BOUND))
         && (mmio64_nvme_candidate_bdf() == g_vmd_nested_first_address)
         && (mmio64_nvme_candidate_token() != 0u))
     {

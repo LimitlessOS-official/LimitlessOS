@@ -321,6 +321,16 @@ static void log_pci_storage_surface(void)
         SERVICE_ENDPOINT_CLASS_HARDWARE,
         CAPABILITY64_RIGHT_QUERY,
         owner);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 vmd_driver_plan = pci64_stage_vmd_nested_driver_plan(cap, owner);
+    u32 vmd_nvme_bind = (vmd_driver_plan != PCI64_INVALID_RESULT)
+        ? mmio64_bind_vmd_nested_nvme_candidate(
+            cap,
+            owner,
+            pci64_vmd_nested_first_address(cap, owner),
+            vmd_driver_plan)
+        : MMIO64_INVALID_RESULT;
+#endif
     u32 denied_devices = (u32)syscall64_invoke(
         X64_SYSCALL_PCI_DEVICE_COUNT,
         cap,
@@ -844,7 +854,7 @@ static void log_pci_storage_surface(void)
     write_string(" vmd-nested-register-token ");
     write_hex_u32(pci64_vmd_nested_register_token(cap, owner));
     write_string(" vmd-nested-driver-plan-result ");
-    write_hex_u32(pci64_stage_vmd_nested_driver_plan(cap, owner));
+    write_hex_u32(vmd_driver_plan);
     write_string(" vmd-nested-driver-plan-state ");
     write_dec_u32(pci64_vmd_nested_driver_plan_state(cap, owner));
     write_string(" vmd-nested-driver-plan-flags ");
@@ -910,6 +920,25 @@ static void log_pci_storage_surface(void)
     write_labeled_dec_u32(" drs-nvme-probe-unavailable ", mmio64_nvme_probe_unavailable());
     write_labeled_dec_u32(" drs-nvme-probe-error ", mmio64_nvme_probe_error());
     write_line("");
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_labeled_hex_u32("[x64] drs-vmd-nvme-bind result ", vmd_nvme_bind);
+    write_labeled_dec_u32(" state ", mmio64_vmd_nvme_bind_state());
+    write_string(" flags ");
+    write_hex_u32(mmio64_vmd_nvme_bind_flags());
+    write_string(" token ");
+    write_hex_u32(mmio64_vmd_nvme_bind_token());
+    write_labeled_dec_u32(" count ", mmio64_vmd_nvme_bind_count());
+    write_labeled_dec_u32(" denials ", mmio64_vmd_nvme_bind_denial_count());
+    write_labeled_dec_u32(" unavailable ", mmio64_vmd_nvme_bind_unavailable_count());
+    write_labeled_dec_u32(" candidate-source ", mmio64_nvme_candidate_source());
+    write_labeled_dec_u32(" candidate-deferred ", mmio64_nvme_candidate_deferred());
+    write_string(" candidate-bdf ");
+    write_hex_u32(mmio64_nvme_candidate_bdf());
+    write_string(" candidate-token ");
+    write_hex_u32(mmio64_nvme_candidate_token());
+    write_line("");
+#endif
 
     write_labeled_hex_u32("[x64] drs-nvme-read denied-drs-nvme-read ", denied_nvme_read);
     write_labeled_hex_u32(" drs-nvme-read ", nvme_read);
