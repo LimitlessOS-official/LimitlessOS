@@ -212,6 +212,7 @@ $verification = [PSCustomObject]@{
     capture_pass = $capturePass
     capture_stage = $captureStage
     capture_analysis_dir = $captureOutputDir
+    capture_vmd_handoff = if ($null -ne $captureAnalysis) { $captureAnalysis.vmd_handoff } else { $null }
     analyzer_exit_code = $analysisExitCode
     iso = $isoProof
     uefi_image = $uefiProof
@@ -226,6 +227,12 @@ $verification = [PSCustomObject]@{
 $verificationJsonPath = Join-Path $OutputDir "hardware-storage-evidence-verification.json"
 $verificationTextPath = Join-Path $OutputDir "hardware-storage-evidence-verification.txt"
 $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPath -Encoding Ascii
+$captureVmdKind = ""
+$captureVmdStage = ""
+if ($null -ne $captureAnalysis) {
+    $captureVmdKind = [string]$captureAnalysis.vmd_handoff.kind
+    $captureVmdStage = [string]$captureAnalysis.vmd_handoff.stage
+}
 
 @(
     "hardware-storage-evidence: verified",
@@ -240,6 +247,8 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "capture-checked: $(-not [string]::IsNullOrWhiteSpace($CapturePath))",
     "capture-pass: $capturePass",
     "capture-stage: $captureStage",
+    "capture-vmd-handoff-kind: $captureVmdKind",
+    "capture-vmd-handoff-stage: $captureVmdStage",
     "output-json: $verificationJsonPath"
 ) | Set-Content -Path $verificationTextPath -Encoding Ascii
 

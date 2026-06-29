@@ -180,6 +180,7 @@ $report = [PSCustomObject]@{
         capture_pass = $storageCapturePass
         capture_stage = $storageCaptureStage
         next_target = $storageNextTarget
+        vmd_handoff = $storageVerification.capture_vmd_handoff
         verification_json = $storageJsonPath
         analysis_dir = $storageCaptureAnalysisDir
     }
@@ -200,6 +201,10 @@ $report = [PSCustomObject]@{
 $reportJsonPath = Join-Path $OutputDir "msi-hardware-analysis.json"
 $reportTextPath = Join-Path $OutputDir "msi-hardware-analysis.txt"
 $reportMarkdownPath = Join-Path $OutputDir "msi-hardware-analysis.md"
+$storageVmdKind = ""
+if ($null -ne $storageVerification.capture_vmd_handoff) {
+    $storageVmdKind = [string]$storageVerification.capture_vmd_handoff.kind
+}
 
 $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding Ascii
 
@@ -238,6 +243,7 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Capture pass | $storageCapturePass |",
     "| Capture stage | $storageCaptureStage |",
     "| Next target | $storageNextTarget |",
+    "| VMD handoff | $storageVmdKind |",
     "| Verification JSON | $storageJsonPath |",
     "",
     "## Display/Input",

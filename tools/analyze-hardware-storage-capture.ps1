@@ -52,6 +52,70 @@ function Get-Field
     return [string]$property.Value
 }
 
+function New-VmdHandoffSummary
+{
+    param([object]$Fields)
+
+    $pciNvme = Get-Field -Fields $Fields -Name "pci-nvme"
+    $pciVmd = Get-Field -Fields $Fields -Name "pci-vmd"
+    $nestedPlan = Get-Field -Fields $Fields -Name "vmd-nested-plan"
+    $nestedEnum = Get-Field -Fields $Fields -Name "vmd-nested-enum"
+    $nestedNvme = Get-Field -Fields $Fields -Name "vmd-nested-nvme"
+    $bindReady = Get-Field -Fields $Fields -Name "vmd-nested-bind-ready"
+    $registerCandidate = Get-Field -Fields $Fields -Name "vmd-nested-register-candidate"
+    $registerStatus = Get-Field -Fields $Fields -Name "vmd-nested-register-status"
+    $candidateSource = Get-Field -Fields $Fields -Name "nvme-candidate-source"
+    $candidateDeferred = Get-Field -Fields $Fields -Name "nvme-candidate-deferred"
+    $kind = "none"
+    $stage = "none"
+
+    if ($pciNvme -ne "0") {
+        $kind = "direct-nvme"
+        $stage = "direct"
+    } elseif (($registerCandidate -eq "1") -and ($registerStatus -eq "2") -and ($candidateSource -eq "2") -and ($candidateDeferred -eq "1")) {
+        $kind = "vmd-nested-deferred"
+        $stage = "registration-deferred"
+    } elseif (($registerCandidate -eq "1") -and ($bindReady -eq "1")) {
+        $kind = "vmd-nested-register-candidate"
+        $stage = "registration-candidate"
+    } elseif ($bindReady -eq "1") {
+        $kind = "vmd-nested-bind-ready"
+        $stage = "bind-ready"
+    } elseif ($nestedNvme -ne "0") {
+        $kind = "vmd-nested-nvme"
+        $stage = "nested-nvme"
+    } elseif ($nestedEnum -eq "1") {
+        $kind = "vmd-nested-enumerated"
+        $stage = "nested-enumerated"
+    } elseif ($nestedPlan -eq "1") {
+        $kind = "vmd-nested-planned"
+        $stage = "nested-plan"
+    } elseif ($pciVmd -ne "0") {
+        $kind = "vmd-candidate"
+        $stage = "vmd-candidate"
+    }
+
+    return [PSCustomObject]@{
+        kind = $kind
+        stage = $stage
+        pci_vmd = $pciVmd
+        pci_nvme = $pciNvme
+        nested_plan = $nestedPlan
+        nested_enum = $nestedEnum
+        nested_nvme = $nestedNvme
+        nested_bind_ready = $bindReady
+        nested_bind_status = Get-Field -Fields $Fields -Name "vmd-nested-bind-status"
+        nested_bind_token = Get-Field -Fields $Fields -Name "vmd-nested-bind-token"
+        nested_register_candidate = $registerCandidate
+        nested_register_status = $registerStatus
+        nested_register_token = Get-Field -Fields $Fields -Name "vmd-nested-register-token"
+        nvme_candidate_source = $candidateSource
+        nvme_candidate_deferred = $candidateDeferred
+        nvme_candidate_bdf = Get-Field -Fields $Fields -Name "nvme-candidate-bdf" -Default "0xFFFFFFFF"
+        nvme_candidate_token = Get-Field -Fields $Fields -Name "nvme-candidate-token"
+    }
+}
+
 function Get-NextTarget
 {
     param([string]$Stage)
@@ -781,6 +845,7 @@ $pass = [bool]$parsed.classification.pass
 $detail = [string]$parsed.classification.detail
 $nextTarget = Get-NextTarget -Stage $stage
 $diagnostic = New-DiagnosticPlan -Stage $stage -Parsed $parsed
+$vmdHandoff = New-VmdHandoffSummary -Fields $parsed.fields
 
 $analysis = [PSCustomObject]@{
     tool = "analyze-hardware-storage-capture"
@@ -815,6 +880,7 @@ $analysis = [PSCustomObject]@{
         ldlimit_stat = Get-Field -Fields $parsed.fields -Name "ldlimit-stat"
         stage_match = Get-Field -Fields $parsed.fields -Name "stage-match"
     }
+    vmd_handoff = $vmdHandoff
     raw_line = [string]$parsed.raw_line
 }
 
@@ -855,6 +921,11 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "next-target: $nextTarget",
     "parser-exit-code: $parserExitCode",
     "require-staged-dynamic-artifacts: $([bool]$RequireStagedDynamicArtifacts)",
+    "vmd-handoff-kind: $($vmdHandoff.kind)",
+    "vmd-handoff-stage: $($vmdHandoff.stage)",
+    "vmd-handoff-register-status: $($vmdHandoff.nested_register_status)",
+    "vmd-handoff-candidate-source: $($vmdHandoff.nvme_candidate_source)",
+    "vmd-handoff-candidate-deferred: $($vmdHandoff.nvme_candidate_deferred)",
     "expected-dynamic-app-bytes: $ExpectedDynamicAppBytes",
     "expected-dynamic-interp-bytes: $ExpectedDynamicInterpBytes",
     "output-json: $analysisJsonPath",
@@ -884,6 +955,11 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "| nvme-mmio-flags | $fieldNvmeMmioFlags |",
     "| nvme-ready | $fieldNvmeReady |",
     "| nvme-identify | $fieldNvmeIdentify |",
+    "| vmd-handoff-kind | $($vmdHandoff.kind) |",
+    "| vmd-handoff-stage | $($vmdHandoff.stage) |",
+    "| vmd-nested-register-status | $($vmdHandoff.nested_register_status) |",
+    "| nvme-candidate-source | $($vmdHandoff.nvme_candidate_source) |",
+    "| nvme-candidate-deferred | $($vmdHandoff.nvme_candidate_deferred) |",
     "| ioq | $fieldIoQueue |",
     "| read-completed | $fieldReadCompleted |",
     "| read-status | $fieldReadStatus |",

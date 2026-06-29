@@ -179,6 +179,10 @@ if ($null -ne $combined) {
     $displayPass = [bool]$combined.display_input.pass
     $displayNextTarget = Get-PropertyText -Object $combined.display_input -Name "next_target"
 }
+$vmdHandoff = $null
+if (($null -ne $combined) -and ($null -ne $combined.storage)) {
+    $vmdHandoff = $combined.storage.vmd_handoff
+}
 
 $target = $null
 if (-not [bool]$handoff.storage_bundle_pass) {
@@ -293,6 +297,7 @@ $report = [PSCustomObject]@{
         boot_media_read_error = Get-PropertyText -Object $handoff -Name "dynamic_handoff_boot_media_read_error"
         telemetry = Get-PropertyText -Object $handoff -Name "dynamic_handoff_telemetry"
     }
+    vmd_handoff = $vmdHandoff
     reserves = [PSCustomObject]@{
         bios_sectors = $biosReserve
         uefi_bytes = $uefiReserve
@@ -304,6 +309,20 @@ $report = [PSCustomObject]@{
 $reportJsonPath = Join-Path $OutputDir "m134-storage-target.json"
 $reportTextPath = Join-Path $OutputDir "m134-storage-target.txt"
 $reportMarkdownPath = Join-Path $OutputDir "m134-storage-target.md"
+$vmdHandoffKind = ""
+$vmdHandoffStage = ""
+$vmdRegisterCandidate = ""
+$vmdRegisterStatus = ""
+$vmdCandidateSource = ""
+$vmdCandidateDeferred = ""
+if ($null -ne $vmdHandoff) {
+    $vmdHandoffKind = [string]$vmdHandoff.kind
+    $vmdHandoffStage = [string]$vmdHandoff.stage
+    $vmdRegisterCandidate = [string]$vmdHandoff.nested_register_candidate
+    $vmdRegisterStatus = [string]$vmdHandoff.nested_register_status
+    $vmdCandidateSource = [string]$vmdHandoff.nvme_candidate_source
+    $vmdCandidateDeferred = [string]$vmdHandoff.nvme_candidate_deferred
+}
 
 $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding Ascii
 
@@ -324,6 +343,8 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "gui-interaction-stage: $($report.display_input.gui_interaction_stage)",
     "dynamic-handoff-pass: $($report.dynamic_handoff.pass)",
     "dynamic-handoff-stage: $($report.dynamic_handoff.stage)",
+    "vmd-handoff-kind: $vmdHandoffKind",
+    "vmd-handoff-stage: $vmdHandoffStage",
     "bios-sector-reserve: $biosReserve",
     "uefi-byte-reserve: $uefiReserve",
     "output-json: $reportJsonPath"
@@ -368,7 +389,18 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Stage | $($report.dynamic_handoff.stage) |",
     "| Source | $($report.dynamic_handoff.source) |",
     "| Boot-media read | $($report.dynamic_handoff.boot_media_read) |",
-    "| Boot-media read error | $($report.dynamic_handoff.boot_media_read_error) |"
+    "| Boot-media read error | $($report.dynamic_handoff.boot_media_read_error) |",
+    "",
+    "## VMD/NVMe Handoff",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    "| Kind | $vmdHandoffKind |",
+    "| Stage | $vmdHandoffStage |",
+    "| Register candidate | $vmdRegisterCandidate |",
+    "| Register status | $vmdRegisterStatus |",
+    "| Candidate source | $vmdCandidateSource |",
+    "| Candidate deferred | $vmdCandidateDeferred |"
 ) | Set-Content -Path $reportMarkdownPath -Encoding Ascii
 
 Write-Host "m134-storage-target: $($report.target_kind)-$($report.target_stage)"
