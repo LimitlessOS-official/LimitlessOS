@@ -244,6 +244,7 @@ $isoPath = Get-ManifestProperty -Object $manifest.iso -Name "path"
 $uefiImagePath = Get-ManifestProperty -Object $manifest.uefi_image -Name "path"
 $dynamicAppPath = Get-ManifestProperty -Object $manifest.dynamic_app -Name "path"
 $dynamicInterpPath = Get-ManifestProperty -Object $manifest.dynamic_interpreter -Name "path"
+$captureReport = Get-ManifestProperty -Object $manifest.expected_hwval -Name "capture_report"
 $expectedAnalyzer = Get-ManifestProperty -Object $manifest.expected_hwval -Name "analyzer"
 $storageTargetClassifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "storage_target_classifier"
 $storageVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "storage_verifier"
@@ -270,6 +271,9 @@ if ($dynamicAppPath -ne "/APPS/DYNLDLIMIT") {
 if ($dynamicInterpPath -ne "/APPS/LDLIMIT") {
     throw "MSI hardware handoff verifier: dynamic interpreter path mismatch: '$dynamicInterpPath'."
 }
+if ($captureReport -ne "tools\\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry") {
+    throw "MSI hardware handoff verifier: manifest capture report mismatch: '$captureReport'."
+}
 if ($expectedAnalyzer -ne "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts") {
     throw "MSI hardware handoff verifier: manifest analyzer mismatch: '$expectedAnalyzer'."
 }
@@ -294,6 +298,7 @@ if ($requiredGuiTelemetry -ne "1") {
 
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*hwval\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run hwval."
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*linux /APPS/DYNLDLIMIT\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run linux /APPS/DYNLDLIMIT."
+Assert-TextContains -Text $runbook -Pattern 'report-msi-hardware-capture\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not use the M155 MSI capture report with GUI telemetry required."
 Assert-TextContains -Text $runbook -Pattern 'classify-m134-storage-target\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not use the M134 storage target classifier with GUI telemetry required."
 Assert-TextContains -Text $runbook -Pattern 'verify-msi-hardware-handoff\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not require GUI telemetry in the MSI handoff verifier."
 Assert-TextContains -Text $runbook -Pattern 'analyze-msi-hardware-capture\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the combined MSI analyzer."
@@ -429,6 +434,7 @@ $verification = [PSCustomObject]@{
     boot_media_verifier_ran = $bootMediaVerifierRan
     boot_media_verifier_exit_code = $bootMediaVerifierExitCode
     milestone = $milestone
+    capture_report = $captureReport
     expected_boot_media_linux_source = [uint32]$requiredBootMediaSource
     reserves = $storageVerification.reserves
 }
@@ -443,6 +449,7 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "handoff-pass: True",
     "evidence-dir: $resolvedEvidenceDir",
     "milestone: $milestone",
+    "capture-report: $captureReport",
     "source2-required: $requiredBootMediaSource",
     "storage-bundle-pass: $($verification.storage_bundle_pass)",
     "storage-capture-checked: $($verification.storage_capture_checked)",

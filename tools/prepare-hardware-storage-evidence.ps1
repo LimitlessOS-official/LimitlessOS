@@ -176,6 +176,7 @@ $manifestObject = [PSCustomObject]@{
     expected_hwval = [PSCustomObject]@{
         command = "hwval"
         required_line = "drs-nvme-triage"
+        capture_report = "tools\\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
         analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
         storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
         storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
@@ -221,7 +222,13 @@ LimitlessOS $handoffMilestone MSI Hardware Handoff Runbook
    linux /APPS/DYNLDLIMIT
 
 4. Capture the full transcript to a text file named msi-hwval-storage.txt.
-5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
+5. Back on Windows/PowerShell, generate the current MSI capture report from the repository root:
+
+   .\tools\report-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <capture-report-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
+
+   Start with msi-hardware-capture-report.md or msi-hardware-capture-report.txt. A nonzero exit code of 2 is still useful: it means the report found an actionable first-failure target.
+
+6. If you need lower-level artifacts, run the raw classifier, handoff verifier, and combined analyzer:
 
    .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
 

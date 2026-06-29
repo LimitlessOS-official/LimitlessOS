@@ -100,6 +100,7 @@ function New-EvidenceBundle
         expected_hwval = [PSCustomObject]@{
             command = "hwval"
             required_line = "drs-nvme-triage"
+            capture_report = "tools\\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
             analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
             storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
             storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
@@ -142,6 +143,8 @@ function New-EvidenceBundle
         "linux /APPS/DYNLDLIMIT",
         "",
         "Analyze with:",
+        "",
+        ".\tools\report-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <capture-report-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry",
         "",
         ".\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry",
         "",
