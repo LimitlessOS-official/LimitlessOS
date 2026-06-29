@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M154 handoff media ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the M153 GUI telemetry requirement.
+Status: M155 handoff report tooling ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry requirement.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -51,7 +51,20 @@ Host-side verifier for the boot-media handoff path:
 
 The verifier intentionally stages tiny invalid ELF-shaped probe payloads. Passing output proves UEFI FAT staging, `boot_info` handoff, shell source selection, and boot-media read telemetry; it does not claim the real dynamic binary completed.
 
-Analyze the evidence bundle and captured transcript from Windows/PowerShell with the M134 storage target classifier first:
+Analyze the evidence bundle and captured transcript from Windows/PowerShell with the M155 capture report first:
+
+```powershell
+.\tools\report-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-current `
+  -CapturePath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\msi-hardware-capture-report `
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
+```
+
+Start with `msi-hardware-capture-report.md` or `msi-hardware-capture-report.txt`. The report records the target kind, target stage, roadmap target, next target, bundle hashes, reserves, storage/display-input/dynamic-handoff status, and links to the lower-level JSON evidence. A nonzero report exit code can still be the correct result: exit `2` means the capture produced an actionable first-failure stage rather than a clean pass.
+
+The lower-level M134 storage target classifier remains available when you need the raw classification output directly:
 
 ```powershell
 .\tools\classify-m134-storage-target.ps1 `
@@ -64,7 +77,7 @@ Analyze the evidence bundle and captured transcript from Windows/PowerShell with
 
 Use `target-kind`, `target-stage`, and `next-target` as the next implementation target. If `target-kind` is `storage`, continue M134-M140 storage work on that exact storage stage. If it is `display-input` or `dynamic-handoff`, do not guess at NVMe; follow the reported roadmap target instead.
 
-The current classifier command requires the `hwval` GUI interaction line. A stale transcript that proves storage/display/dynamic handoff but lacks `drs-gui` reports:
+The current report and classifier commands require the `hwval` GUI interaction line. A stale transcript that proves storage/display/dynamic handoff but lacks `drs-gui` reports:
 
 ```text
 target-kind: display-input
@@ -105,6 +118,19 @@ Before writing the USB stick, verify the current handoff bundle itself:
 
 This checks the bundle hashes/reserves, the M133 media contract, the current M153 runbook contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` instructions, the required `drs-gui` expectation, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
 
+The preferred post-capture command is now the M155 report wrapper:
+
+```powershell
+.\tools\report-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-current `
+  -CapturePath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\msi-hardware-capture-report `
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
+```
+
+Use `msi-hardware-capture-report.md` as the handoff summary. It delegates to the stricter verifier/classifier path; it does not replace the raw transcript, photos/video, or lower-level JSON artifacts.
+
 When a capture is supplied, the verifier also classifies the dynamic command itself. Use `dynamic-handoff-stage` as the dynamic launch target:
 
 - `dynamic-runtime-*`: boot-media source 2 worked; the next target is the named dynamic runtime stage.
@@ -129,10 +155,10 @@ dist\m133-msi-hardware-handoff-<timestamp>
 For the next physical run, write `limitlessos-x86_64-m133-handoff.iso` from that bundle to USB, boot through the UEFI USB entry, run `hwval`, run `linux /APPS/DYNLDLIMIT`, save the full transcript, then classify it with:
 
 ```powershell
-.\tools\classify-m134-storage-target.ps1 `
-  -EvidenceDir .\dist\m133-msi-hardware-handoff-<timestamp> `
+.\tools\report-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-current `
   -CapturePath .\dist\msi-hwval-storage.txt `
-  -OutputDir .\dist\m134-msi-storage-target `
+  -OutputDir .\dist\msi-hardware-capture-report `
   -RequireStagedDynamicArtifacts `
   -RequireGuiInteractionTelemetry
 ```
