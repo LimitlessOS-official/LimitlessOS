@@ -164,6 +164,7 @@ $report = [PSCustomObject]@{
     storage = $classifier.storage
     display_input = $classifier.display_input
     dynamic_handoff = $classifier.dynamic_handoff
+    vmd_handoff = $classifier.vmd_handoff
     handoff = [PSCustomObject]@{
         pass = if ($null -ne $handoff) { Get-PropertyBool -Object $handoff -Name "handoff_pass" } else { $false }
         storage_bundle_pass = if ($null -ne $handoff) { Get-PropertyBool -Object $handoff -Name "storage_bundle_pass" } else { $false }
@@ -184,6 +185,12 @@ $report = [PSCustomObject]@{
 $reportJsonPath = Join-Path $OutputDir "msi-hardware-capture-report.json"
 $reportTextPath = Join-Path $OutputDir "msi-hardware-capture-report.txt"
 $reportMarkdownPath = Join-Path $OutputDir "msi-hardware-capture-report.md"
+$reportVmdKind = ""
+$reportVmdStage = ""
+if ($null -ne $report.vmd_handoff) {
+    $reportVmdKind = [string]$report.vmd_handoff.kind
+    $reportVmdStage = [string]$report.vmd_handoff.stage
+}
 
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding Ascii
 
@@ -200,6 +207,8 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "gui-interaction-stage: $($report.display_input.gui_interaction_stage)",
     "dynamic-handoff-pass: $($report.dynamic_handoff.pass)",
     "dynamic-handoff-stage: $($report.dynamic_handoff.stage)",
+    "vmd-handoff-kind: $reportVmdKind",
+    "vmd-handoff-stage: $reportVmdStage",
     "bios-sector-reserve: $($report.reserves.bios_sectors)",
     "uefi-byte-reserve: $($report.reserves.uefi_bytes)",
     "classifier-json: $classifierJsonPath",
@@ -240,6 +249,7 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "| Display/Input | $($report.display_input.pass) | $($report.display_input.stage) |",
     "| GUI interaction | $($report.display_input.gui_interaction_pass) | $($report.display_input.gui_interaction_stage) |",
     "| Dynamic handoff | $($report.dynamic_handoff.pass) | $($report.dynamic_handoff.stage) |",
+    "| VMD/NVMe handoff | $reportVmdKind | $reportVmdStage |",
     "",
     "## Outputs",
     "",

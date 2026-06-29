@@ -642,6 +642,8 @@ $fixtures = @(
         expected_stage = "pci-vmd-nested-nvme-register-deferred"
         expected_roadmap = "M134"
         expected_pass = $false
+        expected_vmd_kind = "vmd-nested-deferred"
+        expected_vmd_stage = "registration-deferred"
     },
     [PSCustomObject]@{
         name = "display-after-storage-ready"
@@ -748,12 +750,18 @@ foreach ($fixture in $fixtures) {
     $actualStage = ""
     $actualRoadmap = ""
     $actualPass = $false
+    $actualVmdKind = ""
+    $actualVmdStage = ""
     if (Test-Path $reportPath) {
         $report = Get-Content -Raw -Path $reportPath | ConvertFrom-Json
         $actualKind = [string]$report.target_kind
         $actualStage = [string]$report.target_stage
         $actualRoadmap = [string]$report.roadmap_target
         $actualPass = [bool]$report.pass
+        if ($null -ne $report.vmd_handoff) {
+            $actualVmdKind = [string]$report.vmd_handoff.kind
+            $actualVmdStage = [string]$report.vmd_handoff.stage
+        }
     }
 
     $passed = (($exitCode -eq [int]$fixture.expected_exit_code) -and
@@ -761,8 +769,13 @@ foreach ($fixture in $fixtures) {
         ($actualStage -eq [string]$fixture.expected_stage) -and
         ($actualRoadmap -eq [string]$fixture.expected_roadmap) -and
         ($actualPass -eq [bool]$fixture.expected_pass))
+    if ($fixture.PSObject.Properties["expected_vmd_kind"]) {
+        $passed = ($passed -and
+            ($actualVmdKind -eq [string]$fixture.expected_vmd_kind) -and
+            ($actualVmdStage -eq [string]$fixture.expected_vmd_stage))
+    }
     if (-not $passed) {
-        $failures += ("{0}: expected exit/kind/stage/roadmap/pass {1}/{2}/{3}/{4}/{5}, observed {6}/{7}/{8}/{9}/{10}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass)
+        $failures += ("{0}: expected exit/kind/stage/roadmap/pass/vmd {1}/{2}/{3}/{4}/{5}/{6}/{7}, observed {8}/{9}/{10}/{11}/{12}/{13}/{14}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $(if ($fixture.PSObject.Properties["expected_vmd_kind"]) { $fixture.expected_vmd_kind } else { "" }), $(if ($fixture.PSObject.Properties["expected_vmd_stage"]) { $fixture.expected_vmd_stage } else { "" }), $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass, $actualVmdKind, $actualVmdStage)
     }
 
     $results += [PSCustomObject]@{
@@ -777,6 +790,10 @@ foreach ($fixture in $fixtures) {
         actual_roadmap = $actualRoadmap
         expected_pass = [bool]$fixture.expected_pass
         actual_pass = $actualPass
+        expected_vmd_kind = if ($fixture.PSObject.Properties["expected_vmd_kind"]) { [string]$fixture.expected_vmd_kind } else { "" }
+        actual_vmd_kind = $actualVmdKind
+        expected_vmd_stage = if ($fixture.PSObject.Properties["expected_vmd_stage"]) { [string]$fixture.expected_vmd_stage } else { "" }
+        actual_vmd_stage = $actualVmdStage
         pass = $passed
     }
 }
