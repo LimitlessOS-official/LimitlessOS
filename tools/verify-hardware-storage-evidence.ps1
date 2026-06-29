@@ -56,6 +56,37 @@ function Get-ManifestValue
     return [string]$valueProperty.Value
 }
 
+function Get-PropertyText
+{
+    param(
+        [object]$Object,
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    if ($null -eq $Object) {
+        return $Default
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+    return [string]$property.Value
+}
+
+function Format-Hex32Text
+{
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ""
+    }
+    if ($Text.StartsWith("0x", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ("0x{0:X8}" -f ([uint32][Convert]::ToUInt64($Text.Substring(2), 16)))
+    }
+    return ("0x{0:X8}" -f ([uint32][Convert]::ToUInt64($Text, 10)))
+}
+
 function Assert-ManifestFile
 {
     param(
@@ -203,6 +234,21 @@ if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     $capturePass = [bool]$captureAnalysis.pass
 }
 
+$captureNvmeController = $null
+if ($null -ne $captureAnalysis) {
+    $captureNvmeController = [PSCustomObject]@{
+        probe_error = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_probe_error"
+        regs = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_regs"
+        cap_low = Format-Hex32Text -Text (Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_cap_low")
+        cap_high = Format-Hex32Text -Text (Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_cap_high")
+        vs = Format-Hex32Text -Text (Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_vs")
+        cc = Format-Hex32Text -Text (Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_cc")
+        csts = Format-Hex32Text -Text (Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_csts")
+        dstrd_bytes = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_dstrd_bytes"
+        doorbell_page = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_doorbell_page"
+    }
+}
+
 $verification = [PSCustomObject]@{
     tool = "verify-hardware-storage-evidence"
     evidence_dir = $resolvedEvidenceDir
@@ -213,6 +259,7 @@ $verification = [PSCustomObject]@{
     capture_stage = $captureStage
     capture_analysis_dir = $captureOutputDir
     capture_vmd_handoff = if ($null -ne $captureAnalysis) { $captureAnalysis.vmd_handoff } else { $null }
+    capture_nvme_controller = $captureNvmeController
     analyzer_exit_code = $analysisExitCode
     iso = $isoProof
     uefi_image = $uefiProof
@@ -231,11 +278,25 @@ $captureVmdKind = ""
 $captureVmdStage = ""
 $captureVmdDriverPlanState = ""
 $captureVmdDriverPlanToken = ""
+$captureNvmeProbeError = ""
+$captureNvmeRegs = ""
+$captureNvmeCapLow = ""
+$captureNvmeCapHigh = ""
+$captureNvmeVersion = ""
+$captureNvmeCc = ""
+$captureNvmeCsts = ""
 if ($null -ne $captureAnalysis) {
     $captureVmdKind = [string]$captureAnalysis.vmd_handoff.kind
     $captureVmdStage = [string]$captureAnalysis.vmd_handoff.stage
     $captureVmdDriverPlanState = [string]$captureAnalysis.vmd_handoff.nested_driver_plan_state
     $captureVmdDriverPlanToken = [string]$captureAnalysis.vmd_handoff.nested_driver_plan_token
+    $captureNvmeProbeError = [string]$captureNvmeController.probe_error
+    $captureNvmeRegs = [string]$captureNvmeController.regs
+    $captureNvmeCapLow = [string]$captureNvmeController.cap_low
+    $captureNvmeCapHigh = [string]$captureNvmeController.cap_high
+    $captureNvmeVersion = [string]$captureNvmeController.vs
+    $captureNvmeCc = [string]$captureNvmeController.cc
+    $captureNvmeCsts = [string]$captureNvmeController.csts
 }
 
 @(
@@ -255,6 +316,13 @@ if ($null -ne $captureAnalysis) {
     "capture-vmd-handoff-stage: $captureVmdStage",
     "capture-vmd-driver-plan-state: $captureVmdDriverPlanState",
     "capture-vmd-driver-plan-token: $captureVmdDriverPlanToken",
+    "capture-nvme-probe-error: $captureNvmeProbeError",
+    "capture-nvme-regs: $captureNvmeRegs",
+    "capture-nvme-cap-low: $captureNvmeCapLow",
+    "capture-nvme-cap-high: $captureNvmeCapHigh",
+    "capture-nvme-vs: $captureNvmeVersion",
+    "capture-nvme-cc: $captureNvmeCc",
+    "capture-nvme-csts: $captureNvmeCsts",
     "output-json: $verificationJsonPath"
 ) | Set-Content -Path $verificationTextPath -Encoding Ascii
 

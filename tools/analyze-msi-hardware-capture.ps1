@@ -181,6 +181,7 @@ $report = [PSCustomObject]@{
         capture_stage = $storageCaptureStage
         next_target = $storageNextTarget
         vmd_handoff = $storageVerification.capture_vmd_handoff
+        nvme_controller = $storageVerification.capture_nvme_controller
         verification_json = $storageJsonPath
         analysis_dir = $storageCaptureAnalysisDir
     }
@@ -205,11 +206,27 @@ $storageVmdKind = ""
 $storageVmdStage = ""
 $storageVmdDriverPlanState = ""
 $storageVmdDriverPlanToken = ""
+$storageNvmeProbeError = ""
+$storageNvmeRegs = ""
+$storageNvmeCapLow = ""
+$storageNvmeCapHigh = ""
+$storageNvmeVersion = ""
+$storageNvmeCc = ""
+$storageNvmeCsts = ""
 if ($null -ne $storageVerification.capture_vmd_handoff) {
     $storageVmdKind = [string]$storageVerification.capture_vmd_handoff.kind
     $storageVmdStage = [string]$storageVerification.capture_vmd_handoff.stage
     $storageVmdDriverPlanState = [string]$storageVerification.capture_vmd_handoff.nested_driver_plan_state
     $storageVmdDriverPlanToken = [string]$storageVerification.capture_vmd_handoff.nested_driver_plan_token
+}
+if ($null -ne $storageVerification.capture_nvme_controller) {
+    $storageNvmeProbeError = [string]$storageVerification.capture_nvme_controller.probe_error
+    $storageNvmeRegs = [string]$storageVerification.capture_nvme_controller.regs
+    $storageNvmeCapLow = [string]$storageVerification.capture_nvme_controller.cap_low
+    $storageNvmeCapHigh = [string]$storageVerification.capture_nvme_controller.cap_high
+    $storageNvmeVersion = [string]$storageVerification.capture_nvme_controller.vs
+    $storageNvmeCc = [string]$storageVerification.capture_nvme_controller.cc
+    $storageNvmeCsts = [string]$storageVerification.capture_nvme_controller.csts
 }
 
 $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding Ascii
@@ -226,6 +243,13 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "storage-vmd-handoff-stage: $storageVmdStage",
     "storage-vmd-driver-plan-state: $storageVmdDriverPlanState",
     "storage-vmd-driver-plan-token: $storageVmdDriverPlanToken",
+    "storage-nvme-probe-error: $storageNvmeProbeError",
+    "storage-nvme-regs: $storageNvmeRegs",
+    "storage-nvme-cap-low: $storageNvmeCapLow",
+    "storage-nvme-cap-high: $storageNvmeCapHigh",
+    "storage-nvme-vs: $storageNvmeVersion",
+    "storage-nvme-cc: $storageNvmeCc",
+    "storage-nvme-csts: $storageNvmeCsts",
     "display-input-pass: $displayPass",
     "display-input-stage: $displayStage",
     "bios-sector-reserve: $biosReserve",
@@ -257,6 +281,13 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| VMD handoff stage | $storageVmdStage |",
     "| VMD driver plan state | $storageVmdDriverPlanState |",
     "| VMD driver plan token | $storageVmdDriverPlanToken |",
+    "| NVMe probe error | $storageNvmeProbeError |",
+    "| NVMe register snapshot | $storageNvmeRegs |",
+    "| NVMe CAP low | $storageNvmeCapLow |",
+    "| NVMe CAP high | $storageNvmeCapHigh |",
+    "| NVMe VS | $storageNvmeVersion |",
+    "| NVMe CC | $storageNvmeCc |",
+    "| NVMe CSTS | $storageNvmeCsts |",
     "| Verification JSON | $storageJsonPath |",
     "",
     "## Display/Input",

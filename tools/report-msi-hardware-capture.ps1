@@ -165,6 +165,7 @@ $report = [PSCustomObject]@{
     display_input = $classifier.display_input
     dynamic_handoff = $classifier.dynamic_handoff
     vmd_handoff = $classifier.vmd_handoff
+    nvme_controller = $classifier.nvme_controller
     handoff = [PSCustomObject]@{
         pass = if ($null -ne $handoff) { Get-PropertyBool -Object $handoff -Name "handoff_pass" } else { $false }
         storage_bundle_pass = if ($null -ne $handoff) { Get-PropertyBool -Object $handoff -Name "storage_bundle_pass" } else { $false }
@@ -189,11 +190,31 @@ $reportVmdKind = ""
 $reportVmdStage = ""
 $reportVmdDriverPlanState = ""
 $reportVmdDriverPlanToken = ""
+$reportNvmeProbeError = ""
+$reportNvmeRegs = ""
+$reportNvmeCapLow = ""
+$reportNvmeCapHigh = ""
+$reportNvmeVersion = ""
+$reportNvmeCc = ""
+$reportNvmeCsts = ""
+$reportNvmeDstrdBytes = ""
+$reportNvmeDoorbellPage = ""
 if ($null -ne $report.vmd_handoff) {
     $reportVmdKind = [string]$report.vmd_handoff.kind
     $reportVmdStage = [string]$report.vmd_handoff.stage
     $reportVmdDriverPlanState = [string]$report.vmd_handoff.nested_driver_plan_state
     $reportVmdDriverPlanToken = [string]$report.vmd_handoff.nested_driver_plan_token
+}
+if ($null -ne $report.nvme_controller) {
+    $reportNvmeProbeError = [string]$report.nvme_controller.probe_error
+    $reportNvmeRegs = [string]$report.nvme_controller.regs
+    $reportNvmeCapLow = [string]$report.nvme_controller.cap_low
+    $reportNvmeCapHigh = [string]$report.nvme_controller.cap_high
+    $reportNvmeVersion = [string]$report.nvme_controller.vs
+    $reportNvmeCc = [string]$report.nvme_controller.cc
+    $reportNvmeCsts = [string]$report.nvme_controller.csts
+    $reportNvmeDstrdBytes = [string]$report.nvme_controller.dstrd_bytes
+    $reportNvmeDoorbellPage = [string]$report.nvme_controller.doorbell_page
 }
 
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding Ascii
@@ -215,6 +236,15 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "vmd-handoff-stage: $reportVmdStage",
     "vmd-handoff-driver-plan-state: $reportVmdDriverPlanState",
     "vmd-handoff-driver-plan-token: $reportVmdDriverPlanToken",
+    "nvme-probe-error: $reportNvmeProbeError",
+    "nvme-regs: $reportNvmeRegs",
+    "nvme-cap-low: $reportNvmeCapLow",
+    "nvme-cap-high: $reportNvmeCapHigh",
+    "nvme-vs: $reportNvmeVersion",
+    "nvme-cc: $reportNvmeCc",
+    "nvme-csts: $reportNvmeCsts",
+    "nvme-dstrd-bytes: $reportNvmeDstrdBytes",
+    "nvme-doorbell-page: $reportNvmeDoorbellPage",
     "bios-sector-reserve: $($report.reserves.bios_sectors)",
     "uefi-byte-reserve: $($report.reserves.uefi_bytes)",
     "classifier-json: $classifierJsonPath",
@@ -257,6 +287,20 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "| Dynamic handoff | $($report.dynamic_handoff.pass) | $($report.dynamic_handoff.stage) |",
     "| VMD/NVMe handoff | $reportVmdKind | $reportVmdStage |",
     "| VMD driver plan | $reportVmdDriverPlanState | $reportVmdDriverPlanToken |",
+    "",
+    "## NVMe Controller Snapshot",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    "| Probe error | $reportNvmeProbeError |",
+    "| Registers sampled | $reportNvmeRegs |",
+    "| CAP low | $reportNvmeCapLow |",
+    "| CAP high | $reportNvmeCapHigh |",
+    "| VS | $reportNvmeVersion |",
+    "| CC | $reportNvmeCc |",
+    "| CSTS | $reportNvmeCsts |",
+    "| Doorbell stride bytes | $reportNvmeDstrdBytes |",
+    "| Doorbell page | $reportNvmeDoorbellPage |",
     "",
     "## Outputs",
     "",
