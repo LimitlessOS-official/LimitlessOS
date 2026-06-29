@@ -57,6 +57,15 @@ $fixtures = @(
         expected_stage = "dynamic-handoff-nvme-unavailable"
         expected_roadmap = "M83+"
         expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "storage-missing-nvme-controller-snapshot"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "nvme-controller-snapshot-missing"
+        expected_roadmap = "M134"
+        expected_pass = $false
+        expected_nvme_snapshot = $false
     }
 )
 
@@ -117,18 +126,36 @@ foreach ($fixture in $fixtures) {
         }
     }
 
+    $expectNvmeSnapshot = $true
+    if ($fixture.PSObject.Properties["expected_nvme_snapshot"] -ne $null) {
+        $expectNvmeSnapshot = [bool]$fixture.expected_nvme_snapshot
+    }
+
+    $nvmeSnapshotMatched = $false
+    if ($expectNvmeSnapshot) {
+        $nvmeSnapshotMatched = (($actualNvmeProbeError -eq "0") -and
+            ($actualNvmeRegs -eq "1") -and
+            ($actualNvmeCapLow -eq "0x00003FFF") -and
+            ($actualNvmeCapHigh -eq "0x00000030") -and
+            ($actualNvmeVersion -eq "0x00010400") -and
+            ($actualNvmeCc -eq "0x00460001") -and
+            ($actualNvmeCsts -eq "0x00000001"))
+    } else {
+        $nvmeSnapshotMatched = (([string]::IsNullOrWhiteSpace($actualNvmeProbeError)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeRegs)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCapLow)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCapHigh)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeVersion)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCc)) -and
+            ([string]::IsNullOrWhiteSpace($actualNvmeCsts)))
+    }
+
     $passed = (($exitCode -eq [int]$fixture.expected_exit_code) -and
         ($actualKind -eq [string]$fixture.expected_kind) -and
         ($actualStage -eq [string]$fixture.expected_stage) -and
         ($actualRoadmap -eq [string]$fixture.expected_roadmap) -and
         ($actualPass -eq [bool]$fixture.expected_pass) -and
-        ($actualNvmeProbeError -eq "0") -and
-        ($actualNvmeRegs -eq "1") -and
-        ($actualNvmeCapLow -eq "0x00003FFF") -and
-        ($actualNvmeCapHigh -eq "0x00000030") -and
-        ($actualNvmeVersion -eq "0x00010400") -and
-        ($actualNvmeCc -eq "0x00460001") -and
-        ($actualNvmeCsts -eq "0x00000001"))
+        $nvmeSnapshotMatched)
     if (-not $passed) {
         $failures += ("{0}: expected exit/kind/stage/roadmap/pass/nvme {1}/{2}/{3}/{4}/{5}/0/1/0x00003FFF/0x00000030/0x00010400/0x00460001/0x00000001, observed {6}/{7}/{8}/{9}/{10}/{11}/{12}/{13}/{14}/{15}/{16}/{17}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass, $actualNvmeProbeError, $actualNvmeRegs, $actualNvmeCapLow, $actualNvmeCapHigh, $actualNvmeVersion, $actualNvmeCc, $actualNvmeCsts)
     }

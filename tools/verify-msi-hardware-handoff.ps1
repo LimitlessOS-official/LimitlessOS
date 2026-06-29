@@ -435,6 +435,8 @@ $verification = [PSCustomObject]@{
     storage_capture_checked = [bool]$storageVerification.capture_checked
     storage_capture_pass = [bool]$storageVerification.capture_pass
     storage_capture_stage = [string]$storageVerification.capture_stage
+    storage_capture_next_target = [string]$storageVerification.capture_next_target
+    storage_capture_nvme_controller_missing_fields = $storageVerification.capture_nvme_controller_missing_fields
     combined_capture_checked = (-not [string]::IsNullOrWhiteSpace($CapturePath))
     combined_capture_pass = $combinedPass
     combined_capture_stage = $combinedStage
@@ -487,6 +489,8 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "storage-bundle-pass: $($verification.storage_bundle_pass)",
     "storage-capture-checked: $($verification.storage_capture_checked)",
     "storage-capture-stage: $($verification.storage_capture_stage)",
+    "storage-capture-next-target: $($verification.storage_capture_next_target)",
+    "storage-capture-nvme-controller-missing-fields: $($verification.storage_capture_nvme_controller_missing_fields -join ',')",
     "combined-capture-checked: $($verification.combined_capture_checked)",
     "combined-capture-stage: $combinedStage",
     "gui-interaction-checked: $($verification.gui_interaction_checked)",

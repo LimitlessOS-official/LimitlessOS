@@ -74,6 +74,54 @@ function Get-PropertyText
     return [string]$property.Value
 }
 
+function Get-ExpectedHwvalProperty
+{
+    param(
+        [object]$Manifest,
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    if (($null -eq $Manifest) -or ($null -eq $Manifest.expected_hwval)) {
+        return $Default
+    }
+    $property = $Manifest.expected_hwval.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+    return [string]$property.Value
+}
+
+function Get-ExpectedHwvalArray
+{
+    param(
+        [object]$Manifest,
+        [string]$Name
+    )
+
+    if (($null -eq $Manifest) -or ($null -eq $Manifest.expected_hwval)) {
+        return @()
+    }
+    $property = $Manifest.expected_hwval.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return @()
+    }
+    return @($property.Value)
+}
+
+function Test-RawTelemetryField
+{
+    param(
+        [string]$RawLine,
+        [string]$Field
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RawLine) -or [string]::IsNullOrWhiteSpace($Field)) {
+        return $false
+    }
+    return ($RawLine -match ("(^|\s)" + [regex]::Escape($Field) + "(\s|$)"))
+}
+
 function Format-Hex32Text
 {
     param([string]$Text)
@@ -209,6 +257,10 @@ $captureStage = ""
 $capturePass = $false
 $captureOutputDir = ""
 $analysisExitCode = 0
+$captureNextTarget = ""
+$requiredNvmeControllerSnapshot = Get-ExpectedHwvalProperty -Manifest $manifest -Name "required_nvme_controller_snapshot" -Default "0"
+$requiredNvmeControllerFields = Get-ExpectedHwvalArray -Manifest $manifest -Name "required_nvme_controller_fields"
+$missingNvmeControllerFields = @()
 if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     Assert-FileExists -Path $CapturePath -Message "Hardware storage evidence verifier: capture file not found: $CapturePath"
     $captureOutputDir = Join-Path $OutputDir "capture-analysis"
@@ -232,6 +284,21 @@ if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     $captureAnalysis = Get-Content -Raw -Path $captureAnalysisPath | ConvertFrom-Json
     $captureStage = [string]$captureAnalysis.stage
     $capturePass = [bool]$captureAnalysis.pass
+    $captureNextTarget = Get-PropertyText -Object $captureAnalysis -Name "next_target"
+
+    if ($requiredNvmeControllerSnapshot -eq "1") {
+        foreach ($field in $requiredNvmeControllerFields) {
+            if (-not (Test-RawTelemetryField -RawLine ([string]$captureAnalysis.raw_line) -Field ([string]$field))) {
+                $missingNvmeControllerFields += [string]$field
+            }
+        }
+        if (@($missingNvmeControllerFields).Count -ne 0) {
+            $capturePass = $false
+            $captureStage = "nvme-controller-snapshot-missing"
+            $captureNextTarget = "Capture target: repeat hwval with an M163-or-newer Product image; drs-nvme-triage is missing required NVMe controller snapshot fields."
+            $analysisExitCode = 2
+        }
+    }
 }
 
 $captureNvmeController = $null
@@ -247,6 +314,20 @@ if ($null -ne $captureAnalysis) {
         dstrd_bytes = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_dstrd_bytes"
         doorbell_page = Get-PropertyText -Object $captureAnalysis.key_fields -Name "nvme_doorbell_page"
     }
+
+    if (@($missingNvmeControllerFields).Count -ne 0) {
+        $captureNvmeController = [PSCustomObject]@{
+            probe_error = ""
+            regs = ""
+            cap_low = ""
+            cap_high = ""
+            vs = ""
+            cc = ""
+            csts = ""
+            dstrd_bytes = ""
+            doorbell_page = ""
+        }
+    }
 }
 
 $verification = [PSCustomObject]@{
@@ -257,9 +338,12 @@ $verification = [PSCustomObject]@{
     capture_checked = (-not [string]::IsNullOrWhiteSpace($CapturePath))
     capture_pass = $capturePass
     capture_stage = $captureStage
+    capture_next_target = $captureNextTarget
     capture_analysis_dir = $captureOutputDir
     capture_vmd_handoff = if ($null -ne $captureAnalysis) { $captureAnalysis.vmd_handoff } else { $null }
     capture_nvme_controller = $captureNvmeController
+    capture_nvme_controller_snapshot_required = ([string]$requiredNvmeControllerSnapshot -eq "1")
+    capture_nvme_controller_missing_fields = $missingNvmeControllerFields
     analyzer_exit_code = $analysisExitCode
     iso = $isoProof
     uefi_image = $uefiProof
@@ -312,6 +396,9 @@ if ($null -ne $captureAnalysis) {
     "capture-checked: $(-not [string]::IsNullOrWhiteSpace($CapturePath))",
     "capture-pass: $capturePass",
     "capture-stage: $captureStage",
+    "capture-next-target: $captureNextTarget",
+    "capture-nvme-controller-snapshot-required: $([string]$requiredNvmeControllerSnapshot -eq "1")",
+    "capture-nvme-controller-missing-fields: $($missingNvmeControllerFields -join ',')",
     "capture-vmd-handoff-kind: $captureVmdKind",
     "capture-vmd-handoff-stage: $captureVmdStage",
     "capture-vmd-driver-plan-state: $captureVmdDriverPlanState",
