@@ -192,6 +192,12 @@ static u32 g_vmd_nested_bind_token = 0u;
 static u32 g_vmd_nested_register_candidate = 0u;
 static u32 g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
 static u32 g_vmd_nested_register_token = 0u;
+static u32 g_vmd_nested_driver_plan_state = PCI64_VMD_NESTED_DRIVER_PLAN_STATE_NOT_APPLICABLE;
+static u32 g_vmd_nested_driver_plan_flags = 0u;
+static u32 g_vmd_nested_driver_plan_token = 0u;
+static u32 g_vmd_nested_driver_plan_stage_count = 0u;
+static u32 g_vmd_nested_driver_plan_denial_count = 0u;
+static u32 g_vmd_nested_driver_plan_unavailable_count = 0u;
 #endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
@@ -911,6 +917,38 @@ static u32 pci64_mix_token(u32 token, u32 value)
     return token;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void pci64_reset_vmd_nested_driver_plan(void)
+{
+    g_vmd_nested_driver_plan_state =
+        PCI64_VMD_NESTED_DRIVER_PLAN_STATE_NOT_APPLICABLE;
+    g_vmd_nested_driver_plan_flags = 0u;
+    g_vmd_nested_driver_plan_token = 0u;
+}
+
+static u32 pci64_make_vmd_nested_driver_plan_token(void)
+{
+    u32 token = 2166136261u;
+
+    token = pci64_mix_token(token, g_vmd_nested_register_token);
+    token = pci64_mix_token(token, g_vmd_nested_bind_token);
+    token = pci64_mix_token(token, g_vmd_nested_first_address);
+    token = pci64_mix_token(token, g_vmd_nested_first_vendor_device);
+    token = pci64_mix_token(token, g_vmd_nested_first_class);
+    token = pci64_mix_token(token, g_vmd_nested_mmio_base_low);
+    token = pci64_mix_token(token, g_vmd_nested_mmio_base_high);
+    token = pci64_mix_token(token, g_vmd_nested_mmio_span_hint);
+    token = pci64_mix_token(token, g_vmd_nested_mmio_flags);
+    token = pci64_mix_token(token, g_vmd_nested_mmio_token);
+    token = pci64_mix_token(token, mmio64_nvme_candidate_source());
+    token = pci64_mix_token(token, mmio64_nvme_candidate_deferred());
+    token = pci64_mix_token(token, mmio64_nvme_candidate_bdf());
+    token = pci64_mix_token(token, mmio64_nvme_candidate_token());
+    token = pci64_mix_token(token, g_vmd_nested_driver_plan_flags);
+    return (token != 0u) ? token : 1u;
+}
+#endif
+
 static void pci64_update_ahci_mmio_plan(void)
 {
     u32 flags = 0u;
@@ -1448,6 +1486,7 @@ static void pci64_update_vmd_nested_plan(void)
     g_vmd_nested_register_candidate = 0u;
     g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
     g_vmd_nested_register_token = 0u;
+    pci64_reset_vmd_nested_driver_plan();
     g_vmd_nested_status = (g_vmd_nested_plan != 0u)
         ? PCI64_VMD_NESTED_STATUS_ENUM_UNAVAILABLE
         : PCI64_VMD_NESTED_STATUS_NOT_APPLICABLE;
@@ -2067,6 +2106,10 @@ void pci64_init(const struct boot_info *boot_info)
     g_vmd_nested_register_candidate = 0u;
     g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
     g_vmd_nested_register_token = 0u;
+    pci64_reset_vmd_nested_driver_plan();
+    g_vmd_nested_driver_plan_stage_count = 0u;
+    g_vmd_nested_driver_plan_denial_count = 0u;
+    g_vmd_nested_driver_plan_unavailable_count = 0u;
 #endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
@@ -2571,6 +2614,123 @@ u32 pci64_vmd_nested_register_status(u32 hardware_capability_handle, u32 owner_i
 u32 pci64_vmd_nested_register_token(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_register_token);
+}
+
+u32 pci64_stage_vmd_nested_driver_plan(u32 hardware_capability_handle, u32 owner_id)
+{
+    u32 flags;
+    u32 required_flags;
+    u32 nvme_ready_flags = PCI64_NVME_MMIO_FLAG_PRESENT
+        | PCI64_NVME_MMIO_FLAG_MEMORY_BAR
+        | PCI64_NVME_MMIO_FLAG_BASE_NONZERO
+        | PCI64_NVME_MMIO_FLAG_PAGE_ALIGNED
+        | PCI64_NVME_MMIO_FLAG_MAPPING_REQUIRED
+        | PCI64_NVME_MMIO_FLAG_ADMIN_ONLY
+        | PCI64_NVME_MMIO_FLAG_SAFE_NO_IO_QUEUE;
+
+    if (!pci64_authorize_query(hardware_capability_handle, owner_id))
+    {
+        ++g_vmd_nested_driver_plan_denial_count;
+        return PCI64_INVALID_RESULT;
+    }
+
+    pci64_reset_vmd_nested_driver_plan();
+    flags = PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REQUESTED
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_MMIO_WRITES
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_COMMANDS
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_PROBE_PLAN
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CAPABILITY_GATED;
+
+    if ((g_vmd_nested_register_candidate != 0u)
+        && (g_vmd_nested_register_status
+            == PCI64_VMD_NESTED_REGISTER_STATUS_DEFERRED_NO_DRIVER)
+        && (g_vmd_nested_register_token != 0u))
+    {
+        flags |= PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REGISTER_READY;
+    }
+
+    if ((mmio64_nvme_candidate_source()
+            == MMIO64_NVME_CANDIDATE_SOURCE_VMD_NESTED_DEFERRED)
+        && (mmio64_nvme_candidate_deferred() != 0u)
+        && (mmio64_nvme_candidate_bdf() == g_vmd_nested_first_address)
+        && (mmio64_nvme_candidate_token() != 0u))
+    {
+        flags |= PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CANDIDATE_DEFERRED;
+    }
+
+    if (((g_vmd_nested_mmio_flags & nvme_ready_flags) == nvme_ready_flags)
+        && ((g_vmd_nested_mmio_base_low != 0u)
+            || (g_vmd_nested_mmio_base_high != 0u))
+        && (g_vmd_nested_mmio_span_hint >= PCI_NVME_MMIO_SPAN_HINT))
+    {
+        flags |= PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_MMIO_READY;
+    }
+
+    required_flags = PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REQUESTED
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REGISTER_READY
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CANDIDATE_DEFERRED
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_MMIO_READY
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_MMIO_WRITES
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_COMMANDS
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_PROBE_PLAN
+        | PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CAPABILITY_GATED;
+
+    g_vmd_nested_driver_plan_flags = flags;
+    if ((flags & required_flags) != required_flags)
+    {
+        g_vmd_nested_driver_plan_state =
+            PCI64_VMD_NESTED_DRIVER_PLAN_STATE_UNAVAILABLE;
+        g_vmd_nested_driver_plan_flags |=
+            PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_UNAVAILABLE;
+        ++g_vmd_nested_driver_plan_unavailable_count;
+        return PCI64_INVALID_RESULT;
+    }
+
+    g_vmd_nested_driver_plan_state =
+        PCI64_VMD_NESTED_DRIVER_PLAN_STATE_STAGED_NO_TOUCH;
+    g_vmd_nested_driver_plan_token =
+        pci64_make_vmd_nested_driver_plan_token();
+    ++g_vmd_nested_driver_plan_stage_count;
+    return g_vmd_nested_driver_plan_token;
+}
+
+u32 pci64_vmd_nested_driver_plan_state(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(
+        hardware_capability_handle,
+        owner_id,
+        g_vmd_nested_driver_plan_state);
+}
+
+u32 pci64_vmd_nested_driver_plan_flags(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(
+        hardware_capability_handle,
+        owner_id,
+        g_vmd_nested_driver_plan_flags);
+}
+
+u32 pci64_vmd_nested_driver_plan_token(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(
+        hardware_capability_handle,
+        owner_id,
+        g_vmd_nested_driver_plan_token);
+}
+
+u32 pci64_vmd_nested_driver_plan_stage_count(void)
+{
+    return g_vmd_nested_driver_plan_stage_count;
+}
+
+u32 pci64_vmd_nested_driver_plan_denial_count(void)
+{
+    return g_vmd_nested_driver_plan_denial_count;
+}
+
+u32 pci64_vmd_nested_driver_plan_unavailable_count(void)
+{
+    return g_vmd_nested_driver_plan_unavailable_count;
 }
 #endif
 

@@ -64,6 +64,8 @@ function New-VmdHandoffSummary
     $bindReady = Get-Field -Fields $Fields -Name "vmd-nested-bind-ready"
     $registerCandidate = Get-Field -Fields $Fields -Name "vmd-nested-register-candidate"
     $registerStatus = Get-Field -Fields $Fields -Name "vmd-nested-register-status"
+    $driverPlanState = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-state"
+    $driverPlanToken = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-token"
     $candidateSource = Get-Field -Fields $Fields -Name "nvme-candidate-source"
     $candidateDeferred = Get-Field -Fields $Fields -Name "nvme-candidate-deferred"
     $kind = "none"
@@ -72,6 +74,9 @@ function New-VmdHandoffSummary
     if ($pciNvme -ne "0") {
         $kind = "direct-nvme"
         $stage = "direct"
+    } elseif (($driverPlanState -eq "2") -and ($driverPlanToken -ne "0") -and ($driverPlanToken -ne "0x00000000")) {
+        $kind = "vmd-nested-driver-plan"
+        $stage = "driver-plan-staged"
     } elseif (($registerCandidate -eq "1") -and ($registerStatus -eq "2") -and ($candidateSource -eq "2") -and ($candidateDeferred -eq "1")) {
         $kind = "vmd-nested-deferred"
         $stage = "registration-deferred"
@@ -109,6 +114,13 @@ function New-VmdHandoffSummary
         nested_register_candidate = $registerCandidate
         nested_register_status = $registerStatus
         nested_register_token = Get-Field -Fields $Fields -Name "vmd-nested-register-token"
+        nested_driver_plan_result = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-result" -Default "0xFFFFFFFF"
+        nested_driver_plan_state = $driverPlanState
+        nested_driver_plan_flags = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-flags"
+        nested_driver_plan_token = $driverPlanToken
+        nested_driver_plan_stage_count = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-stage-count"
+        nested_driver_plan_denials = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-denials"
+        nested_driver_plan_unavailable = Get-Field -Fields $Fields -Name "vmd-nested-driver-plan-unavailable"
         nvme_candidate_source = $candidateSource
         nvme_candidate_deferred = $candidateDeferred
         nvme_candidate_bdf = Get-Field -Fields $Fields -Name "nvme-candidate-bdf" -Default "0xFFFFFFFF"
@@ -142,6 +154,8 @@ function Get-NextTarget
         "pci-vmd-nested-nvme-bind-ready" { return "Driver target: child NVMe exists behind VMD with MMIO preflight, but bind-readiness telemetry is not green; inspect the VMD child bind prerequisite gate before touching NVMe controller state." }
         "pci-vmd-nested-nvme-register-candidate" { return "Driver target: child NVMe exists behind VMD with bind-readiness green, but registration-candidate telemetry was not exported; inspect the candidate handoff gate before touching NVMe controller state." }
         "pci-vmd-nested-nvme-register-deferred" { return "Driver target: child NVMe exists behind VMD and is a registration candidate, but VMD-backed NVMe driver handoff is intentionally deferred; next implementation target is scoped nested NVMe registration." }
+        "pci-vmd-nested-driver-plan" { return "Driver target: child NVMe exists behind VMD, but the capability-gated no-touch driver plan was not staged; inspect readiness/safety flags before any VMD-backed probe." }
+        "pci-vmd-nested-driver-plan-staged" { return "Driver target: no-touch VMD-backed NVMe driver plan is staged. Next implementation target is the real scoped VMD-backed NVMe bind/probe path." }
         "pci-vmd-nested-nvme-bind" { return "Driver target: child NVMe exists behind VMD; bind the regular NVMe driver through the nested VMD path." }
         "pci-nvme-hidden-by-vmd" { return "Driver target: direct NVMe is hidden behind an Intel VMD-class candidate; inspect nested PCI domain enumeration before regular NVMe probing." }
         "pci-nvme-hidden-by-intel-system" { return "Driver target: direct NVMe is absent while Intel system-class controller candidates are present; inspect VMD-style controller exposure and nested PCI domain handling." }
@@ -402,6 +416,26 @@ function New-DiagnosticPlan
                 first_check = "Implement the VMD-aware NVMe candidate registration handoff only after this deferred state is observed on real hardware; the current milestone intentionally avoids VMD controller probing."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
                 acceptance_signal = "A physical transcript reports vmd-nested-register-candidate 1, vmd-nested-register-status 2, nvme-candidate-source 2, nvme-candidate-deferred 1, and nvme-found 0, proving the remaining target is the VMD-backed NVMe handoff."
+            }
+        }
+        "pci-vmd-nested-driver-plan" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-driver-plan"
+                required_fields = @("vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-candidate-source", "nvme-candidate-deferred", "nvme-candidate-bdf", "nvme-candidate-token", "vmd-nested-driver-plan-result", "vmd-nested-driver-plan-state", "vmd-nested-driver-plan-flags", "vmd-nested-driver-plan-token", "nvme-found")
+                first_check = "Inspect pci64_stage_vmd_nested_driver_plan; it should stage only when registration, deferred MMIO/NVMe candidate, nested MMIO readiness, no-MMIO-write, no-command, no-probe, and capability-gated flags are all present."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/shell.c")
+                acceptance_signal = "A VMD child registration-deferred transcript reports vmd-nested-driver-plan-state 2, flags 0x000000FF, and a nonzero driver-plan token while nvme-found remains 0."
+            }
+        }
+        "pci-vmd-nested-driver-plan-staged" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-driver-plan-staged"
+                required_fields = @("vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-candidate-source", "nvme-candidate-deferred", "nvme-candidate-bdf", "nvme-candidate-token", "vmd-nested-driver-plan-result", "vmd-nested-driver-plan-state", "vmd-nested-driver-plan-flags", "vmd-nested-driver-plan-token", "vmd-nested-driver-plan-stage-count", "nvme-found")
+                first_check = "Do not expand no-touch preflight further; the next code target is a scoped VMD-backed NVMe driver bind/probe path that consumes this staged token."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
+                acceptance_signal = "The transcript remains nvme-found 0, but reports a capability-gated staged VMD driver plan with no MMIO writes, no commands, and no probe attempt."
             }
         }
         "pci-vmd-nested-nvme-mmio-source" {
@@ -924,6 +958,8 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "vmd-handoff-kind: $($vmdHandoff.kind)",
     "vmd-handoff-stage: $($vmdHandoff.stage)",
     "vmd-handoff-register-status: $($vmdHandoff.nested_register_status)",
+    "vmd-handoff-driver-plan-state: $($vmdHandoff.nested_driver_plan_state)",
+    "vmd-handoff-driver-plan-token: $($vmdHandoff.nested_driver_plan_token)",
     "vmd-handoff-candidate-source: $($vmdHandoff.nvme_candidate_source)",
     "vmd-handoff-candidate-deferred: $($vmdHandoff.nvme_candidate_deferred)",
     "expected-dynamic-app-bytes: $ExpectedDynamicAppBytes",
@@ -958,6 +994,9 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "| vmd-handoff-kind | $($vmdHandoff.kind) |",
     "| vmd-handoff-stage | $($vmdHandoff.stage) |",
     "| vmd-nested-register-status | $($vmdHandoff.nested_register_status) |",
+    "| vmd-nested-driver-plan-state | $($vmdHandoff.nested_driver_plan_state) |",
+    "| vmd-nested-driver-plan-flags | $($vmdHandoff.nested_driver_plan_flags) |",
+    "| vmd-nested-driver-plan-token | $($vmdHandoff.nested_driver_plan_token) |",
     "| nvme-candidate-source | $($vmdHandoff.nvme_candidate_source) |",
     "| nvme-candidate-deferred | $($vmdHandoff.nvme_candidate_deferred) |",
     "| ioq | $fieldIoQueue |",

@@ -51,6 +51,19 @@
 #define PCI64_VMD_NESTED_REGISTER_STATUS_WAITING_BIND_READY 0x00000001u
 #define PCI64_VMD_NESTED_REGISTER_STATUS_DEFERRED_NO_DRIVER 0x00000002u
 
+#define PCI64_VMD_NESTED_DRIVER_PLAN_STATE_NOT_APPLICABLE 0x00000000u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_STATE_UNAVAILABLE 0x00000001u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_STATE_STAGED_NO_TOUCH 0x00000002u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REQUESTED 0x00000001u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_REGISTER_READY 0x00000002u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CANDIDATE_DEFERRED 0x00000004u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_MMIO_READY 0x00000008u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_MMIO_WRITES 0x00000010u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_COMMANDS 0x00000020u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_NO_PROBE_PLAN 0x00000040u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_CAPABILITY_GATED 0x00000080u
+#define PCI64_VMD_NESTED_DRIVER_PLAN_FLAG_UNAVAILABLE 0x00000100u
+
 #define PCI64_LPSS_I2C_MMIO_FLAG_PRESENT 0x00000001u
 #define PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR 0x00000002u
 #define PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR 0x00000004u
@@ -138,6 +151,13 @@ u32 pci64_vmd_nested_bind_token(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_register_candidate(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_register_status(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_register_token(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_stage_vmd_nested_driver_plan(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_driver_plan_state(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_driver_plan_flags(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_driver_plan_token(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_driver_plan_stage_count(void);
+u32 pci64_vmd_nested_driver_plan_denial_count(void);
+u32 pci64_vmd_nested_driver_plan_unavailable_count(void);
 u32 pci64_query_count(void);
 u32 pci64_denial_count(void);
 u32 pci64_ecam_rsdp_found(void);

@@ -153,6 +153,18 @@ function Classify-StorageCapture
                     if ((Has-Field -Fields $Fields -Name "nvme-candidate-deferred") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-deferred") -ne 1)) {
                         return New-Classification -Stage "pci-vmd-nested-nvme-mmio-deferred" -Detail "A VMD child NVMe registration candidate was deferred, but the MMIO/NVMe layer did not mark the source as deferred."
                     }
+                    if (Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-state") {
+                        if ((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-state") -ne 2) {
+                            return New-Classification -Stage "pci-vmd-nested-driver-plan" -Detail "A VMD child NVMe registration candidate was deferred, but the no-touch VMD-backed driver plan was not staged."
+                        }
+                        if ((Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-flags") -and (((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-flags") -band 0xFF) -ne 0xFF)) {
+                            return New-Classification -Stage "pci-vmd-nested-driver-plan" -Detail "A VMD child NVMe no-touch driver plan exists, but its safety/readiness flags are incomplete."
+                        }
+                        if ((Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-token") -and (((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq $InvalidU32))) {
+                            return New-Classification -Stage "pci-vmd-nested-driver-plan" -Detail "A VMD child NVMe no-touch driver plan exists, but its handoff token is invalid."
+                        }
+                        return New-Classification -Stage "pci-vmd-nested-driver-plan-staged" -Detail "A child NVMe controller behind VMD has a capability-gated no-touch driver plan staged; actual VMD-backed NVMe binding remains the next implementation target."
+                    }
                     return New-Classification -Stage "pci-vmd-nested-nvme-register-deferred" -Detail "A child NVMe controller behind VMD is a registration candidate, but the VMD-backed NVMe driver handoff is intentionally deferred."
                 }
                 return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A child NVMe controller was reported behind VMD, but the regular NVMe driver has not been bound through the nested path."

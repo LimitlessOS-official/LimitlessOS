@@ -187,9 +187,13 @@ $reportTextPath = Join-Path $OutputDir "msi-hardware-capture-report.txt"
 $reportMarkdownPath = Join-Path $OutputDir "msi-hardware-capture-report.md"
 $reportVmdKind = ""
 $reportVmdStage = ""
+$reportVmdDriverPlanState = ""
+$reportVmdDriverPlanToken = ""
 if ($null -ne $report.vmd_handoff) {
     $reportVmdKind = [string]$report.vmd_handoff.kind
     $reportVmdStage = [string]$report.vmd_handoff.stage
+    $reportVmdDriverPlanState = [string]$report.vmd_handoff.nested_driver_plan_state
+    $reportVmdDriverPlanToken = [string]$report.vmd_handoff.nested_driver_plan_token
 }
 
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding Ascii
@@ -209,6 +213,8 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "dynamic-handoff-stage: $($report.dynamic_handoff.stage)",
     "vmd-handoff-kind: $reportVmdKind",
     "vmd-handoff-stage: $reportVmdStage",
+    "vmd-handoff-driver-plan-state: $reportVmdDriverPlanState",
+    "vmd-handoff-driver-plan-token: $reportVmdDriverPlanToken",
     "bios-sector-reserve: $($report.reserves.bios_sectors)",
     "uefi-byte-reserve: $($report.reserves.uefi_bytes)",
     "classifier-json: $classifierJsonPath",
@@ -250,6 +256,7 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportJsonPath -Encoding
     "| GUI interaction | $($report.display_input.gui_interaction_pass) | $($report.display_input.gui_interaction_stage) |",
     "| Dynamic handoff | $($report.dynamic_handoff.pass) | $($report.dynamic_handoff.stage) |",
     "| VMD/NVMe handoff | $reportVmdKind | $reportVmdStage |",
+    "| VMD driver plan | $reportVmdDriverPlanState | $reportVmdDriverPlanToken |",
     "",
     "## Outputs",
     "",
