@@ -81,6 +81,16 @@ function New-Target
     }
 }
 
+function Get-DisplayInputRoadmapTarget
+{
+    param([string]$Stage)
+
+    if ($Stage -like "cursor-*") {
+        return "M150"
+    }
+    return "M149"
+}
+
 function Invoke-HandoffVerifier
 {
     param(
@@ -188,7 +198,7 @@ if (-not [bool]$handoff.storage_bundle_pass) {
             -Stage $displayStage `
             -Detail "Storage reached storage-ready; the first remaining physical blocker is display/input, not NVMe storage." `
             -NextTarget $displayNextTarget `
-            -Milestone "M149"
+            -Milestone (Get-DisplayInputRoadmapTarget -Stage $displayStage)
     } else {
         $target = New-Target `
             -Pass $false `

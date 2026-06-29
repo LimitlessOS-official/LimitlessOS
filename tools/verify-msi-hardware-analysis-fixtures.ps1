@@ -249,6 +249,26 @@ $uiOrder = @(
     "token"
 )
 
+$cursorOrder = @(
+    "cursor-path",
+    "surface-ready",
+    "format-supported",
+    "compositor-active",
+    "compositor-direct",
+    "visible",
+    "draws",
+    "direct-draws",
+    "x",
+    "y",
+    "buttons",
+    "in-bounds",
+    "rect-w",
+    "rect-h",
+    "saved",
+    "drawn",
+    "token"
+)
+
 $baseDisplay = @{
     "display-readability" = "1"
     "available" = "1"
@@ -285,6 +305,26 @@ $baseUi = @{
     "windows" = "3"
     "cursor-visible" = "1"
     "token" = "0xCB1B1C83"
+}
+
+$baseCursor = @{
+    "cursor-path" = "1"
+    "surface-ready" = "1"
+    "format-supported" = "1"
+    "compositor-active" = "1"
+    "compositor-direct" = "1"
+    "visible" = "1"
+    "draws" = "205"
+    "direct-draws" = "207"
+    "x" = "640"
+    "y" = "400"
+    "buttons" = "0"
+    "in-bounds" = "1"
+    "rect-w" = "12"
+    "rect-h" = "20"
+    "saved" = "1"
+    "drawn" = "1"
+    "token" = "0xA5197C42"
 }
 
 $baseInput = @{
@@ -336,9 +376,11 @@ function New-Fixture
         [hashtable]$Storage = @{},
         [hashtable]$Display = @{},
         [hashtable]$Ui = @{},
+        [hashtable]$Cursor = @{},
         [hashtable]$InputMutations = @{},
         [bool]$OmitStorage = $false,
-        [bool]$OmitDisplay = $false
+        [bool]$OmitDisplay = $false,
+        [bool]$OmitCursor = $false
     )
 
     return [PSCustomObject]@{
@@ -348,9 +390,11 @@ function New-Fixture
         storage = $Storage
         display = $Display
         ui = $Ui
+        cursor = $Cursor
         input = $InputMutations
         omit_storage = $OmitStorage
         omit_display = $OmitDisplay
+        omit_cursor = $OmitCursor
     }
 }
 
@@ -359,7 +403,8 @@ New-EvidenceBundle
 $fixtures = @(
     (New-Fixture -Name "all-ready" -ExpectedStage "msi-hardware-ready" -ExpectedExitCode 0),
     (New-Fixture -Name "storage-first" -ExpectedStage "storage-nvme-controller-discovery" -ExpectedExitCode 2 -Storage @{ "nvme-found" = "0" }),
-    (New-Fixture -Name "display-after-storage" -ExpectedStage "display-input-pointer-moving-cursor-hidden" -ExpectedExitCode 2 -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" }),
+    (New-Fixture -Name "display-after-storage" -ExpectedStage "display-input-pointer-moving-cursor-hidden" -ExpectedExitCode 2 -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -OmitCursor:$true),
+    (New-Fixture -Name "display-cursor-draw-not-called" -ExpectedStage "display-input-cursor-draw-not-called" -ExpectedExitCode 2 -Display @{ "cursor-visible" = "0"; "cursor-draws" = "0"; "direct-cursor-draws" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "draws" = "0"; "direct-draws" = "0"; "saved" = "0"; "drawn" = "0" }),
     (New-Fixture -Name "missing-storage-priority" -ExpectedStage "storage-missing-storage-triage" -ExpectedExitCode 2 -OmitStorage:$true -OmitDisplay:$true)
 )
 
@@ -369,6 +414,7 @@ foreach ($fixture in $fixtures) {
     $storage = Copy-Hashtable -Source $baseStorage
     $display = Copy-Hashtable -Source $baseDisplay
     $ui = Copy-Hashtable -Source $baseUi
+    $cursor = Copy-Hashtable -Source $baseCursor
     $input = Copy-Hashtable -Source $baseInput
     foreach ($key in $fixture.storage.Keys) {
         $storage[$key] = $fixture.storage[$key]
@@ -378,6 +424,9 @@ foreach ($fixture in $fixtures) {
     }
     foreach ($key in $fixture.ui.Keys) {
         $ui[$key] = $fixture.ui[$key]
+    }
+    foreach ($key in $fixture.cursor.Keys) {
+        $cursor[$key] = $fixture.cursor[$key]
     }
     foreach ($key in $fixture.input.Keys) {
         $input[$key] = $fixture.input[$key]
@@ -391,6 +440,9 @@ foreach ($fixture in $fixtures) {
     if (-not $fixture.omit_display) {
         $lines += New-TelemetryLine -Prefix "drs-display-readability" -Order $displayOrder -Fields $display
         $lines += New-TelemetryLine -Prefix "drs-ui-polish" -Order $uiOrder -Fields $ui
+        if (-not $fixture.omit_cursor) {
+            $lines += New-TelemetryLine -Prefix "drs-cursor-path" -Order $cursorOrder -Fields $cursor
+        }
     }
     $lines += "xhci mouse endpoint: $(if ($input["xhci-mouse-endpoint"] -eq "1") { "yes" } else { "no" })"
     $lines += "xhci mouse reports: $($input["xhci-mouse-reports"])"
