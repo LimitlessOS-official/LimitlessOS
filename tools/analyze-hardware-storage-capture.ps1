@@ -604,8 +604,8 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-nvme-enumeration"
-                required_fields = @("nvme-found", "pci-storage", "pci-nvme", "nvme-pci", "nvme-vendor-device", "nvme-class", "nvme-mmio-flags", "storage-triage", "token")
-                first_check = "Inspect PCI class/subclass/prog-if matching, BAR0 discovery, MMIO mapping, and whether the controller is hidden behind VMD/RAID firmware mode."
+                required_fields = @("nvme-found", "pci-storage", "pci-nvme", "nvme-pci", "nvme-vendor-device", "nvme-class", "nvme-mmio-flags", "nvme-probe-error", "nvme-regs", "nvme-cap-low", "nvme-cap-high", "nvme-vs", "nvme-cc", "nvme-csts", "storage-triage", "token")
+                first_check = "Inspect PCI class/subclass/prog-if matching, BAR0 discovery, MMIO mapping, probe-error, and the CAP/VS/CC/CSTS snapshot to determine whether the controller register window was visible."
                 kernel_files = $commonKernelFiles
                 acceptance_signal = "nvme-found 1 appears on the physical transcript."
             }
@@ -614,8 +614,8 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "nvme-controller-enable"
-                required_fields = @("nvme-found", "nvme-ready")
-                first_check = "Trace CC.EN/CSTS.RDY reset and enable sequencing, timeout budget, CAP fields, memory page size selection, and doorbell stride."
+                required_fields = @("nvme-found", "nvme-ready", "nvme-probe-error", "nvme-regs", "nvme-cap-low", "nvme-cap-high", "nvme-vs", "nvme-cc", "nvme-csts", "nvme-dstrd-bytes", "nvme-doorbell-page")
+                first_check = "Trace CC.EN/CSTS.RDY reset and enable sequencing against the sampled CAP/VS/CC/CSTS fields, timeout budget, page size selection, and doorbell stride/page."
                 kernel_files = $commonKernelFiles
                 acceptance_signal = "nvme-ready 1 appears after nvme-found 1."
             }
@@ -624,8 +624,8 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "nvme-admin-identify"
-                required_fields = @("nvme-ready", "nvme-identify")
-                first_check = "Inspect admin queue allocation, PRP buffer addressability, Identify opcode construction, completion status, and namespace selection."
+                required_fields = @("nvme-ready", "nvme-identify", "nvme-probe-error", "nvme-regs", "nvme-cap-low", "nvme-cap-high", "nvme-vs", "nvme-cc", "nvme-csts", "nvme-dstrd-bytes", "nvme-doorbell-page")
+                first_check = "Inspect admin queue allocation, PRP buffer addressability, Identify opcode construction, completion status, and the sampled controller registers after the admin command attempt."
                 kernel_files = $commonKernelFiles
                 acceptance_signal = "nvme-identify 1 appears and model/firmware fields are stable in the lower-level probe log."
             }
@@ -914,6 +914,15 @@ $analysis = [PSCustomObject]@{
         nvme_vendor_device = Get-Field -Fields $parsed.fields -Name "nvme-vendor-device"
         nvme_class = Get-Field -Fields $parsed.fields -Name "nvme-class"
         nvme_mmio_flags = Get-Field -Fields $parsed.fields -Name "nvme-mmio-flags"
+        nvme_probe_error = Get-Field -Fields $parsed.fields -Name "nvme-probe-error"
+        nvme_regs = Get-Field -Fields $parsed.fields -Name "nvme-regs"
+        nvme_cap_low = Get-Field -Fields $parsed.fields -Name "nvme-cap-low"
+        nvme_cap_high = Get-Field -Fields $parsed.fields -Name "nvme-cap-high"
+        nvme_vs = Get-Field -Fields $parsed.fields -Name "nvme-vs"
+        nvme_cc = Get-Field -Fields $parsed.fields -Name "nvme-cc"
+        nvme_csts = Get-Field -Fields $parsed.fields -Name "nvme-csts"
+        nvme_dstrd_bytes = Get-Field -Fields $parsed.fields -Name "nvme-dstrd-bytes"
+        nvme_doorbell_page = Get-Field -Fields $parsed.fields -Name "nvme-doorbell-page"
         nvme_ready = Get-Field -Fields $parsed.fields -Name "nvme-ready"
         nvme_identify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
         ioq = Get-Field -Fields $parsed.fields -Name "ioq"
@@ -941,6 +950,15 @@ $fieldNvmePci = Get-Field -Fields $parsed.fields -Name "nvme-pci"
 $fieldNvmeVendorDevice = Get-Field -Fields $parsed.fields -Name "nvme-vendor-device"
 $fieldNvmeClass = Get-Field -Fields $parsed.fields -Name "nvme-class"
 $fieldNvmeMmioFlags = Get-Field -Fields $parsed.fields -Name "nvme-mmio-flags"
+$fieldNvmeProbeError = Get-Field -Fields $parsed.fields -Name "nvme-probe-error"
+$fieldNvmeRegs = Get-Field -Fields $parsed.fields -Name "nvme-regs"
+$fieldNvmeCapLow = Get-Field -Fields $parsed.fields -Name "nvme-cap-low"
+$fieldNvmeCapHigh = Get-Field -Fields $parsed.fields -Name "nvme-cap-high"
+$fieldNvmeVersion = Get-Field -Fields $parsed.fields -Name "nvme-vs"
+$fieldNvmeCc = Get-Field -Fields $parsed.fields -Name "nvme-cc"
+$fieldNvmeCsts = Get-Field -Fields $parsed.fields -Name "nvme-csts"
+$fieldNvmeDstrdBytes = Get-Field -Fields $parsed.fields -Name "nvme-dstrd-bytes"
+$fieldNvmeDoorbellPage = Get-Field -Fields $parsed.fields -Name "nvme-doorbell-page"
 $fieldNvmeReady = Get-Field -Fields $parsed.fields -Name "nvme-ready"
 $fieldNvmeIdentify = Get-Field -Fields $parsed.fields -Name "nvme-identify"
 $fieldIoQueue = Get-Field -Fields $parsed.fields -Name "ioq"
@@ -1001,6 +1019,15 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "| nvme-vendor-device | $fieldNvmeVendorDevice |",
     "| nvme-class | $fieldNvmeClass |",
     "| nvme-mmio-flags | $fieldNvmeMmioFlags |",
+    "| nvme-probe-error | $fieldNvmeProbeError |",
+    "| nvme-regs | $fieldNvmeRegs |",
+    "| nvme-cap-low | $fieldNvmeCapLow |",
+    "| nvme-cap-high | $fieldNvmeCapHigh |",
+    "| nvme-vs | $fieldNvmeVersion |",
+    "| nvme-cc | $fieldNvmeCc |",
+    "| nvme-csts | $fieldNvmeCsts |",
+    "| nvme-dstrd-bytes | $fieldNvmeDstrdBytes |",
+    "| nvme-doorbell-page | $fieldNvmeDoorbellPage |",
     "| nvme-ready | $fieldNvmeReady |",
     "| nvme-identify | $fieldNvmeIdentify |",
     "| vmd-handoff-kind | $($vmdHandoff.kind) |",

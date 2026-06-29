@@ -1231,6 +1231,15 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-candidate-deferred ", nvme_candidate_deferred);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-bdf ", nvme_candidate_bdf);
     shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-candidate-token ", nvme_candidate_token);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-probe-error ", mmio64_nvme_probe_error());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-regs ", mmio64_nvme_probe_register_snapshot());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-cap-low ", mmio64_nvme_probe_cap_low());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-cap-high ", mmio64_nvme_probe_cap_high());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-vs ", mmio64_nvme_probe_version());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-cc ", mmio64_nvme_probe_cc());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " nvme-csts ", mmio64_nvme_probe_csts());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-dstrd-bytes ", mmio64_nvme_probe_dstrd_bytes());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-doorbell-page ", mmio64_nvme_probe_doorbell_page());
 #endif
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-pci ", pci_other_storage_address);
     shell64_write_hex32_field(console_capability_handle, owner_id, " other-storage-vendor-device ", pci_other_storage_vendor_device);

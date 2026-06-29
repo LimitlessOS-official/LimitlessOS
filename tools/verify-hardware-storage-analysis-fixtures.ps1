@@ -38,6 +38,15 @@ $fieldOrder = @(
     "nvme-candidate-deferred",
     "nvme-candidate-bdf",
     "nvme-candidate-token",
+    "nvme-probe-error",
+    "nvme-regs",
+    "nvme-cap-low",
+    "nvme-cap-high",
+    "nvme-vs",
+    "nvme-cc",
+    "nvme-csts",
+    "nvme-dstrd-bytes",
+    "nvme-doorbell-page",
     "other-storage-pci",
     "other-storage-vendor-device",
     "other-storage-class",
@@ -155,6 +164,15 @@ $baseFields = @{
     "nvme-candidate-deferred" = "0"
     "nvme-candidate-bdf" = "0xFFFFFFFF"
     "nvme-candidate-token" = "0xC1480001"
+    "nvme-probe-error" = "0"
+    "nvme-regs" = "1"
+    "nvme-cap-low" = "0x00003FFF"
+    "nvme-cap-high" = "0x00000030"
+    "nvme-vs" = "0x00010400"
+    "nvme-cc" = "0x00460001"
+    "nvme-csts" = "0x00000001"
+    "nvme-dstrd-bytes" = "4"
+    "nvme-doorbell-page" = "1"
     "other-storage-pci" = "0xFFFFFFFF"
     "other-storage-vendor-device" = "0x00000000"
     "other-storage-class" = "0x00000000"
