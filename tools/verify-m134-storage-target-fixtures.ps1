@@ -296,6 +296,22 @@ function Write-Capture
     if ($DisplayMode -eq "ready") {
         $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
         $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
+        $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 1 draws 205 direct-draws 207 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 1 drawn 1 token 0xA5197C42"
+        $lines += "xhci mouse endpoint: yes"
+        $lines += "xhci mouse reports: 2"
+        $lines += "xhci mouse bytes: 8"
+        $lines += "xhci error: 0"
+        $lines += "i2c pointer found: no"
+        $lines += "i2c pointer reports: 0"
+        $lines += "i2c pointer error: 0"
+        $lines += "i2c pointer candidates: 0"
+        $lines += "mouse packets: 2"
+        $lines += "ps2 fallback present: yes"
+        $lines += "ps2 fallback enabled: yes"
+    } elseif ($DisplayMode -eq "cursor-draw-not-called") {
+        $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 0 cursor-draws 0 direct-cursor-draws 0 token 0xF8C98059"
+        $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 0 token 0xCB1B1C83"
+        $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 0 draws 0 direct-draws 0 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 0 drawn 0 token 0xA5197C43"
         $lines += "xhci mouse endpoint: yes"
         $lines += "xhci mouse reports: 2"
         $lines += "xhci mouse bytes: 8"
@@ -356,6 +372,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "nvme-controller-discovery"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -366,6 +383,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-nvme-class"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -396,6 +414,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-nested-enumeration"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -421,6 +440,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-mmio-base"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -466,6 +486,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-nested-nvme-mmio-base"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -483,6 +504,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-nvme-hidden-by-intel-system"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -534,6 +556,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-nested-nvme-bind-ready"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -589,6 +612,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-nested-nvme-register-deferred"
+        expected_roadmap = "M134"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -599,6 +623,18 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "display-input"
         expected_stage = "pointer-moving-cursor-hidden"
+        expected_roadmap = "M149"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "display-cursor-draw-not-called"
+        storage_mutations = @{}
+        display_mode = "cursor-draw-not-called"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "display-input"
+        expected_stage = "cursor-draw-not-called"
+        expected_roadmap = "M150"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -609,6 +645,7 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "dynamic-handoff"
         expected_stage = "dynamic-handoff-nvme-unavailable"
+        expected_roadmap = "M83+"
         expected_pass = $false
     },
     [PSCustomObject]@{
@@ -619,6 +656,7 @@ $fixtures = @(
         expected_exit_code = 0
         expected_kind = "storage-ready"
         expected_stage = "storage-ready"
+        expected_roadmap = "M134"
         expected_pass = $true
     }
 )
@@ -657,20 +695,23 @@ foreach ($fixture in $fixtures) {
     $reportPath = Join-Path $fixtureOutputDir "m134-storage-target.json"
     $actualKind = ""
     $actualStage = ""
+    $actualRoadmap = ""
     $actualPass = $false
     if (Test-Path $reportPath) {
         $report = Get-Content -Raw -Path $reportPath | ConvertFrom-Json
         $actualKind = [string]$report.target_kind
         $actualStage = [string]$report.target_stage
+        $actualRoadmap = [string]$report.roadmap_target
         $actualPass = [bool]$report.pass
     }
 
     $passed = (($exitCode -eq [int]$fixture.expected_exit_code) -and
         ($actualKind -eq [string]$fixture.expected_kind) -and
         ($actualStage -eq [string]$fixture.expected_stage) -and
+        ($actualRoadmap -eq [string]$fixture.expected_roadmap) -and
         ($actualPass -eq [bool]$fixture.expected_pass))
     if (-not $passed) {
-        $failures += ("{0}: expected exit/kind/stage/pass {1}/{2}/{3}/{4}, observed {5}/{6}/{7}/{8}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_pass, $exitCode, $actualKind, $actualStage, $actualPass)
+        $failures += ("{0}: expected exit/kind/stage/roadmap/pass {1}/{2}/{3}/{4}/{5}, observed {6}/{7}/{8}/{9}/{10}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass)
     }
 
     $results += [PSCustomObject]@{
@@ -681,6 +722,8 @@ foreach ($fixture in $fixtures) {
         actual_kind = $actualKind
         expected_stage = [string]$fixture.expected_stage
         actual_stage = $actualStage
+        expected_roadmap = [string]$fixture.expected_roadmap
+        actual_roadmap = $actualRoadmap
         expected_pass = [bool]$fixture.expected_pass
         actual_pass = $actualPass
         pass = $passed
@@ -706,7 +749,7 @@ $summary | ConvertTo-Json -Depth 6 | Set-Content -Path $summaryJsonPath -Encodin
     "failed: $($summary.failed)",
     "output-json: $summaryJsonPath"
 ) + ($results | ForEach-Object {
-    "{0}: expected {1}/{2}/{3} observed {4}/{5}/{6} pass {7}" -f $_.name, $_.expected_exit_code, $_.expected_kind, $_.expected_stage, $_.actual_exit_code, $_.actual_kind, $_.actual_stage, $_.pass
+    "{0}: expected {1}/{2}/{3}/{4} observed {5}/{6}/{7}/{8} pass {9}" -f $_.name, $_.expected_exit_code, $_.expected_kind, $_.expected_stage, $_.expected_roadmap, $_.actual_exit_code, $_.actual_kind, $_.actual_stage, $_.actual_roadmap, $_.pass
 }) | Set-Content -Path $summaryTextPath -Encoding Ascii
 
 Write-Host "m134-storage-target-fixtures: $($summary.passed)/$($summary.total)"
