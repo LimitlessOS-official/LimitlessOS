@@ -115,13 +115,26 @@ foreach ($expectedLine in @(
 
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
 
+$qemuOutputPath = Join-Path $EvidenceDir "qemu-storage-stage-gate.txt"
+$qemuSkipPath = Join-Path $EvidenceDir "qemu-storage-stage-gate-skipped.txt"
 if (-not $SkipQemuGate.IsPresent) {
-    $qemuOutputPath = Join-Path $EvidenceDir "qemu-storage-stage-gate.txt"
+    if (Test-Path $qemuSkipPath) {
+        Remove-Item -Force -Path $qemuSkipPath
+    }
     $qemuOutput = & (Join-Path $root "tools\verify-hardware-storage-staging.ps1") -DynamicAppPath $resolvedApp -DynamicInterpPath $resolvedInterp -SkipBuild 2>&1
     $qemuOutput | Set-Content -Path $qemuOutputPath -Encoding Ascii
     if ($LASTEXITCODE -ne 0) {
         throw "$handoffMilestone handoff prep: staged QEMU storage gate failed. See $qemuOutputPath"
     }
+} else {
+    if (Test-Path $qemuOutputPath) {
+        Remove-Item -Force -Path $qemuOutputPath
+    }
+    @(
+        "qemu-storage-stage-gate: skipped",
+        "reason: -SkipQemuGate was provided",
+        "generated-utc: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
+    ) | Set-Content -Path $qemuSkipPath -Encoding Ascii
 }
 
 $copiedIso = Copy-EvidenceFile -Path $isoPath -Name $handoffIsoName
