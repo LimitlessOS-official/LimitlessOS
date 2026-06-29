@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M155 handoff report tooling ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry requirement.
+Status: M164 handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry plus NVMe controller snapshot requirement.
 
 This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
