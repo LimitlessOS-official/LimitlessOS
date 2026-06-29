@@ -8390,6 +8390,102 @@ u32 display64_cursor_visible(void)
     return (g_display_compositor_cursor_drawn_valid != 0u) ? 1u : 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_cursor_x(void)
+{
+    return g_display_compositor_cursor_x;
+}
+
+u32 display64_cursor_y(void)
+{
+    return g_display_compositor_cursor_y;
+}
+
+u32 display64_cursor_buttons(void)
+{
+    return g_display_compositor_cursor_buttons;
+}
+
+u32 display64_cursor_saved_valid(void)
+{
+    return g_display_compositor_cursor_saved_valid;
+}
+
+u32 display64_cursor_drawn_valid(void)
+{
+    return g_display_compositor_cursor_drawn_valid;
+}
+
+u32 display64_cursor_in_bounds(void)
+{
+    u32 width = 0u;
+    u32 height = 0u;
+
+    display64_compositor_cursor_rect(g_display_compositor_cursor_x, g_display_compositor_cursor_y, &width, &height);
+    return ((width != 0u) && (height != 0u)) ? 1u : 0u;
+}
+
+u32 display64_cursor_rect_w(void)
+{
+    u32 width = 0u;
+    u32 height = 0u;
+
+    display64_compositor_cursor_rect(g_display_compositor_cursor_x, g_display_compositor_cursor_y, &width, &height);
+    return width;
+}
+
+u32 display64_cursor_rect_h(void)
+{
+    u32 width = 0u;
+    u32 height = 0u;
+
+    display64_compositor_cursor_rect(g_display_compositor_cursor_x, g_display_compositor_cursor_y, &width, &height);
+    return height;
+}
+
+u32 display64_cursor_surface_ready(void)
+{
+    return (display64_has_framebuffer()
+            && (g_display_stride_ok != 0u)
+            && (g_display_bounds_ok != 0u))
+        ? 1u
+        : 0u;
+}
+
+u32 display64_cursor_framebuffer_format_supported(void)
+{
+    if ((g_display_boot_info == 0)
+        || ((g_display_boot_info->bootstrap_flags & LIMITLESS_BOOT_FLAG_FRAMEBUFFER) == 0u))
+    {
+        return 0u;
+    }
+
+    return display64_format_supported(g_display_boot_info->framebuffer_format) ? 1u : 0u;
+}
+
+u32 display64_cursor_path_token(void)
+{
+    u32 token = 2166136261u;
+
+    token = display64_mix_token(token, display64_cursor_surface_ready());
+    token = display64_mix_token(token, display64_cursor_framebuffer_format_supported());
+    token = display64_mix_token(token, g_display_compositor_active);
+    token = display64_mix_token(token, display64_compositor_direct_mode());
+    token = display64_mix_token(token, display64_cursor_visible());
+    token = display64_mix_token(token, g_display_compositor_cursor_count);
+    token = display64_mix_token(token, g_display_direct_cursor_count);
+    token = display64_mix_token(token, g_display_compositor_cursor_x);
+    token = display64_mix_token(token, g_display_compositor_cursor_y);
+    token = display64_mix_token(token, g_display_compositor_cursor_buttons);
+    token = display64_mix_token(token, display64_cursor_in_bounds());
+    token = display64_mix_token(token, display64_cursor_rect_w());
+    token = display64_mix_token(token, display64_cursor_rect_h());
+    token = display64_mix_token(token, g_display_compositor_cursor_saved_valid);
+    token = display64_mix_token(token, g_display_compositor_cursor_drawn_valid);
+    return token;
+}
+#endif
+
 u32 display64_font_init_done(void)
 {
     return g_display_font_active;

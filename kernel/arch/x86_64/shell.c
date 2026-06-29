@@ -1412,6 +1412,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor visible: ", display64_cursor_visible());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display cursor draws: ", display64_compositor_cursor_count());
         (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display direct cursor draws: ", display64_direct_cursor_count());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display cursor x: ", display64_cursor_x());
+        (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display cursor y: ", display64_cursor_y());
+        (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor in bounds: ", display64_cursor_in_bounds());
+        (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor surface ready: ", display64_cursor_surface_ready());
         (void)shell64_write_yes_no_line(
             console_capability_handle,
             owner_id,
@@ -1462,6 +1466,27 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
             owner_id,
             " token ",
             display64_ui_polish_token());
+        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-cursor-path cursor-path 1");
+        shell64_write_decimal_field(console_capability_handle, owner_id, " surface-ready ", display64_cursor_surface_ready());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " format-supported ", display64_cursor_framebuffer_format_supported());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-active ", display64_compositor_init_done());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-direct ", display64_compositor_direct_mode());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " visible ", display64_cursor_visible());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " draws ", display64_compositor_cursor_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " direct-draws ", display64_direct_cursor_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " x ", display64_cursor_x());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " y ", display64_cursor_y());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " buttons ", display64_cursor_buttons());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " in-bounds ", display64_cursor_in_bounds());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " rect-w ", display64_cursor_rect_w());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " rect-h ", display64_cursor_rect_h());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " saved ", display64_cursor_saved_valid());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " drawn ", display64_cursor_drawn_valid());
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            " token ",
+            display64_cursor_path_token());
 #endif
     }
     else
