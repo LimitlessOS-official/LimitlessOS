@@ -88,6 +88,9 @@ function Get-DisplayInputRoadmapTarget
     if ($Stage -like "cursor-*") {
         return "M150"
     }
+    if ($Stage -like "gui-*") {
+        return "M151"
+    }
     return "M149"
 }
 

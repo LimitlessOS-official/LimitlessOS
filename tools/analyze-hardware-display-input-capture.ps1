@@ -124,9 +124,11 @@ function Classify-HardwareDisplayInput
         [hashtable]$DisplayFields,
         [hashtable]$UiFields,
         [hashtable]$CursorFields,
+        [hashtable]$GuiFields,
         [bool]$DisplayFound,
         [bool]$UiFound,
         [bool]$CursorFound,
+        [bool]$GuiFound,
         [uint64]$MousePackets,
         [uint64]$XhciMouseEndpoint,
         [uint64]$XhciMouseReports,
@@ -215,8 +217,29 @@ function Classify-HardwareDisplayInput
         }
         return New-Classification -Stage "cursor-hidden" -Detail "No visible cursor was reported." -NextTarget "Cursor target: inspect cursor draw fallback and compositor cursor visibility."
     }
-    if ($MousePackets -ne 0) {
+    if (($MousePackets -ne 0) -and $GuiFound) {
+        if ((Get-FieldValue -Fields $GuiFields -Name "drs-gui-interactive") -ne 1) {
+            return New-Classification -Stage "gui-interactive-unrouted" -Detail "Pointer packets and cursor drawing are ready, but no GUI interaction was recorded." -NextTarget "GUI input target: route live pointer packets into the desktop/window-manager interaction path."
+        }
+        if ((Get-FieldValue -Fields $GuiFields -Name "drs-gui-right-click") -eq 0) {
+            return New-Classification -Stage "gui-right-click-unrouted" -Detail "Pointer packets and cursor drawing are ready, but no right-click event reached the window manager." -NextTarget "GUI input target: route secondary-button events into context-menu handling on this hardware path."
+        }
+        if ((Get-FieldValue -Fields $GuiFields -Name "drs-gui-context-action") -eq 0) {
+            return New-Classification -Stage "gui-context-action-missing" -Detail "Right-click reached the window manager, but no context-menu action was completed." -NextTarget "GUI input target: verify context-menu hit testing and action dispatch on this hardware path."
+        }
+        if ((Get-FieldValue -Fields $GuiFields -Name "drs-gui-scroll") -eq 0) {
+            return New-Classification -Stage "gui-scroll-unrouted" -Detail "Pointer packets and cursor drawing are ready, but no scroll event reached a Product window." -NextTarget "GUI input target: route wheel/touchpad scroll deltas into focused or hovered Product windows."
+        }
+        if ((Get-FieldValue -Fields $GuiFields -Name "terminal-scroll") -eq 0) {
+            return New-Classification -Stage "gui-terminal-scroll-missing" -Detail "Generic GUI scroll was recorded, but Terminal scrollback did not move." -NextTarget "GUI input target: verify scroll routing to the Terminal content viewport."
+        }
+        if ((Get-FieldValue -Fields $GuiFields -Name "terminal-selection") -eq 0) {
+            return New-Classification -Stage "gui-terminal-selection-missing" -Detail "GUI pointer events were recorded, but Terminal selection was not completed." -NextTarget "GUI input target: verify drag/selection routing to the focused Terminal window."
+        }
         return New-Classification -Stage "display-input-ready" -Detail "Display is readable, UI initialized, cursor is visible, and pointer packets were received." -NextTarget "Hardware input/display ready. Next target: run interactive desktop focus/drag/click validation on the laptop." -Pass $true
+    }
+    if ($MousePackets -ne 0) {
+        return New-Classification -Stage "display-input-ready" -Detail "Display is readable, UI initialized, cursor is visible, and pointer packets were received; no drs-gui interaction proof was present in this capture." -NextTarget "Hardware input/display ready. Next target: run an M151-or-newer interactive desktop capture to validate right-click, scroll, and Terminal selection." -Pass $true
     }
 
     if (($I2cPointerFound -ne 0) -and ($I2cPointerReports -ne 0)) {
@@ -254,9 +277,11 @@ $lines = @(Get-Content -Path $InputPath)
 $displayLine = @($lines | Where-Object { $_ -match 'drs-display-readability' } | Select-Object -Last 1)
 $uiLine = @($lines | Where-Object { $_ -match 'drs-ui-polish' } | Select-Object -Last 1)
 $cursorLine = @($lines | Where-Object { $_ -match 'drs-cursor-path' } | Select-Object -Last 1)
+$guiLine = @($lines | Where-Object { $_ -match 'drs-gui' } | Select-Object -Last 1)
 $displayFields = @{}
 $uiFields = @{}
 $cursorFields = @{}
+$guiFields = @{}
 if ($displayLine.Count -ne 0) {
     $displayFields = Parse-TelemetryFields -Line ([string]$displayLine[0])
 }
@@ -265,6 +290,9 @@ if ($uiLine.Count -ne 0) {
 }
 if ($cursorLine.Count -ne 0) {
     $cursorFields = Parse-TelemetryFields -Line ([string]$cursorLine[0])
+}
+if ($guiLine.Count -ne 0) {
+    $guiFields = Parse-TelemetryFields -Line ([string]$guiLine[0])
 }
 
 $mousePackets = Get-LineDecimal -Lines $lines -Prefix "mouse packets"
@@ -283,9 +311,11 @@ $classification = Classify-HardwareDisplayInput `
     -DisplayFields $displayFields `
     -UiFields $uiFields `
     -CursorFields $cursorFields `
+    -GuiFields $guiFields `
     -DisplayFound ($displayLine.Count -ne 0) `
     -UiFound ($uiLine.Count -ne 0) `
     -CursorFound ($cursorLine.Count -ne 0) `
+    -GuiFound ($guiLine.Count -ne 0) `
     -MousePackets $mousePackets `
     -XhciMouseEndpoint $xhciMouseEndpoint `
     -XhciMouseReports $xhciMouseReports `
@@ -308,9 +338,11 @@ $analysis = [PSCustomObject]@{
     display_line_found = ($displayLine.Count -ne 0)
     ui_line_found = ($uiLine.Count -ne 0)
     cursor_line_found = ($cursorLine.Count -ne 0)
+    gui_line_found = ($guiLine.Count -ne 0)
     display = [PSCustomObject]$displayFields
     ui = [PSCustomObject]$uiFields
     cursor = [PSCustomObject]$cursorFields
+    gui = [PSCustomObject]$guiFields
     input_state = [PSCustomObject]@{
         mouse_packets = $mousePackets
         xhci_mouse_endpoint = $xhciMouseEndpoint
@@ -327,6 +359,7 @@ $analysis = [PSCustomObject]@{
     raw_display_line = if ($displayLine.Count -ne 0) { [string]$displayLine[0] } else { "" }
     raw_ui_line = if ($uiLine.Count -ne 0) { [string]$uiLine[0] } else { "" }
     raw_cursor_line = if ($cursorLine.Count -ne 0) { [string]$cursorLine[0] } else { "" }
+    raw_gui_line = if ($guiLine.Count -ne 0) { [string]$guiLine[0] } else { "" }
 }
 
 $analysisJsonPath = Join-Path $OutputDir "hardware-display-input-analysis.json"
@@ -341,6 +374,7 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "display-line-found: $($analysis.display_line_found)",
     "ui-line-found: $($analysis.ui_line_found)",
     "cursor-line-found: $($analysis.cursor_line_found)",
+    "gui-line-found: $($analysis.gui_line_found)",
     "mouse-packets: $mousePackets",
     "xhci-mouse-endpoint: $xhciMouseEndpoint",
     "xhci-mouse-reports: $xhciMouseReports",
