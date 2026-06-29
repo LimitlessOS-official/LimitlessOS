@@ -177,11 +177,12 @@ $manifestObject = [PSCustomObject]@{
         command = "hwval"
         required_line = "drs-nvme-triage"
         analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
-        storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts"
+        storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
         storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
         boot_media_handoff_verifier = "tools\\verify-boot-media-linux-handoff.ps1"
         required_storage_stage = "storage-ready"
         required_boot_media_linux_source = 2
+        required_gui_interaction_telemetry = 1
     }
 }
 
@@ -222,9 +223,9 @@ LimitlessOS $handoffMilestone MSI Hardware Handoff Runbook
 4. Capture the full transcript to a text file named msi-hwval-storage.txt.
 5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:
 
-   .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts
+   .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
 
-   .\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts
+   .\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
 
    .\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts
 
@@ -236,6 +237,10 @@ Pass means the combined analyzer reports:
    pass: True
    storage-stage: storage-ready
    display/input-stage: display-input-ready
+
+The same capture must include the M152 GUI interaction line from hwval:
+
+   drs-gui ... drs-gui-right-click 1 ... drs-gui-context-action 1 ... drs-gui-scroll ...
 
 If storage is unavailable on the laptop, linux /APPS/DYNLDLIMIT should still prefer the UEFI boot-media staged source when this bundle was written correctly. Capture that command output too. Expected handoff signal:
 
@@ -267,7 +272,8 @@ if (-not $SkipHandoffVerify.IsPresent) {
     & (Join-Path $root "tools\verify-msi-hardware-handoff.ps1") `
         -EvidenceDir $EvidenceDir `
         -OutputDir $handoffOutputDir `
-        -RequireStagedDynamicArtifacts
+        -RequireStagedDynamicArtifacts `
+        -RequireGuiInteractionTelemetry
     if ($LASTEXITCODE -ne 0) {
         throw "$handoffMilestone handoff prep: MSI hardware handoff verifier failed. See $handoffOutputPath"
     }

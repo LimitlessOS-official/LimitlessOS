@@ -7,7 +7,9 @@ param(
 
     [string]$OutputDir = "",
 
-    [switch]$RequireStagedDynamicArtifacts
+    [switch]$RequireStagedDynamicArtifacts,
+
+    [switch]$RequireGuiInteractionTelemetry
 )
 
 Set-StrictMode -Version Latest
@@ -100,7 +102,8 @@ function Invoke-HandoffVerifier
         [string]$ResolvedEvidenceDir,
         [string]$ResolvedCapturePath,
         [string]$VerifierOutputDir,
-        [bool]$RequireStaged
+        [bool]$RequireStaged,
+        [bool]$RequireGuiTelemetry
     )
 
     $arguments = @{
@@ -110,6 +113,9 @@ function Invoke-HandoffVerifier
     }
     if ($RequireStaged) {
         $arguments["RequireStagedDynamicArtifacts"] = $true
+    }
+    if ($RequireGuiTelemetry) {
+        $arguments["RequireGuiInteractionTelemetry"] = $true
     }
 
     $global:LASTEXITCODE = 0
@@ -133,7 +139,8 @@ $handoffExitCode = Invoke-HandoffVerifier `
     -ResolvedEvidenceDir $resolvedEvidenceDir `
     -ResolvedCapturePath $resolvedCapturePath `
     -VerifierOutputDir $handoffOutputDir `
-    -RequireStaged ([bool]$RequireStagedDynamicArtifacts)
+    -RequireStaged ([bool]$RequireStagedDynamicArtifacts) `
+    -RequireGuiTelemetry ([bool]$RequireGuiInteractionTelemetry)
 
 $handoffJsonPath = Join-Path $handoffOutputDir "msi-hardware-handoff-verification.json"
 $handoff = Read-JsonFile `
@@ -161,6 +168,9 @@ $combinedStage = Get-PropertyText -Object $handoff -Name "combined_capture_stage
 $combinedPass = [bool]$handoff.combined_capture_pass
 $dynamicStage = Get-PropertyText -Object $handoff -Name "dynamic_handoff_stage"
 $dynamicPass = [bool]$handoff.dynamic_handoff_pass
+$guiInteractionRequired = [bool]$handoff.gui_interaction_required
+$guiInteractionPass = [bool]$handoff.gui_interaction_pass
+$guiInteractionStage = Get-PropertyText -Object $handoff -Name "gui_interaction_stage"
 $displayStage = ""
 $displayPass = $false
 $displayNextTarget = ""
@@ -211,6 +221,14 @@ if (-not [bool]$handoff.storage_bundle_pass) {
             -NextTarget (Get-PropertyText -Object $combined -Name "next_target" -Default "Inspect the combined MSI capture report.") `
             -Milestone "M134"
     }
+} elseif ($guiInteractionRequired -and (-not $guiInteractionPass)) {
+    $target = New-Target `
+        -Pass $false `
+        -Kind "display-input" `
+        -Stage $guiInteractionStage `
+        -Detail "Storage, display, cursor, and pointer packets are ready, but the current MSI handoff requires hwval drs-gui interaction telemetry and this transcript did not include it." `
+        -NextTarget "M152 capture target: rerun hwval on an M152-or-newer Product image and include the drs-gui line with right-click, context action, scroll, and Terminal interaction proofs." `
+        -Milestone "M152"
 } elseif (-not $dynamicPass) {
     $target = New-Target `
         -Pass $false `
@@ -252,6 +270,7 @@ $report = [PSCustomObject]@{
     roadmap_target = [string]$target.roadmap_target
     handoff_exit_code = $handoffExitCode
     require_staged_dynamic_artifacts = [bool]$RequireStagedDynamicArtifacts
+    require_gui_interaction_telemetry = [bool]$RequireGuiInteractionTelemetry
     storage = [PSCustomObject]@{
         pass = $storagePass
         stage = $storageStage
@@ -261,6 +280,10 @@ $report = [PSCustomObject]@{
         pass = $displayPass
         stage = $displayStage
         next_target = $displayNextTarget
+        gui_interaction_required = $guiInteractionRequired
+        gui_interaction_pass = $guiInteractionPass
+        gui_interaction_stage = $guiInteractionStage
+        gui_interaction_line_found = [bool]$handoff.gui_interaction_line_found
     }
     dynamic_handoff = [PSCustomObject]@{
         pass = $dynamicPass
@@ -296,6 +319,9 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "storage-stage: $($report.storage.stage)",
     "display-input-pass: $($report.display_input.pass)",
     "display-input-stage: $($report.display_input.stage)",
+    "gui-interaction-required: $($report.display_input.gui_interaction_required)",
+    "gui-interaction-pass: $($report.display_input.gui_interaction_pass)",
+    "gui-interaction-stage: $($report.display_input.gui_interaction_stage)",
     "dynamic-handoff-pass: $($report.dynamic_handoff.pass)",
     "dynamic-handoff-stage: $($report.dynamic_handoff.stage)",
     "bios-sector-reserve: $biosReserve",
@@ -330,6 +356,9 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Pass | $($report.display_input.pass) |",
     "| Stage | $($report.display_input.stage) |",
     "| Next target | $($report.display_input.next_target) |",
+    "| GUI interaction required | $($report.display_input.gui_interaction_required) |",
+    "| GUI interaction pass | $($report.display_input.gui_interaction_pass) |",
+    "| GUI interaction stage | $($report.display_input.gui_interaction_stage) |",
     "",
     "## Dynamic Handoff",
     "",
