@@ -76,6 +76,8 @@ function Get-NextTarget
         "pci-vmd-nested-nvme-mmio-span" { return "Driver target: child NVMe exists behind VMD, but its nested MMIO span is zero; inspect the conservative child NVMe span plan." }
         "pci-vmd-nested-nvme-mmio-flags" { return "Driver target: child NVMe exists behind VMD, but nested MMIO flags/token are invalid; inspect child MMIO preflight telemetry." }
         "pci-vmd-nested-nvme-bind-ready" { return "Driver target: child NVMe exists behind VMD with MMIO preflight, but bind-readiness telemetry is not green; inspect the VMD child bind prerequisite gate before touching NVMe controller state." }
+        "pci-vmd-nested-nvme-register-candidate" { return "Driver target: child NVMe exists behind VMD with bind-readiness green, but registration-candidate telemetry was not exported; inspect the candidate handoff gate before touching NVMe controller state." }
+        "pci-vmd-nested-nvme-register-deferred" { return "Driver target: child NVMe exists behind VMD and is a registration candidate, but VMD-backed NVMe driver handoff is intentionally deferred; next implementation target is scoped nested NVMe registration." }
         "pci-vmd-nested-nvme-bind" { return "Driver target: child NVMe exists behind VMD; bind the regular NVMe driver through the nested VMD path." }
         "pci-nvme-hidden-by-vmd" { return "Driver target: direct NVMe is hidden behind an Intel VMD-class candidate; inspect nested PCI domain enumeration before regular NVMe probing." }
         "pci-nvme-hidden-by-intel-system" { return "Driver target: direct NVMe is absent while Intel system-class controller candidates are present; inspect VMD-style controller exposure and nested PCI domain handling." }
@@ -312,17 +314,37 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-bind"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-bar0", "vmd-nested-bar1", "vmd-nested-mmio-low", "vmd-nested-mmio-high", "vmd-nested-mmio-span", "vmd-nested-mmio-flags", "vmd-nested-mmio-token", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-scan-buses", "vmd-nested-scan-devices", "vmd-nested-scan-functions", "vmd-nested-scan-windows", "vmd-nested-scan-truncated", "nvme-found")
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-bar0", "vmd-nested-bar1", "vmd-nested-mmio-low", "vmd-nested-mmio-high", "vmd-nested-mmio-span", "vmd-nested-mmio-flags", "vmd-nested-mmio-token", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "vmd-nested-scan-buses", "vmd-nested-scan-devices", "vmd-nested-scan-functions", "vmd-nested-scan-windows", "vmd-nested-scan-truncated", "nvme-found")
                 first_check = "Bind the existing NVMe controller path to the child controller identity and proven bind-readiness telemetry exported by VMD nested enumeration, preserving the scoped storage authority model."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
                 acceptance_signal = "nvme-found 1 appears for a controller reached through VMD and the transcript proceeds to nvme-ready or a precise NVMe controller stage."
+            }
+        }
+        "pci-vmd-nested-nvme-register-candidate" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-register-candidate"
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token")
+                first_check = "Inspect pci64_update_vmd_nested_plan registration-candidate derivation; bind-ready child identity should become a registration candidate before any controller probing is attempted."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/shell.c")
+                acceptance_signal = "vmd-nested-register-candidate 1 appears after vmd-nested-bind-ready 1, while no VMD-backed NVMe driver handoff is attempted."
+            }
+        }
+        "pci-vmd-nested-nvme-register-deferred" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-register-deferred"
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token", "nvme-found")
+                first_check = "Implement the VMD-aware NVMe candidate registration handoff only after this deferred state is observed on real hardware; the current milestone intentionally avoids VMD controller probing."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
+                acceptance_signal = "A physical transcript reports vmd-nested-register-candidate 1, vmd-nested-register-status 2, and nvme-found 0, proving the remaining target is the VMD-backed NVMe handoff."
             }
         }
         "pci-vmd-nested-nvme-bind-ready" {
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-bind-ready"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-mmio-low", "vmd-nested-mmio-span", "vmd-nested-mmio-flags", "vmd-nested-mmio-token", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token")
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-mmio-low", "vmd-nested-mmio-span", "vmd-nested-mmio-flags", "vmd-nested-mmio-token", "vmd-nested-bind-ready", "vmd-nested-bind-status", "vmd-nested-bind-token", "vmd-nested-register-candidate", "vmd-nested-register-status", "vmd-nested-register-token")
                 first_check = "Inspect pci64_update_vmd_nested_plan bind-readiness derivation; valid child identity and MMIO preflight should promote vmd-nested-bind-ready to 1 before any controller probing is attempted."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h", "kernel/arch/x86_64/shell.c")
                 acceptance_signal = "vmd-nested-bind-ready 1 appears with vmd-nested-bind-status 5 and a nonzero bind token while nvme-found remains 0 until the actual bind milestone."

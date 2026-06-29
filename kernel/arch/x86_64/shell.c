@@ -901,6 +901,9 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     u32 pci_vmd_nested_bind_ready;
     u32 pci_vmd_nested_bind_status;
     u32 pci_vmd_nested_bind_token;
+    u32 pci_vmd_nested_register_candidate;
+    u32 pci_vmd_nested_register_status;
+    u32 pci_vmd_nested_register_token;
     u32 token = 2166136261u;
 
     hardware_capability = capability64_grant_service(
@@ -966,6 +969,9 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     pci_vmd_nested_bind_ready = pci64_vmd_nested_bind_ready(hardware_capability, owner_id);
     pci_vmd_nested_bind_status = pci64_vmd_nested_bind_status(hardware_capability, owner_id);
     pci_vmd_nested_bind_token = pci64_vmd_nested_bind_token(hardware_capability, owner_id);
+    pci_vmd_nested_register_candidate = pci64_vmd_nested_register_candidate(hardware_capability, owner_id);
+    pci_vmd_nested_register_status = pci64_vmd_nested_register_status(hardware_capability, owner_id);
+    pci_vmd_nested_register_token = pci64_vmd_nested_register_token(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1042,6 +1048,9 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, pci_vmd_nested_bind_ready);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_bind_status);
     token = shell64_storage_triage_mix(token, pci_vmd_nested_bind_token);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_register_candidate);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_register_status);
+    token = shell64_storage_triage_mix(token, pci_vmd_nested_register_token);
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_ready());
     token = shell64_storage_triage_mix(token, mmio64_nvme_probe_identify());
     token = shell64_storage_triage_mix(token, mmio64_nvme_read_ioq_created());
@@ -1125,6 +1134,9 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-bind-ready ", pci_vmd_nested_bind_ready);
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-bind-status ", pci_vmd_nested_bind_status);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bind-token ", pci_vmd_nested_bind_token);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-register-candidate ", pci_vmd_nested_register_candidate);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-register-status ", pci_vmd_nested_register_status);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-register-token ", pci_vmd_nested_register_token);
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-ready ", mmio64_nvme_probe_ready());
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-identify ", mmio64_nvme_probe_identify());
     shell64_write_decimal_field(console_capability_handle, owner_id, " ioq ", mmio64_nvme_read_ioq_created());
@@ -1231,6 +1243,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     u32 pci_vmd_nested_bind_ready;
     u32 pci_vmd_nested_bind_status;
     u32 pci_vmd_nested_bind_token;
+    u32 pci_vmd_nested_register_candidate;
+    u32 pci_vmd_nested_register_status;
+    u32 pci_vmd_nested_register_token;
 
     hardware_capability = capability64_grant_service(
         SERVICE_ENDPOINT_CLASS_HARDWARE,
@@ -1296,6 +1311,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     pci_vmd_nested_bind_ready = pci64_vmd_nested_bind_ready(hardware_capability, owner_id);
     pci_vmd_nested_bind_status = pci64_vmd_nested_bind_status(hardware_capability, owner_id);
     pci_vmd_nested_bind_token = pci64_vmd_nested_bind_token(hardware_capability, owner_id);
+    pci_vmd_nested_register_candidate = pci64_vmd_nested_register_candidate(hardware_capability, owner_id);
+    pci_vmd_nested_register_status = pci64_vmd_nested_register_status(hardware_capability, owner_id);
+    pci_vmd_nested_register_token = pci64_vmd_nested_register_token(hardware_capability, owner_id);
     if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
     {
         (void)capability64_revoke(hardware_capability, owner_id);
@@ -1570,6 +1588,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested bind ready: ", pci_vmd_nested_bind_ready);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested bind status: ", pci_vmd_nested_bind_status);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd nested bind token: ", pci_vmd_nested_bind_token);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested register candidate: ", pci_vmd_nested_register_candidate);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "pci vmd nested register status: ", pci_vmd_nested_register_status);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "pci vmd nested register token: ", pci_vmd_nested_register_token);
     (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
@@ -1630,6 +1651,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-bind-ready ", pci_vmd_nested_bind_ready);
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-bind-status ", pci_vmd_nested_bind_status);
     shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-bind-token ", pci_vmd_nested_bind_token);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-register-candidate ", pci_vmd_nested_register_candidate);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-register-status ", pci_vmd_nested_register_status);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " vmd-nested-register-token ", pci_vmd_nested_register_token);
     (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());

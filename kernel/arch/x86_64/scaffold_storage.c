@@ -829,6 +829,12 @@ static void log_pci_storage_surface(void)
     write_dec_u32(pci64_vmd_nested_bind_status(cap, owner));
     write_string(" vmd-nested-bind-token ");
     write_hex_u32(pci64_vmd_nested_bind_token(cap, owner));
+    write_string(" vmd-nested-register-candidate ");
+    write_dec_u32(pci64_vmd_nested_register_candidate(cap, owner));
+    write_string(" vmd-nested-register-status ");
+    write_dec_u32(pci64_vmd_nested_register_status(cap, owner));
+    write_string(" vmd-nested-register-token ");
+    write_hex_u32(pci64_vmd_nested_register_token(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));
