@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## Accepted Baseline
 
@@ -15,6 +15,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M145 is `VMD nested child NVMe MMIO preflight`. The UEFI Product VMD nested scanner now turns an observed child NVMe-class device behind VMD into no-touch nested BAR/MMIO planning telemetry before any future bind attempt. New fields are emitted through `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold proof: `vmd-nested-mmio-low`, `vmd-nested-mmio-high`, `vmd-nested-mmio-span`, `vmd-nested-mmio-flags`, and `vmd-nested-mmio-token`. QEMU, which exposes direct NVMe and no VMD candidate, truthfully reports all nested MMIO fields as `0`; synthetic hardware fixtures now route child-NVMe VMD captures through `pci-vmd-nested-nvme-mmio-base`, `pci-vmd-nested-nvme-mmio-span`, and `pci-vmd-nested-nvme-mmio-flags` before the remaining `pci-vmd-nested-nvme-bind` target. Fixture coverage passed with `hardware-storage-analysis-fixtures: 61/61` and `m134-storage-target-fixtures: 9/9`. Product build, M1 production-slice gate, and full QEMU Product verification passed. Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `733,664` bytes. No physical MSI storage-driver pass, VMD programming, VMD controller reset/enable, VMD NVMe bind, RAID driver, or unsafe storage reads/writes through VMD are claimed.
 
 M144 is `VMD full first-bus read-only scan`. The UEFI Product VMD nested scanner now remaps a 64 KiB read-only high-half MMIO window across the first full nested PCI config bus instead of checking only the first two devices. The scanner covers one bus, 32 devices, 8 functions each, and 16 read-only remap windows when a usable VMD MMIO candidate exists. New coverage telemetry is emitted through `hwval`, `drs-nvme-pci`, `drs-nvme-triage`, and the brokered PCI scaffold proof: `vmd-nested-scan-buses`, `vmd-nested-scan-devices`, `vmd-nested-scan-functions`, `vmd-nested-scan-windows`, and `vmd-nested-scan-truncated`. QEMU, which exposes direct NVMe and no VMD candidate, truthfully reports all scan counters as `0`; the hardware fixtures cover the VMD nested no-child and child-NVMe routes with `1/32/256/16/1` coverage. Fixture coverage passed with `hardware-storage-analysis-fixtures: 58/58` and `m134-storage-target-fixtures: 8/8`. Product build, M1 production-slice gate, and full QEMU Product verification passed. Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `734,016` bytes. No physical MSI storage-driver pass, multi-bus VMD enumeration, VMD MMIO programming, VMD storage binding, RAID driver, or unsafe storage writes are claimed.
 

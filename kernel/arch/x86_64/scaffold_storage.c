@@ -813,6 +813,16 @@ static void log_pci_storage_surface(void)
     write_dec_u32(pci64_vmd_nested_scan_windows(cap, owner));
     write_string(" vmd-nested-scan-truncated ");
     write_dec_u32(pci64_vmd_nested_scan_truncated(cap, owner));
+    write_string(" vmd-nested-mmio-low ");
+    write_hex_u32(pci64_vmd_nested_mmio_base_low(cap, owner));
+    write_string(" vmd-nested-mmio-high ");
+    write_hex_u32(pci64_vmd_nested_mmio_base_high(cap, owner));
+    write_string(" vmd-nested-mmio-span ");
+    write_dec_u32(pci64_vmd_nested_mmio_span_hint(cap, owner));
+    write_string(" vmd-nested-mmio-flags ");
+    write_hex_u32(pci64_vmd_nested_mmio_flags(cap, owner));
+    write_string(" vmd-nested-mmio-token ");
+    write_hex_u32(pci64_vmd_nested_mmio_token(cap, owner));
 #endif
     write_string(" token ");
     write_hex_u32((u32)syscall64_invoke(X64_SYSCALL_PCI_INVENTORY_TOKEN, cap, 0u, owner_arg));

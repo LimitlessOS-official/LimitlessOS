@@ -215,6 +215,11 @@ function New-StorageLine
         "vmd-nested-scan-functions" = "0"
         "vmd-nested-scan-windows" = "0"
         "vmd-nested-scan-truncated" = "0"
+        "vmd-nested-mmio-low" = "0x00000000"
+        "vmd-nested-mmio-high" = "0x00000000"
+        "vmd-nested-mmio-span" = "0"
+        "vmd-nested-mmio-flags" = "0x00000000"
+        "vmd-nested-mmio-token" = "0x00000000"
         "nvme-ready" = "1"
         "nvme-identify" = "1"
         "ioq" = "1"
@@ -406,6 +411,51 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-mmio-base"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "storage-pci-vmd-nested-nvme-mmio-base"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "pci-vmd" = "1";
+            "vmd-pci" = "0x00000E00";
+            "vmd-vendor-device" = "0x467F8086";
+            "vmd-class" = "0x08800000";
+            "vmd-bar0" = "0xFE010004";
+            "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0xFE010000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "1048576";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
+            "vmd-nested-plan" = "1";
+            "vmd-nested-enum" = "1";
+            "vmd-nested-nvme" = "1";
+            "vmd-nested-status" = "3";
+            "vmd-nested-token" = "0xD204D933";
+            "vmd-nested-pci" = "0x00000100";
+            "vmd-nested-vendor-device" = "0x00101B36";
+            "vmd-nested-class" = "0x01080202";
+            "vmd-nested-bar0" = "0x00000000";
+            "vmd-nested-bar1" = "0x00000000";
+            "vmd-nested-scan-buses" = "1";
+            "vmd-nested-scan-devices" = "32";
+            "vmd-nested-scan-functions" = "256";
+            "vmd-nested-scan-windows" = "16";
+            "vmd-nested-scan-truncated" = "1";
+            "vmd-nested-mmio-low" = "0x00000000";
+            "vmd-nested-mmio-high" = "0x00000000";
+            "vmd-nested-mmio-span" = "16384";
+            "vmd-nested-mmio-flags" = "0x00000183";
+            "vmd-nested-mmio-token" = "0xA1450CC1";
+            "nvme-found" = "0"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-vmd-nested-nvme-mmio-base"
         expected_pass = $false
     },
     [PSCustomObject]@{

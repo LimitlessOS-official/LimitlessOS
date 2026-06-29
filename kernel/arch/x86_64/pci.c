@@ -181,6 +181,11 @@ static u32 g_vmd_nested_scan_devices = 0u;
 static u32 g_vmd_nested_scan_functions = 0u;
 static u32 g_vmd_nested_scan_windows = 0u;
 static u32 g_vmd_nested_scan_truncated = 0u;
+static u32 g_vmd_nested_mmio_base_low = 0u;
+static u32 g_vmd_nested_mmio_base_high = 0u;
+static u32 g_vmd_nested_mmio_span_hint = 0u;
+static u32 g_vmd_nested_mmio_flags = 0u;
+static u32 g_vmd_nested_mmio_token = 0u;
 #endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
@@ -1323,6 +1328,78 @@ static void pci64_scan_vmd_nested_config_window(void)
         : PCI64_VMD_NESTED_STATUS_ENUM_NO_NVME;
 }
 
+static void pci64_update_vmd_nested_nvme_mmio_plan(void)
+{
+    u32 flags = 0u;
+    u32 base_low = 0u;
+    u32 base_high = 0u;
+    u32 token = 2166136261u;
+
+    if (g_vmd_nested_nvme_count == 0u)
+    {
+        g_vmd_nested_mmio_base_low = 0u;
+        g_vmd_nested_mmio_base_high = 0u;
+        g_vmd_nested_mmio_span_hint = 0u;
+        g_vmd_nested_mmio_flags = 0u;
+        g_vmd_nested_mmio_token = 0u;
+        return;
+    }
+
+    flags |= PCI64_NVME_MMIO_FLAG_PRESENT
+        | PCI64_NVME_MMIO_FLAG_ADMIN_ONLY
+        | PCI64_NVME_MMIO_FLAG_SAFE_NO_IO_QUEUE;
+
+    if ((g_vmd_nested_first_bar0 != 0u)
+        && (g_vmd_nested_first_bar0 != 0xFFFFFFFFu)
+        && ((g_vmd_nested_first_bar0 & PCI_BAR_IO_SPACE) == 0u))
+    {
+        flags |= PCI64_NVME_MMIO_FLAG_MEMORY_BAR
+            | PCI64_NVME_MMIO_FLAG_MAPPING_REQUIRED;
+
+        if ((g_vmd_nested_first_bar0 & PCI_BAR_MEMORY_TYPE_MASK)
+            == PCI_BAR_MEMORY_TYPE_64BIT)
+        {
+            flags |= PCI64_NVME_MMIO_FLAG_64BIT_BAR;
+            base_high = g_vmd_nested_first_bar1;
+        }
+
+        base_low = g_vmd_nested_first_bar0 & PCI_BAR_MEMORY_BASE_MASK;
+        if ((base_low != 0u) || (base_high != 0u))
+        {
+            flags |= PCI64_NVME_MMIO_FLAG_BASE_NONZERO;
+        }
+
+        if ((base_low & 0xFFFu) == 0u)
+        {
+            flags |= PCI64_NVME_MMIO_FLAG_PAGE_ALIGNED;
+        }
+
+        if (base_high == 0u)
+        {
+            flags |= PCI64_NVME_MMIO_FLAG_BELOW_4G;
+        }
+    }
+
+    token = pci64_mix_token(token, g_vmd_nested_first_address);
+    token = pci64_mix_token(token, g_vmd_nested_first_vendor_device);
+    token = pci64_mix_token(token, g_vmd_nested_first_class);
+    token = pci64_mix_token(token, g_vmd_nested_first_bar0);
+    token = pci64_mix_token(token, g_vmd_nested_first_bar1);
+    token = pci64_mix_token(token, base_low);
+    token = pci64_mix_token(token, base_high);
+    token = pci64_mix_token(token, PCI_NVME_MMIO_SPAN_HINT);
+    token = pci64_mix_token(token, flags);
+
+    g_vmd_nested_mmio_base_low = base_low;
+    g_vmd_nested_mmio_base_high = base_high;
+    g_vmd_nested_mmio_span_hint =
+        ((flags & PCI64_NVME_MMIO_FLAG_PRESENT) != 0u)
+            ? PCI_NVME_MMIO_SPAN_HINT
+            : 0u;
+    g_vmd_nested_mmio_flags = flags;
+    g_vmd_nested_mmio_token = token;
+}
+
 static void pci64_update_vmd_nested_plan(void)
 {
     u32 token = 2166136261u;
@@ -1345,6 +1422,11 @@ static void pci64_update_vmd_nested_plan(void)
     g_vmd_nested_scan_functions = 0u;
     g_vmd_nested_scan_windows = 0u;
     g_vmd_nested_scan_truncated = 0u;
+    g_vmd_nested_mmio_base_low = 0u;
+    g_vmd_nested_mmio_base_high = 0u;
+    g_vmd_nested_mmio_span_hint = 0u;
+    g_vmd_nested_mmio_flags = 0u;
+    g_vmd_nested_mmio_token = 0u;
     g_vmd_nested_status = (g_vmd_nested_plan != 0u)
         ? PCI64_VMD_NESTED_STATUS_ENUM_UNAVAILABLE
         : PCI64_VMD_NESTED_STATUS_NOT_APPLICABLE;
@@ -1353,6 +1435,7 @@ static void pci64_update_vmd_nested_plan(void)
     {
         pci64_scan_vmd_nested_config_window();
     }
+    pci64_update_vmd_nested_nvme_mmio_plan();
 
     token ^= g_vmd_nested_plan;
     token *= 16777619u;
@@ -1383,6 +1466,16 @@ static void pci64_update_vmd_nested_plan(void)
     token ^= g_vmd_nested_scan_windows;
     token *= 16777619u;
     token ^= g_vmd_nested_scan_truncated;
+    token *= 16777619u;
+    token ^= g_vmd_nested_mmio_base_low;
+    token *= 16777619u;
+    token ^= g_vmd_nested_mmio_base_high;
+    token *= 16777619u;
+    token ^= g_vmd_nested_mmio_span_hint;
+    token *= 16777619u;
+    token ^= g_vmd_nested_mmio_flags;
+    token *= 16777619u;
+    token ^= g_vmd_nested_mmio_token;
     token *= 16777619u;
     g_vmd_nested_token = token;
 }
@@ -1852,6 +1945,11 @@ void pci64_init(const struct boot_info *boot_info)
     g_vmd_nested_scan_functions = 0u;
     g_vmd_nested_scan_windows = 0u;
     g_vmd_nested_scan_truncated = 0u;
+    g_vmd_nested_mmio_base_low = 0u;
+    g_vmd_nested_mmio_base_high = 0u;
+    g_vmd_nested_mmio_span_hint = 0u;
+    g_vmd_nested_mmio_flags = 0u;
+    g_vmd_nested_mmio_token = 0u;
 #endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
@@ -2301,6 +2399,31 @@ u32 pci64_vmd_nested_scan_windows(u32 hardware_capability_handle, u32 owner_id)
 u32 pci64_vmd_nested_scan_truncated(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_scan_truncated);
+}
+
+u32 pci64_vmd_nested_mmio_base_low(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_mmio_base_low);
+}
+
+u32 pci64_vmd_nested_mmio_base_high(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_mmio_base_high);
+}
+
+u32 pci64_vmd_nested_mmio_span_hint(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_mmio_span_hint);
+}
+
+u32 pci64_vmd_nested_mmio_flags(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_mmio_flags);
+}
+
+u32 pci64_vmd_nested_mmio_token(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_mmio_token);
 }
 #endif
 
