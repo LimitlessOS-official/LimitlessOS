@@ -72,6 +72,9 @@ function Get-NextTarget
         "pci-vmd-nested-plan" { return "Driver target: VMD MMIO preflight exists but no nested-domain plan was exported; inspect VMD nested enumeration telemetry setup." }
         "pci-vmd-nested-enumeration" { return "Driver target: VMD MMIO preflight is valid; implement read-only nested PCI-domain enumeration before binding child NVMe." }
         "pci-vmd-nested-nvme-class" { return "Driver target: VMD nested domain enumeration ran but no child NVMe class device was reported; inspect nested class-code scanning." }
+        "pci-vmd-nested-nvme-mmio-base" { return "Driver target: child NVMe exists behind VMD, but its nested BAR did not yield a usable MMIO base; inspect child BAR parsing before binding." }
+        "pci-vmd-nested-nvme-mmio-span" { return "Driver target: child NVMe exists behind VMD, but its nested MMIO span is zero; inspect the conservative child NVMe span plan." }
+        "pci-vmd-nested-nvme-mmio-flags" { return "Driver target: child NVMe exists behind VMD, but nested MMIO flags/token are invalid; inspect child MMIO preflight telemetry." }
         "pci-vmd-nested-nvme-bind" { return "Driver target: child NVMe exists behind VMD; bind the regular NVMe driver through the nested VMD path." }
         "pci-nvme-hidden-by-vmd" { return "Driver target: direct NVMe is hidden behind an Intel VMD-class candidate; inspect nested PCI domain enumeration before regular NVMe probing." }
         "pci-nvme-hidden-by-intel-system" { return "Driver target: direct NVMe is absent while Intel system-class controller candidates are present; inspect VMD-style controller exposure and nested PCI domain handling." }
@@ -308,10 +311,40 @@ function New-DiagnosticPlan
             return [PSCustomObject]@{
                 stage = $Stage
                 component = "pci-vmd-nested-nvme-bind"
-                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-bar0", "vmd-nested-bar1", "vmd-nested-scan-buses", "vmd-nested-scan-devices", "vmd-nested-scan-functions", "vmd-nested-scan-windows", "vmd-nested-scan-truncated", "nvme-found")
-                first_check = "Bind the existing NVMe controller path to the child controller identity exported by VMD nested enumeration, preserving the scoped storage authority model."
+                required_fields = @("vmd-nested-plan", "vmd-nested-enum", "vmd-nested-nvme", "vmd-nested-pci", "vmd-nested-vendor-device", "vmd-nested-class", "vmd-nested-bar0", "vmd-nested-bar1", "vmd-nested-mmio-low", "vmd-nested-mmio-high", "vmd-nested-mmio-span", "vmd-nested-mmio-flags", "vmd-nested-mmio-token", "vmd-nested-scan-buses", "vmd-nested-scan-devices", "vmd-nested-scan-functions", "vmd-nested-scan-windows", "vmd-nested-scan-truncated", "nvme-found")
+                first_check = "Bind the existing NVMe controller path to the child controller identity and no-touch MMIO preflight exported by VMD nested enumeration, preserving the scoped storage authority model."
                 kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/arch/x86_64/mmio.c", "kernel/include/pci_x64.h", "kernel/include/mmio_x64.h")
                 acceptance_signal = "nvme-found 1 appears for a controller reached through VMD and the transcript proceeds to nvme-ready or a precise NVMe controller stage."
+            }
+        }
+        "pci-vmd-nested-nvme-mmio-base" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-mmio-base"
+                required_fields = @("vmd-nested-nvme", "vmd-nested-bar0", "vmd-nested-bar1", "vmd-nested-mmio-low", "vmd-nested-mmio-high")
+                first_check = "Inspect nested child BAR0/BAR1 parsing, memory-vs-IO BAR filtering, 64-bit BAR pairing, and all-zero/all-ones rejection before any nested NVMe binding."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-nested-mmio-low/high report a usable nonzero/non-sentinel base when vmd-nested-nvme is nonzero."
+            }
+        }
+        "pci-vmd-nested-nvme-mmio-span" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-mmio-span"
+                required_fields = @("vmd-nested-mmio-low", "vmd-nested-mmio-span")
+                first_check = "Inspect the conservative nested child NVMe span hint and ensure it is only exported when child NVMe presence is proven."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-nested-mmio-span is nonzero for the child NVMe candidate."
+            }
+        }
+        "pci-vmd-nested-nvme-mmio-flags" {
+            return [PSCustomObject]@{
+                stage = $Stage
+                component = "pci-vmd-nested-nvme-mmio-flags"
+                required_fields = @("vmd-nested-mmio-low", "vmd-nested-mmio-flags", "vmd-nested-mmio-token")
+                first_check = "Inspect nested child MMIO preflight flag construction and token mixing. This remains no-touch and must not bind or program the controller."
+                kernel_files = @("kernel/arch/x86_64/pci.c", "kernel/include/pci_x64.h")
+                acceptance_signal = "vmd-nested-mmio-flags and vmd-nested-mmio-token are nonzero/non-sentinel while no storage binding has occurred."
             }
         }
         "pci-nvme-hidden-by-intel-system" {

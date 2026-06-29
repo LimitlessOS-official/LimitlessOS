@@ -2901,6 +2901,72 @@ pci vmd nested scan truncated: 0
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `734,016` bytes. M144 non-claims: no physical MSI transcript was newly supplied, no multi-bus VMD enumeration is claimed, no VMD MMIO programming is implemented, no child NVMe binding is implemented, no RAID driver is implemented, and no unsafe storage writes are introduced.
 
+## M145 VMD Nested Child NVMe MMIO Preflight
+
+M145 adds the next no-touch boundary after M144's full first-bus VMD child scan. When that scan observes a child NVMe-class function, the kernel now derives conservative BAR/MMIO preflight fields for the first nested child NVMe before reporting that binding is still missing. This is still a diagnostic and planning milestone: it performs no VMD register programming, no controller reset, no controller enable, no NVMe queue setup, and no storage reads/writes through VMD.
+
+New child-NVMe MMIO preflight telemetry:
+
+- `vmd-nested-mmio-low`
+- `vmd-nested-mmio-high`
+- `vmd-nested-mmio-span`
+- `vmd-nested-mmio-flags`
+- `vmd-nested-mmio-token`
+
+The hardware storage parser now routes child-NVMe VMD captures through narrower pre-bind stages:
+
+- `pci-vmd-nested-nvme-mmio-base`
+- `pci-vmd-nested-nvme-mmio-span`
+- `pci-vmd-nested-nvme-mmio-flags`
+- `pci-vmd-nested-nvme-bind`
+
+The positive synthetic VMD bind fixture now requires the nested child MMIO fields before it can reach `pci-vmd-nested-nvme-bind`, so a physical MSI transcript with a child NVMe behind VMD will identify whether the next missing piece is BAR base derivation, span telemetry, safety flags, or the actual VMD/NVMe bind path.
+
+Accepted commands:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m145-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m145-storage-target-fixtures
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+M1 production-slice gate passed for x86_64 (Product profile).
+
+hardware-storage-analysis-fixtures: 61/61
+failed: 0
+
+m134-storage-target-fixtures: 9/9
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+pci vmd nested plan: 0
+pci vmd nested enum: 0
+pci vmd nested nvme: 0
+pci vmd nested status: 0
+pci vmd nested first bdf: 0xFFFFFFFF
+pci vmd nested scan buses: 0
+pci vmd nested scan devices: 0
+pci vmd nested scan functions: 0
+pci vmd nested scan windows: 0
+pci vmd nested scan truncated: 0
+pci vmd nested mmio low: 0x00000000
+pci vmd nested mmio high: 0x00000000
+pci vmd nested mmio span: 0
+pci vmd nested mmio flags: 0x00000000
+pci vmd nested mmio token: 0x00000000
+[x64] drs-nvme-pci nvme-pci-diag 1 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-pci 0xFFFFFFFF vmd-nested-scan-buses 0 vmd-nested-scan-devices 0 vmd-nested-scan-functions 0 vmd-nested-scan-windows 0 vmd-nested-scan-truncated 0 vmd-nested-mmio-low 0x00000000 vmd-nested-mmio-high 0x00000000 vmd-nested-mmio-span 0 vmd-nested-mmio-flags 0x00000000 vmd-nested-mmio-token 0x00000000
+[x64] drs-nvme-triage storage-triage 1 ... vmd-nested-plan 0 vmd-nested-enum 0 vmd-nested-nvme 0 vmd-nested-status 0 vmd-nested-pci 0xFFFFFFFF vmd-nested-scan-buses 0 vmd-nested-scan-devices 0 vmd-nested-scan-functions 0 vmd-nested-scan-windows 0 vmd-nested-scan-truncated 0 vmd-nested-mmio-low 0x00000000 vmd-nested-mmio-high 0x00000000 vmd-nested-mmio-span 0 vmd-nested-mmio-flags 0x00000000 vmd-nested-mmio-token 0x00000000 ... nvme-ready 1 nvme-identify 1 read-status 0 fat-located 1 stage-match 1
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `733,664` bytes. M145 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics
