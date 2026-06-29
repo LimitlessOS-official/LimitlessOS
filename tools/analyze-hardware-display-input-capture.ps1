@@ -123,8 +123,10 @@ function Classify-HardwareDisplayInput
     param(
         [hashtable]$DisplayFields,
         [hashtable]$UiFields,
+        [hashtable]$CursorFields,
         [bool]$DisplayFound,
         [bool]$UiFound,
+        [bool]$CursorFound,
         [uint64]$MousePackets,
         [uint64]$XhciMouseEndpoint,
         [uint64]$XhciMouseReports,
@@ -183,9 +185,34 @@ function Classify-HardwareDisplayInput
 
     $cursorVisible = Get-FieldValue -Fields $DisplayFields -Name "cursor-visible"
     if (($MousePackets -ne 0) -and ($cursorVisible -ne 1)) {
+        if ($CursorFound) {
+            if ((Get-FieldValue -Fields $CursorFields -Name "format-supported") -ne 1) {
+                return New-Classification -Stage "cursor-format-unsupported" -Detail "Mouse packets are moving, but the framebuffer format is not cursor-draw compatible." -NextTarget "Cursor target: add framebuffer-format support or a safe conversion path for this GOP mode."
+            }
+            if ((Get-FieldValue -Fields $CursorFields -Name "surface-ready") -ne 1) {
+                return New-Classification -Stage "cursor-surface-not-ready" -Detail "Mouse packets are moving, but cursor drawing does not have a validated framebuffer surface." -NextTarget "Cursor target: inspect framebuffer base, stride, bounds, and direct draw eligibility."
+            }
+            if ((Get-FieldValue -Fields $CursorFields -Name "draws") -eq 0) {
+                return New-Classification -Stage "cursor-draw-not-called" -Detail "Mouse packets are moving, but no cursor draw was recorded." -NextTarget "Cursor target: route brokered pointer packets into compositor/direct cursor update on this hardware path."
+            }
+            if ((Get-FieldValue -Fields $CursorFields -Name "in-bounds") -ne 1) {
+                return New-Classification -Stage "cursor-out-of-bounds" -Detail "Mouse packets are moving, but the cursor rectangle is outside the framebuffer." -NextTarget "Cursor target: fix cursor coordinate clamping and hardware-pointer coordinate scaling."
+            }
+            if ((Get-FieldValue -Fields $CursorFields -Name "drawn") -ne 1) {
+                return New-Classification -Stage "cursor-draw-not-validated" -Detail "Mouse packets are moving and draw attempts exist, but no final drawn cursor state was recorded." -NextTarget "Cursor target: inspect cursor save/draw completion and framebuffer write path."
+            }
+        }
         return New-Classification -Stage "pointer-moving-cursor-hidden" -Detail "Mouse packets are moving but the cursor is not visible." -NextTarget "Cursor target: fix direct/compositor cursor draw path for this framebuffer mode."
     }
     if ($cursorVisible -ne 1) {
+        if ($CursorFound) {
+            if ((Get-FieldValue -Fields $CursorFields -Name "draws") -eq 0) {
+                return New-Classification -Stage "cursor-draw-not-called" -Detail "No cursor draw was recorded." -NextTarget "Cursor target: inspect compositor/direct cursor startup draw and pointer routing."
+            }
+            if ((Get-FieldValue -Fields $CursorFields -Name "in-bounds") -ne 1) {
+                return New-Classification -Stage "cursor-out-of-bounds" -Detail "The cursor rectangle is outside the framebuffer." -NextTarget "Cursor target: fix cursor coordinate clamping and boot-time cursor placement."
+            }
+        }
         return New-Classification -Stage "cursor-hidden" -Detail "No visible cursor was reported." -NextTarget "Cursor target: inspect cursor draw fallback and compositor cursor visibility."
     }
     if ($MousePackets -ne 0) {
@@ -226,13 +253,18 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $lines = @(Get-Content -Path $InputPath)
 $displayLine = @($lines | Where-Object { $_ -match 'drs-display-readability' } | Select-Object -Last 1)
 $uiLine = @($lines | Where-Object { $_ -match 'drs-ui-polish' } | Select-Object -Last 1)
+$cursorLine = @($lines | Where-Object { $_ -match 'drs-cursor-path' } | Select-Object -Last 1)
 $displayFields = @{}
 $uiFields = @{}
+$cursorFields = @{}
 if ($displayLine.Count -ne 0) {
     $displayFields = Parse-TelemetryFields -Line ([string]$displayLine[0])
 }
 if ($uiLine.Count -ne 0) {
     $uiFields = Parse-TelemetryFields -Line ([string]$uiLine[0])
+}
+if ($cursorLine.Count -ne 0) {
+    $cursorFields = Parse-TelemetryFields -Line ([string]$cursorLine[0])
 }
 
 $mousePackets = Get-LineDecimal -Lines $lines -Prefix "mouse packets"
@@ -250,8 +282,10 @@ $ps2Enabled = Get-LineBoolean -Lines $lines -Prefix "ps2 fallback enabled"
 $classification = Classify-HardwareDisplayInput `
     -DisplayFields $displayFields `
     -UiFields $uiFields `
+    -CursorFields $cursorFields `
     -DisplayFound ($displayLine.Count -ne 0) `
     -UiFound ($uiLine.Count -ne 0) `
+    -CursorFound ($cursorLine.Count -ne 0) `
     -MousePackets $mousePackets `
     -XhciMouseEndpoint $xhciMouseEndpoint `
     -XhciMouseReports $xhciMouseReports `
@@ -273,8 +307,10 @@ $analysis = [PSCustomObject]@{
     next_target = [string]$classification.next_target
     display_line_found = ($displayLine.Count -ne 0)
     ui_line_found = ($uiLine.Count -ne 0)
+    cursor_line_found = ($cursorLine.Count -ne 0)
     display = [PSCustomObject]$displayFields
     ui = [PSCustomObject]$uiFields
+    cursor = [PSCustomObject]$cursorFields
     input_state = [PSCustomObject]@{
         mouse_packets = $mousePackets
         xhci_mouse_endpoint = $xhciMouseEndpoint
@@ -290,6 +326,7 @@ $analysis = [PSCustomObject]@{
     }
     raw_display_line = if ($displayLine.Count -ne 0) { [string]$displayLine[0] } else { "" }
     raw_ui_line = if ($uiLine.Count -ne 0) { [string]$uiLine[0] } else { "" }
+    raw_cursor_line = if ($cursorLine.Count -ne 0) { [string]$cursorLine[0] } else { "" }
 }
 
 $analysisJsonPath = Join-Path $OutputDir "hardware-display-input-analysis.json"
@@ -303,6 +340,7 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "next-target: $($analysis.next_target)",
     "display-line-found: $($analysis.display_line_found)",
     "ui-line-found: $($analysis.ui_line_found)",
+    "cursor-line-found: $($analysis.cursor_line_found)",
     "mouse-packets: $mousePackets",
     "xhci-mouse-endpoint: $xhciMouseEndpoint",
     "xhci-mouse-reports: $xhciMouseReports",

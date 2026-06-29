@@ -75,6 +75,19 @@ u32 display64_direct_cursor_count(void);
 u32 display64_ui_polish_token(void);
 #endif
 u32 display64_cursor_visible(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_cursor_x(void);
+u32 display64_cursor_y(void);
+u32 display64_cursor_buttons(void);
+u32 display64_cursor_saved_valid(void);
+u32 display64_cursor_drawn_valid(void);
+u32 display64_cursor_in_bounds(void);
+u32 display64_cursor_rect_w(void);
+u32 display64_cursor_rect_h(void);
+u32 display64_cursor_surface_ready(void);
+u32 display64_cursor_framebuffer_format_supported(void);
+u32 display64_cursor_path_token(void);
+#endif
 void display64_font_probe(void);
 u32 display64_font_init_done(void);
 u32 display64_font_glyph_count(void);

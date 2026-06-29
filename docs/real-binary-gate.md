@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, and M138 NVMe PCI capture-stage classification are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, and M149 cursor path hardware-display diagnostics are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -3137,6 +3137,53 @@ nvme candidate token: 0x87F22324
 ```
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `728,608` bytes. M148 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe registration/bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
+
+## M149 Cursor Path Hardware-Display Diagnostics
+
+M149 adds one UEFI Product `hwval` proof line that makes the existing physical display/input capture path actionable for the real laptop symptom where mouse packets and coordinates move but the cursor is not visible. The old `drs-display-readability` and `drs-ui-polish` lines are preserved. The new line is `drs-cursor-path`, with fields for surface readiness, framebuffer format support, compositor/direct mode, cursor visibility, draw counts, cursor position/buttons, bounds, cursor rectangle size, saved-underlay state, final drawn state, and a token.
+
+The host-side analyzer remains backward-compatible with older M117-M148 captures. When `drs-cursor-path` exists, the former broad `pointer-moving-cursor-hidden` failure is split into:
+
+- `cursor-format-unsupported`
+- `cursor-surface-not-ready`
+- `cursor-draw-not-called`
+- `cursor-out-of-bounds`
+- `cursor-draw-not-validated`
+
+Accepted commands:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-hardware-display-input-fixtures.ps1
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+M1 production-slice gate passed for x86_64 (Product profile).
+
+hardware-display-input-fixtures: 31/31
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+display cursor visible: yes
+display cursor draws: 151
+display direct cursor draws: 154
+display cursor x: 560
+display cursor y: 420
+display cursor in bounds: yes
+display cursor surface ready: yes
+[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 210 direct-cursor-draws 212 token 0xF8C98059
+[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0x99B377DB
+[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 1 draws 250 direct-draws 252 x 560 y 420 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 1 drawn 1 token 0xD2FC1305
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `728,352` bytes after the first build. The full UEFI Product QEMU verifier also passed after the hardware-display gate. M149 non-claims: no physical MSI laptop display/input certification is claimed, no native GPU driver or DRM/KMS path is added, no touchpad driver is added, and cursor drawing behavior is not changed. The milestone makes the next real hardware capture distinguish the exact cursor/display failure before any hardware-specific drawing or input changes are attempted.
 
 Later targets are:
 

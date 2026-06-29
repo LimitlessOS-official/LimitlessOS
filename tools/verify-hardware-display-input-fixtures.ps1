@@ -53,6 +53,26 @@ $uiOrder = @(
     "token"
 )
 
+$cursorOrder = @(
+    "cursor-path",
+    "surface-ready",
+    "format-supported",
+    "compositor-active",
+    "compositor-direct",
+    "visible",
+    "draws",
+    "direct-draws",
+    "x",
+    "y",
+    "buttons",
+    "in-bounds",
+    "rect-w",
+    "rect-h",
+    "saved",
+    "drawn",
+    "token"
+)
+
 $baseDisplay = @{
     "display-readability" = "1"
     "available" = "1"
@@ -89,6 +109,26 @@ $baseUi = @{
     "windows" = "3"
     "cursor-visible" = "1"
     "token" = "0xCB1B1C83"
+}
+
+$baseCursor = @{
+    "cursor-path" = "1"
+    "surface-ready" = "1"
+    "format-supported" = "1"
+    "compositor-active" = "1"
+    "compositor-direct" = "1"
+    "visible" = "1"
+    "draws" = "205"
+    "direct-draws" = "207"
+    "x" = "640"
+    "y" = "400"
+    "buttons" = "0"
+    "in-bounds" = "1"
+    "rect-w" = "12"
+    "rect-h" = "20"
+    "saved" = "1"
+    "drawn" = "1"
+    "token" = "0xA5197C42"
 }
 
 $baseInput = @{
@@ -138,9 +178,11 @@ function New-Fixture
         [string]$ExpectedStage,
         [hashtable]$Display = @{},
         [hashtable]$Ui = @{},
+        [hashtable]$Cursor = @{},
         [hashtable]$InputMutations = @{},
         [bool]$OmitDisplay = $false,
-        [bool]$OmitUi = $false
+        [bool]$OmitUi = $false,
+        [bool]$OmitCursor = $false
     )
 
     return [PSCustomObject]@{
@@ -148,9 +190,11 @@ function New-Fixture
         expected_stage = $ExpectedStage
         display = $Display
         ui = $Ui
+        cursor = $Cursor
         input = $InputMutations
         omit_display = $OmitDisplay
         omit_ui = $OmitUi
+        omit_cursor = $OmitCursor
     }
 }
 
@@ -169,8 +213,13 @@ $fixtures = @(
     (New-Fixture -Name "taskbar-unavailable" -ExpectedStage "taskbar-unavailable" -Ui @{ "taskbar" = "0" }),
     (New-Fixture -Name "launcher-unavailable" -ExpectedStage "launcher-unavailable" -Ui @{ "launcher" = "0" }),
     (New-Fixture -Name "windows-unavailable" -ExpectedStage "windows-unavailable" -Ui @{ "windows" = "0" }),
-    (New-Fixture -Name "pointer-moving-cursor-hidden" -ExpectedStage "pointer-moving-cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" }),
-    (New-Fixture -Name "cursor-hidden" -ExpectedStage "cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -InputMutations @{ "mouse-packets" = "0" }),
+    (New-Fixture -Name "pointer-moving-cursor-hidden" -ExpectedStage "pointer-moving-cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -OmitCursor:$true),
+    (New-Fixture -Name "cursor-hidden" -ExpectedStage "cursor-hidden" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -InputMutations @{ "mouse-packets" = "0" } -OmitCursor:$true),
+    (New-Fixture -Name "cursor-format-unsupported" -ExpectedStage "cursor-format-unsupported" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "format-supported" = "0"; "drawn" = "0" }),
+    (New-Fixture -Name "cursor-surface-not-ready" -ExpectedStage "cursor-surface-not-ready" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "surface-ready" = "0"; "drawn" = "0" }),
+    (New-Fixture -Name "cursor-draw-not-called" -ExpectedStage "cursor-draw-not-called" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "draws" = "0"; "direct-draws" = "0"; "drawn" = "0"; "saved" = "0" }),
+    (New-Fixture -Name "cursor-out-of-bounds" -ExpectedStage "cursor-out-of-bounds" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "in-bounds" = "0"; "rect-w" = "0"; "rect-h" = "0"; "drawn" = "0" }),
+    (New-Fixture -Name "cursor-draw-not-validated" -ExpectedStage "cursor-draw-not-validated" -Display @{ "cursor-visible" = "0" } -Ui @{ "cursor-visible" = "0" } -Cursor @{ "visible" = "0"; "drawn" = "0"; "saved" = "0" }),
     (New-Fixture -Name "i2c-pointer-reports-no-packets" -ExpectedStage "i2c-pointer-reports-no-packets" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-found" = "1"; "i2c-pointer-reports" = "2" }),
     (New-Fixture -Name "i2c-pointer-error" -ExpectedStage "i2c-pointer-error" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-found" = "1"; "i2c-pointer-error" = "3" }),
     (New-Fixture -Name "i2c-pointer-candidate-unbound" -ExpectedStage "i2c-pointer-candidate-unbound" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-candidates" = "1" }),
@@ -188,12 +237,16 @@ $failures = @()
 foreach ($fixture in $fixtures) {
     $display = Copy-Hashtable -Source $baseDisplay
     $ui = Copy-Hashtable -Source $baseUi
+    $cursor = Copy-Hashtable -Source $baseCursor
     $input = Copy-Hashtable -Source $baseInput
     foreach ($key in $fixture.display.Keys) {
         $display[$key] = $fixture.display[$key]
     }
     foreach ($key in $fixture.ui.Keys) {
         $ui[$key] = $fixture.ui[$key]
+    }
+    foreach ($key in $fixture.cursor.Keys) {
+        $cursor[$key] = $fixture.cursor[$key]
     }
     foreach ($key in $fixture.input.Keys) {
         $input[$key] = $fixture.input[$key]
@@ -206,6 +259,9 @@ foreach ($fixture in $fixtures) {
     }
     if (-not $fixture.omit_ui) {
         $lines += New-TelemetryLine -Prefix "drs-ui-polish" -Order $uiOrder -Fields $ui
+    }
+    if (-not $fixture.omit_cursor) {
+        $lines += New-TelemetryLine -Prefix "drs-cursor-path" -Order $cursorOrder -Fields $cursor
     }
     $lines += "xhci mouse endpoint: $(if ($input["xhci-mouse-endpoint"] -eq "1") { "yes" } else { "no" })"
     $lines += "xhci mouse reports: $($input["xhci-mouse-reports"])"
