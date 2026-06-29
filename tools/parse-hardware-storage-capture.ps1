@@ -147,10 +147,11 @@ function Classify-StorageCapture
                     return New-Classification -Stage "pci-vmd-nested-nvme-register-candidate" -Detail "A child NVMe controller was reported behind VMD with bind readiness, but no registration candidate was exported."
                 }
                 if ((Has-Field -Fields $Fields -Name "vmd-nested-register-status") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-register-status") -eq 2)) {
-                    if ((Has-Field -Fields $Fields -Name "nvme-candidate-source") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-source") -ne 2)) {
+                    $vmdBindSucceeded = ((Has-Field -Fields $Fields -Name "vmd-nvme-bind-state") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nvme-bind-state") -eq 2))
+                    if ((-not $vmdBindSucceeded) -and (Has-Field -Fields $Fields -Name "nvme-candidate-source") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-source") -ne 2)) {
                         return New-Classification -Stage "pci-vmd-nested-nvme-mmio-source" -Detail "A VMD child NVMe registration candidate was deferred, but the MMIO/NVMe layer did not record it as the deferred VMD source."
                     }
-                    if ((Has-Field -Fields $Fields -Name "nvme-candidate-deferred") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-deferred") -ne 1)) {
+                    if ((-not $vmdBindSucceeded) -and (Has-Field -Fields $Fields -Name "nvme-candidate-deferred") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-deferred") -ne 1)) {
                         return New-Classification -Stage "pci-vmd-nested-nvme-mmio-deferred" -Detail "A VMD child NVMe registration candidate was deferred, but the MMIO/NVMe layer did not mark the source as deferred."
                     }
                     if (Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-state") {
@@ -163,7 +164,7 @@ function Classify-StorageCapture
                         if ((Has-Field -Fields $Fields -Name "vmd-nested-driver-plan-token") -and (((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-nested-driver-plan-token") -eq $InvalidU32))) {
                             return New-Classification -Stage "pci-vmd-nested-driver-plan" -Detail "A VMD child NVMe no-touch driver plan exists, but its handoff token is invalid."
                         }
-                        if ((Has-Field -Fields $Fields -Name "vmd-nvme-bind-state") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nvme-bind-state") -eq 2)) {
+                        if ($vmdBindSucceeded) {
                             if ((Has-Field -Fields $Fields -Name "nvme-candidate-source") -and ((Get-FieldValue -Fields $Fields -Name "nvme-candidate-source") -ne 3)) {
                                 return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A VMD child NVMe bind reported success, but the MMIO/NVMe candidate source was not promoted to the bound VMD source."
                             }

@@ -315,6 +315,9 @@ $vmdRegisterCandidate = ""
 $vmdRegisterStatus = ""
 $vmdDriverPlanState = ""
 $vmdDriverPlanToken = ""
+$vmdDriverBindState = ""
+$vmdDriverBindToken = ""
+$vmdDriverBindCount = ""
 $vmdCandidateSource = ""
 $vmdCandidateDeferred = ""
 if ($null -ne $vmdHandoff) {
@@ -324,6 +327,9 @@ if ($null -ne $vmdHandoff) {
     $vmdRegisterStatus = [string]$vmdHandoff.nested_register_status
     $vmdDriverPlanState = [string]$vmdHandoff.nested_driver_plan_state
     $vmdDriverPlanToken = [string]$vmdHandoff.nested_driver_plan_token
+    $vmdDriverBindState = [string]$vmdHandoff.nested_driver_bind_state
+    $vmdDriverBindToken = [string]$vmdHandoff.nested_driver_bind_token
+    $vmdDriverBindCount = [string]$vmdHandoff.nested_driver_bind_count
     $vmdCandidateSource = [string]$vmdHandoff.nvme_candidate_source
     $vmdCandidateDeferred = [string]$vmdHandoff.nvme_candidate_deferred
 }
@@ -351,6 +357,9 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "vmd-handoff-stage: $vmdHandoffStage",
     "vmd-handoff-driver-plan-state: $vmdDriverPlanState",
     "vmd-handoff-driver-plan-token: $vmdDriverPlanToken",
+    "vmd-handoff-driver-bind-state: $vmdDriverBindState",
+    "vmd-handoff-driver-bind-token: $vmdDriverBindToken",
+    "vmd-handoff-driver-bind-count: $vmdDriverBindCount",
     "bios-sector-reserve: $biosReserve",
     "uefi-byte-reserve: $uefiReserve",
     "output-json: $reportJsonPath"
@@ -407,6 +416,9 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Register status | $vmdRegisterStatus |",
     "| Driver plan state | $vmdDriverPlanState |",
     "| Driver plan token | $vmdDriverPlanToken |",
+    "| Driver bind state | $vmdDriverBindState |",
+    "| Driver bind token | $vmdDriverBindToken |",
+    "| Driver bind count | $vmdDriverBindCount |",
     "| Candidate source | $vmdCandidateSource |",
     "| Candidate deferred | $vmdCandidateDeferred |"
 ) | Set-Content -Path $reportMarkdownPath -Encoding Ascii

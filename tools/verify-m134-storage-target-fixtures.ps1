@@ -297,17 +297,63 @@ function New-StorageLine
     return "[x64] drs-nvme-triage " + ($parts -join " ")
 }
 
+function New-VmdBindLine
+{
+    param([hashtable]$Fields)
+
+    $bindOrder = @(
+        "result",
+        "state",
+        "flags",
+        "token",
+        "count",
+        "denials",
+        "unavailable",
+        "candidate-source",
+        "candidate-deferred",
+        "candidate-bdf",
+        "candidate-token"
+    )
+    $defaults = @{
+        "result" = "0xFFFFFFFF"
+        "state" = "0"
+        "flags" = "0x00000000"
+        "token" = "0x00000000"
+        "count" = "0"
+        "denials" = "0"
+        "unavailable" = "0"
+        "candidate-source" = "0"
+        "candidate-deferred" = "0"
+        "candidate-bdf" = "0xFFFFFFFF"
+        "candidate-token" = "0x00000000"
+    }
+
+    foreach ($key in $Fields.Keys) {
+        $defaults[$key] = [string]$Fields[$key]
+    }
+
+    $parts = @("bind 1")
+    foreach ($field in $bindOrder) {
+        $parts += ("{0} {1}" -f $field, $defaults[$field])
+    }
+    return "[x64] drs-vmd-nvme-bind " + ($parts -join " ")
+}
+
 function Write-Capture
 {
     param(
         [string]$Path,
         [hashtable]$StorageMutations = @{},
+        [hashtable]$VmdBindFields = @{},
         [string]$DisplayMode = "ready",
         [string]$DynamicMode = "source2-exit0"
     )
 
     $lines = @()
     $lines += New-StorageLine -Mutations $StorageMutations
+    if ($VmdBindFields.Count -ne 0) {
+        $lines += New-VmdBindLine -Fields $VmdBindFields
+    }
 
     if (($DisplayMode -eq "ready") -or ($DisplayMode -eq "ready-no-gui")) {
         $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
@@ -660,6 +706,158 @@ $fixtures = @(
         expected_vmd_stage = "driver-plan-staged"
     },
     [PSCustomObject]@{
+        name = "storage-pci-vmd-nested-bound-source-mismatch"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "pci-vmd" = "1";
+            "vmd-pci" = "0x00000E00";
+            "vmd-vendor-device" = "0x467F8086";
+            "vmd-class" = "0x08800000";
+            "vmd-bar0" = "0xFE010004";
+            "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0xFE010000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "1048576";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
+            "vmd-nested-plan" = "1";
+            "vmd-nested-enum" = "1";
+            "vmd-nested-nvme" = "1";
+            "vmd-nested-status" = "3";
+            "vmd-nested-token" = "0xD204D933";
+            "vmd-nested-pci" = "0x00000100";
+            "vmd-nested-vendor-device" = "0x00101B36";
+            "vmd-nested-class" = "0x01080202";
+            "vmd-nested-bar0" = "0xFE020004";
+            "vmd-nested-bar1" = "0x00000000";
+            "vmd-nested-scan-buses" = "1";
+            "vmd-nested-scan-devices" = "32";
+            "vmd-nested-scan-functions" = "256";
+            "vmd-nested-scan-windows" = "16";
+            "vmd-nested-scan-truncated" = "1";
+            "vmd-nested-mmio-low" = "0xFE020000";
+            "vmd-nested-mmio-high" = "0x00000000";
+            "vmd-nested-mmio-span" = "16384";
+            "vmd-nested-mmio-flags" = "0x000001FF";
+            "vmd-nested-mmio-token" = "0xA1450CC4";
+            "vmd-nested-bind-ready" = "1";
+            "vmd-nested-bind-status" = "5";
+            "vmd-nested-bind-token" = "0xB1460CC4";
+            "vmd-nested-register-candidate" = "1";
+            "vmd-nested-register-status" = "2";
+            "vmd-nested-register-token" = "0xC1470CC4";
+            "vmd-nested-driver-plan-result" = "0xD1580CC4";
+            "vmd-nested-driver-plan-state" = "2";
+            "vmd-nested-driver-plan-flags" = "0x000000FF";
+            "vmd-nested-driver-plan-token" = "0xD1580CC4";
+            "vmd-nested-driver-plan-stage-count" = "1";
+            "vmd-nested-driver-plan-denials" = "0";
+            "vmd-nested-driver-plan-unavailable" = "0";
+            "nvme-candidate-source" = "2";
+            "nvme-candidate-deferred" = "1";
+            "nvme-candidate-bdf" = "0x00000100";
+            "nvme-candidate-token" = "0xC1480CC4";
+            "nvme-found" = "0"
+        }
+        vmd_bind_fields = @{
+            "result" = "0xE1590CC4";
+            "state" = "2";
+            "flags" = "0x0000003F";
+            "token" = "0xE1590CC4";
+            "count" = "1";
+            "candidate-source" = "2";
+            "candidate-deferred" = "0";
+            "candidate-bdf" = "0x00000100";
+            "candidate-token" = "0xE1590CC4"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-vmd-nested-nvme-bind"
+        expected_roadmap = "M134"
+        expected_pass = $false
+        expected_vmd_kind = "vmd-nested-bound"
+        expected_vmd_stage = "driver-bound"
+    },
+    [PSCustomObject]@{
+        name = "storage-pci-vmd-nested-bound-controller-discovery"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "pci-vmd" = "1";
+            "vmd-pci" = "0x00000E00";
+            "vmd-vendor-device" = "0x467F8086";
+            "vmd-class" = "0x08800000";
+            "vmd-bar0" = "0xFE010004";
+            "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0xFE010000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "1048576";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
+            "vmd-nested-plan" = "1";
+            "vmd-nested-enum" = "1";
+            "vmd-nested-nvme" = "1";
+            "vmd-nested-status" = "3";
+            "vmd-nested-token" = "0xD204D933";
+            "vmd-nested-pci" = "0x00000100";
+            "vmd-nested-vendor-device" = "0x00101B36";
+            "vmd-nested-class" = "0x01080202";
+            "vmd-nested-bar0" = "0xFE020004";
+            "vmd-nested-bar1" = "0x00000000";
+            "vmd-nested-scan-buses" = "1";
+            "vmd-nested-scan-devices" = "32";
+            "vmd-nested-scan-functions" = "256";
+            "vmd-nested-scan-windows" = "16";
+            "vmd-nested-scan-truncated" = "1";
+            "vmd-nested-mmio-low" = "0xFE020000";
+            "vmd-nested-mmio-high" = "0x00000000";
+            "vmd-nested-mmio-span" = "16384";
+            "vmd-nested-mmio-flags" = "0x000001FF";
+            "vmd-nested-mmio-token" = "0xA1450CC4";
+            "vmd-nested-bind-ready" = "1";
+            "vmd-nested-bind-status" = "5";
+            "vmd-nested-bind-token" = "0xB1460CC4";
+            "vmd-nested-register-candidate" = "1";
+            "vmd-nested-register-status" = "2";
+            "vmd-nested-register-token" = "0xC1470CC4";
+            "vmd-nested-driver-plan-result" = "0xD1580CC4";
+            "vmd-nested-driver-plan-state" = "2";
+            "vmd-nested-driver-plan-flags" = "0x000000FF";
+            "vmd-nested-driver-plan-token" = "0xD1580CC4";
+            "vmd-nested-driver-plan-stage-count" = "1";
+            "vmd-nested-driver-plan-denials" = "0";
+            "vmd-nested-driver-plan-unavailable" = "0";
+            "nvme-candidate-source" = "2";
+            "nvme-candidate-deferred" = "1";
+            "nvme-candidate-bdf" = "0x00000100";
+            "nvme-candidate-token" = "0xC1480CC4";
+            "nvme-found" = "0"
+        }
+        vmd_bind_fields = @{
+            "result" = "0xE1590CC4";
+            "state" = "2";
+            "flags" = "0x0000003F";
+            "token" = "0xE1590CC4";
+            "count" = "1";
+            "candidate-source" = "3";
+            "candidate-deferred" = "0";
+            "candidate-bdf" = "0x00000100";
+            "candidate-token" = "0xE1590CC4"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "nvme-controller-discovery"
+        expected_roadmap = "M134"
+        expected_pass = $false
+        expected_vmd_kind = "vmd-nested-bound"
+        expected_vmd_stage = "driver-bound"
+    },
+    [PSCustomObject]@{
         name = "display-after-storage-ready"
         storage_mutations = @{}
         display_mode = "cursor-hidden"
@@ -735,6 +933,7 @@ foreach ($fixture in $fixtures) {
     Write-Capture `
         -Path $capturePath `
         -StorageMutations $fixture.storage_mutations `
+        -VmdBindFields $(if ($fixture.PSObject.Properties["vmd_bind_fields"]) { $fixture.vmd_bind_fields } else { @{} }) `
         -DisplayMode $fixture.display_mode `
         -DynamicMode $fixture.dynamic_mode
 
