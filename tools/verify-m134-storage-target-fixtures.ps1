@@ -108,6 +108,18 @@ function New-EvidenceBundle
             required_storage_stage = "storage-ready"
             required_boot_media_linux_source = "2"
             required_gui_interaction_telemetry = "1"
+            required_nvme_controller_snapshot = "1"
+            required_nvme_controller_fields = @(
+                "nvme-probe-error",
+                "nvme-regs",
+                "nvme-cap-low",
+                "nvme-cap-high",
+                "nvme-vs",
+                "nvme-cc",
+                "nvme-csts",
+                "nvme-dstrd-bytes",
+                "nvme-doorbell-page"
+            )
         }
     } | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $evidenceDir "hardware-storage-evidence-manifest.json") -Encoding Ascii
 
@@ -155,6 +167,8 @@ function New-EvidenceBundle
         "Expected handoff signal:",
         "",
         "drs-gui ... drs-gui-right-click 1 ... drs-gui-context-action 1 ... drs-gui-scroll ...",
+        "",
+        "NVMe Controller Snapshot: nvme-probe-error nvme-regs nvme-cap-low nvme-cap-high nvme-vs nvme-cc nvme-csts nvme-dstrd-bytes nvme-doorbell-page",
         "",
         "",
         "linux: using UEFI boot-media staged file",
@@ -966,6 +980,7 @@ foreach ($fixture in $fixtures) {
         $exitCode = 99
     }
 
+    New-Item -ItemType Directory -Force -Path $fixtureOutputDir | Out-Null
     $consoleText | Set-Content -Path (Join-Path $fixtureOutputDir "classifier-console.txt") -Encoding Ascii
     $reportPath = Join-Path $fixtureOutputDir "m134-storage-target.json"
     $actualKind = ""

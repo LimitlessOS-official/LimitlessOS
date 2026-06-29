@@ -252,6 +252,23 @@ $bootMediaVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name
 $requiredStorageStage = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_storage_stage"
 $requiredBootMediaSource = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_boot_media_linux_source"
 $requiredGuiTelemetry = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_gui_interaction_telemetry"
+$requiredNvmeControllerSnapshot = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_nvme_controller_snapshot"
+$requiredNvmeControllerFields = @()
+$requiredNvmeControllerFieldsProperty = $manifest.expected_hwval.PSObject.Properties["required_nvme_controller_fields"]
+if ($null -ne $requiredNvmeControllerFieldsProperty) {
+    $requiredNvmeControllerFields = @($requiredNvmeControllerFieldsProperty.Value)
+}
+$expectedNvmeControllerFields = @(
+    "nvme-probe-error",
+    "nvme-regs",
+    "nvme-cap-low",
+    "nvme-cap-high",
+    "nvme-vs",
+    "nvme-cc",
+    "nvme-csts",
+    "nvme-dstrd-bytes",
+    "nvme-doorbell-page"
+)
 
 if ($milestone -ne $handoffMilestone) {
     throw "MSI hardware handoff verifier: manifest milestone must be $handoffMilestone, observed '$milestone'."
@@ -295,6 +312,14 @@ if ($requiredBootMediaSource -ne "2") {
 if ($requiredGuiTelemetry -ne "1") {
     throw "MSI hardware handoff verifier: required GUI interaction telemetry mismatch: '$requiredGuiTelemetry'."
 }
+if ($requiredNvmeControllerSnapshot -ne "1") {
+    throw "MSI hardware handoff verifier: required NVMe controller snapshot mismatch: '$requiredNvmeControllerSnapshot'."
+}
+foreach ($field in $expectedNvmeControllerFields) {
+    if (-not ($requiredNvmeControllerFields -contains $field)) {
+        throw "MSI hardware handoff verifier: required NVMe controller field missing from manifest: '$field'."
+    }
+}
 
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*hwval\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run hwval."
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*linux /APPS/DYNLDLIMIT\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run linux /APPS/DYNLDLIMIT."
@@ -303,6 +328,10 @@ Assert-TextContains -Text $runbook -Pattern 'classify-m134-storage-target\.ps1 .
 Assert-TextContains -Text $runbook -Pattern 'verify-msi-hardware-handoff\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not require GUI telemetry in the MSI handoff verifier."
 Assert-TextContains -Text $runbook -Pattern 'analyze-msi-hardware-capture\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the combined MSI analyzer."
 Assert-TextContains -Text $runbook -Pattern 'drs-gui .* drs-gui-right-click 1 .* drs-gui-context-action 1 .* drs-gui-scroll' -Message "MSI hardware handoff verifier: runbook is missing the GUI interaction telemetry expectation."
+Assert-TextContains -Text $runbook -Pattern 'NVMe Controller Snapshot' -Message "MSI hardware handoff verifier: runbook is missing the NVMe controller snapshot report expectation."
+foreach ($field in $expectedNvmeControllerFields) {
+    Assert-TextContains -Text $runbook -Pattern $field -Message "MSI hardware handoff verifier: runbook is missing the NVMe controller field expectation: $field."
+}
 Assert-TextContains -Text $runbook -Pattern 'linux: using UEFI boot-media staged file' -Message "MSI hardware handoff verifier: runbook is missing the boot-media staged-file signal."
 Assert-TextContains -Text $runbook -Pattern 'drs-realbin \.\.\. source 2 \.\.\. boot-media-read 1' -Message "MSI hardware handoff verifier: runbook is missing the source-2 boot-media telemetry expectation."
 Assert-TextContains -Text $runbook -Pattern 'verify-boot-media-linux-handoff\.ps1' -Message "MSI hardware handoff verifier: runbook is missing the boot-media handoff verifier."
@@ -436,6 +465,8 @@ $verification = [PSCustomObject]@{
     milestone = $milestone
     capture_report = $captureReport
     expected_boot_media_linux_source = [uint32]$requiredBootMediaSource
+    required_nvme_controller_snapshot = [uint32]$requiredNvmeControllerSnapshot
+    required_nvme_controller_fields = $requiredNvmeControllerFields
     reserves = $storageVerification.reserves
 }
 
@@ -451,6 +482,8 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "milestone: $milestone",
     "capture-report: $captureReport",
     "source2-required: $requiredBootMediaSource",
+    "nvme-controller-snapshot-required: $requiredNvmeControllerSnapshot",
+    "nvme-controller-fields: $($requiredNvmeControllerFields -join ',')",
     "storage-bundle-pass: $($verification.storage_bundle_pass)",
     "storage-capture-checked: $($verification.storage_capture_checked)",
     "storage-capture-stage: $($verification.storage_capture_stage)",
@@ -476,6 +509,7 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
 Write-Host "msi-hardware-handoff: verified"
 Write-Host "  handoff pass: True"
 Write-Host "  source2 required: $requiredBootMediaSource"
+Write-Host "  nvme controller snapshot required: $requiredNvmeControllerSnapshot"
 Write-Host "  bios reserve: $($storageVerification.reserves.bios_sectors) sectors"
 Write-Host "  uefi reserve: $($storageVerification.reserves.uefi_bytes) bytes"
 if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
