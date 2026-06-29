@@ -180,8 +180,10 @@ if ($null -ne $combined) {
     $displayNextTarget = Get-PropertyText -Object $combined.display_input -Name "next_target"
 }
 $vmdHandoff = $null
+$nvmeController = $null
 if (($null -ne $combined) -and ($null -ne $combined.storage)) {
     $vmdHandoff = $combined.storage.vmd_handoff
+    $nvmeController = $combined.storage.nvme_controller
 }
 
 $target = $null
@@ -298,6 +300,7 @@ $report = [PSCustomObject]@{
         telemetry = Get-PropertyText -Object $handoff -Name "dynamic_handoff_telemetry"
     }
     vmd_handoff = $vmdHandoff
+    nvme_controller = $nvmeController
     reserves = [PSCustomObject]@{
         bios_sectors = $biosReserve
         uefi_bytes = $uefiReserve
@@ -320,6 +323,15 @@ $vmdDriverBindToken = ""
 $vmdDriverBindCount = ""
 $vmdCandidateSource = ""
 $vmdCandidateDeferred = ""
+$nvmeProbeError = ""
+$nvmeRegs = ""
+$nvmeCapLow = ""
+$nvmeCapHigh = ""
+$nvmeVersion = ""
+$nvmeCc = ""
+$nvmeCsts = ""
+$nvmeDstrdBytes = ""
+$nvmeDoorbellPage = ""
 if ($null -ne $vmdHandoff) {
     $vmdHandoffKind = [string]$vmdHandoff.kind
     $vmdHandoffStage = [string]$vmdHandoff.stage
@@ -332,6 +344,17 @@ if ($null -ne $vmdHandoff) {
     $vmdDriverBindCount = [string]$vmdHandoff.nested_driver_bind_count
     $vmdCandidateSource = [string]$vmdHandoff.nvme_candidate_source
     $vmdCandidateDeferred = [string]$vmdHandoff.nvme_candidate_deferred
+}
+if ($null -ne $nvmeController) {
+    $nvmeProbeError = [string]$nvmeController.probe_error
+    $nvmeRegs = [string]$nvmeController.regs
+    $nvmeCapLow = [string]$nvmeController.cap_low
+    $nvmeCapHigh = [string]$nvmeController.cap_high
+    $nvmeVersion = [string]$nvmeController.vs
+    $nvmeCc = [string]$nvmeController.cc
+    $nvmeCsts = [string]$nvmeController.csts
+    $nvmeDstrdBytes = [string]$nvmeController.dstrd_bytes
+    $nvmeDoorbellPage = [string]$nvmeController.doorbell_page
 }
 
 $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding Ascii
@@ -360,6 +383,15 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "vmd-handoff-driver-bind-state: $vmdDriverBindState",
     "vmd-handoff-driver-bind-token: $vmdDriverBindToken",
     "vmd-handoff-driver-bind-count: $vmdDriverBindCount",
+    "nvme-probe-error: $nvmeProbeError",
+    "nvme-regs: $nvmeRegs",
+    "nvme-cap-low: $nvmeCapLow",
+    "nvme-cap-high: $nvmeCapHigh",
+    "nvme-vs: $nvmeVersion",
+    "nvme-cc: $nvmeCc",
+    "nvme-csts: $nvmeCsts",
+    "nvme-dstrd-bytes: $nvmeDstrdBytes",
+    "nvme-doorbell-page: $nvmeDoorbellPage",
     "bios-sector-reserve: $biosReserve",
     "uefi-byte-reserve: $uefiReserve",
     "output-json: $reportJsonPath"
@@ -420,7 +452,21 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportJsonPath -Encoding 
     "| Driver bind token | $vmdDriverBindToken |",
     "| Driver bind count | $vmdDriverBindCount |",
     "| Candidate source | $vmdCandidateSource |",
-    "| Candidate deferred | $vmdCandidateDeferred |"
+    "| Candidate deferred | $vmdCandidateDeferred |",
+    "",
+    "## NVMe Controller Snapshot",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    "| Probe error | $nvmeProbeError |",
+    "| Registers sampled | $nvmeRegs |",
+    "| CAP low | $nvmeCapLow |",
+    "| CAP high | $nvmeCapHigh |",
+    "| VS | $nvmeVersion |",
+    "| CC | $nvmeCc |",
+    "| CSTS | $nvmeCsts |",
+    "| Doorbell stride bytes | $nvmeDstrdBytes |",
+    "| Doorbell page | $nvmeDoorbellPage |"
 ) | Set-Content -Path $reportMarkdownPath -Encoding Ascii
 
 Write-Host "m134-storage-target: $($report.target_kind)-$($report.target_stage)"

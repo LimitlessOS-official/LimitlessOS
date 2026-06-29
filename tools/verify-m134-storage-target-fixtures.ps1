@@ -974,6 +974,13 @@ foreach ($fixture in $fixtures) {
     $actualPass = $false
     $actualVmdKind = ""
     $actualVmdStage = ""
+    $actualNvmeProbeError = ""
+    $actualNvmeRegs = ""
+    $actualNvmeCapLow = ""
+    $actualNvmeCapHigh = ""
+    $actualNvmeVersion = ""
+    $actualNvmeCc = ""
+    $actualNvmeCsts = ""
     if (Test-Path $reportPath) {
         $report = Get-Content -Raw -Path $reportPath | ConvertFrom-Json
         $actualKind = [string]$report.target_kind
@@ -984,20 +991,36 @@ foreach ($fixture in $fixtures) {
             $actualVmdKind = [string]$report.vmd_handoff.kind
             $actualVmdStage = [string]$report.vmd_handoff.stage
         }
+        if ($null -ne $report.nvme_controller) {
+            $actualNvmeProbeError = [string]$report.nvme_controller.probe_error
+            $actualNvmeRegs = [string]$report.nvme_controller.regs
+            $actualNvmeCapLow = [string]$report.nvme_controller.cap_low
+            $actualNvmeCapHigh = [string]$report.nvme_controller.cap_high
+            $actualNvmeVersion = [string]$report.nvme_controller.vs
+            $actualNvmeCc = [string]$report.nvme_controller.cc
+            $actualNvmeCsts = [string]$report.nvme_controller.csts
+        }
     }
 
     $passed = (($exitCode -eq [int]$fixture.expected_exit_code) -and
         ($actualKind -eq [string]$fixture.expected_kind) -and
         ($actualStage -eq [string]$fixture.expected_stage) -and
         ($actualRoadmap -eq [string]$fixture.expected_roadmap) -and
-        ($actualPass -eq [bool]$fixture.expected_pass))
+        ($actualPass -eq [bool]$fixture.expected_pass) -and
+        ($actualNvmeProbeError -eq "0") -and
+        ($actualNvmeRegs -eq "1") -and
+        ($actualNvmeCapLow -eq "0x00003FFF") -and
+        ($actualNvmeCapHigh -eq "0x00000030") -and
+        ($actualNvmeVersion -eq "0x00010400") -and
+        ($actualNvmeCc -eq "0x00460001") -and
+        ($actualNvmeCsts -eq "0x00000001"))
     if ($fixture.PSObject.Properties["expected_vmd_kind"]) {
         $passed = ($passed -and
             ($actualVmdKind -eq [string]$fixture.expected_vmd_kind) -and
             ($actualVmdStage -eq [string]$fixture.expected_vmd_stage))
     }
     if (-not $passed) {
-        $failures += ("{0}: expected exit/kind/stage/roadmap/pass/vmd {1}/{2}/{3}/{4}/{5}/{6}/{7}, observed {8}/{9}/{10}/{11}/{12}/{13}/{14}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $(if ($fixture.PSObject.Properties["expected_vmd_kind"]) { $fixture.expected_vmd_kind } else { "" }), $(if ($fixture.PSObject.Properties["expected_vmd_stage"]) { $fixture.expected_vmd_stage } else { "" }), $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass, $actualVmdKind, $actualVmdStage)
+        $failures += ("{0}: expected exit/kind/stage/roadmap/pass/vmd/nvme {1}/{2}/{3}/{4}/{5}/{6}/{7}/0/1/0x00003FFF/0x00000030/0x00010400/0x00460001/0x00000001, observed {8}/{9}/{10}/{11}/{12}/{13}/{14}/{15}/{16}/{17}/{18}/{19}/{20}/{21}" -f $fixture.name, $fixture.expected_exit_code, $fixture.expected_kind, $fixture.expected_stage, $fixture.expected_roadmap, $fixture.expected_pass, $(if ($fixture.PSObject.Properties["expected_vmd_kind"]) { $fixture.expected_vmd_kind } else { "" }), $(if ($fixture.PSObject.Properties["expected_vmd_stage"]) { $fixture.expected_vmd_stage } else { "" }), $exitCode, $actualKind, $actualStage, $actualRoadmap, $actualPass, $actualVmdKind, $actualVmdStage, $actualNvmeProbeError, $actualNvmeRegs, $actualNvmeCapLow, $actualNvmeCapHigh, $actualNvmeVersion, $actualNvmeCc, $actualNvmeCsts)
     }
 
     $results += [PSCustomObject]@{
@@ -1016,6 +1039,13 @@ foreach ($fixture in $fixtures) {
         actual_vmd_kind = $actualVmdKind
         expected_vmd_stage = if ($fixture.PSObject.Properties["expected_vmd_stage"]) { [string]$fixture.expected_vmd_stage } else { "" }
         actual_vmd_stage = $actualVmdStage
+        actual_nvme_probe_error = $actualNvmeProbeError
+        actual_nvme_regs = $actualNvmeRegs
+        actual_nvme_cap_low = $actualNvmeCapLow
+        actual_nvme_cap_high = $actualNvmeCapHigh
+        actual_nvme_vs = $actualNvmeVersion
+        actual_nvme_cc = $actualNvmeCc
+        actual_nvme_csts = $actualNvmeCsts
         pass = $passed
     }
 }
