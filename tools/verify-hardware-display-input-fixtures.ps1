@@ -73,6 +73,50 @@ $cursorOrder = @(
     "token"
 )
 
+$guiOrder = @(
+    "drs-gui-interactive",
+    "drs-gui-click-hittest",
+    "drs-gui-launcher-opened",
+    "drs-gui-terminal-opened",
+    "drs-gui-drag-completed",
+    "drs-gui-keyboard-routed",
+    "drs-gui-close-completed",
+    "drs-gui-taskbar-focus",
+    "drs-gui-fileman-opened",
+    "drs-gui-settings-opened",
+    "drs-gui-installer-opened",
+    "drs-gui-right-click",
+    "drs-gui-context-action",
+    "wm-resize",
+    "wm-minimize",
+    "wm-restore",
+    "wm-zorder",
+    "drs-gui-scroll",
+    "terminal-actions",
+    "terminal-scroll",
+    "terminal-scroll-offset",
+    "terminal-selection",
+    "terminal-copy",
+    "terminal-copied-bytes",
+    "terminal-cursor",
+    "fileman-actions",
+    "fileman-refresh",
+    "fileman-write",
+    "fileman-mkdir",
+    "fileman-edit",
+    "fileman-edit-commit",
+    "drs-gui-unfocused-key-denied",
+    "drs-gui-no-ambient-input",
+    "drs-gui-no-ambient-display",
+    "drs-gui-no-ambient-fs",
+    "target-window",
+    "key-target-window",
+    "unfocused-key-denials",
+    "input-token",
+    "display-token",
+    "fs-token"
+)
+
 $baseDisplay = @{
     "display-readability" = "1"
     "available" = "1"
@@ -131,6 +175,50 @@ $baseCursor = @{
     "token" = "0xA5197C42"
 }
 
+$baseGui = @{
+    "drs-gui-interactive" = "1"
+    "drs-gui-click-hittest" = "1"
+    "drs-gui-launcher-opened" = "1"
+    "drs-gui-terminal-opened" = "1"
+    "drs-gui-drag-completed" = "1"
+    "drs-gui-keyboard-routed" = "1"
+    "drs-gui-close-completed" = "1"
+    "drs-gui-taskbar-focus" = "1"
+    "drs-gui-fileman-opened" = "1"
+    "drs-gui-settings-opened" = "1"
+    "drs-gui-installer-opened" = "1"
+    "drs-gui-right-click" = "1"
+    "drs-gui-context-action" = "1"
+    "wm-resize" = "1"
+    "wm-minimize" = "1"
+    "wm-restore" = "1"
+    "wm-zorder" = "1"
+    "drs-gui-scroll" = "2"
+    "terminal-actions" = "2"
+    "terminal-scroll" = "1"
+    "terminal-scroll-offset" = "512"
+    "terminal-selection" = "1"
+    "terminal-copy" = "1"
+    "terminal-copied-bytes" = "16"
+    "terminal-cursor" = "1"
+    "fileman-actions" = "1"
+    "fileman-refresh" = "1"
+    "fileman-write" = "1"
+    "fileman-mkdir" = "1"
+    "fileman-edit" = "1"
+    "fileman-edit-commit" = "1"
+    "drs-gui-unfocused-key-denied" = "0"
+    "drs-gui-no-ambient-input" = "1"
+    "drs-gui-no-ambient-display" = "1"
+    "drs-gui-no-ambient-fs" = "1"
+    "target-window" = "1"
+    "key-target-window" = "1"
+    "unfocused-key-denials" = "0"
+    "input-token" = "0x494E5054"
+    "display-token" = "0x44495350"
+    "fs-token" = "0x46535041"
+}
+
 $baseInput = @{
     "mouse-packets" = "2"
     "xhci-mouse-endpoint" = "1"
@@ -179,10 +267,12 @@ function New-Fixture
         [hashtable]$Display = @{},
         [hashtable]$Ui = @{},
         [hashtable]$Cursor = @{},
+        [hashtable]$Gui = @{},
         [hashtable]$InputMutations = @{},
         [bool]$OmitDisplay = $false,
         [bool]$OmitUi = $false,
-        [bool]$OmitCursor = $false
+        [bool]$OmitCursor = $false,
+        [bool]$OmitGui = $false
     )
 
     return [PSCustomObject]@{
@@ -191,10 +281,12 @@ function New-Fixture
         display = $Display
         ui = $Ui
         cursor = $Cursor
+        gui = $Gui
         input = $InputMutations
         omit_display = $OmitDisplay
         omit_ui = $OmitUi
         omit_cursor = $OmitCursor
+        omit_gui = $OmitGui
     }
 }
 
@@ -229,6 +321,13 @@ $fixtures = @(
     (New-Fixture -Name "ps2-mouse-no-packets" -ExpectedStage "ps2-mouse-no-packets" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "1" }),
     (New-Fixture -Name "ps2-mouse-disabled" -ExpectedStage "ps2-mouse-disabled" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "0" }),
     (New-Fixture -Name "no-pointer-backend" -ExpectedStage "no-pointer-backend" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "0"; "ps2-enabled" = "0" }),
+    (New-Fixture -Name "display-input-ready-legacy-no-gui-line" -ExpectedStage "display-input-ready" -OmitGui:$true),
+    (New-Fixture -Name "gui-interactive-unrouted" -ExpectedStage "gui-interactive-unrouted" -Gui @{ "drs-gui-interactive" = "0" }),
+    (New-Fixture -Name "gui-right-click-unrouted" -ExpectedStage "gui-right-click-unrouted" -Gui @{ "drs-gui-right-click" = "0" }),
+    (New-Fixture -Name "gui-context-action-missing" -ExpectedStage "gui-context-action-missing" -Gui @{ "drs-gui-context-action" = "0" }),
+    (New-Fixture -Name "gui-scroll-unrouted" -ExpectedStage "gui-scroll-unrouted" -Gui @{ "drs-gui-scroll" = "0" }),
+    (New-Fixture -Name "gui-terminal-scroll-missing" -ExpectedStage "gui-terminal-scroll-missing" -Gui @{ "terminal-scroll" = "0" }),
+    (New-Fixture -Name "gui-terminal-selection-missing" -ExpectedStage "gui-terminal-selection-missing" -Gui @{ "terminal-selection" = "0" }),
     (New-Fixture -Name "display-input-ready" -ExpectedStage "display-input-ready")
 )
 
@@ -238,6 +337,7 @@ foreach ($fixture in $fixtures) {
     $display = Copy-Hashtable -Source $baseDisplay
     $ui = Copy-Hashtable -Source $baseUi
     $cursor = Copy-Hashtable -Source $baseCursor
+    $gui = Copy-Hashtable -Source $baseGui
     $input = Copy-Hashtable -Source $baseInput
     foreach ($key in $fixture.display.Keys) {
         $display[$key] = $fixture.display[$key]
@@ -247,6 +347,9 @@ foreach ($fixture in $fixtures) {
     }
     foreach ($key in $fixture.cursor.Keys) {
         $cursor[$key] = $fixture.cursor[$key]
+    }
+    foreach ($key in $fixture.gui.Keys) {
+        $gui[$key] = $fixture.gui[$key]
     }
     foreach ($key in $fixture.input.Keys) {
         $input[$key] = $fixture.input[$key]
@@ -262,6 +365,9 @@ foreach ($fixture in $fixtures) {
     }
     if (-not $fixture.omit_cursor) {
         $lines += New-TelemetryLine -Prefix "drs-cursor-path" -Order $cursorOrder -Fields $cursor
+    }
+    if (-not $fixture.omit_gui) {
+        $lines += New-TelemetryLine -Prefix "drs-gui" -Order $guiOrder -Fields $gui
     }
     $lines += "xhci mouse endpoint: $(if ($input["xhci-mouse-endpoint"] -eq "1") { "yes" } else { "no" })"
     $lines += "xhci mouse reports: $($input["xhci-mouse-reports"])"

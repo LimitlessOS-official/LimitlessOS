@@ -297,6 +297,7 @@ function Write-Capture
         $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
         $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
         $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 1 draws 205 direct-draws 207 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 1 drawn 1 token 0xA5197C42"
+        $lines += "[x64] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-right-click 1 drs-gui-context-action 1 wm-resize 1 wm-minimize 1 wm-restore 1 wm-zorder 1 drs-gui-scroll 2 terminal-actions 2 terminal-scroll 1 terminal-scroll-offset 512 terminal-selection 1 terminal-copy 1 terminal-copied-bytes 16 terminal-cursor 1 fileman-actions 1 fileman-refresh 1 fileman-write 1 fileman-mkdir 1 fileman-edit 1 fileman-edit-commit 1 drs-gui-unfocused-key-denied 0 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 target-window 1 key-target-window 1 unfocused-key-denials 0 input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041"
         $lines += "xhci mouse endpoint: yes"
         $lines += "xhci mouse reports: 2"
         $lines += "xhci mouse bytes: 8"
@@ -312,6 +313,22 @@ function Write-Capture
         $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 0 cursor-draws 0 direct-cursor-draws 0 token 0xF8C98059"
         $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 0 token 0xCB1B1C83"
         $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 0 draws 0 direct-draws 0 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 0 drawn 0 token 0xA5197C43"
+        $lines += "xhci mouse endpoint: yes"
+        $lines += "xhci mouse reports: 2"
+        $lines += "xhci mouse bytes: 8"
+        $lines += "xhci error: 0"
+        $lines += "i2c pointer found: no"
+        $lines += "i2c pointer reports: 0"
+        $lines += "i2c pointer error: 0"
+        $lines += "i2c pointer candidates: 0"
+        $lines += "mouse packets: 2"
+        $lines += "ps2 fallback present: yes"
+        $lines += "ps2 fallback enabled: yes"
+    } elseif ($DisplayMode -eq "gui-right-click-unrouted") {
+        $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
+        $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
+        $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 1 draws 205 direct-draws 207 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 1 drawn 1 token 0xA5197C42"
+        $lines += "[x64] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-right-click 0 drs-gui-context-action 0 wm-resize 1 wm-minimize 1 wm-restore 1 wm-zorder 1 drs-gui-scroll 2 terminal-actions 2 terminal-scroll 1 terminal-scroll-offset 512 terminal-selection 1 terminal-copy 1 terminal-copied-bytes 16 terminal-cursor 1 fileman-actions 1 fileman-refresh 1 fileman-write 1 fileman-mkdir 1 fileman-edit 1 fileman-edit-commit 1 drs-gui-unfocused-key-denied 0 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 target-window 1 key-target-window 1 unfocused-key-denials 0 input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041"
         $lines += "xhci mouse endpoint: yes"
         $lines += "xhci mouse reports: 2"
         $lines += "xhci mouse bytes: 8"
@@ -635,6 +652,17 @@ $fixtures = @(
         expected_kind = "display-input"
         expected_stage = "cursor-draw-not-called"
         expected_roadmap = "M150"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "display-gui-right-click-unrouted"
+        storage_mutations = @{}
+        display_mode = "gui-right-click-unrouted"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "display-input"
+        expected_stage = "gui-right-click-unrouted"
+        expected_roadmap = "M151"
         expected_pass = $false
     },
     [PSCustomObject]@{
