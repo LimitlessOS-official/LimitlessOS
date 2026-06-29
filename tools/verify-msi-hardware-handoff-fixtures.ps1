@@ -77,7 +77,17 @@ function Write-Runbook
     $lines += @(
         "",
         "4. Capture the full transcript to a text file named msi-hwval-storage.txt.",
-        "5. Back on Windows/PowerShell, verify this bundle and analyze the capture from the repository root:",
+        "5. Back on Windows/PowerShell, generate the current MSI capture report from the repository root:"
+    )
+    if ($Mode -ne "missing-capture-report-runbook") {
+        $lines += @(
+            "",
+            "   .\tools\report-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <capture-report-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
+        )
+    }
+    $lines += @(
+        "",
+        "6. If you need lower-level artifacts, run the raw classifier, handoff verifier, and combined analyzer:",
         "",
         "   .\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry",
         "",
@@ -179,6 +189,7 @@ function New-EvidenceBundle
         expected_hwval = [PSCustomObject]@{
             command = "hwval"
             required_line = "drs-nvme-triage"
+            capture_report = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.capture_report" -Default "tools\\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
             analyzer = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.analyzer" -Default "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
             storage_target_classifier = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.storage_target_classifier" -Default "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
             storage_verifier = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.storage_verifier" -Default "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
@@ -290,6 +301,20 @@ $fixtures = @(
         mutations = @{ "expected_hwval.analyzer" = "tools\\analyze-hardware-storage-capture.ps1 -RequireStagedDynamicArtifacts" }
         runbook_mode = "valid"
         expected_error = "manifest analyzer mismatch"
+    },
+    [PSCustomObject]@{
+        name = "missing-capture-report"
+        expect_success = $false
+        mutations = @{ "expected_hwval.capture_report" = "" }
+        runbook_mode = "valid"
+        expected_error = "manifest capture report mismatch"
+    },
+    [PSCustomObject]@{
+        name = "missing-capture-report-runbook"
+        expect_success = $false
+        mutations = @{}
+        runbook_mode = "missing-capture-report-runbook"
+        expected_error = "runbook does not use the M155 MSI capture report"
     },
     [PSCustomObject]@{
         name = "missing-storage-target-classifier"

@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, M152 hwval GUI interaction telemetry, M153 MSI handoff GUI telemetry requirement, M154 current MSI handoff bundle refresh, and M155 MSI capture intake report are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, M152 hwval GUI interaction telemetry, M153 MSI handoff GUI telemetry requirement, M154 current MSI handoff bundle refresh, M155 MSI capture intake report, and M156 MSI handoff report contract integration are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -3506,6 +3506,61 @@ uefi budget  : 1370208 / 2097152 bytes (726944 reserve)
 ```
 
 M155 non-claims: this does not certify the physical MSI laptop, add a new driver, change kernel behavior, prove real hardware storage/display/input behavior, or prove `/APPS/DYNLDLIMIT` exits successfully on hardware. It makes the next real transcript produce one manager-readable, artifact-linked first-failure report.
+
+## M156 MSI Handoff Report Contract Integration
+
+M156 threads the M155 report wrapper into the generated physical handoff contract. `tools\prepare-hardware-storage-evidence.ps1` now records the report command in the bundle manifest:
+
+```text
+expected_hwval.capture_report = tools\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
+```
+
+The generated `README-HARDWARE-STORAGE.txt` now tells the hardware tester to run `tools\report-msi-hardware-capture.ps1` first and read `msi-hardware-capture-report.md` or `.txt` before consulting the lower-level classifier/verifier/analyzer artifacts. `tools\verify-msi-hardware-handoff.ps1` rejects handoff bundles that omit the report command from the manifest or runbook, so stale packages cannot bypass the current M155 intake path. `tools\verify-m134-storage-target-fixtures.ps1` was updated to generate the same M156-compatible evidence shape for all downstream classifier and report fixtures.
+
+Accepted commands:
+
+```powershell
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m156-storage-target-fixtures
+.\tools\verify-msi-hardware-handoff-fixtures.ps1 -OutputDir .\build\m156-msi-handoff-report-contract-fixtures
+.\tools\verify-msi-hardware-capture-report-fixtures.ps1 -OutputDir .\build\m156-msi-capture-report-fixtures
+.\tools\prepare-hardware-storage-evidence.ps1 -EvidenceDir .\dist\m133-msi-hardware-handoff-current -SkipBuild -SkipQemuGate
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+m134-storage-target-fixtures: 14/14
+failed: 0
+
+msi-hardware-handoff-fixtures: 16/16
+failed: 0
+
+msi-hardware-capture-report-fixtures: 3/3
+failed: 0
+
+msi-hardware-handoff: verified
+capture-report: tools\\report-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry
+bios-sector-reserve: 101
+uefi-byte-reserve: 726944
+
+M1 production-slice gate passed for x86_64 (Product profile).
+```
+
+The current ignored physical handoff bundle was refreshed at:
+
+```text
+dist\m133-msi-hardware-handoff-current
+```
+
+Bundle artifacts:
+
+- ISO: `limitlessos-x86_64-m133-handoff.iso`, SHA-256 `3f4cb1629e31d6e40d086d04c423f6a9f44ba37e27f85e3bc41b0fe7fc0bce48`
+- UEFI FAT image: `limitlessos-x86_64-m133-handoff-uefi.img`, SHA-256 `62e652a4d5ac6fa387fa5948db262efdc87abdbc4a56cf7e79f3f9dad93ce443`
+- `/APPS/DYNLDLIMIT`: 15,680 bytes, SHA-256 `9f6eb9c05b3065d39bc59d24defe9361267b34cefd4de78f568ddb00497238fa`
+- `/APPS/LDLIMIT`: 16,704 bytes, SHA-256 `6f713105878c30d817b7add4a7ed5d4ee8e01fb6eab2c80ba10acee059c72238`
+
+M156 non-claims: this does not certify the physical MSI laptop, add hardware support, change kernel behavior, prove real storage/display/input behavior, or prove `/APPS/DYNLDLIMIT` exits successfully on hardware. It closes the package-contract loop so the next real transcript is always fed through the M155 report path first.
 
 Later targets are:
 
