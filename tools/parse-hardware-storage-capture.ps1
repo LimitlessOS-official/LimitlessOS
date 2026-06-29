@@ -140,6 +140,9 @@ function Classify-StorageCapture
                 if ((Has-Field -Fields $Fields -Name "vmd-nested-mmio-flags") -and (((Get-FieldValue -Fields $Fields -Name "vmd-nested-mmio-flags") -eq 0) -or ((Get-FieldValue -Fields $Fields -Name "vmd-nested-mmio-flags") -eq $InvalidU32))) {
                     return New-Classification -Stage "pci-vmd-nested-nvme-mmio-flags" -Detail "A child NVMe controller was reported behind VMD, but its MMIO flags were missing or invalid."
                 }
+                if ((Has-Field -Fields $Fields -Name "vmd-nested-bind-ready") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-bind-ready") -ne 1)) {
+                    return New-Classification -Stage "pci-vmd-nested-nvme-bind-ready" -Detail "A child NVMe controller was reported behind VMD with MMIO preflight, but bind readiness was not proven."
+                }
                 return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A child NVMe controller was reported behind VMD, but the regular NVMe driver has not been bound through the nested path."
             }
             return New-Classification -Stage "pci-nvme-hidden-by-vmd" -Detail "PCI storage exists, but direct NVMe is absent and an Intel VMD-class candidate is present."

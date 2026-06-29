@@ -2967,6 +2967,63 @@ pci vmd nested mmio token: 0x00000000
 
 Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `733,664` bytes. M145 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
 
+## M146 VMD Nested Child NVMe Bind-Readiness Gate
+
+M146 adds the final no-touch diagnostic boundary before a real VMD-backed NVMe bind. When a VMD nested scan reports a child NVMe and M145 child MMIO preflight is valid, the kernel now derives bind-readiness telemetry. The readiness gate says whether child identity, class, BAR-derived MMIO base/span/flags, and token state are sufficient for a future registration path. It does not register the child with the existing NVMe driver and performs no controller access.
+
+New fields:
+
+- `vmd-nested-bind-ready`
+- `vmd-nested-bind-status`
+- `vmd-nested-bind-token`
+
+Status values:
+
+- `0`: not applicable
+- `1`: enumeration pending
+- `2`: no child NVMe
+- `3`: child identity/class invalid
+- `4`: child MMIO invalid
+- `5`: ready but unbound
+
+Host capture routing now includes:
+
+- `pci-vmd-nested-nvme-bind-ready`
+- `pci-vmd-nested-nvme-bind`
+
+Accepted commands:
+
+```powershell
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-hardware-storage-analysis-fixtures.ps1 -OutputDir .\build\m146-hardware-storage-analysis-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m146-storage-target-fixtures
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+M1 production-slice gate passed for x86_64 (Product profile).
+
+hardware-storage-analysis-fixtures: 62/62
+failed: 0
+
+m134-storage-target-fixtures: 10/10
+failed: 0
+```
+
+Representative QEMU telemetry:
+
+```text
+pci vmd nested bind ready: 0
+pci vmd nested bind status: 0
+pci vmd nested bind token: 0x00000000
+[x64] drs-nvme-pci ... vmd-nested-bind-ready 0 vmd-nested-bind-status 0 vmd-nested-bind-token 0x00000000
+[x64] drs-nvme-triage ... vmd-nested-bind-ready 0 vmd-nested-bind-status 0 vmd-nested-bind-token 0x00000000 ... nvme-ready 1 nvme-identify 1 read-status 0 fat-located 1 stage-match 1
+```
+
+Accepted evidence preserves BIOS reserve `101` sectors and records UEFI reserve `733,408` bytes. M146 non-claims: no physical MSI transcript was newly supplied, no VMD register programming is implemented, no VMD controller reset or enable is implemented, no nested NVMe registration/bind is implemented, no RAID driver is implemented, and no unsafe storage reads/writes through VMD are introduced.
+
 Later targets are:
 
 - dynamic Linux ELF with `PT_INTERP`, relocations, libc, environment, and filesystem semantics
