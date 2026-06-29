@@ -269,12 +269,55 @@ function New-TriageLine
     return "[x64] drs-nvme-triage " + ($parts -join " ")
 }
 
+function New-VmdBindLine
+{
+    param([hashtable]$Fields)
+
+    $bindOrder = @(
+        "result",
+        "state",
+        "flags",
+        "token",
+        "count",
+        "denials",
+        "unavailable",
+        "candidate-source",
+        "candidate-deferred",
+        "candidate-bdf",
+        "candidate-token"
+    )
+    $defaults = @{
+        "result" = "0xFFFFFFFF"
+        "state" = "0"
+        "flags" = "0x00000000"
+        "token" = "0x00000000"
+        "count" = "0"
+        "denials" = "0"
+        "unavailable" = "0"
+        "candidate-source" = "0"
+        "candidate-deferred" = "0"
+        "candidate-bdf" = "0xFFFFFFFF"
+        "candidate-token" = "0x00000000"
+    }
+
+    foreach ($key in $Fields.Keys) {
+        $defaults[$key] = [string]$Fields[$key]
+    }
+
+    $parts = @("bind 1")
+    foreach ($field in $bindOrder) {
+        $parts += ("{0} {1}" -f $field, $defaults[$field])
+    }
+    return "[x64] drs-vmd-nvme-bind " + ($parts -join " ")
+}
+
 function New-Fixture
 {
     param(
         [string]$Name,
         [string]$ExpectedStage,
         [hashtable]$Mutations = @{},
+        [hashtable]$BindFields = @{},
         [string]$Mode = "triage"
     )
 
@@ -282,6 +325,7 @@ function New-Fixture
         name = $Name
         expected_stage = $ExpectedStage
         mutations = $Mutations
+        bind_fields = $BindFields
         mode = $Mode
     }
 }
@@ -307,6 +351,10 @@ $fixtures = @(
     (New-Fixture -Name "pci-vmd-nested-nvme-bind-ready" -ExpectedStage "pci-vmd-nested-nvme-bind-ready" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "0"; "vmd-nested-bind-status" = "4"; "vmd-nested-bind-token" = "0xB1460CC0"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-vmd-nested-nvme-register-candidate" -ExpectedStage "pci-vmd-nested-nvme-register-candidate" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "0"; "vmd-nested-register-status" = "1"; "vmd-nested-register-token" = "0xC1470CC0"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-vmd-nested-driver-plan-staged" -ExpectedStage "pci-vmd-nested-driver-plan-staged" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "1"; "vmd-nested-register-status" = "2"; "vmd-nested-register-token" = "0xC1470CC4"; "vmd-nested-driver-plan-result" = "0xD1580CC4"; "vmd-nested-driver-plan-state" = "2"; "vmd-nested-driver-plan-flags" = "0x000000FF"; "vmd-nested-driver-plan-token" = "0xD1580CC4"; "vmd-nested-driver-plan-stage-count" = "1"; "vmd-nested-driver-plan-denials" = "0"; "vmd-nested-driver-plan-unavailable" = "0"; "nvme-candidate-source" = "2"; "nvme-candidate-deferred" = "1"; "nvme-candidate-bdf" = "0x00000100"; "nvme-candidate-token" = "0xC1480CC4"; "nvme-found" = "0" }),
+    (New-Fixture -Name "pci-vmd-nested-bound-source-mismatch" -ExpectedStage "pci-vmd-nested-nvme-bind" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "1"; "vmd-nested-register-status" = "2"; "vmd-nested-register-token" = "0xC1470CC4"; "vmd-nested-driver-plan-result" = "0xD1580CC4"; "vmd-nested-driver-plan-state" = "2"; "vmd-nested-driver-plan-flags" = "0x000000FF"; "vmd-nested-driver-plan-token" = "0xD1580CC4"; "vmd-nested-driver-plan-stage-count" = "1"; "vmd-nested-driver-plan-denials" = "0"; "vmd-nested-driver-plan-unavailable" = "0"; "nvme-candidate-source" = "2"; "nvme-candidate-deferred" = "1"; "nvme-candidate-bdf" = "0x00000100"; "nvme-candidate-token" = "0xC1480CC4"; "nvme-found" = "0" } -BindFields @{ "result" = "0xE1590CC4"; "state" = "2"; "flags" = "0x0000003F"; "token" = "0xE1590CC4"; "count" = "1"; "candidate-source" = "2"; "candidate-deferred" = "0"; "candidate-bdf" = "0x00000100"; "candidate-token" = "0xE1590CC4" }),
+    (New-Fixture -Name "pci-vmd-nested-bound-controller-discovery" -ExpectedStage "nvme-controller-discovery" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "1"; "vmd-nested-register-status" = "2"; "vmd-nested-register-token" = "0xC1470CC4"; "vmd-nested-driver-plan-result" = "0xD1580CC4"; "vmd-nested-driver-plan-state" = "2"; "vmd-nested-driver-plan-flags" = "0x000000FF"; "vmd-nested-driver-plan-token" = "0xD1580CC4"; "vmd-nested-driver-plan-stage-count" = "1"; "vmd-nested-driver-plan-denials" = "0"; "vmd-nested-driver-plan-unavailable" = "0"; "nvme-candidate-source" = "2"; "nvme-candidate-deferred" = "1"; "nvme-candidate-bdf" = "0x00000100"; "nvme-candidate-token" = "0xC1480CC4"; "nvme-found" = "0" } -BindFields @{ "result" = "0xE1590CC4"; "state" = "2"; "flags" = "0x0000003F"; "token" = "0xE1590CC4"; "count" = "1"; "candidate-source" = "3"; "candidate-deferred" = "0"; "candidate-bdf" = "0x00000100"; "candidate-token" = "0xE1590CC4" }),
+    (New-Fixture -Name "pci-vmd-nested-bound-controller-ready" -ExpectedStage "nvme-controller-ready" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "1"; "vmd-nested-register-status" = "2"; "vmd-nested-register-token" = "0xC1470CC4"; "vmd-nested-driver-plan-result" = "0xD1580CC4"; "vmd-nested-driver-plan-state" = "2"; "vmd-nested-driver-plan-flags" = "0x000000FF"; "vmd-nested-driver-plan-token" = "0xD1580CC4"; "vmd-nested-driver-plan-stage-count" = "1"; "vmd-nested-driver-plan-denials" = "0"; "vmd-nested-driver-plan-unavailable" = "0"; "nvme-candidate-source" = "2"; "nvme-candidate-deferred" = "1"; "nvme-candidate-bdf" = "0x00000100"; "nvme-candidate-token" = "0xC1480CC4"; "nvme-found" = "1"; "nvme-ready" = "0" } -BindFields @{ "result" = "0xE1590CC4"; "state" = "2"; "flags" = "0x0000003F"; "token" = "0xE1590CC4"; "count" = "1"; "candidate-source" = "3"; "candidate-deferred" = "0"; "candidate-bdf" = "0x00000100"; "candidate-token" = "0xE1590CC4" }),
+    (New-Fixture -Name "pci-vmd-nested-bound-identify" -ExpectedStage "nvme-identify" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "pci-vmd" = "1"; "vmd-pci" = "0x00000E00"; "vmd-vendor-device" = "0x467F8086"; "vmd-class" = "0x08800000"; "vmd-bar0" = "0xFE010004"; "vmd-bar1" = "0x00000000"; "vmd-mmio-low" = "0xFE010000"; "vmd-mmio-high" = "0x00000000"; "vmd-mmio-span" = "1048576"; "vmd-mmio-flags" = "0x000003FF"; "vmd-mmio-token" = "0x94D5D769"; "vmd-nested-plan" = "1"; "vmd-nested-enum" = "1"; "vmd-nested-nvme" = "1"; "vmd-nested-status" = "3"; "vmd-nested-token" = "0xD204D933"; "vmd-nested-pci" = "0x00000100"; "vmd-nested-vendor-device" = "0x00101B36"; "vmd-nested-class" = "0x01080202"; "vmd-nested-bar0" = "0xFE020004"; "vmd-nested-bar1" = "0x00000000"; "vmd-nested-scan-buses" = "1"; "vmd-nested-scan-devices" = "32"; "vmd-nested-scan-functions" = "256"; "vmd-nested-scan-windows" = "16"; "vmd-nested-scan-truncated" = "1"; "vmd-nested-mmio-low" = "0xFE020000"; "vmd-nested-mmio-high" = "0x00000000"; "vmd-nested-mmio-span" = "16384"; "vmd-nested-mmio-flags" = "0x000001FF"; "vmd-nested-mmio-token" = "0xA1450CC4"; "vmd-nested-bind-ready" = "1"; "vmd-nested-bind-status" = "5"; "vmd-nested-bind-token" = "0xB1460CC4"; "vmd-nested-register-candidate" = "1"; "vmd-nested-register-status" = "2"; "vmd-nested-register-token" = "0xC1470CC4"; "vmd-nested-driver-plan-result" = "0xD1580CC4"; "vmd-nested-driver-plan-state" = "2"; "vmd-nested-driver-plan-flags" = "0x000000FF"; "vmd-nested-driver-plan-token" = "0xD1580CC4"; "vmd-nested-driver-plan-stage-count" = "1"; "vmd-nested-driver-plan-denials" = "0"; "vmd-nested-driver-plan-unavailable" = "0"; "nvme-candidate-source" = "2"; "nvme-candidate-deferred" = "1"; "nvme-candidate-bdf" = "0x00000100"; "nvme-candidate-token" = "0xC1480CC4"; "nvme-found" = "1"; "nvme-ready" = "1"; "nvme-identify" = "0" } -BindFields @{ "result" = "0xE1590CC4"; "state" = "2"; "flags" = "0x0000003F"; "token" = "0xE1590CC4"; "count" = "1"; "candidate-source" = "3"; "candidate-deferred" = "0"; "candidate-bdf" = "0x00000100"; "candidate-token" = "0xE1590CC4" }),
     (New-Fixture -Name "pci-nvme-hidden-by-intel-system" -ExpectedStage "pci-nvme-hidden-by-intel-system" -Mutations @{ "pci-nvme" = "0"; "pci-intel-system" = "1"; "intel-system-pci" = "0x00000E00"; "intel-system-vendor-device" = "0x467F8086"; "intel-system-class" = "0x08800000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-other-storage" -ExpectedStage "pci-nvme-other-storage" -Mutations @{ "pci-nvme" = "0"; "pci-other-storage" = "1"; "other-storage-pci" = "0x00001F00"; "other-storage-vendor-device" = "0x00011234"; "other-storage-class" = "0x01050000"; "nvme-found" = "0" }),
     (New-Fixture -Name "pci-nvme-class" -ExpectedStage "pci-nvme-class" -Mutations @{ "pci-nvme" = "0"; "nvme-found" = "0" }),
@@ -373,7 +421,11 @@ foreach ($fixture in $fixtures) {
         foreach ($mutationKey in $fixture.mutations.Keys) {
             $fields[$mutationKey] = $fixture.mutations[$mutationKey]
         }
-        New-TriageLine -Fields $fields | Set-Content -Path $capturePath -Encoding Ascii
+        $captureLines = @(New-TriageLine -Fields $fields)
+        if ($fixture.bind_fields.Count -ne 0) {
+            $captureLines += New-VmdBindLine -Fields $fixture.bind_fields
+        }
+        $captureLines | Set-Content -Path $capturePath -Encoding Ascii
     }
 
     $fixtureOutputDir = Join-Path $analysisDir $fixture.name
