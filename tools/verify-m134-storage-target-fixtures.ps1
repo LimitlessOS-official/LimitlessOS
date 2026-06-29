@@ -223,6 +223,9 @@ function New-StorageLine
         "vmd-nested-bind-ready" = "0"
         "vmd-nested-bind-status" = "0"
         "vmd-nested-bind-token" = "0x00000000"
+        "vmd-nested-register-candidate" = "0"
+        "vmd-nested-register-status" = "0"
+        "vmd-nested-register-token" = "0x00000000"
         "nvme-ready" = "1"
         "nvme-identify" = "1"
         "ioq" = "1"
@@ -517,6 +520,9 @@ $fixtures = @(
             "vmd-nested-bind-ready" = "0";
             "vmd-nested-bind-status" = "4";
             "vmd-nested-bind-token" = "0xB1460CC0";
+            "vmd-nested-register-candidate" = "0";
+            "vmd-nested-register-status" = "1";
+            "vmd-nested-register-token" = "0xC1470CC0";
             "nvme-found" = "0"
         }
         display_mode = "ready"
@@ -524,6 +530,57 @@ $fixtures = @(
         expected_exit_code = 2
         expected_kind = "storage"
         expected_stage = "pci-vmd-nested-nvme-bind-ready"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
+        name = "storage-pci-vmd-nested-nvme-register-deferred"
+        storage_mutations = @{
+            "pci-nvme" = "0";
+            "pci-intel-system" = "1";
+            "pci-vmd" = "1";
+            "vmd-pci" = "0x00000E00";
+            "vmd-vendor-device" = "0x467F8086";
+            "vmd-class" = "0x08800000";
+            "vmd-bar0" = "0xFE010004";
+            "vmd-bar1" = "0x00000000";
+            "vmd-mmio-low" = "0xFE010000";
+            "vmd-mmio-high" = "0x00000000";
+            "vmd-mmio-span" = "1048576";
+            "vmd-mmio-flags" = "0x000003FF";
+            "vmd-mmio-token" = "0x94D5D769";
+            "vmd-nested-plan" = "1";
+            "vmd-nested-enum" = "1";
+            "vmd-nested-nvme" = "1";
+            "vmd-nested-status" = "3";
+            "vmd-nested-token" = "0xD204D933";
+            "vmd-nested-pci" = "0x00000100";
+            "vmd-nested-vendor-device" = "0x00101B36";
+            "vmd-nested-class" = "0x01080202";
+            "vmd-nested-bar0" = "0xFE020004";
+            "vmd-nested-bar1" = "0x00000000";
+            "vmd-nested-scan-buses" = "1";
+            "vmd-nested-scan-devices" = "32";
+            "vmd-nested-scan-functions" = "256";
+            "vmd-nested-scan-windows" = "16";
+            "vmd-nested-scan-truncated" = "1";
+            "vmd-nested-mmio-low" = "0xFE020000";
+            "vmd-nested-mmio-high" = "0x00000000";
+            "vmd-nested-mmio-span" = "16384";
+            "vmd-nested-mmio-flags" = "0x000001FF";
+            "vmd-nested-mmio-token" = "0xA1450CC4";
+            "vmd-nested-bind-ready" = "1";
+            "vmd-nested-bind-status" = "5";
+            "vmd-nested-bind-token" = "0xB1460CC4";
+            "vmd-nested-register-candidate" = "1";
+            "vmd-nested-register-status" = "2";
+            "vmd-nested-register-token" = "0xC1470CC4";
+            "nvme-found" = "0"
+        }
+        display_mode = "ready"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "storage"
+        expected_stage = "pci-vmd-nested-nvme-register-deferred"
         expected_pass = $false
     },
     [PSCustomObject]@{

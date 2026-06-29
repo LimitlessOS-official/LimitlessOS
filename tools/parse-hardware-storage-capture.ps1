@@ -143,6 +143,12 @@ function Classify-StorageCapture
                 if ((Has-Field -Fields $Fields -Name "vmd-nested-bind-ready") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-bind-ready") -ne 1)) {
                     return New-Classification -Stage "pci-vmd-nested-nvme-bind-ready" -Detail "A child NVMe controller was reported behind VMD with MMIO preflight, but bind readiness was not proven."
                 }
+                if ((Has-Field -Fields $Fields -Name "vmd-nested-register-candidate") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-register-candidate") -ne 1)) {
+                    return New-Classification -Stage "pci-vmd-nested-nvme-register-candidate" -Detail "A child NVMe controller was reported behind VMD with bind readiness, but no registration candidate was exported."
+                }
+                if ((Has-Field -Fields $Fields -Name "vmd-nested-register-status") -and ((Get-FieldValue -Fields $Fields -Name "vmd-nested-register-status") -eq 2)) {
+                    return New-Classification -Stage "pci-vmd-nested-nvme-register-deferred" -Detail "A child NVMe controller behind VMD is a registration candidate, but the VMD-backed NVMe driver handoff is intentionally deferred."
+                }
                 return New-Classification -Stage "pci-vmd-nested-nvme-bind" -Detail "A child NVMe controller was reported behind VMD, but the regular NVMe driver has not been bound through the nested path."
             }
             return New-Classification -Stage "pci-nvme-hidden-by-vmd" -Detail "PCI storage exists, but direct NVMe is absent and an Intel VMD-class candidate is present."

@@ -47,6 +47,10 @@
 #define PCI64_VMD_NESTED_BIND_STATUS_MMIO_INVALID 0x00000004u
 #define PCI64_VMD_NESTED_BIND_STATUS_READY_UNBOUND 0x00000005u
 
+#define PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE 0x00000000u
+#define PCI64_VMD_NESTED_REGISTER_STATUS_WAITING_BIND_READY 0x00000001u
+#define PCI64_VMD_NESTED_REGISTER_STATUS_DEFERRED_NO_DRIVER 0x00000002u
+
 #define PCI64_LPSS_I2C_MMIO_FLAG_PRESENT 0x00000001u
 #define PCI64_LPSS_I2C_MMIO_FLAG_MEMORY_BAR 0x00000002u
 #define PCI64_LPSS_I2C_MMIO_FLAG_64BIT_BAR 0x00000004u
@@ -131,6 +135,9 @@ u32 pci64_vmd_nested_mmio_token(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_bind_ready(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_bind_status(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_vmd_nested_bind_token(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_register_candidate(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_register_status(u32 hardware_capability_handle, u32 owner_id);
+u32 pci64_vmd_nested_register_token(u32 hardware_capability_handle, u32 owner_id);
 u32 pci64_query_count(void);
 u32 pci64_denial_count(void);
 u32 pci64_ecam_rsdp_found(void);

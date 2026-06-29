@@ -189,6 +189,9 @@ static u32 g_vmd_nested_mmio_token = 0u;
 static u32 g_vmd_nested_bind_ready = 0u;
 static u32 g_vmd_nested_bind_status = PCI64_VMD_NESTED_BIND_STATUS_NOT_APPLICABLE;
 static u32 g_vmd_nested_bind_token = 0u;
+static u32 g_vmd_nested_register_candidate = 0u;
+static u32 g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
+static u32 g_vmd_nested_register_token = 0u;
 #endif
 static u32 g_first_xhci_address = 0xFFFFFFFFu;
 static u32 g_first_xhci_vendor_device = 0u;
@@ -1407,6 +1410,7 @@ static void pci64_update_vmd_nested_plan(void)
 {
     u32 token = 2166136261u;
     u32 bind_token = 2166136261u;
+    u32 register_token = 2166136261u;
     u32 nvme_ready_flags = PCI64_NVME_MMIO_FLAG_PRESENT
         | PCI64_NVME_MMIO_FLAG_MEMORY_BAR
         | PCI64_NVME_MMIO_FLAG_BASE_NONZERO
@@ -1441,6 +1445,9 @@ static void pci64_update_vmd_nested_plan(void)
     g_vmd_nested_bind_ready = 0u;
     g_vmd_nested_bind_status = PCI64_VMD_NESTED_BIND_STATUS_NOT_APPLICABLE;
     g_vmd_nested_bind_token = 0u;
+    g_vmd_nested_register_candidate = 0u;
+    g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
+    g_vmd_nested_register_token = 0u;
     g_vmd_nested_status = (g_vmd_nested_plan != 0u)
         ? PCI64_VMD_NESTED_STATUS_ENUM_UNAVAILABLE
         : PCI64_VMD_NESTED_STATUS_NOT_APPLICABLE;
@@ -1492,6 +1499,31 @@ static void pci64_update_vmd_nested_plan(void)
     bind_token = pci64_mix_token(bind_token, g_vmd_nested_mmio_token);
     g_vmd_nested_bind_token = (g_vmd_nested_plan != 0u) ? bind_token : 0u;
 
+    if (g_vmd_nested_plan == 0u)
+    {
+        g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
+    }
+    else if (g_vmd_nested_bind_ready == 0u)
+    {
+        g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_WAITING_BIND_READY;
+    }
+    else
+    {
+        g_vmd_nested_register_candidate = 1u;
+        g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_DEFERRED_NO_DRIVER;
+    }
+
+    register_token = pci64_mix_token(register_token, g_vmd_nested_register_candidate);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_register_status);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_bind_ready);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_bind_token);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_first_address);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_base_low);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_base_high);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_span_hint);
+    register_token = pci64_mix_token(register_token, g_vmd_nested_mmio_flags);
+    g_vmd_nested_register_token = (g_vmd_nested_plan != 0u) ? register_token : 0u;
+
     token ^= g_vmd_nested_plan;
     token *= 16777619u;
     token ^= g_vmd_nested_enumerated;
@@ -1537,6 +1569,12 @@ static void pci64_update_vmd_nested_plan(void)
     token ^= g_vmd_nested_bind_status;
     token *= 16777619u;
     token ^= g_vmd_nested_bind_token;
+    token *= 16777619u;
+    token ^= g_vmd_nested_register_candidate;
+    token *= 16777619u;
+    token ^= g_vmd_nested_register_status;
+    token *= 16777619u;
+    token ^= g_vmd_nested_register_token;
     token *= 16777619u;
     g_vmd_nested_token = token;
 }
@@ -2014,6 +2052,9 @@ void pci64_init(const struct boot_info *boot_info)
     g_vmd_nested_bind_ready = 0u;
     g_vmd_nested_bind_status = PCI64_VMD_NESTED_BIND_STATUS_NOT_APPLICABLE;
     g_vmd_nested_bind_token = 0u;
+    g_vmd_nested_register_candidate = 0u;
+    g_vmd_nested_register_status = PCI64_VMD_NESTED_REGISTER_STATUS_NOT_APPLICABLE;
+    g_vmd_nested_register_token = 0u;
 #endif
     g_first_xhci_address = 0xFFFFFFFFu;
     g_first_xhci_vendor_device = 0u;
@@ -2503,6 +2544,21 @@ u32 pci64_vmd_nested_bind_status(u32 hardware_capability_handle, u32 owner_id)
 u32 pci64_vmd_nested_bind_token(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_bind_token);
+}
+
+u32 pci64_vmd_nested_register_candidate(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_register_candidate);
+}
+
+u32 pci64_vmd_nested_register_status(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_register_status);
+}
+
+u32 pci64_vmd_nested_register_token(u32 hardware_capability_handle, u32 owner_id)
+{
+    return pci64_authorized_value(hardware_capability_handle, owner_id, g_vmd_nested_register_token);
 }
 #endif
 
