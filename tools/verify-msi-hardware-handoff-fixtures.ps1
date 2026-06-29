@@ -106,6 +106,10 @@ function Write-Runbook
         "",
         "   drs-gui ... drs-gui-right-click 1 ... drs-gui-context-action 1 ... drs-gui-scroll ...",
         "",
+        "The same capture and generated report must include the M161/M162 NVMe Controller Snapshot from drs-nvme-triage:",
+        "",
+        "   nvme-probe-error nvme-regs nvme-cap-low nvme-cap-high nvme-vs nvme-cc nvme-csts nvme-dstrd-bytes nvme-doorbell-page",
+        "",
         "If storage is unavailable on the laptop, linux /APPS/DYNLDLIMIT should still prefer the UEFI boot-media staged source when this bundle was written correctly. Capture that command output too. Expected handoff signal:",
         "",
         "   linux: using UEFI boot-media staged file"
@@ -197,6 +201,18 @@ function New-EvidenceBundle
             required_storage_stage = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.required_storage_stage" -Default "storage-ready"
             required_boot_media_linux_source = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.required_boot_media_linux_source" -Default "2"
             required_gui_interaction_telemetry = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.required_gui_interaction_telemetry" -Default "1"
+            required_nvme_controller_snapshot = Get-MutationValue -Mutations $Mutations -Name "expected_hwval.required_nvme_controller_snapshot" -Default "1"
+            required_nvme_controller_fields = @(
+                "nvme-probe-error",
+                "nvme-regs",
+                "nvme-cap-low",
+                "nvme-cap-high",
+                "nvme-vs",
+                "nvme-cc",
+                "nvme-csts",
+                "nvme-dstrd-bytes",
+                "nvme-doorbell-page"
+            )
         }
     }
 
