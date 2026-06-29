@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, M152 hwval GUI interaction telemetry, M153 MSI handoff GUI telemetry requirement, and M154 current MSI handoff bundle refresh are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, M152 hwval GUI interaction telemetry, M153 MSI handoff GUI telemetry requirement, M154 current MSI handoff bundle refresh, and M155 MSI capture intake report are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -3451,6 +3451,61 @@ uefi budget  : 1370208 / 2097152 bytes (726944 reserve)
 ```
 
 M154 non-claims: this does not certify the physical MSI laptop, add a new driver, prove real hardware storage/display/input behavior, or prove `/APPS/DYNLDLIMIT` exits successfully on hardware. It packages the current evidence media and ensures the next physical transcript is classified under the M153 GUI telemetry requirement.
+
+## M155 MSI Capture Intake Report
+
+M155 adds a single host-side intake report wrapper for the current physical MSI transcript workflow. `tools\report-msi-hardware-capture.ps1` runs the strict M134 classifier with the same staged dynamic artifact and M153 GUI telemetry requirements, preserves expected classifier exit code `2` as an actionable first-failure result, and writes:
+
+- `msi-hardware-capture-report.json`
+- `msi-hardware-capture-report.txt`
+- `msi-hardware-capture-report.md`
+
+The report records target kind, target stage, roadmap target, next target, storage/display-input/dynamic-handoff stages, GUI interaction status, evidence artifact hashes, BIOS/UEFI reserves, and paths to the lower-level classifier, handoff verifier, and combined analyzer JSON. This gives the project manager and hardware tester one stable report to read before diving into raw analyzer artifacts.
+
+Accepted command:
+
+```powershell
+.\tools\verify-msi-hardware-capture-report-fixtures.ps1 -OutputDir .\build\m155-msi-capture-report-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+```
+
+Fixture output:
+
+```text
+m134-storage-target-fixtures: 14/14
+failed: 0
+
+msi-hardware-capture-report-fixtures: 3/3
+  failed: 0
+
+M1 production-slice gate passed for x86_64 (Product profile).
+```
+
+The report fixtures prove:
+
+- `storage-ready` exits `0` and reports `target_kind storage-ready`, `target_stage storage-ready`, roadmap target `M134`, pass `True`.
+- `display-gui-telemetry-missing` exits `2` and reports `target_kind display-input`, `target_stage gui-telemetry-missing`, roadmap target `M152`, pass `False`.
+- `dynamic-after-storage-ready` exits `2` and reports `target_kind dynamic-handoff`, `target_stage dynamic-handoff-nvme-unavailable`, roadmap target `M83+`, pass `False`.
+
+Current report command for a physical transcript:
+
+```powershell
+.\tools\report-msi-hardware-capture.ps1 `
+  -EvidenceDir .\dist\m133-msi-hardware-handoff-current `
+  -CapturePath .\dist\msi-hwval-storage.txt `
+  -OutputDir .\dist\msi-hardware-capture-report `
+  -RequireStagedDynamicArtifacts `
+  -RequireGuiInteractionTelemetry
+```
+
+Final reserves are unchanged because this is host-side tooling and documentation:
+
+```text
+bios sectors : 923 / 1024 sectors (101 reserve)
+uefi budget  : 1370208 / 2097152 bytes (726944 reserve)
+```
+
+M155 non-claims: this does not certify the physical MSI laptop, add a new driver, change kernel behavior, prove real hardware storage/display/input behavior, or prove `/APPS/DYNLDLIMIT` exits successfully on hardware. It makes the next real transcript produce one manager-readable, artifact-linked first-failure report.
 
 Later targets are:
 
