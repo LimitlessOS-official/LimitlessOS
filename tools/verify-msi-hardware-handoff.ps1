@@ -8,6 +8,8 @@ param(
 
     [switch]$RequireStagedDynamicArtifacts,
 
+    [switch]$RequireGuiInteractionTelemetry,
+
     [switch]$RunBootMediaVerifier
 )
 
@@ -77,6 +79,24 @@ function Get-TelemetryValue
         return $Default
     }
     return $match.Groups[1].Value
+}
+
+function Get-PropertyBool
+{
+    param(
+        [object]$Object,
+        [string]$Name,
+        [bool]$Default = $false
+    )
+
+    if ($null -eq $Object) {
+        return $Default
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+    return [bool]$property.Value
 }
 
 function Get-DynamicHandoffClassification
@@ -230,6 +250,7 @@ $storageVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "
 $bootMediaVerifier = Get-ManifestProperty -Object $manifest.expected_hwval -Name "boot_media_handoff_verifier"
 $requiredStorageStage = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_storage_stage"
 $requiredBootMediaSource = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_boot_media_linux_source"
+$requiredGuiTelemetry = Get-ManifestProperty -Object $manifest.expected_hwval -Name "required_gui_interaction_telemetry"
 
 if ($milestone -ne $handoffMilestone) {
     throw "MSI hardware handoff verifier: manifest milestone must be $handoffMilestone, observed '$milestone'."
@@ -252,7 +273,7 @@ if ($dynamicInterpPath -ne "/APPS/LDLIMIT") {
 if ($expectedAnalyzer -ne "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts") {
     throw "MSI hardware handoff verifier: manifest analyzer mismatch: '$expectedAnalyzer'."
 }
-if ($storageTargetClassifier -ne "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts") {
+if ($storageTargetClassifier -ne "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry") {
     throw "MSI hardware handoff verifier: manifest storage target classifier mismatch: '$storageTargetClassifier'."
 }
 if ($storageVerifier -ne "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts") {
@@ -267,11 +288,16 @@ if ($requiredStorageStage -ne "storage-ready") {
 if ($requiredBootMediaSource -ne "2") {
     throw "MSI hardware handoff verifier: required boot-media source mismatch: '$requiredBootMediaSource'."
 }
+if ($requiredGuiTelemetry -ne "1") {
+    throw "MSI hardware handoff verifier: required GUI interaction telemetry mismatch: '$requiredGuiTelemetry'."
+}
 
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*hwval\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run hwval."
 Assert-TextContains -Text $runbook -Pattern '(?m)^\s*linux /APPS/DYNLDLIMIT\s*$' -Message "MSI hardware handoff verifier: runbook does not instruct the tester to run linux /APPS/DYNLDLIMIT."
-Assert-TextContains -Text $runbook -Pattern 'classify-m134-storage-target\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the M134 storage target classifier."
+Assert-TextContains -Text $runbook -Pattern 'classify-m134-storage-target\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not use the M134 storage target classifier with GUI telemetry required."
+Assert-TextContains -Text $runbook -Pattern 'verify-msi-hardware-handoff\.ps1 .*-RequireStagedDynamicArtifacts.*-RequireGuiInteractionTelemetry' -Message "MSI hardware handoff verifier: runbook does not require GUI telemetry in the MSI handoff verifier."
 Assert-TextContains -Text $runbook -Pattern 'analyze-msi-hardware-capture\.ps1 .* -RequireStagedDynamicArtifacts' -Message "MSI hardware handoff verifier: runbook does not use the combined MSI analyzer."
+Assert-TextContains -Text $runbook -Pattern 'drs-gui .* drs-gui-right-click 1 .* drs-gui-context-action 1 .* drs-gui-scroll' -Message "MSI hardware handoff verifier: runbook is missing the GUI interaction telemetry expectation."
 Assert-TextContains -Text $runbook -Pattern 'linux: using UEFI boot-media staged file' -Message "MSI hardware handoff verifier: runbook is missing the boot-media staged-file signal."
 Assert-TextContains -Text $runbook -Pattern 'drs-realbin \.\.\. source 2 \.\.\. boot-media-read 1' -Message "MSI hardware handoff verifier: runbook is missing the source-2 boot-media telemetry expectation."
 Assert-TextContains -Text $runbook -Pattern 'verify-boot-media-linux-handoff\.ps1' -Message "MSI hardware handoff verifier: runbook is missing the boot-media handoff verifier."
@@ -281,6 +307,19 @@ $combinedStage = ""
 $combinedPass = $false
 $combinedOutputDir = ""
 $combinedExitCode = 0
+$guiInteraction = [PSCustomObject]@{
+    checked = $false
+    required = [bool]$RequireGuiInteractionTelemetry
+    pass = (-not [bool]$RequireGuiInteractionTelemetry)
+    stage = ""
+    line_found = $false
+    right_click = ""
+    context_action = ""
+    scroll = ""
+    terminal_scroll = ""
+    terminal_selection = ""
+    raw_line = ""
+}
 $dynamicHandoff = [PSCustomObject]@{
     pass = $false
     stage = ""
@@ -319,6 +358,27 @@ if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     $combinedAnalysis = Get-Content -Raw -Path $combinedAnalysisPath | ConvertFrom-Json
     $combinedStage = [string]$combinedAnalysis.stage
     $combinedPass = [bool]$combinedAnalysis.pass
+
+    $displayAnalysisPath = Get-ManifestProperty -Object $combinedAnalysis.display_input -Name "analysis_json"
+    if (-not [string]::IsNullOrWhiteSpace($displayAnalysisPath)) {
+        Assert-FileExists -Path $displayAnalysisPath -Message "MSI hardware handoff verifier: display/input analyzer did not write $displayAnalysisPath"
+        $displayAnalysis = Get-Content -Raw -Path $displayAnalysisPath | ConvertFrom-Json
+        $guiLineFound = Get-PropertyBool -Object $displayAnalysis -Name "gui_line_found"
+        $guiStage = if ($guiLineFound) { [string]$displayAnalysis.stage } else { "gui-telemetry-missing" }
+        $guiInteraction = [PSCustomObject]@{
+            checked = $true
+            required = [bool]$RequireGuiInteractionTelemetry
+            pass = ((-not [bool]$RequireGuiInteractionTelemetry) -or $guiLineFound)
+            stage = $guiStage
+            line_found = $guiLineFound
+            right_click = Get-ManifestProperty -Object $displayAnalysis.gui -Name "drs-gui-right-click"
+            context_action = Get-ManifestProperty -Object $displayAnalysis.gui -Name "drs-gui-context-action"
+            scroll = Get-ManifestProperty -Object $displayAnalysis.gui -Name "drs-gui-scroll"
+            terminal_scroll = Get-ManifestProperty -Object $displayAnalysis.gui -Name "terminal-scroll"
+            terminal_selection = Get-ManifestProperty -Object $displayAnalysis.gui -Name "terminal-selection"
+            raw_line = Get-ManifestProperty -Object $displayAnalysis -Name "raw_gui_line"
+        }
+    }
 }
 
 $bootMediaVerifierRan = $false
@@ -345,6 +405,17 @@ $verification = [PSCustomObject]@{
     combined_capture_pass = $combinedPass
     combined_capture_stage = $combinedStage
     combined_analyzer_exit_code = $combinedExitCode
+    gui_interaction_checked = [bool]$guiInteraction.checked
+    gui_interaction_required = [bool]$guiInteraction.required
+    gui_interaction_pass = [bool]$guiInteraction.pass
+    gui_interaction_stage = [string]$guiInteraction.stage
+    gui_interaction_line_found = [bool]$guiInteraction.line_found
+    gui_interaction_right_click = [string]$guiInteraction.right_click
+    gui_interaction_context_action = [string]$guiInteraction.context_action
+    gui_interaction_scroll = [string]$guiInteraction.scroll
+    gui_interaction_terminal_scroll = [string]$guiInteraction.terminal_scroll
+    gui_interaction_terminal_selection = [string]$guiInteraction.terminal_selection
+    gui_interaction_raw_line = [string]$guiInteraction.raw_line
     dynamic_handoff_checked = (-not [string]::IsNullOrWhiteSpace($CapturePath))
     dynamic_handoff_pass = [bool]$dynamicHandoff.pass
     dynamic_handoff_stage = [string]$dynamicHandoff.stage
@@ -378,6 +449,11 @@ $verification | ConvertTo-Json -Depth 6 | Set-Content -Path $verificationJsonPat
     "storage-capture-stage: $($verification.storage_capture_stage)",
     "combined-capture-checked: $($verification.combined_capture_checked)",
     "combined-capture-stage: $combinedStage",
+    "gui-interaction-checked: $($verification.gui_interaction_checked)",
+    "gui-interaction-required: $($verification.gui_interaction_required)",
+    "gui-interaction-pass: $($verification.gui_interaction_pass)",
+    "gui-interaction-stage: $($verification.gui_interaction_stage)",
+    "gui-interaction-line-found: $($verification.gui_interaction_line_found)",
     "dynamic-handoff-checked: $($verification.dynamic_handoff_checked)",
     "dynamic-handoff-pass: $($verification.dynamic_handoff_pass)",
     "dynamic-handoff-stage: $($verification.dynamic_handoff_stage)",
@@ -398,11 +474,13 @@ Write-Host "  uefi reserve: $($storageVerification.reserves.uefi_bytes) bytes"
 if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
     Write-Host "  combined capture pass: $combinedPass"
     Write-Host "  combined capture stage: $combinedStage"
+    Write-Host "  gui interaction pass: $($guiInteraction.pass)"
+    Write-Host "  gui interaction stage: $($guiInteraction.stage)"
     Write-Host "  dynamic handoff pass: $($dynamicHandoff.pass)"
     Write-Host "  dynamic handoff stage: $($dynamicHandoff.stage)"
 }
 Write-Host "  output: $verificationJsonPath"
 
-if ((-not [string]::IsNullOrWhiteSpace($CapturePath)) -and ((-not $combinedPass) -or (-not [bool]$dynamicHandoff.pass))) {
+if ((-not [string]::IsNullOrWhiteSpace($CapturePath)) -and ((-not $combinedPass) -or (-not [bool]$guiInteraction.pass) -or (-not [bool]$dynamicHandoff.pass))) {
     exit 2
 }

@@ -2,7 +2,7 @@
 
 Effective after M21, new Product progress must be proven with real externally built software or real hardware behavior, not synthetic test processes.
 
-Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, and M152 hwval GUI interaction telemetry are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
+Current status: the first static Linux x86_64 ELF execution gate, the M22 per-process page table foundation gate, the M23 bounded fork/wait gate, the M24 Unix pipeline gate, the M25 Linux VFS path execution gate, the M26 forked-child execve inheritance gate, M27-M61 third-party static ET_EXEC path/cwd/env/execvp/canonicalization gates, M62 low-compat removal, M63 signal foundation, M64 pthread-style clone threading, M65 contended futex wakeups, M66 TLS/pool expansion, M67-M69 bounded file-backed mmap, M70-M105 dynamic ELF progression from denial-path telemetry through first supported-interpreter execution, multiple dynamic ET_EXEC runtime breadth proofs, libc-helper breadth, inherited environment binding, stdio helper output, bounded heap helpers, environment mutation, first dynamic pthread helper execution, multi-threaded dynamic pthread TLS/condition/futex contention, dynamic NVMe VFS file open/read/write/close, dynamic file metadata/seek behavior, dynamic directory enumeration, dynamic cwd/relative path behavior, dynamic vectored I/O/readiness behavior, dynamic fstatat metadata behavior, dynamic openat relative file-read behavior, dynamic openat dirfd-relative lookup behavior, dynamic fchdir cwd handoff behavior, dynamic fcntl descriptor/status flag behavior, dynamic fcntl descriptor duplication behavior, direct dynamic dup syscall behavior, direct dynamic pipe syscall behavior, dynamic fork-plus-pipe/wait composition, blocked pipe read replay, dynamic pipe close/error semantics, M106 universal hardware inventory/driver-binding evidence, M107 physical display readability, M108 visible cursor fallback, M109 Product visual polish direct compositor foundation, M110 NVMe/FAT hardware storage triage, M111 boot/NVMe staged dynamic artifact verification, M112 physical hardware storage capture parsing, M113 physical hardware storage evidence bundling, M114 physical hardware storage capture analysis, M115 physical hardware storage evidence verification, M116 physical hardware storage analysis fixture coverage, M117 physical display/input capture analysis, M118 MSI hardware capture analysis, M119 MSI hardware capture analysis fixture coverage, M120 boot-media Linux handoff verification, M121 MSI hardware handoff bundle refresh, M122 MSI hardware handoff verifier, M123 MSI hardware handoff verifier fixture coverage, M124 self-verifying MSI handoff packaging, M125 MSI dynamic handoff capture classification, M127 FAT backend completion, M128 File Manager real workflows, M129 Settings real workflows, M130 Terminal quality pass, M131 Login/session polish, M132 Window manager usability, M133 MSI hardware capture closure, M134 storage hardware target classification, M135 M134 classifier handoff integration, M136 storage diagnostic playbooks, M137 NVMe PCI identity telemetry, M138 NVMe PCI capture-stage classification, M139-M148 storage hardware target refinement through NVMe candidate-source/deferred handoff telemetry, M149 cursor path hardware-display diagnostics, M150 MSI cursor-stage routing closure, M151 MSI GUI interaction-stage routing, M152 hwval GUI interaction telemetry, and M153 MSI handoff GUI telemetry requirement are crossed on the UEFI Product path. Detailed command evidence and milestone telemetry are recorded below.
 
 Current BIOS budget note: the Product BIOS path has 101 reserve sectors, below the 128-sector warning threshold but still inside the hard 1024-sector loader limit. New real-binary work must continue to protect the BIOS path from accidental large buffers or code growth.
 
@@ -3329,6 +3329,68 @@ uefi budget  : 1370208 / 2097152 bytes (726944 reserve)
 ```
 
 M152 does not add new GUI behavior and does not claim a physical MSI display/input pass. It makes the next physical `hwval` capture carry the evidence needed for M151's right-click, scroll, context-menu, and Terminal routing analysis.
+
+## M153 MSI Handoff GUI Telemetry Requirement
+
+M153 closes the host-side contract around M152. The MSI handoff verifier and M134 classifier can now require that a current physical transcript include the `drs-gui` line from `hwval` instead of accepting a display/input-ready capture that only proves readable display, visible cursor, and pointer packets.
+
+New verifier/classifier behavior:
+
+- `tools\verify-msi-hardware-handoff.ps1 -RequireGuiInteractionTelemetry` reads the nested display/input analyzer JSON and emits `gui_interaction_checked`, `gui_interaction_required`, `gui_interaction_pass`, `gui_interaction_stage`, `gui_interaction_line_found`, and the key right-click/context/scroll/Terminal fields.
+- A capture with storage ready, display/input ready, and dynamic source-2 ready but no `drs-gui` line now fails handoff verification with `gui_interaction_pass False` and `gui_interaction_stage gui-telemetry-missing`.
+- `tools\classify-m134-storage-target.ps1 -RequireGuiInteractionTelemetry` routes that exact stale-capture case to `target_kind display-input`, `target_stage gui-telemetry-missing`, and roadmap target `M152`.
+- `tools\prepare-hardware-storage-evidence.ps1` now writes the stricter classifier/verifier commands and records `required_gui_interaction_telemetry = 1` in the generated handoff manifest.
+
+Accepted commands:
+
+```powershell
+.\tools\verify-msi-hardware-handoff-fixtures.ps1 -OutputDir .\build\m153-msi-handoff-fixtures
+.\tools\verify-m134-storage-target-fixtures.ps1 -OutputDir .\build\m153-storage-target-fixtures-final
+.\tools\verify-msi-hardware-analysis-fixtures.ps1 -OutputDir .\build\m153-msi-analysis-fixtures
+.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product
+.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+```
+
+Verifier output:
+
+```text
+msi-hardware-handoff-fixtures: 14/14
+failed: 0
+
+m134-storage-target-fixtures: 14/14
+failed: 0
+
+msi-hardware-analysis-fixtures: 7/7
+failed: 0
+
+M1 production-slice gate passed for x86_64 (Product profile).
+```
+
+Representative M153 stale-capture routing:
+
+```text
+msi-hardware-handoff:
+  combined capture pass: True
+  combined capture stage: msi-hardware-ready
+  gui interaction pass: False
+  gui interaction stage: gui-telemetry-missing
+  dynamic handoff pass: True
+  dynamic handoff stage: dynamic-runtime-exit0
+
+m134-storage-target: display-input-gui-telemetry-missing
+target kind: display-input
+target stage: gui-telemetry-missing
+roadmap target: M152
+```
+
+Final reserves are unchanged from M152 because this is host-side tooling and docs:
+
+```text
+bios sectors : 923 / 1024 sectors (101 reserve)
+uefi budget  : 1370208 / 2097152 bytes (726944 reserve)
+```
+
+M153 non-claims: no kernel behavior changed, no new GUI behavior is claimed, no hardware driver support is added, and no physical MSI pass is claimed. The milestone ensures the next current MSI capture cannot accidentally pass handoff verification without the GUI interaction telemetry that M152 made available.
 
 Later targets are:
 

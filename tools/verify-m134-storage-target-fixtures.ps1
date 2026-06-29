@@ -101,11 +101,12 @@ function New-EvidenceBundle
             command = "hwval"
             required_line = "drs-nvme-triage"
             analyzer = "tools\\analyze-msi-hardware-capture.ps1 -RequireStagedDynamicArtifacts"
-            storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts"
+            storage_target_classifier = "tools\\classify-m134-storage-target.ps1 -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry"
             storage_verifier = "tools\\verify-hardware-storage-evidence.ps1 -RequireStagedDynamicArtifacts"
             boot_media_handoff_verifier = "tools\\verify-boot-media-linux-handoff.ps1"
             required_storage_stage = "storage-ready"
             required_boot_media_linux_source = "2"
+            required_gui_interaction_telemetry = "1"
         }
     } | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $evidenceDir "hardware-storage-evidence-manifest.json") -Encoding Ascii
 
@@ -142,11 +143,16 @@ function New-EvidenceBundle
         "",
         "Analyze with:",
         "",
-        ".\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts",
+        ".\tools\classify-m134-storage-target.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <m134-target-output-dir> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry",
+        "",
+        ".\tools\verify-msi-hardware-handoff.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -RequireStagedDynamicArtifacts -RequireGuiInteractionTelemetry",
         "",
         ".\tools\analyze-msi-hardware-capture.ps1 -EvidenceDir <path-to-this-bundle> -CapturePath <path-to-msi-hwval-storage.txt> -OutputDir <analysis-output-dir> -RequireStagedDynamicArtifacts",
         "",
         "Expected handoff signal:",
+        "",
+        "drs-gui ... drs-gui-right-click 1 ... drs-gui-context-action 1 ... drs-gui-scroll ...",
+        "",
         "",
         "linux: using UEFI boot-media staged file",
         "drs-realbin ... source 2 ... boot-media-read 1",
@@ -293,11 +299,13 @@ function Write-Capture
     $lines = @()
     $lines += New-StorageLine -Mutations $StorageMutations
 
-    if ($DisplayMode -eq "ready") {
+    if (($DisplayMode -eq "ready") -or ($DisplayMode -eq "ready-no-gui")) {
         $lines += "[x64] drs-display-readability display-readability 1 available 1 width 1280 height 800 pitch 1280 stride-ok 1 bounds-ok 1 scale 2 viewport-x 40 viewport-y 92 viewport-w 904 viewport-h 516 columns 75 rows 28 fit 1 readable 1 clip 0 cursor-visible 1 cursor-draws 205 direct-cursor-draws 207 token 0xF8C98059"
         $lines += "[x64] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct 1 font 1 wm 1 desktop 1 taskbar 1 launcher 1 windows 3 cursor-visible 1 token 0xCB1B1C83"
         $lines += "[x64] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct 1 visible 1 draws 205 direct-draws 207 x 640 y 400 buttons 0 in-bounds 1 rect-w 12 rect-h 20 saved 1 drawn 1 token 0xA5197C42"
-        $lines += "[x64] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-right-click 1 drs-gui-context-action 1 wm-resize 1 wm-minimize 1 wm-restore 1 wm-zorder 1 drs-gui-scroll 2 terminal-actions 2 terminal-scroll 1 terminal-scroll-offset 512 terminal-selection 1 terminal-copy 1 terminal-copied-bytes 16 terminal-cursor 1 fileman-actions 1 fileman-refresh 1 fileman-write 1 fileman-mkdir 1 fileman-edit 1 fileman-edit-commit 1 drs-gui-unfocused-key-denied 0 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 target-window 1 key-target-window 1 unfocused-key-denials 0 input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041"
+        if ($DisplayMode -eq "ready") {
+            $lines += "[x64] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed 1 drs-gui-keyboard-routed 1 drs-gui-close-completed 1 drs-gui-taskbar-focus 1 drs-gui-fileman-opened 1 drs-gui-settings-opened 1 drs-gui-installer-opened 1 drs-gui-right-click 1 drs-gui-context-action 1 wm-resize 1 wm-minimize 1 wm-restore 1 wm-zorder 1 drs-gui-scroll 2 terminal-actions 2 terminal-scroll 1 terminal-scroll-offset 512 terminal-selection 1 terminal-copy 1 terminal-copied-bytes 16 terminal-cursor 1 fileman-actions 1 fileman-refresh 1 fileman-write 1 fileman-mkdir 1 fileman-edit 1 fileman-edit-commit 1 drs-gui-unfocused-key-denied 0 drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 target-window 1 key-target-window 1 unfocused-key-denials 0 input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041"
+        }
         $lines += "xhci mouse endpoint: yes"
         $lines += "xhci mouse reports: 2"
         $lines += "xhci mouse bytes: 8"
@@ -677,6 +685,17 @@ $fixtures = @(
         expected_pass = $false
     },
     [PSCustomObject]@{
+        name = "display-gui-telemetry-missing"
+        storage_mutations = @{}
+        display_mode = "ready-no-gui"
+        dynamic_mode = "source2-exit0"
+        expected_exit_code = 2
+        expected_kind = "display-input"
+        expected_stage = "gui-telemetry-missing"
+        expected_roadmap = "M152"
+        expected_pass = $false
+    },
+    [PSCustomObject]@{
         name = "storage-ready"
         storage_mutations = @{}
         display_mode = "ready"
@@ -711,7 +730,8 @@ foreach ($fixture in $fixtures) {
             -EvidenceDir $evidenceDir `
             -CapturePath $capturePath `
             -OutputDir $fixtureOutputDir `
-            -RequireStagedDynamicArtifacts 2>&1
+            -RequireStagedDynamicArtifacts `
+            -RequireGuiInteractionTelemetry 2>&1
         $consoleText = ($console | Out-String)
         $exitCode = [int]$LASTEXITCODE
     } catch {
