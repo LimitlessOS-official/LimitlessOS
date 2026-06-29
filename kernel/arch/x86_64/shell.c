@@ -468,6 +468,86 @@ static void shell64_write_hex32_field(
     length = shell64_format_hex32(buffer, value);
     (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
 }
+
+static void shell64_write_gui_interaction_telemetry(
+    u32 console_capability_handle,
+    u32 owner_id)
+{
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-gui drs-gui-interactive ");
+    shell64_write_decimal_field(console_capability_handle, owner_id, "", display64_gui_interactive());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-click-hittest ", display64_gui_click_hittest());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-launcher-opened ", display64_gui_launcher_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-terminal-opened ", display64_gui_terminal_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-drag-completed ", display64_gui_drag_completed());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-keyboard-routed ", display64_gui_keyboard_routed());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-close-completed ", display64_gui_close_completed());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-taskbar-focus ", display64_gui_taskbar_focus());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-fileman-opened ", display64_gui_fileman_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-settings-opened ", display64_gui_settings_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-installer-opened ", display64_gui_installer_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-right-click ", display64_gui_right_click_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-context-action ", display64_gui_context_menu_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " wm-resize ", display64_wm_resize_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " wm-minimize ", display64_wm_minimize_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " wm-restore ", display64_wm_restore_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " wm-zorder ", display64_wm_zorder_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-scroll ", display64_gui_scroll_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-actions ", display64_gui_terminal_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-scroll ", display64_gui_terminal_scroll_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-scroll-offset ", display64_gui_terminal_scroll_offset());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-selection ", display64_gui_terminal_selection_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-copy ", display64_gui_terminal_copy_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-copied-bytes ", display64_gui_terminal_copied_bytes());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " terminal-cursor ", display64_gui_terminal_cursor_draw_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-actions ", display64_gui_fileman_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-refresh ", display64_gui_fileman_backend_refresh_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-preview ", display64_gui_fileman_backend_preview_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-open-dir ", display64_gui_fileman_backend_open_dir_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-write ", display64_gui_fileman_backend_write_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-write-denial ", display64_gui_fileman_backend_write_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-delete ", display64_gui_fileman_backend_delete_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-delete-denial ", display64_gui_fileman_backend_delete_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-delete-confirm ", display64_gui_fileman_backend_delete_confirm_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-mkdir ", display64_gui_fileman_backend_mkdir_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-mkdir-denial ", display64_gui_fileman_backend_mkdir_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-copy ", display64_gui_fileman_backend_copy_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-copy-denial ", display64_gui_fileman_backend_copy_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-rename ", display64_gui_fileman_backend_rename_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-rename-denial ", display64_gui_fileman_backend_rename_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-move ", display64_gui_fileman_backend_move_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-move-denial ", display64_gui_fileman_backend_move_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-edit ", display64_gui_fileman_backend_edit_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-edit-commit ", display64_gui_fileman_backend_edit_commit_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-actions ", display64_gui_settings_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-load ", display64_gui_settings_load_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-save ", display64_gui_settings_save_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-save-denial ", display64_gui_settings_save_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-export ", display64_gui_settings_export_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-export-denial ", display64_gui_settings_export_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-theme ", display64_gui_settings_theme());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-pointer ", display64_gui_settings_pointer_speed());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-keyrepeat ", display64_gui_settings_key_repeat());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " installer-actions ", display64_gui_installer_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-no-ambient-input ", display64_gui_no_ambient_input());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-no-ambient-display ", display64_gui_no_ambient_display());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-no-ambient-fs ", display64_gui_no_ambient_fs());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " mouse-x ", display64_gui_mouse_x());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " mouse-y ", display64_gui_mouse_y());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " target-window ", display64_gui_target_window());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " target-region ", display64_gui_target_region());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " focus-before ", display64_gui_focus_before());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " focus-after ", display64_gui_focus_after());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " z-before ", display64_gui_z_before());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " z-after ", display64_gui_z_after());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " key-target-window ", display64_gui_key_target_window());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " unfocused-key-denials ", display64_gui_unfocused_key_denial_count());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " input-token ", display64_gui_input_path_token());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " display-token ", display64_gui_display_path_token());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " fs-token ", display64_gui_fs_path_token());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " assistant-opened ", display64_gui_assistant_opened());
+    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+}
 #endif
 
 static u32 shell64_write_hex32_line(
@@ -1487,6 +1567,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
             owner_id,
             " token ",
             display64_cursor_path_token());
+        shell64_write_gui_interaction_telemetry(console_capability_handle, owner_id);
 #endif
     }
     else
