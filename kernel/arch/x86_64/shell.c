@@ -4,6 +4,7 @@
 #include "ai_policy_x64.h"
 #include "apic_x64.h"
 #include "auth_x64.h"
+#include "boot_diag_x64.h"
 #include "boot_media_x64.h"
 #include "capability_x64.h"
 #include "console_x64.h"
@@ -1704,6 +1705,20 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface protocol: ", xhci64_last_interface_protocol());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last endpoint mps: ", xhci64_last_endpoint_max_packet());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci broad mouse probes: ", xhci64_broad_mouse_probe_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks xhci init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_XHCI_INIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks boot diag: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_BOOT_DIAG));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks nvme probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_NVME_PROBE));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks display init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_DISPLAY_INIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks i2c hid init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_I2C_HID_INIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks timer wait: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_TIMER_WAIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks keyboard wait: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_KEYBOARD_WAIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks mouse wait: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_MOUSE_WAIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks login: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_LOGIN));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks lock probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_LOCK_PROBE));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks wm probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_WM_PROBE));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks desktop probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_DESKTOP_PROBE));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks virtio net init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_VIRTIO_NET_INIT));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks pit to shell: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_PIT_TO_SHELL));
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer reports: ", i2c_hid64_pointer_report_count());

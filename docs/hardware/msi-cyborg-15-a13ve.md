@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M170 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open. The July 2026 `PIC MASK` freeze is cleared by the M169 diagnostic image: the laptop now reaches the Product desktop and shell. The current first input failure is xHCI mouse descriptor binding: user photos show `XHCI Y HANDOFF Y HID N`, `USB2 12 ERR 27`, and no pointer movement from either a USB mouse dongle or the built-in touchpad. The M170 handoff ISO adds a conservative UEFI-only broad xHCI mouse-probe fallback plus descriptor telemetry so the next capture identifies the exact class/protocol/endpoint shape if the pointer still does not move. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
+Status: M171 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open. The July 2026 `PIC MASK` freeze is cleared by the M169 diagnostic image: the laptop now reaches the Product desktop and shell. The current first input failure is xHCI mouse descriptor binding: user photos show `XHCI Y HANDOFF Y HID N`, `USB2 12 ERR 27`, and no pointer movement from either a USB mouse dongle or the built-in touchpad. The M170 handoff ISO adds a conservative UEFI-only broad xHCI mouse-probe fallback plus descriptor telemetry so the next capture identifies the exact class/protocol/endpoint shape if the pointer still does not move. M171 adds UEFI-only boot-latency telemetry because the MSI laptop was reported to take roughly 3-5 minutes to reach the Product desktop while VirtualBox reaches it much faster. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
 
 This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m133-msi-hardware-handoff-current\limitlessos-x86_64-m133-handoff.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,7 +24,7 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the current M170-verified handoff bundle:
+Next hardware evidence to capture with the current M171-verified handoff bundle:
 
 ```text
 hwval
@@ -77,9 +77,30 @@ Interpretation for the M170 physical run:
 - If `xhci last skip code` remains `27`, the report should route to `xhci-mouse-descriptor-unmatched`; the captured device/interface class triples and endpoint max packet size become the next exact xHCI binding target.
 - If USB pointer movement works but the built-in touchpad does not, continue through `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` instead of changing the USB path.
 
+For the MSI slow-boot report, capture the M171 boot timing lines from `hwval`:
+
+```text
+boot ticks xhci init
+boot ticks boot diag
+boot ticks nvme probe
+boot ticks display init
+boot ticks i2c hid init
+boot ticks timer wait
+boot ticks keyboard wait
+boot ticks mouse wait
+boot ticks login
+boot ticks lock probe
+boot ticks wm probe
+boot ticks desktop probe
+boot ticks virtio net init
+boot ticks pit to shell
+```
+
+Interpretation: ticks are PIT ticks after PIT initialization, currently 100 ticks per second. A 3-minute delay should appear as roughly `18000` ticks in one stage or in the `boot ticks pit to shell` total. Do not optimize or remove a hardware wait until the captured timing line identifies the slow stage.
+
 Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. The `drs-nvme-triage` line and generated report must include the M161/M162 `NVMe Controller Snapshot` fields: `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, and `nvme-doorbell-page`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing or the controller snapshot is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M163-or-newer Product image. The report now exposes missing controller fields explicitly and uses the stage `nvme-controller-snapshot-missing` for that stale-transcript case.
 
-The current M170 handoff bundle self-verifies with ISO SHA-256 `d3942bb40ed3f571f3f7d4f1a1f557343e4365df686d13f3b9e7c3c51454736b`, UEFI image SHA-256 `dc86c45602a0e524693693ec70944b203fa8b4bf4decf96a0b61a6a1e27393c3`, BIOS reserve `101` sectors, and UEFI reserve `716,896` bytes.
+The current M171 handoff bundle self-verifies with ISO SHA-256 `619ffac1d528b499438631c7a17dcab07d94b1b1c786cc32ef1ba8f9a8131d41`, UEFI image SHA-256 `1940c39fdca70fc203f49ba68a38145b7c2e9c333e0f9e41c58c33669280ba34`, BIOS reserve `101` sectors, and UEFI reserve `716,352` bytes.
 
 Before writing the USB stick, generate the current capture session handoff from the repository root:
 

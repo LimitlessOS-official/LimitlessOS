@@ -325,6 +325,20 @@ $xhciLastInterfaceSubclass = Get-LineDecimal -Lines $lines -Prefix "xhci last in
 $xhciLastInterfaceProtocol = Get-LineDecimal -Lines $lines -Prefix "xhci last interface protocol"
 $xhciLastEndpointMps = Get-LineDecimal -Lines $lines -Prefix "xhci last endpoint mps"
 $xhciBroadMouseProbes = Get-LineDecimal -Lines $lines -Prefix "xhci broad mouse probes"
+$bootTicksXhciInit = Get-LineDecimal -Lines $lines -Prefix "boot ticks xhci init"
+$bootTicksBootDiag = Get-LineDecimal -Lines $lines -Prefix "boot ticks boot diag"
+$bootTicksNvmeProbe = Get-LineDecimal -Lines $lines -Prefix "boot ticks nvme probe"
+$bootTicksDisplayInit = Get-LineDecimal -Lines $lines -Prefix "boot ticks display init"
+$bootTicksI2cHidInit = Get-LineDecimal -Lines $lines -Prefix "boot ticks i2c hid init"
+$bootTicksTimerWait = Get-LineDecimal -Lines $lines -Prefix "boot ticks timer wait"
+$bootTicksKeyboardWait = Get-LineDecimal -Lines $lines -Prefix "boot ticks keyboard wait"
+$bootTicksMouseWait = Get-LineDecimal -Lines $lines -Prefix "boot ticks mouse wait"
+$bootTicksLogin = Get-LineDecimal -Lines $lines -Prefix "boot ticks login"
+$bootTicksLockProbe = Get-LineDecimal -Lines $lines -Prefix "boot ticks lock probe"
+$bootTicksWmProbe = Get-LineDecimal -Lines $lines -Prefix "boot ticks wm probe"
+$bootTicksDesktopProbe = Get-LineDecimal -Lines $lines -Prefix "boot ticks desktop probe"
+$bootTicksVirtioNetInit = Get-LineDecimal -Lines $lines -Prefix "boot ticks virtio net init"
+$bootTicksPitToShell = Get-LineDecimal -Lines $lines -Prefix "boot ticks pit to shell"
 $i2cPointerFound = Get-LineBoolean -Lines $lines -Prefix "i2c pointer found"
 $i2cPointerReports = Get-LineDecimal -Lines $lines -Prefix "i2c pointer reports"
 $i2cPointerError = Get-LineDecimal -Lines $lines -Prefix "i2c pointer error"
@@ -396,6 +410,20 @@ $analysis = [PSCustomObject]@{
         xhci_last_interface_protocol = $xhciLastInterfaceProtocol
         xhci_last_endpoint_mps = $xhciLastEndpointMps
         xhci_broad_mouse_probes = $xhciBroadMouseProbes
+        boot_ticks_xhci_init = $bootTicksXhciInit
+        boot_ticks_boot_diag = $bootTicksBootDiag
+        boot_ticks_nvme_probe = $bootTicksNvmeProbe
+        boot_ticks_display_init = $bootTicksDisplayInit
+        boot_ticks_i2c_hid_init = $bootTicksI2cHidInit
+        boot_ticks_timer_wait = $bootTicksTimerWait
+        boot_ticks_keyboard_wait = $bootTicksKeyboardWait
+        boot_ticks_mouse_wait = $bootTicksMouseWait
+        boot_ticks_login = $bootTicksLogin
+        boot_ticks_lock_probe = $bootTicksLockProbe
+        boot_ticks_wm_probe = $bootTicksWmProbe
+        boot_ticks_desktop_probe = $bootTicksDesktopProbe
+        boot_ticks_virtio_net_init = $bootTicksVirtioNetInit
+        boot_ticks_pit_to_shell = $bootTicksPitToShell
         i2c_pointer_found = $i2cPointerFound
         i2c_pointer_reports = $i2cPointerReports
         i2c_pointer_error = $i2cPointerError
@@ -430,6 +458,13 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "xhci-last-interface-class: $xhciLastInterfaceClass/$xhciLastInterfaceSubclass/$xhciLastInterfaceProtocol",
     "xhci-last-endpoint-mps: $xhciLastEndpointMps",
     "xhci-broad-mouse-probes: $xhciBroadMouseProbes",
+    "boot-ticks-xhci-init: $bootTicksXhciInit",
+    "boot-ticks-nvme-probe: $bootTicksNvmeProbe",
+    "boot-ticks-i2c-hid-init: $bootTicksI2cHidInit",
+    "boot-ticks-keyboard-wait: $bootTicksKeyboardWait",
+    "boot-ticks-mouse-wait: $bootTicksMouseWait",
+    "boot-ticks-login: $bootTicksLogin",
+    "boot-ticks-pit-to-shell: $bootTicksPitToShell",
     "i2c-pointer-found: $i2cPointerFound",
     "i2c-pointer-reports: $i2cPointerReports",
     "i2c-pointer-error: $i2cPointerError",

@@ -9,6 +9,7 @@
 #include "auth_x64.h"
 #include "block_x64.h"
 #include "boot_info.h"
+#include "boot_diag_x64.h"
 #include "capability_x64.h"
 #include "cloud_storage_x64.h"
 #include "console_x64.h"
@@ -40777,6 +40778,36 @@ static u32 scaffold_wide_panel_hardware_path(const struct boot_info *boot_info)
         : 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_boot_diag64_timing_ticks[BOOT_DIAG64_TIMING_COUNT];
+
+static void record_boot_duration_ticks(u32 index, const char *label, u32 start_ticks)
+{
+    u32 duration_ticks = (u32)(pit_get_ticks() - start_ticks);
+
+    if (index < BOOT_DIAG64_TIMING_COUNT)
+    {
+        g_boot_diag64_timing_ticks[index] = duration_ticks;
+    }
+
+    write_string("[x64] boot-time ");
+    write_string(label);
+    write_string(" ticks ");
+    write_dec_u32(duration_ticks);
+    write_line("");
+}
+
+u32 boot_diag64_timing_ticks(u32 index)
+{
+    if (index >= BOOT_DIAG64_TIMING_COUNT)
+    {
+        return 0u;
+    }
+
+    return g_boot_diag64_timing_ticks[index];
+}
+#endif
+
 static void log_build_profile_surface(void)
 {
     write_string("[x64] build-profile ");
@@ -40795,6 +40826,11 @@ static void log_build_profile_surface(void)
 
 void kernel_main64_scaffold(const struct boot_info *boot_info)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 boot_timer_start_ticks = 0u;
+    u32 boot_stage_start_ticks = 0u;
+#endif
+
     serial_init();
     kernel_entry_draw_raw_splash(boot_info);
     kernel_stage_marker(boot_info, "KERNEL ENTRY FB ALIVE");
@@ -40860,6 +40896,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
 #endif
     pit_initialize(100u);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_timer_start_ticks = pit_get_ticks();
     kernel_stage_marker(boot_info, "PIT OK");
 #endif
     write_line("[x64] PIT at 100 Hz");
@@ -40902,7 +40939,13 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     kernel_stage_marker(boot_info, "INT PROBES OK");
 #endif
     kernel_stage_marker(boot_info, "XHCI PROBE");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     xhci64_init();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_XHCI_INIT, "xhci-init", boot_stage_start_ticks);
+#endif
     if (scaffold_wide_panel_hardware_path(boot_info) != 0u)
     {
         write_line("[x64] xhci native init complete; lpss i2c hid path remains enabled");
@@ -40914,6 +40957,9 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     kernel_stage_marker(boot_info, "XHCI OK");
     xhci64_set_live_polling_enabled(0u);
     kernel_stage_marker(boot_info, "BOOT DIAG");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     (void)display64_write_boot_diagnostics(
         xhci64_found(),
         xhci64_legacy_handoff(),
@@ -40934,15 +40980,36 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         input64_keyboard_pending_count(),
         input64_keyboard_last_scancode(),
         pci64_lpss_i2c_hid_found());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_BOOT_DIAG, "boot-diag", boot_stage_start_ticks);
+#endif
     kernel_stage_marker(boot_info, "BOOT DIAG OK");
     kernel_stage_marker(boot_info, "NVME PROBE");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     log_pci_storage_surface();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_NVME_PROBE, "nvme-probe", boot_stage_start_ticks);
+#endif
     kernel_stage_marker(boot_info, "NVME OK");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     display64_init(boot_info);
     input64_set_mouse_bounds(display64_width(), display64_height());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_DISPLAY_INIT, "display-init", boot_stage_start_ticks);
+#endif
     kernel_stage_marker(boot_info, "FB INIT");
     kernel_stage_marker(boot_info, "I2C HID INIT");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     i2c_hid64_init();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_I2C_HID_INIT, "i2c-hid-init", boot_stage_start_ticks);
+#endif
     write_line("[x64] i2c hid native init complete");
     kernel_stage_marker(boot_info, "I2C HID OK");
     kernel_stage_marker(boot_info, "INPUT PROBE");
@@ -40958,12 +41025,24 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     kernel_stage_marker(boot_info, "USER RUNQUEUE OK");
     interrupts64_enable();
     kernel_stage_marker(boot_info, "TIMER WAIT");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     wait_for_timer_ticks(30u);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_TIMER_WAIT, "timer-wait", boot_stage_start_ticks);
+#endif
     interrupts64_disable();
     kernel_stage_marker(boot_info, "TIMER OK");
     input64_poll_keyboard();
     kernel_stage_marker(boot_info, "KEYBOARD WAIT");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     collect_keyboard_probe_input(1u, 20u);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_KEYBOARD_WAIT, "keyboard-wait", boot_stage_start_ticks);
+#endif
     if (input64_keyboard_pending_count() == 0u)
     {
         serial_write_string("[x64] keyboard probe optional: no key observed\n");
@@ -40974,7 +41053,13 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         kernel_stage_marker(boot_info, "KEYBOARD OK");
     }
     kernel_stage_marker(boot_info, "MOUSE WAIT");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+#endif
     collect_mouse_probe_input(1u, 20u);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_MOUSE_WAIT, "mouse-wait", boot_stage_start_ticks);
+#endif
     if (input64_mouse_packet_count() == 0u)
     {
         serial_write_string("[x64] mouse probe optional: no packet observed\n");
@@ -41059,6 +41144,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_font_surface();
 #if LIMITLESS_BUILD_PROFILE_PRODUCT && defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     kernel_stage_marker(boot_info, "LOGIN");
+    boot_stage_start_ticks = pit_get_ticks();
     input64_clear_keyboard_pending();
     serial_write_string("[x64] pre-login keyboard probe buffer cleared\n");
     if (auth64_run_login_gate() == 0u)
@@ -41066,16 +41152,31 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         write_line("[x64] login gate failed");
         cpu_halt_forever();
     }
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_LOGIN, "login", boot_stage_start_ticks);
     kernel_stage_marker(boot_info, "LOGIN OK");
+    boot_stage_start_ticks = pit_get_ticks();
     auth64_controlled_lock_probe();
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_LOCK_PROBE, "lock-probe", boot_stage_start_ticks);
 #endif
     log_login_surface();
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+ #endif
     display64_wm_probe();
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_WM_PROBE, "wm-probe", boot_stage_start_ticks);
+ #endif
 #endif
     log_window_manager_surface();
 #if LIMITLESS_EXPERIMENTAL_RUNTIME_ENABLED || LIMITLESS_BUILD_PROFILE_PRODUCT
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+ #endif
     display64_desktop_probe();
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_DESKTOP_PROBE, "desktop-probe", boot_stage_start_ticks);
+ #endif
     if (display64_desktop_init_done() != 0u)
     {
         if (scaffold_wide_panel_hardware_path(boot_info) == 0u)
@@ -41136,7 +41237,13 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     log_apic_surface();
     log_usb_hci_surface();
     log_xhci_surface();
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    boot_stage_start_ticks = pit_get_ticks();
+ #endif
     virtio_net64_init();
+ #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_VIRTIO_NET_INIT, "virtio-net-init", boot_stage_start_ticks);
+ #endif
     log_virtio_net_surface();
     log_e1000_surface();
     log_dhcp_surface();
@@ -41165,6 +41272,9 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     run_drs_load_probe();
     run_drs_load_full_probe();
     run_app_model_m20_probe();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    record_boot_duration_ticks(BOOT_DIAG64_TIMING_PIT_TO_SHELL, "pit-to-shell", boot_timer_start_ticks);
+#endif
     write_string("[x64] active virtual ");
     write_hex_u64(g_x64_scaffold_report.active_virtual_base);
     write_line("");
