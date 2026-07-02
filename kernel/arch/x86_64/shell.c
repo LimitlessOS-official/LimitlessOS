@@ -1692,6 +1692,19 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse reports: ", xhci64_mouse_reports());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse bytes: ", xhci64_mouse_report_bytes());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci error: ", xhci64_error());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last skip port: ", xhci64_last_skip_port());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last skip code: ", xhci64_last_skip_code());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last device class: ", xhci64_last_device_class());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last device subclass: ", xhci64_last_device_subclass());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last device protocol: ", xhci64_last_device_protocol());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last config bytes: ", xhci64_last_config_total_length());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface class: ", xhci64_last_interface_class());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface subclass: ", xhci64_last_interface_subclass());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface protocol: ", xhci64_last_interface_protocol());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last endpoint mps: ", xhci64_last_endpoint_max_packet());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci broad mouse probes: ", xhci64_broad_mouse_probe_count());
+#endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer reports: ", i2c_hid64_pointer_report_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer error: ", i2c_hid64_pointer_error());

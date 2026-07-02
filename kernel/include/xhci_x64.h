@@ -73,5 +73,16 @@ u32 xhci64_port_reset_wait_ms(void);
 u32 xhci64_device_settle_ms(void);
 u32 xhci64_unavailable(void);
 u32 xhci64_error(void);
+u32 xhci64_last_skip_port(void);
+u32 xhci64_last_skip_code(void);
+u32 xhci64_last_device_class(void);
+u32 xhci64_last_device_subclass(void);
+u32 xhci64_last_device_protocol(void);
+u32 xhci64_last_config_total_length(void);
+u32 xhci64_last_interface_class(void);
+u32 xhci64_last_interface_subclass(void);
+u32 xhci64_last_interface_protocol(void);
+u32 xhci64_last_endpoint_max_packet(void);
+u32 xhci64_broad_mouse_probe_count(void);
 
 #endif
