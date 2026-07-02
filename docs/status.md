@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-06-29
+Last updated: 2026-07-02
 
 ## Accepted Baseline
 
@@ -15,6 +15,8 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M166 is `current MSI handoff bundle M165 refresh`. The ignored physical handoff bundle at `dist\m133-msi-hardware-handoff-current` has been regenerated from commit `c38296b1` after M165 so the actual USB handoff package carries the stricter stale-capture routing contract. The refreshed bundle records ISO SHA-256 `b3ce83b485b4bf3de5bad8e9622c7bfc518c071202359894c092a19adf365bc3`, UEFI image SHA-256 `7d87db946fac05f6e436c74046b23cf9f7a4985f860bc46630277155f57109b7`, `/APPS/DYNLDLIMIT` SHA-256 `9f6eb9c05b3065d39bc59d24defe9361267b34cefd4de78f568ddb00497238fa`, and `/APPS/LDLIMIT` SHA-256 `6f713105878c30d817b7add4a7ed5d4ee8e01fb6eab2c80ba10acee059c72238`. The handoff verifier reports `source2-required: 2`, `nvme-controller-snapshot-required: 1`, the nine required controller snapshot fields, and no capture-side missing fields before physical evidence is supplied. The bundle was refreshed from a staged Product build with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` copied into the UEFI boot image, then regenerated with `-SkipBuild -SkipQemuGate`; the bundle now contains `qemu-storage-stage-gate-skipped.txt` rather than stale QEMU evidence. Product build plus the M1 production-slice gate passed. Final reserves remain BIOS `101` sectors and UEFI `721,408` bytes. M166 does not claim a physical MSI pass, a working VMD-backed NVMe controller, successful internal SSD FAT access, or safe internal-disk writes; it makes the current handoff media ready for the next real laptop capture under the M165 report contract.
 
 M165 is `MSI capture NVMe snapshot stale-transcript routing`. This is host-side capture/report hardening for the M163 NVMe controller snapshot contract, not new kernel behavior. `tools\verify-hardware-storage-evidence.ps1` now reads `expected_hwval.required_nvme_controller_snapshot` and the required controller field list from the handoff manifest when a real `-CapturePath` transcript is supplied. If the raw `drs-nvme-triage` line is otherwise storage-ready but omits any of `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, or `nvme-doorbell-page`, the capture is forced to `nvme-controller-snapshot-missing` with a next target telling the tester to rerun `hwval` on an M163-or-newer Product image. The stale case also reports the missing field list and leaves the promoted NVMe controller snapshot fields blank instead of formatting absent values as zeroes.
 

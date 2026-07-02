@@ -1,8 +1,8 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M165 handoff analyzer ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry plus NVMe controller snapshot requirement. Stale captures missing the M163 controller snapshot now route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
+Status: M166 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry plus NVMe controller snapshot requirement. Stale captures missing the M163 controller snapshot now route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
 
-This checklist is for a real UEFI USB boot of `dist\limitlessos-x86_64.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
+This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m133-msi-hardware-handoff-current\limitlessos-x86_64-m133-handoff.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
 Post-M21 hardware progress must be based on real device output. Synthetic process tests and QEMU-only driver evidence do not count as MSI laptop network, storage, or daily-driver validation.
 
@@ -24,7 +24,7 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the current M165-verified handoff bundle:
+Next hardware evidence to capture with the current M166-verified handoff bundle:
 
 ```text
 hwval
@@ -32,6 +32,8 @@ linux /APPS/DYNLDLIMIT
 ```
 
 Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. The `drs-nvme-triage` line and generated report must include the M161/M162 `NVMe Controller Snapshot` fields: `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, and `nvme-doorbell-page`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing or the controller snapshot is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M163-or-newer Product image. The report now exposes missing controller fields explicitly and uses the stage `nvme-controller-snapshot-missing` for that stale-transcript case.
+
+The current M166 handoff bundle was generated from commit `c38296b1` and self-verifies with ISO SHA-256 `b3ce83b485b4bf3de5bad8e9622c7bfc518c071202359894c092a19adf365bc3`, UEFI image SHA-256 `7d87db946fac05f6e436c74046b23cf9f7a4985f860bc46630277155f57109b7`, BIOS reserve `101` sectors, and UEFI reserve `721,408` bytes.
 
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
