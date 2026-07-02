@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M166 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the next capture must use the current GUI telemetry plus NVMe controller snapshot requirement. Stale captures missing the M163 controller snapshot now route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
+Status: M169 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the latest July 2026 physical report shows a boot freeze after the visible `PIC MASK` marker on the MSI laptop. The current handoff ISO adds UEFI-only boot-stage markers after `PIC MASK` so the next photo/transcript can identify the exact first failing stage. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
 
 This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m133-msi-hardware-handoff-current\limitlessos-x86_64-m133-handoff.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,16 +24,39 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the current M166-verified handoff bundle:
+Next hardware evidence to capture with the current M169-verified handoff bundle:
 
 ```text
 hwval
 linux /APPS/DYNLDLIMIT
 ```
 
+If the laptop freezes before `hwval` can run, capture a clear photo of the last visible stage marker instead. The M169 diagnostic image adds these UEFI-only markers after the old `PIC MASK` line:
+
+```text
+[x64] irq route apic <0|1> pic-disabled <0|1> timer-gsi <n> keyboard-gsi <n> mouse-gsi <n>
+PIT INIT
+PIT OK
+SYSCALL INIT
+SYSCALL OK
+INT PROBES
+INT PROBES OK
+```
+
+Interpretation for the next physical run:
+
+- Last visible marker is `PIC MASK` with no IRQ route line: the failure is between the old marker and the first diagnostic print.
+- Last visible marker is `PIT INIT`: inspect PIT port programming and legacy timer handoff.
+- Last visible marker is `PIT OK` or `SYSCALL INIT`: inspect syscall MSR/descriptor initialization next.
+- Last visible marker is `SYSCALL OK` or `INT PROBES`: inspect the controlled exception/probe path.
+- Last visible marker is `INT PROBES OK` and the next stall is near `TIMER WAIT`: inspect APIC/IOAPIC/PIT timer interrupt routing.
+- If it reaches `KEYBOARD WAIT`, `MOUSE WAIT`, or the Product shell, the previous PIC/PIT cliff is cleared and the cursor/display/input issues should be classified through `hwval`.
+
+The missing mouse cursor is not yet the primary failure if the system is still frozen at the PIC/PIT/syscall/probe stage: the compositor cursor path has not necessarily started. Once the boot reaches the Product shell or `hwval`, capture `drs-cursor-path`, `drs-gui`, USB/PS2 packet counters, and pointer location fields to classify cursor drawing separately from raw pointer packet movement.
+
 Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. The `drs-nvme-triage` line and generated report must include the M161/M162 `NVMe Controller Snapshot` fields: `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, and `nvme-doorbell-page`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing or the controller snapshot is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M163-or-newer Product image. The report now exposes missing controller fields explicitly and uses the stage `nvme-controller-snapshot-missing` for that stale-transcript case.
 
-The current M166 handoff bundle was generated from commit `c38296b1` and self-verifies with ISO SHA-256 `b3ce83b485b4bf3de5bad8e9622c7bfc518c071202359894c092a19adf365bc3`, UEFI image SHA-256 `7d87db946fac05f6e436c74046b23cf9f7a4985f860bc46630277155f57109b7`, BIOS reserve `101` sectors, and UEFI reserve `721,408` bytes.
+The current M169 handoff bundle self-verifies with ISO SHA-256 `69e95ab98684eb84112497de603ed9160a4563a0db20b54bddbf42d2f380eec6`, UEFI image SHA-256 `b2cdf962eed8b831d71f590ed646dc4794959211cbc88d5b74ac47db063d13e0`, BIOS reserve `101` sectors, and UEFI reserve `721,280` bytes.
 
 Before writing the USB stick, generate the current capture session handoff from the repository root:
 
