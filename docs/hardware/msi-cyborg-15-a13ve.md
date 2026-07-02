@@ -128,18 +128,13 @@ Before writing the USB stick, verify the current handoff bundle itself:
 
 This checks the bundle hashes/reserves, the M133 media contract, the current M153 runbook contract, the `hwval` plus `linux /APPS/DYNLDLIMIT` instructions, the required `drs-gui` expectation, and the source-2 boot-media fallback expectation. After a physical capture exists, add `-CapturePath <path-to-transcript>` to run the same combined analyzer against the real laptop transcript.
 
-The preferred post-capture command is now the M155 report wrapper:
+The preferred post-capture command is now the M168 finish wrapper:
 
 ```powershell
-.\tools\report-msi-hardware-capture.ps1 `
-  -EvidenceDir .\dist\m133-msi-hardware-handoff-current `
-  -CapturePath .\dist\msi-hwval-storage.txt `
-  -OutputDir .\dist\msi-hardware-capture-report `
-  -RequireStagedDynamicArtifacts `
-  -RequireGuiInteractionTelemetry
+.\tools\finish-msi-hardware-capture.ps1
 ```
 
-Use `msi-hardware-capture-report.md` as the handoff summary. It delegates to the stricter verifier/classifier path; it does not replace the raw transcript, photos/video, or lower-level JSON artifacts.
+It uses `dist\m133-msi-hardware-handoff-current` and `dist\msi-hwval-storage.txt` by default, rejects the blank transcript template, runs the strict report wrapper, writes `dist\msi-hardware-capture-report\msi-hardware-capture-next-target.txt`, and prints the target kind/stage/roadmap/next-target summary. Use `msi-hardware-capture-report.md` as the handoff summary. It delegates to the stricter verifier/classifier path; it does not replace the raw transcript, photos/video, or lower-level JSON artifacts.
 
 When a capture is supplied, the verifier also classifies the dynamic command itself. Use `dynamic-handoff-stage` as the dynamic launch target:
 
