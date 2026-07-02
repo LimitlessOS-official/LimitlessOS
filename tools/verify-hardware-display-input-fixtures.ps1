@@ -225,6 +225,17 @@ $baseInput = @{
     "xhci-mouse-reports" = "2"
     "xhci-mouse-bytes" = "8"
     "xhci-error" = "0"
+    "xhci-last-skip-port" = "0"
+    "xhci-last-skip-code" = "0"
+    "xhci-last-device-class" = "0"
+    "xhci-last-device-subclass" = "0"
+    "xhci-last-device-protocol" = "0"
+    "xhci-last-config-bytes" = "0"
+    "xhci-last-interface-class" = "0"
+    "xhci-last-interface-subclass" = "0"
+    "xhci-last-interface-protocol" = "0"
+    "xhci-last-endpoint-mps" = "0"
+    "xhci-broad-mouse-probes" = "0"
     "i2c-pointer-found" = "0"
     "i2c-pointer-reports" = "0"
     "i2c-pointer-error" = "0"
@@ -317,6 +328,7 @@ $fixtures = @(
     (New-Fixture -Name "i2c-pointer-candidate-unbound" -ExpectedStage "i2c-pointer-candidate-unbound" -InputMutations @{ "mouse-packets" = "0"; "i2c-pointer-candidates" = "1" }),
     (New-Fixture -Name "xhci-mouse-reports-no-packets" -ExpectedStage "xhci-mouse-reports-no-packets" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "1"; "xhci-mouse-reports" = "2" }),
     (New-Fixture -Name "xhci-mouse-no-reports" -ExpectedStage "xhci-mouse-no-reports" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "1"; "xhci-mouse-reports" = "0" }),
+    (New-Fixture -Name "xhci-mouse-descriptor-unmatched" -ExpectedStage "xhci-mouse-descriptor-unmatched" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "xhci-error" = "27"; "xhci-last-skip-port" = "6"; "xhci-last-skip-code" = "27"; "xhci-last-device-class" = "0"; "xhci-last-config-bytes" = "74"; "xhci-last-interface-class" = "224"; "xhci-last-interface-subclass" = "1"; "xhci-last-interface-protocol" = "1"; "xhci-last-endpoint-mps" = "16" }),
     (New-Fixture -Name "xhci-input-error" -ExpectedStage "xhci-input-error" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "xhci-error" = "7" }),
     (New-Fixture -Name "ps2-mouse-no-packets" -ExpectedStage "ps2-mouse-no-packets" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "1" }),
     (New-Fixture -Name "ps2-mouse-disabled" -ExpectedStage "ps2-mouse-disabled" -InputMutations @{ "mouse-packets" = "0"; "xhci-mouse-endpoint" = "0"; "xhci-mouse-reports" = "0"; "ps2-present" = "1"; "ps2-enabled" = "0" }),
@@ -373,6 +385,17 @@ foreach ($fixture in $fixtures) {
     $lines += "xhci mouse reports: $($input["xhci-mouse-reports"])"
     $lines += "xhci mouse bytes: $($input["xhci-mouse-bytes"])"
     $lines += "xhci error: $($input["xhci-error"])"
+    $lines += "xhci last skip port: $($input["xhci-last-skip-port"])"
+    $lines += "xhci last skip code: $($input["xhci-last-skip-code"])"
+    $lines += "xhci last device class: $($input["xhci-last-device-class"])"
+    $lines += "xhci last device subclass: $($input["xhci-last-device-subclass"])"
+    $lines += "xhci last device protocol: $($input["xhci-last-device-protocol"])"
+    $lines += "xhci last config bytes: $($input["xhci-last-config-bytes"])"
+    $lines += "xhci last interface class: $($input["xhci-last-interface-class"])"
+    $lines += "xhci last interface subclass: $($input["xhci-last-interface-subclass"])"
+    $lines += "xhci last interface protocol: $($input["xhci-last-interface-protocol"])"
+    $lines += "xhci last endpoint mps: $($input["xhci-last-endpoint-mps"])"
+    $lines += "xhci broad mouse probes: $($input["xhci-broad-mouse-probes"])"
     $lines += "i2c pointer found: $(if ($input["i2c-pointer-found"] -eq "1") { "yes" } else { "no" })"
     $lines += "i2c pointer reports: $($input["i2c-pointer-reports"])"
     $lines += "i2c pointer error: $($input["i2c-pointer-error"])"

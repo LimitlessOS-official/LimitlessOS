@@ -134,6 +134,17 @@ function Classify-HardwareDisplayInput
         [uint64]$XhciMouseReports,
         [uint64]$XhciMouseBytes,
         [uint64]$XhciError,
+        [uint64]$XhciLastSkipPort,
+        [uint64]$XhciLastSkipCode,
+        [uint64]$XhciLastDeviceClass,
+        [uint64]$XhciLastDeviceSubclass,
+        [uint64]$XhciLastDeviceProtocol,
+        [uint64]$XhciLastConfigBytes,
+        [uint64]$XhciLastInterfaceClass,
+        [uint64]$XhciLastInterfaceSubclass,
+        [uint64]$XhciLastInterfaceProtocol,
+        [uint64]$XhciLastEndpointMps,
+        [uint64]$XhciBroadMouseProbes,
         [uint64]$I2cPointerFound,
         [uint64]$I2cPointerReports,
         [uint64]$I2cPointerError,
@@ -257,6 +268,9 @@ function Classify-HardwareDisplayInput
     if (($XhciMouseEndpoint -ne 0) -and ($XhciMouseReports -eq 0)) {
         return New-Classification -Stage "xhci-mouse-no-reports" -Detail "xHCI mouse endpoint exists but no reports were received." -NextTarget "Input target: inspect interrupt transfer queueing/completion for the xHCI mouse endpoint."
     }
+    if (($XhciError -eq 27) -or ($XhciLastSkipCode -eq 27)) {
+        return New-Classification -Stage "xhci-mouse-descriptor-unmatched" -Detail ("xHCI reached configuration descriptor parsing but did not find a usable mouse endpoint; last device class {0}/{1}/{2}, interface class {3}/{4}/{5}, endpoint mps {6}, broad-probes {7}." -f $XhciLastDeviceClass,$XhciLastDeviceSubclass,$XhciLastDeviceProtocol,$XhciLastInterfaceClass,$XhciLastInterfaceSubclass,$XhciLastInterfaceProtocol,$XhciLastEndpointMps,$XhciBroadMouseProbes) -NextTarget "Input target: add the missing USB HID/composite/vendor-specific mouse descriptor binding path shown by the captured xHCI class/protocol fields."
+    }
     if ($XhciError -ne 0) {
         return New-Classification -Stage "xhci-input-error" -Detail ("xHCI input path reported error {0}." -f $XhciError) -NextTarget "Input target: decode xHCI error and fix controller/event-ring handling."
     }
@@ -300,6 +314,17 @@ $xhciMouseEndpoint = Get-LineBoolean -Lines $lines -Prefix "xhci mouse endpoint"
 $xhciMouseReports = Get-LineDecimal -Lines $lines -Prefix "xhci mouse reports"
 $xhciMouseBytes = Get-LineDecimal -Lines $lines -Prefix "xhci mouse bytes"
 $xhciError = Get-LineDecimal -Lines $lines -Prefix "xhci error"
+$xhciLastSkipPort = Get-LineDecimal -Lines $lines -Prefix "xhci last skip port"
+$xhciLastSkipCode = Get-LineDecimal -Lines $lines -Prefix "xhci last skip code"
+$xhciLastDeviceClass = Get-LineDecimal -Lines $lines -Prefix "xhci last device class"
+$xhciLastDeviceSubclass = Get-LineDecimal -Lines $lines -Prefix "xhci last device subclass"
+$xhciLastDeviceProtocol = Get-LineDecimal -Lines $lines -Prefix "xhci last device protocol"
+$xhciLastConfigBytes = Get-LineDecimal -Lines $lines -Prefix "xhci last config bytes"
+$xhciLastInterfaceClass = Get-LineDecimal -Lines $lines -Prefix "xhci last interface class"
+$xhciLastInterfaceSubclass = Get-LineDecimal -Lines $lines -Prefix "xhci last interface subclass"
+$xhciLastInterfaceProtocol = Get-LineDecimal -Lines $lines -Prefix "xhci last interface protocol"
+$xhciLastEndpointMps = Get-LineDecimal -Lines $lines -Prefix "xhci last endpoint mps"
+$xhciBroadMouseProbes = Get-LineDecimal -Lines $lines -Prefix "xhci broad mouse probes"
 $i2cPointerFound = Get-LineBoolean -Lines $lines -Prefix "i2c pointer found"
 $i2cPointerReports = Get-LineDecimal -Lines $lines -Prefix "i2c pointer reports"
 $i2cPointerError = Get-LineDecimal -Lines $lines -Prefix "i2c pointer error"
@@ -321,6 +346,17 @@ $classification = Classify-HardwareDisplayInput `
     -XhciMouseReports $xhciMouseReports `
     -XhciMouseBytes $xhciMouseBytes `
     -XhciError $xhciError `
+    -XhciLastSkipPort $xhciLastSkipPort `
+    -XhciLastSkipCode $xhciLastSkipCode `
+    -XhciLastDeviceClass $xhciLastDeviceClass `
+    -XhciLastDeviceSubclass $xhciLastDeviceSubclass `
+    -XhciLastDeviceProtocol $xhciLastDeviceProtocol `
+    -XhciLastConfigBytes $xhciLastConfigBytes `
+    -XhciLastInterfaceClass $xhciLastInterfaceClass `
+    -XhciLastInterfaceSubclass $xhciLastInterfaceSubclass `
+    -XhciLastInterfaceProtocol $xhciLastInterfaceProtocol `
+    -XhciLastEndpointMps $xhciLastEndpointMps `
+    -XhciBroadMouseProbes $xhciBroadMouseProbes `
     -I2cPointerFound $i2cPointerFound `
     -I2cPointerReports $i2cPointerReports `
     -I2cPointerError $i2cPointerError `
@@ -349,6 +385,17 @@ $analysis = [PSCustomObject]@{
         xhci_mouse_reports = $xhciMouseReports
         xhci_mouse_bytes = $xhciMouseBytes
         xhci_error = $xhciError
+        xhci_last_skip_port = $xhciLastSkipPort
+        xhci_last_skip_code = $xhciLastSkipCode
+        xhci_last_device_class = $xhciLastDeviceClass
+        xhci_last_device_subclass = $xhciLastDeviceSubclass
+        xhci_last_device_protocol = $xhciLastDeviceProtocol
+        xhci_last_config_bytes = $xhciLastConfigBytes
+        xhci_last_interface_class = $xhciLastInterfaceClass
+        xhci_last_interface_subclass = $xhciLastInterfaceSubclass
+        xhci_last_interface_protocol = $xhciLastInterfaceProtocol
+        xhci_last_endpoint_mps = $xhciLastEndpointMps
+        xhci_broad_mouse_probes = $xhciBroadMouseProbes
         i2c_pointer_found = $i2cPointerFound
         i2c_pointer_reports = $i2cPointerReports
         i2c_pointer_error = $i2cPointerError
@@ -378,6 +425,11 @@ $analysis | ConvertTo-Json -Depth 6 | Set-Content -Path $analysisJsonPath -Encod
     "mouse-packets: $mousePackets",
     "xhci-mouse-endpoint: $xhciMouseEndpoint",
     "xhci-mouse-reports: $xhciMouseReports",
+    "xhci-last-skip-code: $xhciLastSkipCode",
+    "xhci-last-device-class: $xhciLastDeviceClass/$xhciLastDeviceSubclass/$xhciLastDeviceProtocol",
+    "xhci-last-interface-class: $xhciLastInterfaceClass/$xhciLastInterfaceSubclass/$xhciLastInterfaceProtocol",
+    "xhci-last-endpoint-mps: $xhciLastEndpointMps",
+    "xhci-broad-mouse-probes: $xhciBroadMouseProbes",
     "i2c-pointer-found: $i2cPointerFound",
     "i2c-pointer-reports: $i2cPointerReports",
     "i2c-pointer-error: $i2cPointerError",

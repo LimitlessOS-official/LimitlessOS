@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M169 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open, and the latest July 2026 physical report shows a boot freeze after the visible `PIC MASK` marker on the MSI laptop. The current handoff ISO adds UEFI-only boot-stage markers after `PIC MASK` so the next photo/transcript can identify the exact first failing stage. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
+Status: M170 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open. The July 2026 `PIC MASK` freeze is cleared by the M169 diagnostic image: the laptop now reaches the Product desktop and shell. The current first input failure is xHCI mouse descriptor binding: user photos show `XHCI Y HANDOFF Y HID N`, `USB2 12 ERR 27`, and no pointer movement from either a USB mouse dongle or the built-in touchpad. The M170 handoff ISO adds a conservative UEFI-only broad xHCI mouse-probe fallback plus descriptor telemetry so the next capture identifies the exact class/protocol/endpoint shape if the pointer still does not move. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
 
 This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m133-msi-hardware-handoff-current\limitlessos-x86_64-m133-handoff.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,7 +24,7 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the current M169-verified handoff bundle:
+Next hardware evidence to capture with the current M170-verified handoff bundle:
 
 ```text
 hwval
@@ -54,9 +54,32 @@ Interpretation for the next physical run:
 
 The missing mouse cursor is not yet the primary failure if the system is still frozen at the PIC/PIT/syscall/probe stage: the compositor cursor path has not necessarily started. Once the boot reaches the Product shell or `hwval`, capture `drs-cursor-path`, `drs-gui`, USB/PS2 packet counters, and pointer location fields to classify cursor drawing separately from raw pointer packet movement.
 
+For the current MSI mouse failure, also capture the M170 xHCI descriptor lines from `hwval`:
+
+```text
+xhci last skip port
+xhci last skip code
+xhci last device class
+xhci last device subclass
+xhci last device protocol
+xhci last config bytes
+xhci last interface class
+xhci last interface subclass
+xhci last interface protocol
+xhci last endpoint mps
+xhci broad mouse probes
+```
+
+Interpretation for the M170 physical run:
+
+- If the USB dongle starts moving the cursor, the broad xHCI interrupt-IN fallback bound the device and the remaining touchpad target is the I2C/PS2 path.
+- If `xhci broad mouse probes` is nonzero but `xhci mouse reports` and `mouse packets` remain zero, the endpoint was bound but the report format or transfer completion path still needs work.
+- If `xhci last skip code` remains `27`, the report should route to `xhci-mouse-descriptor-unmatched`; the captured device/interface class triples and endpoint max packet size become the next exact xHCI binding target.
+- If USB pointer movement works but the built-in touchpad does not, continue through `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` instead of changing the USB path.
+
 Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. The `drs-nvme-triage` line and generated report must include the M161/M162 `NVMe Controller Snapshot` fields: `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, and `nvme-doorbell-page`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing or the controller snapshot is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M163-or-newer Product image. The report now exposes missing controller fields explicitly and uses the stage `nvme-controller-snapshot-missing` for that stale-transcript case.
 
-The current M169 handoff bundle self-verifies with ISO SHA-256 `69e95ab98684eb84112497de603ed9160a4563a0db20b54bddbf42d2f380eec6`, UEFI image SHA-256 `b2cdf962eed8b831d71f590ed646dc4794959211cbc88d5b74ac47db063d13e0`, BIOS reserve `101` sectors, and UEFI reserve `721,280` bytes.
+The current M170 handoff bundle self-verifies with ISO SHA-256 `d3942bb40ed3f571f3f7d4f1a1f557343e4365df686d13f3b9e7c3c51454736b`, UEFI image SHA-256 `dc86c45602a0e524693693ec70944b203fa8b4bf4decf96a0b61a6a1e27393c3`, BIOS reserve `101` sectors, and UEFI reserve `716,896` bytes.
 
 Before writing the USB stick, generate the current capture session handoff from the repository root:
 

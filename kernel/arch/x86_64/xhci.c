@@ -185,6 +185,19 @@ static u32 g_xhci_live_rescan_countdown = 0u;
 static u32 g_xhci_unavailable = 1u;
 static u32 g_xhci_error = 0u;
 static u32 g_xhci_port_error_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_xhci_last_skip_port = 0u;
+static u32 g_xhci_last_skip_code = 0u;
+static u32 g_xhci_last_device_class = 0u;
+static u32 g_xhci_last_device_subclass = 0u;
+static u32 g_xhci_last_device_protocol = 0u;
+static u32 g_xhci_last_config_total_length = 0u;
+static u32 g_xhci_last_interface_class = 0u;
+static u32 g_xhci_last_interface_subclass = 0u;
+static u32 g_xhci_last_interface_protocol = 0u;
+static u32 g_xhci_last_endpoint_max_packet = 0u;
+static u32 g_xhci_broad_mouse_probe_count = 0u;
+#endif
 static u32 g_xhci_extcaps_scanned = 0u;
 static u32 g_xhci_legacy_cap_found = 0u;
 static u32 g_xhci_legacy_handoff = 0u;
@@ -312,6 +325,10 @@ static void xhci64_serial_write_dec(u32 value)
 static void xhci64_log_port_skip(u32 port_id, u32 code)
 {
     ++g_xhci_port_error_count;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_skip_port = port_id;
+    g_xhci_last_skip_code = code;
+#endif
     if (g_xhci_error == 0u)
     {
         g_xhci_error = code;
@@ -1614,12 +1631,21 @@ static u32 xhci64_parse_interrupt_mouse_probe_endpoint(
             endpoint->interface_class = interface_class;
             endpoint->interface_subclass = interface_subclass;
             endpoint->interface_protocol = interface_protocol;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            g_xhci_last_interface_class = interface_class;
+            g_xhci_last_interface_subclass = interface_subclass;
+            g_xhci_last_interface_protocol = interface_protocol;
+#endif
             in_candidate_interface =
                 (config[offset + 4u] != 0u)
                 && !((interface_class == 0x03u)
                     && (interface_subclass == 0x01u)
                     && (interface_protocol == 0x01u))
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                && (interface_class != 0x09u);
+#else
                 && ((interface_class == 0x03u) || (interface_class == 0xFFu));
+#endif
             if (in_candidate_interface != 0u)
             {
                 endpoint->interface_number = current_interface;
@@ -1635,6 +1661,9 @@ static u32 xhci64_parse_interrupt_mouse_probe_endpoint(
             {
                 u32 endpoint_number = endpoint_address & 0xFu;
                 u32 max_packet = xhci64_usb16(&config[offset + 4u]) & 0x7FFu;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                g_xhci_last_endpoint_max_packet = max_packet;
+#endif
 
                 if ((max_packet >= 3u) && (max_packet <= 16u))
                 {
@@ -1643,6 +1672,12 @@ static u32 xhci64_parse_interrupt_mouse_probe_endpoint(
                     endpoint->max_packet = max_packet;
                     endpoint->interval = config[offset + 6u];
                     endpoint->report_length = max_packet;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                    if ((endpoint->interface_class != 0x03u) && (endpoint->interface_class != 0xFFu))
+                    {
+                        ++g_xhci_broad_mouse_probe_count;
+                    }
+#endif
                     return 1u;
                 }
             }
@@ -1802,6 +1837,11 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         xhci64_log_port_skip(port_id, 23u);
         return 0u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_device_class = g_xhci_control_buffer[4u];
+    g_xhci_last_device_subclass = g_xhci_control_buffer[5u];
+    g_xhci_last_device_protocol = g_xhci_control_buffer[6u];
+#endif
 
     if (xhci64_get_descriptor(
             slot_id,
@@ -1822,6 +1862,9 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
     }
 
     total_length = xhci64_usb16(&g_xhci_control_buffer[2]);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_config_total_length = total_length;
+#endif
     if (total_length > sizeof(g_xhci_control_buffer))
     {
         total_length = sizeof(g_xhci_control_buffer);
@@ -2259,6 +2302,19 @@ void xhci64_register_candidate(
     g_xhci_unavailable = ((flags & XHCI64_MMIO_FLAG_PRESENT) != 0u) ? 0u : 1u;
     g_xhci_error = 0u;
     g_xhci_port_error_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_skip_port = 0u;
+    g_xhci_last_skip_code = 0u;
+    g_xhci_last_device_class = 0u;
+    g_xhci_last_device_subclass = 0u;
+    g_xhci_last_device_protocol = 0u;
+    g_xhci_last_config_total_length = 0u;
+    g_xhci_last_interface_class = 0u;
+    g_xhci_last_interface_subclass = 0u;
+    g_xhci_last_interface_protocol = 0u;
+    g_xhci_last_endpoint_max_packet = 0u;
+    g_xhci_broad_mouse_probe_count = 0u;
+#endif
     g_xhci_extcaps_scanned = 0u;
     g_xhci_legacy_cap_found = 0u;
     g_xhci_legacy_handoff = 0u;
@@ -2728,3 +2784,60 @@ u32 xhci64_error(void)
 {
     return g_xhci_error;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 xhci64_last_skip_port(void)
+{
+    return g_xhci_last_skip_port;
+}
+
+u32 xhci64_last_skip_code(void)
+{
+    return g_xhci_last_skip_code;
+}
+
+u32 xhci64_last_device_class(void)
+{
+    return g_xhci_last_device_class;
+}
+
+u32 xhci64_last_device_subclass(void)
+{
+    return g_xhci_last_device_subclass;
+}
+
+u32 xhci64_last_device_protocol(void)
+{
+    return g_xhci_last_device_protocol;
+}
+
+u32 xhci64_last_config_total_length(void)
+{
+    return g_xhci_last_config_total_length;
+}
+
+u32 xhci64_last_interface_class(void)
+{
+    return g_xhci_last_interface_class;
+}
+
+u32 xhci64_last_interface_subclass(void)
+{
+    return g_xhci_last_interface_subclass;
+}
+
+u32 xhci64_last_interface_protocol(void)
+{
+    return g_xhci_last_interface_protocol;
+}
+
+u32 xhci64_last_endpoint_max_packet(void)
+{
+    return g_xhci_last_endpoint_max_packet;
+}
+
+u32 xhci64_broad_mouse_probe_count(void)
+{
+    return g_xhci_broad_mouse_probe_count;
+}
+#endif
