@@ -40844,10 +40844,33 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         write_line("[x64] PIC ready");
     }
     kernel_stage_marker(boot_info, "PIC MASK");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    write_string("[x64] irq route apic ");
+    write_dec_u32(apic64_enabled());
+    write_string(" pic-disabled ");
+    write_dec_u32(apic64_pic_disabled());
+    write_string(" timer-gsi ");
+    write_dec_u32(apic64_timer_gsi());
+    write_string(" keyboard-gsi ");
+    write_dec_u32(apic64_keyboard_gsi());
+    write_string(" mouse-gsi ");
+    write_dec_u32(apic64_mouse_gsi());
+    write_line("");
+    kernel_stage_marker(boot_info, "PIT INIT");
+#endif
     pit_initialize(100u);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "PIT OK");
+#endif
     write_line("[x64] PIT at 100 Hz");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "SYSCALL INIT");
+#endif
     syscall64_init(boot_info);
     syscall64_native_init();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "SYSCALL OK");
+#endif
     log_descriptor_surface();
     log_bootstrap_catalog();
     log_principal_namespace();
@@ -40866,12 +40889,18 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
     write_string("[x64] paging levels ");
     write_dec_u32(g_x64_scaffold_report.page_levels);
     write_line("");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "INT PROBES");
+#endif
     interrupts64_trigger_probe();
     interrupts64_trigger_breakpoint_proof();
     interrupts64_trigger_invalid_opcode_proof();
     interrupts64_trigger_page_fault_proof();
     interrupts64_trigger_syscall_probe(1u);
     run_user_entry_transfer_probe();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    kernel_stage_marker(boot_info, "INT PROBES OK");
+#endif
     kernel_stage_marker(boot_info, "XHCI PROBE");
     xhci64_init();
     if (scaffold_wide_panel_hardware_path(boot_info) != 0u)
