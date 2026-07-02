@@ -35,6 +35,14 @@ Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `
 
 The current M166 handoff bundle was generated from commit `c38296b1` and self-verifies with ISO SHA-256 `b3ce83b485b4bf3de5bad8e9622c7bfc518c071202359894c092a19adf365bc3`, UEFI image SHA-256 `7d87db946fac05f6e436c74046b23cf9f7a4985f860bc46630277155f57109b7`, BIOS reserve `101` sectors, and UEFI reserve `721,408` bytes.
 
+Before writing the USB stick, generate the current capture session handoff from the repository root:
+
+```powershell
+.\tools\start-msi-hardware-capture.ps1
+```
+
+This verifies the current handoff bundle, writes `dist\msi-hardware-capture-session\msi-hardware-capture-session.txt` with the exact ISO path, hashes, laptop commands, required telemetry lines, capture path, and report command, and writes a blank transcript template at `dist\msi-hardware-capture-session\msi-hwval-storage.template.txt`. It does not create hardware evidence; it only makes the physical run harder to mis-execute.
+
 For hardware builds that need dynamic-linker artifacts available on the USB boot image itself, the x86_64 Product build can now stage two externally built files into the UEFI FAT boot image:
 
 ```powershell
