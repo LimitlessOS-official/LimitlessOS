@@ -41,6 +41,10 @@ u32 xhci64_event_ring_staged(void);
 u32 xhci64_controller_reset(void);
 u32 xhci64_controller_running(void);
 u32 xhci64_slot_enabled(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 xhci64_slots_disabled(void);
+u32 xhci64_slot_disable_failures(void);
+#endif
 u32 xhci64_addressed(void);
 u32 xhci64_config_read(void);
 u32 xhci64_hid_report_read(void);

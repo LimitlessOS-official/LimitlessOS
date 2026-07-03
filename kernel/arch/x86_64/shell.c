@@ -1692,6 +1692,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci mouse endpoint: ", xhci64_mouse_endpoint_present());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse reports: ", xhci64_mouse_reports());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse bytes: ", xhci64_mouse_report_bytes());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slots disabled: ", xhci64_slots_disabled());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slot disable failures: ", xhci64_slot_disable_failures());
+#endif
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci error: ", xhci64_error());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last skip port: ", xhci64_last_skip_port());

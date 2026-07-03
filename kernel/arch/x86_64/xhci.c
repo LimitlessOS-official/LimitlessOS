@@ -76,6 +76,7 @@
 #define XHCI64_TRB_TYPE_STATUS_STAGE 4u
 #define XHCI64_TRB_TYPE_LINK 6u
 #define XHCI64_TRB_TYPE_ENABLE_SLOT 9u
+#define XHCI64_TRB_TYPE_DISABLE_SLOT 10u
 #define XHCI64_TRB_TYPE_ADDRESS_DEVICE 11u
 #define XHCI64_TRB_TYPE_CONFIGURE_ENDPOINT 12u
 #define XHCI64_TRB_TYPE_TRANSFER_EVENT 32u
@@ -167,6 +168,10 @@ static u32 g_xhci_event_ring_staged = 0u;
 static u32 g_xhci_controller_reset = 0u;
 static u32 g_xhci_controller_running = 0u;
 static u32 g_xhci_slot_enabled = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_xhci_slots_disabled = 0u;
+static u32 g_xhci_slot_disable_failures = 0u;
+#endif
 static u32 g_xhci_addressed = 0u;
 static u32 g_xhci_config_read = 0u;
 static u32 g_xhci_hid_report_read = 0u;
@@ -1139,6 +1144,51 @@ static u32 xhci64_enable_slot(u32 *slot_out)
     return 1u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 xhci64_disable_slot(u32 slot_id)
+{
+    struct xhci64_event event;
+
+    if ((slot_id == 0u) || (slot_id > XHCI64_MAX_SLOTS))
+    {
+        return 0u;
+    }
+
+    if (xhci64_submit_command(
+            0ull,
+            (XHCI64_TRB_TYPE_DISABLE_SLOT << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
+            &event) == 0u)
+    {
+        ++g_xhci_slot_disable_failures;
+        return 0u;
+    }
+
+    if (xhci64_completion_code(&event) != XHCI64_COMPLETION_SUCCESS)
+    {
+        ++g_xhci_slot_disable_failures;
+        return 0u;
+    }
+
+    if (slot_id < (XHCI64_MAX_SLOTS + 1u))
+    {
+        g_xhci_dcbaa[slot_id] = 0ull;
+    }
+
+    ++g_xhci_slots_disabled;
+    return 1u;
+}
+
+#define XHCI64_CLEANUP_FAILED_SLOT(slot_id) \
+    do { \
+        if ((slot_id) != 0u) \
+        { \
+            (void)xhci64_disable_slot((slot_id)); \
+        } \
+    } while (0)
+#else
+#define XHCI64_CLEANUP_FAILED_SLOT(slot_id)
+#endif
+
 static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
 {
     struct xhci64_event event;
@@ -1824,6 +1874,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
     if (xhci64_address_device(slot_id, port_id, speed) == 0u)
     {
         xhci64_log_port_skip(port_id, 22u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 
@@ -1835,6 +1886,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
             18u) == 0u)
     {
         xhci64_log_port_skip(port_id, 23u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -1851,6 +1903,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
             9u) == 0u)
     {
         xhci64_log_port_skip(port_id, 24u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 
@@ -1858,6 +1911,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         || (xhci64_usb16(&g_xhci_control_buffer[2]) < 9u))
     {
         xhci64_log_port_skip(port_id, 25u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 
@@ -1878,6 +1932,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
             total_length) == 0u)
     {
         xhci64_log_port_skip(port_id, 26u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 
@@ -1916,6 +1971,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         if (probe_match == 0u)
         {
             xhci64_log_port_skip(port_id, 27u);
+            XHCI64_CLEANUP_FAILED_SLOT(slot_id);
             return 0u;
         }
     }
@@ -1923,6 +1979,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
     if (xhci64_set_configuration(slot_id, configuration_value) == 0u)
     {
         xhci64_log_port_skip(port_id, 28u);
+        XHCI64_CLEANUP_FAILED_SLOT(slot_id);
         return 0u;
     }
 
@@ -1949,6 +2006,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                 &mouse_endpoint) == 0u)
         {
             xhci64_log_port_skip(port_id, 34u);
+            XHCI64_CLEANUP_FAILED_SLOT(slot_id);
             return 0u;
         }
 
@@ -1975,6 +2033,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                 &g_xhci_intr_cycle) == 0u)
         {
             xhci64_log_port_skip(port_id, 29u);
+            XHCI64_CLEANUP_FAILED_SLOT(slot_id);
             return 0u;
         }
 
@@ -2002,6 +2061,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                 &g_xhci_mouse_intr_cycle) == 0u)
         {
             xhci64_log_port_skip(port_id, 30u);
+            XHCI64_CLEANUP_FAILED_SLOT(slot_id);
             return 0u;
         }
 
@@ -2040,6 +2100,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                     &g_xhci_mouse_intr_cycle) == 0u)
             {
                 xhci64_log_port_skip(port_id, 32u);
+                XHCI64_CLEANUP_FAILED_SLOT(slot_id);
                 return 0u;
             }
 
@@ -2065,6 +2126,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                     &g_xhci_mouse_intr_cycle) == 0u)
             {
                 xhci64_log_port_skip(port_id, 35u);
+                XHCI64_CLEANUP_FAILED_SLOT(slot_id);
                 return 0u;
             }
 
@@ -2087,6 +2149,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                     &g_xhci_intr_cycle) == 0u)
             {
                 xhci64_log_port_skip(port_id, 33u);
+                XHCI64_CLEANUP_FAILED_SLOT(slot_id);
                 return 0u;
             }
 
@@ -2111,6 +2174,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
                 &g_xhci_mouse_intr_cycle) == 0u)
         {
             xhci64_log_port_skip(port_id, 36u);
+            XHCI64_CLEANUP_FAILED_SLOT(slot_id);
             return 0u;
         }
 
@@ -2284,6 +2348,10 @@ void xhci64_register_candidate(
     g_xhci_controller_reset = 0u;
     g_xhci_controller_running = 0u;
     g_xhci_slot_enabled = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_slots_disabled = 0u;
+    g_xhci_slot_disable_failures = 0u;
+#endif
     g_xhci_addressed = 0u;
     g_xhci_config_read = 0u;
     g_xhci_hid_report_read = 0u;
@@ -2624,6 +2692,18 @@ u32 xhci64_slot_enabled(void)
 {
     return g_xhci_slot_enabled;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 xhci64_slots_disabled(void)
+{
+    return g_xhci_slots_disabled;
+}
+
+u32 xhci64_slot_disable_failures(void)
+{
+    return g_xhci_slot_disable_failures;
+}
+#endif
 
 u32 xhci64_addressed(void)
 {
