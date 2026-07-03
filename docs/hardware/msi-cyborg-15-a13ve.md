@@ -102,6 +102,26 @@ Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `
 
 The current M171 handoff bundle self-verifies with ISO SHA-256 `619ffac1d528b499438631c7a17dcab07d94b1b1c786cc32ef1ba8f9a8131d41`, UEFI image SHA-256 `1940c39fdca70fc203f49ba68a38145b7c2e9c333e0f9e41c58c33669280ba34`, BIOS reserve `101` sectors, and UEFI reserve `716,352` bytes.
 
+## Windows Hardware Inventory Cross-Check
+
+The July 2026 Windows-side inventory bundle at `dist\msi-windows-hardware-inventory\capture-20260702-200428` is the current host-authored hardware map for this laptop. It is evidence for generic driver targets, not permission to hardcode MSI-only paths.
+
+Relevant confirmed devices:
+
+- xHCI controller: `PCI\VEN_8086&DEV_51ED&SUBSYS_13B91462&REV_01`, Intel USB 3.10 xHCI, PCI bus 0 device 20 function 0, Windows driver `usbxhci.inf`.
+- USB receiver: Logitech LIGHTSPEED Receiver `USB\VID_046D&PID_C53F`, connected under the Intel xHCI root hub on port `8`.
+- Logitech composite HID shape: `MI_00` is HID boot keyboard-shaped, `MI_01` exposes the mouse collection `HID_DEVICE_SYSTEM_MOUSE` / `HID_DEVICE_UP:0001_U:0002`, and `MI_02` exposes vendor-defined HID collections. LimitlessOS must discover the mouse through descriptor-driven composite HID enumeration rather than by assuming the first HID interface is the pointer.
+- Built-in touchpad: `ACPI\ELAN0307` / `ACPI\PNP0C50`, serviced by the Intel Serial IO I2C host controller `PCI\VEN_8086&DEV_51E8&SUBSYS_13B91462&REV_01`. This confirms the internal touchpad is an I2C HID target, not a PS/2 aux mouse target.
+- Internal SSD: `NVMe Micron_2400_MTFDKBA512QFM`, hidden behind Intel RST VMD controller `PCI\VEN_8086&DEV_A77F&SUBSYS_00008086&REV_00` using Windows driver `iaStorVD`. Direct ECAM NVMe scanning is expected to report no usable internal NVMe controller until the VMD child-device path is completed.
+- Display devices: Intel integrated graphics `PCI\VEN_8086&DEV_A7A8` and NVIDIA RTX 4050 Laptop GPU `PCI\VEN_10DE&DEV_28A1`.
+
+Immediate interpretation for the current photos:
+
+- `XHCI LAST SKIP PORT 14` is not necessarily the Logitech receiver. Windows reports the Logitech receiver on USB port `8`, while LimitlessOS last-skip telemetry can be overwritten by later devices such as mass storage. The next xHCI work should preserve first HID/mouse-candidate evidence in addition to last skipped port.
+- `XHCI LAST INTERFACE CLASS 8 SUBCLASS 6 PROTOCOL 80` describes a mass-storage interface, not the mouse. The correct target is the composite HID mouse interface under Logitech `MI_01`.
+- `I2C POINTER CANDIDATES 1` plus `I2C POINTER FOUND NO` is consistent with the ELAN0307/PNP0C50 touchpad requiring fuller I2C HID descriptor/report support.
+- `NVME FAT UNAVAILABLE` on the internal SSD path is consistent with the Micron NVMe being behind Intel VMD A77F rather than directly visible as a normal PCI NVMe controller.
+
 Before writing the USB stick, generate the current capture session handoff from the repository root:
 
 ```powershell
