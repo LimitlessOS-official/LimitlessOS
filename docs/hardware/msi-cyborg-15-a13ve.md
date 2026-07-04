@@ -1,6 +1,6 @@
 # MSI Cyborg 15 A13VE Manual Validation
 
-Status: M171 current handoff bundle ready; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open. The July 2026 `PIC MASK` freeze is cleared by the M169 diagnostic image: the laptop now reaches the Product desktop and shell. The current first input failure is xHCI mouse descriptor binding: user photos show `XHCI Y HANDOFF Y HID N`, `USB2 12 ERR 27`, and no pointer movement from either a USB mouse dongle or the built-in touchpad. The M170 handoff ISO adds a conservative UEFI-only broad xHCI mouse-probe fallback plus descriptor telemetry so the next capture identifies the exact class/protocol/endpoint shape if the pointer still does not move. M171 adds UEFI-only boot-latency telemetry because the MSI laptop was reported to take roughly 3-5 minutes to reach the Product desktop while VirtualBox reaches it much faster. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
+Status: M173 current handoff bundle pending hardware retest; June 2026 photos show UEFI Product shell reachability with display, touchpad, and NVMe FAT gaps still open. The July 2026 `PIC MASK` freeze is cleared by the M169 diagnostic image: the laptop now reaches the Product desktop and shell. The current first input failure is still pointer input: the built-in ELAN touchpad is an I2C HID target that is not yet bound, and the Logitech USB receiver is not yet producing xHCI mouse reports on the laptop. The latest physical M172 photos show the xHCI path spending too much time in repeated failed slot cleanup (`xhci slots disabled 2701`, `xhci slot disable failures 675`) and overwriting useful HID evidence with a later mass-storage interface (`last interface 8/6/80`). M173 bounds xHCI port enumeration retries and adds first HID/mouse-candidate evidence to `hwval`. Stale captures missing the M163 controller snapshot still route to `nvme-controller-snapshot-missing` instead of being accepted as storage evidence.
 
 This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m133-msi-hardware-handoff-current\limitlessos-x86_64-m133-handoff.iso` on an MSI Cyborg 15 A13VE. QEMU/QMP evidence is useful, but it is not a substitute for this checklist.
 
@@ -24,7 +24,7 @@ Known open hardware gaps from the photos:
 - Touchpad/mouse does not move. Diagnostics show the PS/2 keyboard path is alive, PS/2 aux mouse is not producing packets, and the LPSS/I2C touch path reports an error. Capture `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` from `hwval`.
 - `linux /APPS/DYNLDLIMIT` now has a UEFI boot-media staged-file fallback for the app and interpreter copied by the UEFI loader. NVMe FAT is still needed for Linux VFS file tests, `/nvme/apps` paths, and staged-artifact agreement checks, but the initial dynamic app source no longer has to come from NVMe.
 
-Next hardware evidence to capture with the current M171-verified handoff bundle:
+Next hardware evidence to capture with the current M173-verified handoff bundle:
 
 ```text
 hwval
@@ -54,7 +54,7 @@ Interpretation for the next physical run:
 
 The missing mouse cursor is not yet the primary failure if the system is still frozen at the PIC/PIT/syscall/probe stage: the compositor cursor path has not necessarily started. Once the boot reaches the Product shell or `hwval`, capture `drs-cursor-path`, `drs-gui`, USB/PS2 packet counters, and pointer location fields to classify cursor drawing separately from raw pointer packet movement.
 
-For the current MSI mouse failure, also capture the M170 xHCI descriptor lines from `hwval`:
+For the current MSI mouse failure, also capture the M173 xHCI descriptor/retry lines from `hwval`:
 
 ```text
 xhci last skip port
@@ -68,13 +68,26 @@ xhci last interface subclass
 xhci last interface protocol
 xhci last endpoint mps
 xhci broad mouse probes
+xhci port probe attempts
+xhci port probe retry skips
+xhci first hid port
+xhci first hid class
+xhci first hid subclass
+xhci first hid protocol
+xhci first mouse port
+xhci first mouse class
+xhci first mouse subclass
+xhci first mouse protocol
+xhci first mouse mps
 ```
 
-Interpretation for the M170 physical run:
+Interpretation for the M173 physical run:
 
 - If the USB dongle starts moving the cursor, the broad xHCI interrupt-IN fallback bound the device and the remaining touchpad target is the I2C/PS2 path.
 - If `xhci broad mouse probes` is nonzero but `xhci mouse reports` and `mouse packets` remain zero, the endpoint was bound but the report format or transfer completion path still needs work.
-- If `xhci last skip code` remains `27`, the report should route to `xhci-mouse-descriptor-unmatched`; the captured device/interface class triples and endpoint max packet size become the next exact xHCI binding target.
+- If `xhci port probe retry skips` is nonzero and `xhci slots disabled` is much lower than the previous `2701`, M173 fixed the repeated cleanup storm and any remaining multi-minute pause is elsewhere.
+- If `xhci first mouse port` is nonzero but `xhci mouse endpoint` remains no, the captured first mouse class/subclass/protocol/MPS become the next exact xHCI binding target.
+- If `xhci first mouse port` remains zero while Windows still reports the Logitech receiver on port `8`, the next USB target is descriptor traversal or composite-interface discovery before endpoint binding.
 - If USB pointer movement works but the built-in touchpad does not, continue through `i2c pointer found`, `i2c pointer reports`, `i2c pointer error`, `i2c pointer candidates`, and `i2c pointer0 flags/base` instead of changing the USB path.
 
 For the MSI slow-boot report, capture the M171 boot timing lines from `hwval`:
@@ -100,7 +113,7 @@ Interpretation: ticks are PIT ticks after PIT initialization, currently 100 tick
 
 Record the full `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and `drs-nvme-triage` lines from `hwval`, plus the full `drs-realbin` or `drs-realbin-fail` line from `linux /APPS/DYNLDLIMIT`. The `drs-nvme-triage` line and generated report must include the M161/M162 `NVMe Controller Snapshot` fields: `nvme-probe-error`, `nvme-regs`, `nvme-cap-low`, `nvme-cap-high`, `nvme-vs`, `nvme-cc`, `nvme-csts`, `nvme-dstrd-bytes`, and `nvme-doorbell-page`. If only `drs-realbin-unavailable` appears, the capture is legacy/insufficient and should be repeated with the current staged image. If `drs-gui` is missing or the controller snapshot is missing, the capture is also insufficient for the current MSI handoff and should be repeated with an M163-or-newer Product image. The report now exposes missing controller fields explicitly and uses the stage `nvme-controller-snapshot-missing` for that stale-transcript case.
 
-The current M171 handoff bundle self-verifies with ISO SHA-256 `619ffac1d528b499438631c7a17dcab07d94b1b1c786cc32ef1ba8f9a8131d41`, UEFI image SHA-256 `1940c39fdca70fc203f49ba68a38145b7c2e9c333e0f9e41c58c33669280ba34`, BIOS reserve `101` sectors, and UEFI reserve `716,352` bytes.
+The current M173 handoff bundle self-verifies with ISO SHA-256 `ea5268b6581127c7a0a69e9d0fb070876c938cfa5f389f3deb8a1f7568cbf733`, UEFI image SHA-256 `bfaef31767418ae469841634c2451314cabfeee764d144ad138a792f846445dc`, `/APPS/DYNLDLIMIT` SHA-256 `9f6eb9c05b3065d39bc59d24defe9361267b34cefd4de78f568ddb00497238fa`, `/APPS/LDLIMIT` SHA-256 `6f713105878c30d817b7add4a7ed5d4ee8e01fb6eab2c80ba10acee059c72238`, BIOS reserve `101` sectors, and UEFI reserve `716,032` bytes.
 
 ## Windows Hardware Inventory Cross-Check
 
@@ -117,7 +130,7 @@ Relevant confirmed devices:
 
 Immediate interpretation for the current photos:
 
-- `XHCI LAST SKIP PORT 14` is not necessarily the Logitech receiver. Windows reports the Logitech receiver on USB port `8`, while LimitlessOS last-skip telemetry can be overwritten by later devices such as mass storage. The next xHCI work should preserve first HID/mouse-candidate evidence in addition to last skipped port.
+- `XHCI LAST SKIP PORT 14` is not necessarily the Logitech receiver. Windows reports the Logitech receiver on USB port `8`, while LimitlessOS last-skip telemetry was overwritten by later devices such as mass storage. M173 preserves first HID/mouse-candidate evidence in addition to last skipped port, so the next capture should report whether the receiver's mouse interface is seen at all.
 - `XHCI LAST INTERFACE CLASS 8 SUBCLASS 6 PROTOCOL 80` describes a mass-storage interface, not the mouse. The correct target is the composite HID mouse interface under Logitech `MI_01`.
 - `I2C POINTER CANDIDATES 1` plus `I2C POINTER FOUND NO` is consistent with the ELAN0307/PNP0C50 touchpad requiring fuller I2C HID descriptor/report support.
 - `NVME FAT UNAVAILABLE` on the internal SSD path is consistent with the Micron NVMe being behind Intel VMD A77F rather than directly visible as a normal PCI NVMe controller.
