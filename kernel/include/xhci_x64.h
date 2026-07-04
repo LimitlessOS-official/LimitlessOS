@@ -88,5 +88,16 @@ u32 xhci64_last_interface_subclass(void);
 u32 xhci64_last_interface_protocol(void);
 u32 xhci64_last_endpoint_max_packet(void);
 u32 xhci64_broad_mouse_probe_count(void);
+u32 xhci64_port_probe_attempts(void);
+u32 xhci64_port_probe_retry_skips(void);
+u32 xhci64_first_hid_port(void);
+u32 xhci64_first_hid_interface_class(void);
+u32 xhci64_first_hid_interface_subclass(void);
+u32 xhci64_first_hid_interface_protocol(void);
+u32 xhci64_first_mouse_candidate_port(void);
+u32 xhci64_first_mouse_candidate_interface_class(void);
+u32 xhci64_first_mouse_candidate_interface_subclass(void);
+u32 xhci64_first_mouse_candidate_interface_protocol(void);
+u32 xhci64_first_mouse_candidate_endpoint_mps(void);
 
 #endif

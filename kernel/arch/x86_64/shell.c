@@ -1709,6 +1709,17 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface protocol: ", xhci64_last_interface_protocol());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last endpoint mps: ", xhci64_last_endpoint_max_packet());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci broad mouse probes: ", xhci64_broad_mouse_probe_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci port probe attempts: ", xhci64_port_probe_attempts());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci port probe retry skips: ", xhci64_port_probe_retry_skips());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first hid port: ", xhci64_first_hid_port());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first hid class: ", xhci64_first_hid_interface_class());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first hid subclass: ", xhci64_first_hid_interface_subclass());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first hid protocol: ", xhci64_first_hid_interface_protocol());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first mouse port: ", xhci64_first_mouse_candidate_port());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first mouse class: ", xhci64_first_mouse_candidate_interface_class());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first mouse subclass: ", xhci64_first_mouse_candidate_interface_subclass());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first mouse protocol: ", xhci64_first_mouse_candidate_interface_protocol());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first mouse mps: ", xhci64_first_mouse_candidate_endpoint_mps());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks xhci init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_XHCI_INIT));
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks boot diag: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_BOOT_DIAG));
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks nvme probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_NVME_PROBE));
