@@ -78,6 +78,31 @@ function Select-Devices
     return @($Devices | Where-Object $Predicate | Select-Object class,friendly_name,instance_id,service,driver_provider,driver_version,driver_inf_path,location_info,location_paths,hardware_ids,compatible_ids,parent,children)
 }
 
+function Get-ArrayCount
+{
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        return 0
+    }
+
+    return @($Value).Count
+}
+
+function Select-FirstMatchingDevice
+{
+    param(
+        [object[]]$Devices,
+        [scriptblock]$Predicate
+    )
+
+    $matches = @($Devices | Where-Object $Predicate | Select-Object -First 1)
+    if ($matches.Count -eq 0) {
+        return $null
+    }
+    return $matches[0]
+}
+
 function New-DriverTarget
 {
     param(
@@ -125,10 +150,10 @@ $i2cControllers = Select-Devices -Devices $devices -Predicate {
     $text = Get-DeviceText -Device $_
     $text.Contains("i2c") -or $text.Contains("serial io") -or $text.Contains("lpss")
 }
-$xhciControllers = Select-Devices -Devices $devices -Predicate {
+$xhciControllers = @(Select-Devices -Devices $devices -Predicate {
     $text = Get-DeviceText -Device $_
     $text.Contains("xhci") -or ($text.Contains("usb") -and $text.Contains("host controller"))
-}
+})
 $storageDevices = Select-Devices -Devices $devices -Predicate {
     $text = Get-DeviceText -Device $_
     $text.Contains("nvme") -or $text.Contains("vmd") -or $text.Contains("raid") -or $text.Contains("ahci") -or $text.Contains("sata") -or $text.Contains("storage")
@@ -140,6 +165,33 @@ $displayDevices = Select-Devices -Devices $devices -Predicate {
 $networkDevices = Select-Devices -Devices $devices -Predicate {
     $text = Get-DeviceText -Device $_
     $text.Contains("network") -or $text.Contains("ethernet") -or $text.Contains("wi-fi") -or $text.Contains("wifi") -or $text.Contains("bluetooth")
+}
+
+$primaryUsbMouse = Select-FirstMatchingDevice -Devices $devices -Predicate {
+    $text = Get-DeviceText -Device $_
+    ($text.Contains("hid_device_system_mouse") -or $text.Contains("usage_0002")) -and $text.Contains("vid_")
+}
+$primaryXhciController = Select-FirstMatchingDevice -Devices $devices -Predicate {
+    $text = Get-DeviceText -Device $_
+    $text.Contains("xhci") -or $text.Contains("cc_0c0330") -or $text.Contains("usb 3.")
+}
+$primaryTouchpad = Select-FirstMatchingDevice -Devices $devices -Predicate {
+    $text = Get-DeviceText -Device $_
+    $text.Contains("acpi\elan0307") -or $text.Contains("pnp0c50") -or $text.Contains("hid_device_up:000d_u:0005")
+}
+$primaryStorageController = Select-FirstMatchingDevice -Devices $devices -Predicate {
+    $text = Get-DeviceText -Device $_
+    $text.Contains("vmd") -or $text.Contains("cc_0104")
+}
+if ($null -eq $primaryStorageController) {
+    $primaryStorageController = Select-FirstMatchingDevice -Devices $devices -Predicate {
+        $text = Get-DeviceText -Device $_
+        $text.Contains("nvme")
+    }
+}
+$primaryDisplay = Select-FirstMatchingDevice -Devices $devices -Predicate {
+    $text = Get-DeviceText -Device $_
+    $text.Contains("cc_0300") -or $text.Contains("graphics")
 }
 
 $targets = @(
@@ -156,14 +208,21 @@ $summary = [PSCustomObject]@{
     manifest = $manifest
     computer = $computer
     counts = [PSCustomObject]@{
-        relevant_devices = $devices.Count
-        usb_mouse_devices = $usbMouseDevices.Count
-        touchpad_devices = $touchpadDevices.Count
-        i2c_controllers = $i2cControllers.Count
-        xhci_controllers = $xhciControllers.Count
-        storage_devices = $storageDevices.Count
-        display_devices = $displayDevices.Count
-        network_devices = $networkDevices.Count
+        relevant_devices = (Get-ArrayCount -Value $devices)
+        usb_mouse_devices = (Get-ArrayCount -Value $usbMouseDevices)
+        touchpad_devices = (Get-ArrayCount -Value $touchpadDevices)
+        i2c_controllers = (Get-ArrayCount -Value $i2cControllers)
+        xhci_controllers = (Get-ArrayCount -Value $xhciControllers)
+        storage_devices = (Get-ArrayCount -Value $storageDevices)
+        display_devices = (Get-ArrayCount -Value $displayDevices)
+        network_devices = (Get-ArrayCount -Value $networkDevices)
+    }
+    primary = [PSCustomObject]@{
+        usb_mouse = $primaryUsbMouse
+        xhci_controller = $primaryXhciController
+        touchpad = $primaryTouchpad
+        storage_controller = $primaryStorageController
+        display = $primaryDisplay
     }
     xhci_controllers = $xhciControllers
     driver_targets = $targets
@@ -183,14 +242,25 @@ if ($null -ne $computer) {
     $lines += "machine: $($computer.computer_system.Manufacturer) $($computer.computer_system.Model)"
     $lines += "firmware: $($computer.computer_info.BiosFirmwareType) bios $($computer.bios.SMBIOSBIOSVersion)"
 }
-$lines += "relevant-devices: $($devices.Count)"
-$lines += "usb-mouse-devices: $($usbMouseDevices.Count)"
-$lines += "touchpad-devices: $($touchpadDevices.Count)"
-$lines += "i2c-controllers: $($i2cControllers.Count)"
-$lines += "xhci-controllers: $($xhciControllers.Count)"
-$lines += "storage-devices: $($storageDevices.Count)"
-$lines += "display-devices: $($displayDevices.Count)"
-$lines += "network-devices: $($networkDevices.Count)"
+$lines += "relevant-devices: $(Get-ArrayCount -Value $devices)"
+$lines += "usb-mouse-devices: $(Get-ArrayCount -Value $usbMouseDevices)"
+$lines += "touchpad-devices: $(Get-ArrayCount -Value $touchpadDevices)"
+$lines += "i2c-controllers: $(Get-ArrayCount -Value $i2cControllers)"
+$lines += "xhci-controllers: $(Get-ArrayCount -Value $xhciControllers)"
+$lines += "storage-devices: $(Get-ArrayCount -Value $storageDevices)"
+$lines += "display-devices: $(Get-ArrayCount -Value $displayDevices)"
+$lines += "network-devices: $(Get-ArrayCount -Value $networkDevices)"
+$lines += ""
+$lines += "primary-usb-mouse: $($primaryUsbMouse.friendly_name)"
+$lines += "primary-usb-mouse-instance: $($primaryUsbMouse.instance_id)"
+$lines += "primary-xhci-controller: $($primaryXhciController.friendly_name)"
+$lines += "primary-xhci-controller-instance: $($primaryXhciController.instance_id)"
+$lines += "primary-touchpad: $($primaryTouchpad.friendly_name)"
+$lines += "primary-touchpad-instance: $($primaryTouchpad.instance_id)"
+$lines += "primary-storage-controller: $($primaryStorageController.friendly_name)"
+$lines += "primary-storage-controller-instance: $($primaryStorageController.instance_id)"
+$lines += "primary-display: $($primaryDisplay.friendly_name)"
+$lines += "primary-display-instance: $($primaryDisplay.instance_id)"
 $lines += ""
 foreach ($target in $targets) {
     $lines += "target: $($target.name)"
@@ -222,7 +292,7 @@ $lines | Set-Content -Path $textPath -Encoding UTF8
 Write-Host "windows-hardware-inventory-summary: complete"
 Write-Host "  output: $jsonPath"
 Write-Host "  report: $textPath"
-Write-Host "  usb mouse devices: $($usbMouseDevices.Count)"
-Write-Host "  touchpad devices: $($touchpadDevices.Count)"
-Write-Host "  i2c controllers: $($i2cControllers.Count)"
-Write-Host "  xhci controllers: $($xhciControllers.Count)"
+Write-Host "  usb mouse devices: $(Get-ArrayCount -Value $usbMouseDevices)"
+Write-Host "  touchpad devices: $(Get-ArrayCount -Value $touchpadDevices)"
+Write-Host "  i2c controllers: $(Get-ArrayCount -Value $i2cControllers)"
+Write-Host "  xhci controllers: $(Get-ArrayCount -Value $xhciControllers)"
