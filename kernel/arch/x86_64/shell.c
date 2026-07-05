@@ -1697,6 +1697,9 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci handoff: ", xhci64_legacy_handoff());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci hid keyboard: ", xhci64_hid_device());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci mouse endpoint: ", xhci64_mouse_endpoint_present());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci mouse probe configured: ", xhci64_mouse_endpoint_present());
+#endif
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse reports: ", xhci64_mouse_reports());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse bytes: ", xhci64_mouse_report_bytes());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -1743,6 +1746,17 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks pit to shell: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_PIT_TO_SHELL));
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer kind: ", i2c_hid64_pointer_kind());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer address: ", i2c_hid64_pointer_address());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer desc-reg: ", i2c_hid64_pointer_descriptor_register());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer report-reg: ", i2c_hid64_pointer_report_descriptor_register());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer report-len: ", i2c_hid64_pointer_report_descriptor_length());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer input-reg: ", i2c_hid64_pointer_input_register());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer cmd-reg: ", i2c_hid64_pointer_command_register());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer max-in: ", i2c_hid64_pointer_max_input_length());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer report-id: ", i2c_hid64_pointer_report_has_id());
+#endif
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer reports: ", i2c_hid64_pointer_report_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer error: ", i2c_hid64_pointer_error());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c controllers: ", pci64_lpss_i2c_count());

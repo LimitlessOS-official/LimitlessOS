@@ -1509,6 +1509,51 @@ u32 i2c_hid64_pointer_found(void)
     return g_i2c_hid64_pointer_found;
 }
 
+u32 i2c_hid64_pointer_kind(void)
+{
+    return g_i2c_hid64_pointer_kind;
+}
+
+u32 i2c_hid64_pointer_address(void)
+{
+    return g_i2c_hid64_pointer_address;
+}
+
+u32 i2c_hid64_pointer_descriptor_register(void)
+{
+    return g_i2c_hid64_pointer_descriptor_register;
+}
+
+u32 i2c_hid64_pointer_report_descriptor_register(void)
+{
+    return g_i2c_hid64_pointer_report_descriptor_register;
+}
+
+u32 i2c_hid64_pointer_report_descriptor_length(void)
+{
+    return g_i2c_hid64_pointer_report_descriptor_length;
+}
+
+u32 i2c_hid64_pointer_input_register(void)
+{
+    return g_i2c_hid64_pointer_input_register;
+}
+
+u32 i2c_hid64_pointer_command_register(void)
+{
+    return g_i2c_hid64_pointer_command_register;
+}
+
+u32 i2c_hid64_pointer_max_input_length(void)
+{
+    return g_i2c_hid64_pointer_max_input_length;
+}
+
+u32 i2c_hid64_pointer_report_has_id(void)
+{
+    return g_i2c_hid64_pointer_report_has_id;
+}
+
 u32 i2c_hid64_pointer_report_count(void)
 {
     return g_i2c_hid64_pointer_report_count;

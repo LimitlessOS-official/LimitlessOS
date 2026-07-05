@@ -11,6 +11,17 @@ u32 i2c_hid64_device_found(void);
 u32 i2c_hid64_report_count(void);
 u32 i2c_hid64_error(void);
 u32 i2c_hid64_pointer_found(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 i2c_hid64_pointer_kind(void);
+u32 i2c_hid64_pointer_address(void);
+u32 i2c_hid64_pointer_descriptor_register(void);
+u32 i2c_hid64_pointer_report_descriptor_register(void);
+u32 i2c_hid64_pointer_report_descriptor_length(void);
+u32 i2c_hid64_pointer_input_register(void);
+u32 i2c_hid64_pointer_command_register(void);
+u32 i2c_hid64_pointer_max_input_length(void);
+u32 i2c_hid64_pointer_report_has_id(void);
+#endif
 u32 i2c_hid64_pointer_report_count(void);
 u32 i2c_hid64_pointer_error(void);
 
