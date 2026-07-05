@@ -390,6 +390,7 @@ static u32 g_display_settings_hardware_panel_count = 0u;
 static u32 g_display_settings_input_panel_count = 0u;
 static u32 g_display_settings_readiness_strip_count = 0u;
 static u32 g_display_fileman_storage_card_count = 0u;
+static u32 g_display_product_chrome_count = 0u;
 static u8 g_display_settings_config[DISPLAY64_SETTINGS_CFG_BYTES];
 static u8 g_display_settings_diag[DISPLAY64_SETTINGS_DIAG_BYTES];
 static char g_display_settings_hardware_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
@@ -3417,6 +3418,33 @@ static void display64_draw_label_value(
         DISPLAY64_FONT_TRANSPARENT);
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_product_input_ready(void)
+{
+    return ((input64_mouse_packet_count() != 0u)
+        || (xhci64_mouse_reports() != 0u)
+        || (i2c_hid64_pointer_report_count() != 0u)
+        || (input64_keyboard_scancode_count() != 0u)
+        || (xhci64_report_count() != 0u)) ? 1u : 0u;
+}
+
+static void display64_font_draw_system_chip(
+    u32 x,
+    u32 y,
+    u32 width,
+    const char *label,
+    u32 ready,
+    u32 accent_rgb)
+{
+    u32 fill_rgb = (ready != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_FIELD;
+    u32 text_rgb = (ready != 0u) ? DISPLAY64_RGB_TEXT_SECONDARY : DISPLAY64_RGB_TEXT_MUTED;
+
+    display64_compositor_draw_surface(x, y, width, 22u, fill_rgb, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    display64_compositor_fill_round_rect_4(x + 8u, y + 7u, 8u, 8u, (ready != 0u) ? accent_rgb : DISPLAY64_RGB_DISABLED_TEXT);
+    (void)display64_draw_font_text(x + 22u, y + 5u, label, DISPLAY64_FONT_SMALL, text_rgb, DISPLAY64_FONT_TRANSPARENT);
+}
+#endif
+
 static void display64_font_draw_status_bar(void)
 {
     u32 y = 0u;
@@ -3432,7 +3460,15 @@ static void display64_font_draw_status_bar(void)
     }
 
     height = display64_min_u32(40u, g_display_boot_info->framebuffer_height);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, height, DISPLAY64_RGB_DESKTOP_BG);
+    if (height > 4u)
+    {
+        display64_compositor_fill_rect(0u, y + height - 4u, g_display_boot_info->framebuffer_width, 4u, DISPLAY64_RGB_BAR_BG);
+    }
+#else
     display64_compositor_fill_rect(0u, y, g_display_boot_info->framebuffer_width, height, DISPLAY64_RGB_BAR_BG);
+#endif
     if (height != 0u)
     {
         display64_compositor_fill_rect(0u, y + height - 1u, g_display_boot_info->framebuffer_width, 1u, DISPLAY64_RGB_SURFACE_BORDER);
@@ -3440,7 +3476,24 @@ static void display64_font_draw_status_bar(void)
     brand_y = (height > display64_font_height(DISPLAY64_FONT_LARGE))
         ? (y + ((height - display64_font_height(DISPLAY64_FONT_LARGE)) / 2u))
         : y;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_compositor_fill_round_rect_4(12u, brand_y + 4u, 6u, 18u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(26u, brand_y, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(152u, brand_y + 5u, 74u, "Product", DISPLAY64_RGB_ACCENT);
+    if (g_display_boot_info->framebuffer_width >= 920u)
+    {
+        display64_font_draw_system_chip(248u, 9u, 78u, "Display", display64_readable(), DISPLAY64_RGB_FOCUS_BLUE);
+        display64_font_draw_system_chip(334u, 9u, 70u, "Input", display64_product_input_ready(), DISPLAY64_RGB_ACCENT);
+        display64_font_draw_system_chip(412u, 9u, 82u, "Storage", mmio64_nvme_fat_located(), DISPLAY64_RGB_APP_FILES);
+        display64_font_draw_system_chip(502u, 9u, 76u, "Network", hardware64_registry_network_device_count(), DISPLAY64_RGB_APP_ASSISTANT);
+    }
+    if (g_display_product_chrome_count == 0u)
+    {
+        ++g_display_product_chrome_count;
+    }
+#else
     (void)display64_draw_font_text(10u, brand_y, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+#endif
     time_x = (g_display_boot_info->framebuffer_width
             > (display64_font_text_advance(time_text, DISPLAY64_FONT_NORMAL) + 12u))
         ? (g_display_boot_info->framebuffer_width
@@ -7956,6 +8009,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_settings_save_denial_count = 0u;
     g_display_settings_export_count = 0u;
     g_display_settings_export_denial_count = 0u;
+    g_display_product_chrome_count = 0u;
     g_display_fileman_selected_index = 0u;
     g_display_fileman_window_cursor = 0u;
     g_display_settings_selected_index = 0u;
@@ -9267,6 +9321,11 @@ u32 display64_gui_settings_readiness_strip_count(void)
 u32 display64_gui_fileman_storage_card_count(void)
 {
     return g_display_fileman_storage_card_count;
+}
+
+u32 display64_gui_product_chrome_count(void)
+{
+    return g_display_product_chrome_count;
 }
 
 u32 display64_gui_settings_theme(void)
