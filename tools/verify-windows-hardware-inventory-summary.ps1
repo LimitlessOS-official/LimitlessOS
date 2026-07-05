@@ -48,11 +48,11 @@ Assert-True -Condition (Test-Path -LiteralPath $reportPath) -Message "summary te
 $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
 $counts = $summary.counts
 
-Assert-True -Condition ([uint32]$counts.relevant_devices -gt 0u) -Message "expected at least one relevant device"
-Assert-True -Condition ([uint32]$counts.usb_mouse_devices -gt 0u) -Message "expected at least one USB/HID mouse-class device"
-Assert-True -Condition ([uint32]$counts.touchpad_devices -gt 0u) -Message "expected at least one touchpad/HID pointer-class device"
-Assert-True -Condition ([uint32]$counts.storage_devices -gt 0u) -Message "expected at least one storage device"
-Assert-True -Condition ([uint32]$counts.display_devices -gt 0u) -Message "expected at least one display device"
+Assert-True -Condition ([uint32]$counts.relevant_devices -gt 0) -Message "expected at least one relevant device"
+Assert-True -Condition ([uint32]$counts.usb_mouse_devices -gt 0) -Message "expected at least one USB/HID mouse-class device"
+Assert-True -Condition ([uint32]$counts.touchpad_devices -gt 0) -Message "expected at least one touchpad/HID pointer-class device"
+Assert-True -Condition ([uint32]$counts.storage_devices -gt 0) -Message "expected at least one storage device"
+Assert-True -Condition ([uint32]$counts.display_devices -gt 0) -Message "expected at least one display device"
 
 if ($RequireMsiCyborgEvidence) {
     $report = Get-Content -LiteralPath $reportPath -Raw

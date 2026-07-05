@@ -53,16 +53,16 @@ Assert-Contains -Text $text -Needle "storage" -Message "missing storage section"
 Assert-Contains -Text $text -Needle "display" -Message "missing display section"
 Assert-Contains -Text $text -Needle "network" -Message "missing network section"
 
-if ([uint32]$json.counts.relevant_devices -eq 0u) {
+if ([uint32]$json.counts.relevant_devices -eq 0) {
     throw "expected nonzero relevant device count"
 }
-if ([uint32]$json.counts.xhci_controllers -eq 0u) {
+if ([uint32]$json.counts.xhci_controllers -eq 0) {
     throw "expected nonzero xHCI controller count"
 }
-if ([uint32]$json.counts.storage_devices -eq 0u) {
+if ([uint32]$json.counts.storage_devices -eq 0) {
     throw "expected nonzero storage device count"
 }
-if ([uint32]$json.counts.display_devices -eq 0u) {
+if ([uint32]$json.counts.display_devices -eq 0) {
     throw "expected nonzero display device count"
 }
 
