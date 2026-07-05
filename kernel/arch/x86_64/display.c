@@ -384,12 +384,15 @@ static u32 g_display_settings_export_count = 0u;
 static u32 g_display_settings_export_denial_count = 0u;
 static u32 g_display_settings_hardware_panel_count = 0u;
 static u32 g_display_settings_input_panel_count = 0u;
+static u32 g_display_settings_readiness_strip_count = 0u;
+static u32 g_display_fileman_storage_card_count = 0u;
 static u8 g_display_settings_config[DISPLAY64_SETTINGS_CFG_BYTES];
 static u8 g_display_settings_diag[DISPLAY64_SETTINGS_DIAG_BYTES];
 static char g_display_settings_hardware_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
 static char g_display_settings_input_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
 static char g_display_settings_storage_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
 static char g_display_settings_network_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
+static char g_display_fileman_status_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
 static u32 g_display_fileman_selected_index = 0u;
 static u32 g_display_fileman_window_cursor = 0u;
 static u32 g_display_settings_selected_index = 0u;
@@ -3001,7 +3004,31 @@ static void display64_desktop_draw_readiness_pill(
     (void)display64_draw_font_text(x + 16u, y + 5u, label, DISPLAY64_FONT_SMALL, text, DISPLAY64_FONT_TRANSPARENT);
 }
 
-static void display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 width)
+static void display64_desktop_draw_status_card(
+    u32 x,
+    u32 y,
+    u32 width,
+    const char *title,
+    const char *detail,
+    u32 ready,
+    u32 accent_rgb)
+{
+    u32 state_rgb = (ready != 0u) ? accent_rgb : DISPLAY64_RGB_WARNING;
+
+    if (width < 96u)
+    {
+        return;
+    }
+
+    display64_compositor_draw_surface(x, y, width, 50u, DISPLAY64_RGB_CONTENT, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    display64_compositor_fill_rect(x + 8u, y + 9u, 4u, 32u, state_rgb);
+    (void)display64_draw_font_text(x + 18u, y + 8u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(x + 18u, y + 25u, detail, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_fill_round_rect_4(x + width - 50u, y + 14u, 34u, 20u, (ready != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_FIELD);
+    (void)display64_draw_font_text(x + width - 42u, y + 18u, (ready != 0u) ? "OK" : "WAIT", DISPLAY64_FONT_SMALL, (ready != 0u) ? DISPLAY64_RGB_TEXT_PRIMARY : DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+}
+
+static u32 display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 width)
 {
     u32 pill_w;
     u32 input_ready = ((input64_mouse_packet_count() != 0u)
@@ -3010,9 +3037,44 @@ static void display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 w
         || (input64_keyboard_scancode_count() != 0u)
         || (xhci64_report_count() != 0u)) ? 1u : 0u;
 
+    if (width < 156u)
+    {
+        return 0u;
+    }
+
+    ++g_display_settings_readiness_strip_count;
     if (width < 304u)
     {
-        return;
+        pill_w = (width - 8u) / 2u;
+        display64_desktop_draw_readiness_pill(
+            body_x,
+            body_y,
+            pill_w,
+            "Display",
+            display64_readable(),
+            DISPLAY64_RGB_FOCUS_BLUE);
+        display64_desktop_draw_readiness_pill(
+            body_x + pill_w + 8u,
+            body_y,
+            pill_w,
+            "Input",
+            input_ready,
+            DISPLAY64_RGB_ACCENT);
+        display64_desktop_draw_readiness_pill(
+            body_x,
+            body_y + 26u,
+            pill_w,
+            "Storage",
+            mmio64_nvme_fat_located(),
+            DISPLAY64_RGB_APP_FILES);
+        display64_desktop_draw_readiness_pill(
+            body_x + pill_w + 8u,
+            body_y + 26u,
+            pill_w,
+            "Network",
+            hardware64_registry_network_device_count(),
+            DISPLAY64_RGB_APP_ASSISTANT);
+        return 48u;
     }
 
     pill_w = (width - 44u) / 4u;
@@ -3044,6 +3106,7 @@ static void display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 w
         "Network",
         hardware64_registry_network_device_count(),
         DISPLAY64_RGB_APP_ASSISTANT);
+    return 22u;
 }
 
 static void display64_desktop_draw_settings_summary(
@@ -3057,6 +3120,8 @@ static void display64_desktop_draw_settings_summary(
     u32 row_count = DISPLAY64_SETTINGS_ROW_COUNT;
     u32 row_h = 44u;
     u32 row_w = (width > 32u) ? (width - 32u) : width;
+    u32 readiness_h;
+    u32 action_y;
 
     if (start >= row_count)
     {
@@ -3080,21 +3145,23 @@ static void display64_desktop_draw_settings_summary(
         ++visible_row;
     }
 
-    display64_desktop_draw_readiness_strip(body_x, body_y + 284u, row_w);
-    display64_compositor_fill_round_rect_4(body_x, body_y + 312u, 72u, 24u, DISPLAY64_RGB_ACCENT);
-    (void)display64_draw_font_text(body_x + 18u, body_y + 317u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_draw_badge(body_x + 84u, body_y + 313u, 116u, display64_settings_title(g_display_settings_selected_index), display64_settings_accent(g_display_settings_selected_index));
+    (void)display64_draw_font_text(body_x, body_y + 268u, "System readiness", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    readiness_h = display64_desktop_draw_readiness_strip(body_x, body_y + 284u, row_w);
+    action_y = body_y + 290u + readiness_h;
+    display64_compositor_fill_round_rect_4(body_x, action_y, 72u, 24u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(body_x + 18u, action_y + 5u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(body_x + 84u, action_y + 1u, 116u, display64_settings_title(g_display_settings_selected_index), display64_settings_accent(g_display_settings_selected_index));
     if (g_display_settings_save_count != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Saved", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, action_y + 6u, "Saved", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
     }
     else if (g_display_settings_export_count != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Exported", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, action_y + 6u, "Exported", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
     }
     else if ((g_display_settings_save_denial_count + g_display_settings_export_denial_count) != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, action_y + 6u, "Denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
     }
 }
 #endif
@@ -5527,6 +5594,29 @@ static void display64_fileman_draw_preview_line(u32 x, u32 y, u32 line_index)
         (void)display64_draw_font_text(x, y, line, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     }
 }
+
+static const char *display64_fileman_status_detail(void)
+{
+    u32 cursor = 0u;
+
+    cursor = display64_diag_append_u32(
+        g_display_fileman_status_detail,
+        cursor,
+        sizeof(g_display_fileman_status_detail),
+        g_display_fileman_entry_count);
+    cursor = display64_diag_append_text(
+        g_display_fileman_status_detail,
+        cursor,
+        sizeof(g_display_fileman_status_detail),
+        " entries, ");
+    cursor = display64_diag_append_text(
+        g_display_fileman_status_detail,
+        cursor,
+        sizeof(g_display_fileman_status_detail),
+        (mmio64_nvme_rw_delegated() != 0u) ? "scoped write authority" : "read-only authority");
+    g_display_fileman_status_detail[cursor] = '\0';
+    return g_display_fileman_status_detail;
+}
 #endif
 
 static void display64_desktop_draw_file_manager(u32 handle)
@@ -5642,13 +5732,28 @@ static void display64_desktop_draw_file_manager(u32 handle)
     }
 
     display64_compositor_draw_badge(body_x + 126u, body_y - 4u, content_w, (const char *)g_display_fileman_current_path, DISPLAY64_RGB_APP_FILES);
+    ++g_display_fileman_storage_card_count;
     if (g_display_fileman_last_status != 0u)
     {
-        display64_desktop_draw_info_row_selected(body_x + 126u, body_y + 28u, content_w, "NVMe unavailable", "run hwval for storage status", DISPLAY64_RGB_WARNING, 1u);
+        display64_desktop_draw_status_card(
+            body_x + 126u,
+            body_y + 28u,
+            content_w,
+            "Storage unavailable",
+            "run hwval full for raw evidence",
+            0u,
+            DISPLAY64_RGB_APP_FILES);
     }
     else if (g_display_fileman_entry_count == 0u)
     {
-        display64_desktop_draw_info_row_selected(body_x + 126u, body_y + 28u, content_w, "Empty folder", "no visible entries", DISPLAY64_RGB_TEXT_SECONDARY, 1u);
+        display64_desktop_draw_status_card(
+            body_x + 126u,
+            body_y + 28u,
+            content_w,
+            "Empty folder",
+            display64_fileman_status_detail(),
+            1u,
+            DISPLAY64_RGB_APP_FILES);
     }
     else
     {
@@ -5656,7 +5761,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
         {
             display64_desktop_draw_info_row_selected(
                 body_x + 126u,
-                body_y + 28u + (row * 40u),
+                body_y + 52u + (row * 40u),
                 content_w,
                 (const char *)g_display_fileman_entries[row].name,
                 display64_fileman_type_text(g_display_fileman_entries[row].entry_type),
@@ -5664,13 +5769,17 @@ static void display64_desktop_draw_file_manager(u32 handle)
                 (g_display_fileman_selected_index == row) ? 1u : 0u);
             if (g_display_fileman_entries[row].entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE)
             {
-                display64_draw_label_value(body_x + content_w + 74u, body_y + 34u + (row * 40u), "", g_display_fileman_entries[row].byte_count, DISPLAY64_RGB_TEXT_MUTED);
+                display64_draw_label_value(body_x + content_w + 74u, body_y + 58u + (row * 40u), "", g_display_fileman_entries[row].byte_count, DISPLAY64_RGB_TEXT_MUTED);
             }
+        }
+        if (content_w > 160u)
+        {
+            (void)display64_draw_font_text(body_x + 138u, body_y + 28u, display64_fileman_status_detail(), DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
         }
     }
     if (content_w > 24u)
     {
-        u32 preview_y = body_y + 192u;
+        u32 preview_y = body_y + 216u;
         display64_compositor_draw_surface(body_x + 126u, preview_y, content_w, 72u, DISPLAY64_RGB_CONTENT, DISPLAY64_RGB_SURFACE_BORDER, 0u);
         if (g_display_fileman_edit_mode != 0u)
         {
@@ -6111,7 +6220,7 @@ static u32 display64_desktop_file_manager_row_hit(const struct display64_window 
     content_w = (window->width > 170u) ? (window->width - 158u) : 0u;
     for (index = 0u; (index < g_display_fileman_entry_count) && (index < DISPLAY64_FILEMAN_MAX_ENTRIES); ++index)
     {
-        if (display64_point_in_rect(x, y, body_x + 126u, body_y + 28u + (index * 40u), content_w, 38u))
+        if (display64_point_in_rect(x, y, body_x + 126u, body_y + 52u + (index * 40u), content_w, 38u))
         {
             return index;
         }
@@ -9119,6 +9228,16 @@ u32 display64_gui_settings_hardware_panel_count(void)
 u32 display64_gui_settings_input_panel_count(void)
 {
     return g_display_settings_input_panel_count;
+}
+
+u32 display64_gui_settings_readiness_strip_count(void)
+{
+    return g_display_settings_readiness_strip_count;
+}
+
+u32 display64_gui_fileman_storage_card_count(void)
+{
+    return g_display_fileman_storage_card_count;
 }
 
 u32 display64_gui_settings_theme(void)

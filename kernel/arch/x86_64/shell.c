@@ -527,6 +527,8 @@ static void shell64_write_gui_interaction_telemetry(
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-export-denial ", display64_gui_settings_export_denial_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-hardware-panel ", display64_gui_settings_hardware_panel_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-input-panel ", display64_gui_settings_input_panel_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-readiness-strip ", display64_gui_settings_readiness_strip_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " fileman-storage-card ", display64_gui_fileman_storage_card_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-theme ", display64_gui_settings_theme());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-pointer ", display64_gui_settings_pointer_speed());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-keyrepeat ", display64_gui_settings_key_repeat());
