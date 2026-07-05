@@ -331,6 +331,19 @@ enum scaffold_value_selector
     SCAFFOLD_VALUE_XHCI_INTEL_WORKAROUND,
     SCAFFOLD_VALUE_XHCI_RESET_WAIT_MS,
     SCAFFOLD_VALUE_XHCI_SETTLE_MS,
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    SCAFFOLD_VALUE_XHCI_MAX_SLOTS,
+    SCAFFOLD_VALUE_XHCI_DISABLE_SLOT_POLL_LIMIT,
+    SCAFFOLD_VALUE_XHCI_LAST_ENABLE_COMPLETION,
+    SCAFFOLD_VALUE_XHCI_LAST_ENABLE_SLOT,
+    SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_COMPLETION,
+    SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SLOT,
+    SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_PORT,
+    SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SPEED,
+    SCAFFOLD_VALUE_XHCI_ADDRESS_FAILURES,
+    SCAFFOLD_VALUE_XHCI_LAST_DISABLE_COMPLETION,
+    SCAFFOLD_VALUE_XHCI_LAST_DISABLE_SLOT,
+#endif
     SCAFFOLD_VALUE_NET_FOUND,
     SCAFFOLD_VALUE_NET_BAR0,
     SCAFFOLD_VALUE_NET_MAPPED,
@@ -560,6 +573,19 @@ static u64 scaffold_value_read(u8 selector)
     case SCAFFOLD_VALUE_XHCI_INTEL_WORKAROUND: return xhci64_intel_workaround();
     case SCAFFOLD_VALUE_XHCI_RESET_WAIT_MS: return xhci64_port_reset_wait_ms();
     case SCAFFOLD_VALUE_XHCI_SETTLE_MS: return xhci64_device_settle_ms();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    case SCAFFOLD_VALUE_XHCI_MAX_SLOTS: return xhci64_max_slots_limit();
+    case SCAFFOLD_VALUE_XHCI_DISABLE_SLOT_POLL_LIMIT: return xhci64_disable_slot_poll_limit();
+    case SCAFFOLD_VALUE_XHCI_LAST_ENABLE_COMPLETION: return xhci64_last_enable_slot_completion();
+    case SCAFFOLD_VALUE_XHCI_LAST_ENABLE_SLOT: return xhci64_last_enable_slot_id();
+    case SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_COMPLETION: return xhci64_last_address_completion();
+    case SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SLOT: return xhci64_last_address_slot();
+    case SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_PORT: return xhci64_last_address_port();
+    case SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SPEED: return xhci64_last_address_speed();
+    case SCAFFOLD_VALUE_XHCI_ADDRESS_FAILURES: return xhci64_address_failure_count();
+    case SCAFFOLD_VALUE_XHCI_LAST_DISABLE_COMPLETION: return xhci64_last_disable_slot_completion();
+    case SCAFFOLD_VALUE_XHCI_LAST_DISABLE_SLOT: return xhci64_last_disable_slot_id();
+#endif
     case SCAFFOLD_VALUE_NET_FOUND: return virtio_net64_found();
     case SCAFFOLD_VALUE_NET_BAR0: return virtio_net64_bar_base();
     case SCAFFOLD_VALUE_NET_MAPPED: return virtio_net64_mapped();
@@ -1656,6 +1682,20 @@ static void log_xhci_surface(void)
         {"intel-workaround ", SCAFFOLD_VALUE_XHCI_INTEL_WORKAROUND, SCAFFOLD_TELEMETRY_DEC},
         {"reset-wait-ms ", SCAFFOLD_VALUE_XHCI_RESET_WAIT_MS, SCAFFOLD_TELEMETRY_DEC},
         {"settle-ms ", SCAFFOLD_VALUE_XHCI_SETTLE_MS, SCAFFOLD_TELEMETRY_DEC}
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        ,
+        {"max-slots ", SCAFFOLD_VALUE_XHCI_MAX_SLOTS, SCAFFOLD_TELEMETRY_DEC},
+        {"disable-slot-poll-limit ", SCAFFOLD_VALUE_XHCI_DISABLE_SLOT_POLL_LIMIT, SCAFFOLD_TELEMETRY_DEC},
+        {"last-enable-completion ", SCAFFOLD_VALUE_XHCI_LAST_ENABLE_COMPLETION, SCAFFOLD_TELEMETRY_DEC},
+        {"last-enable-slot ", SCAFFOLD_VALUE_XHCI_LAST_ENABLE_SLOT, SCAFFOLD_TELEMETRY_DEC},
+        {"last-address-completion ", SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_COMPLETION, SCAFFOLD_TELEMETRY_DEC},
+        {"last-address-slot ", SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SLOT, SCAFFOLD_TELEMETRY_DEC},
+        {"last-address-port ", SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_PORT, SCAFFOLD_TELEMETRY_DEC},
+        {"last-address-speed ", SCAFFOLD_VALUE_XHCI_LAST_ADDRESS_SPEED, SCAFFOLD_TELEMETRY_DEC},
+        {"address-failures ", SCAFFOLD_VALUE_XHCI_ADDRESS_FAILURES, SCAFFOLD_TELEMETRY_DEC},
+        {"last-disable-completion ", SCAFFOLD_VALUE_XHCI_LAST_DISABLE_COMPLETION, SCAFFOLD_TELEMETRY_DEC},
+        {"last-disable-slot ", SCAFFOLD_VALUE_XHCI_LAST_DISABLE_SLOT, SCAFFOLD_TELEMETRY_DEC}
+#endif
     };
     write_scaffold_prefixed_value_fields(
         "[x64] drs-xhci drs-xhci-",

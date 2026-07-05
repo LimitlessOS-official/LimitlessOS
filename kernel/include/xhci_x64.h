@@ -44,6 +44,8 @@ u32 xhci64_slot_enabled(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 u32 xhci64_slots_disabled(void);
 u32 xhci64_slot_disable_failures(void);
+u32 xhci64_last_disable_slot_completion(void);
+u32 xhci64_last_disable_slot_id(void);
 #endif
 u32 xhci64_addressed(void);
 u32 xhci64_config_read(void);
@@ -88,6 +90,15 @@ u32 xhci64_last_interface_subclass(void);
 u32 xhci64_last_interface_protocol(void);
 u32 xhci64_last_endpoint_max_packet(void);
 u32 xhci64_broad_mouse_probe_count(void);
+u32 xhci64_max_slots_limit(void);
+u32 xhci64_disable_slot_poll_limit(void);
+u32 xhci64_last_enable_slot_completion(void);
+u32 xhci64_last_enable_slot_id(void);
+u32 xhci64_last_address_completion(void);
+u32 xhci64_last_address_slot(void);
+u32 xhci64_last_address_port(void);
+u32 xhci64_last_address_speed(void);
+u32 xhci64_address_failure_count(void);
 u32 xhci64_port_probe_attempts(void);
 u32 xhci64_port_probe_retry_skips(void);
 u32 xhci64_first_hid_port(void);

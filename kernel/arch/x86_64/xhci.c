@@ -9,7 +9,11 @@
 #define XHCI64_PAGE_BYTES 4096u
 #define XHCI64_RING_TRBS 64u
 #define XHCI64_EVENT_TRBS 64u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define XHCI64_MAX_SLOTS 16u
+#else
 #define XHCI64_MAX_SLOTS 8u
+#endif
 #define XHCI64_MAX_SCRATCHPADS 256u
 #define XHCI64_TRB_DWORDS 4u
 #define XHCI64_PORT_REGISTER_BYTES 0x10u
@@ -103,6 +107,9 @@
 #define XHCI64_DCI_EP0 1u
 #define XHCI64_DEFAULT_MPS 8u
 #define XHCI64_CONTROL_POLL_LIMIT 1000000u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define XHCI64_DISABLE_SLOT_POLL_LIMIT 10000u
+#endif
 #define XHCI64_PORT_RESET_POLL_LIMIT 250000u
 #define XHCI64_LEGACY_HANDOFF_POLL_LIMIT 1000000u
 #define XHCI64_DELAY_1MS_POLLS 25000u
@@ -239,6 +246,17 @@ static u32 g_xhci_intr_pending = 0u;
 static u32 g_xhci_mouse_intr_enqueue = 0u;
 static u32 g_xhci_mouse_intr_cycle = 1u;
 static u32 g_xhci_mouse_intr_pending = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_xhci_last_enable_slot_completion = 0u;
+static u32 g_xhci_last_enable_slot_id = 0u;
+static u32 g_xhci_last_address_completion = 0u;
+static u32 g_xhci_last_address_slot = 0u;
+static u32 g_xhci_last_address_port = 0u;
+static u32 g_xhci_last_address_speed = 0u;
+static u32 g_xhci_address_failure_count = 0u;
+static u32 g_xhci_last_disable_slot_completion = 0u;
+static u32 g_xhci_last_disable_slot_id = 0u;
+#endif
 
 static u64 g_xhci_dcbaa[256] __attribute__((aligned(4096)));
 static u64 g_xhci_scratchpad_array[XHCI64_MAX_SCRATCHPADS] __attribute__((aligned(4096)));
@@ -648,6 +666,34 @@ static u32 xhci64_submit_command(u64 parameter, u32 control, struct xhci64_event
         0u,
         event_out);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 xhci64_submit_command_bounded(
+    u64 parameter,
+    u32 control,
+    u32 poll_limit,
+    struct xhci64_event *event_out)
+{
+    struct xhci64_trb *trb = xhci64_ring_enqueue(
+        g_xhci_command_ring,
+        XHCI64_RING_TRBS,
+        &g_xhci_command_enqueue,
+        &g_xhci_command_cycle,
+        parameter,
+        0u,
+        control);
+    u64 trb_physical = xhci64_virtual_to_physical(trb);
+
+    xhci64_write32(g_xhci_doorbell_offset, 0u);
+    return xhci64_poll_event_bounded(
+        XHCI64_TRB_TYPE_COMMAND_COMPLETION,
+        trb_physical,
+        0u,
+        0u,
+        poll_limit,
+        event_out);
+}
+#endif
 
 static u32 xhci64_context_dword(u8 *context, u32 index, u32 dword)
 {
@@ -1201,11 +1247,19 @@ static u32 xhci64_enable_slot(u32 *slot_out)
             XHCI64_TRB_TYPE_ENABLE_SLOT << XHCI64_TRB_TYPE_SHIFT,
             &event) == 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_xhci_last_enable_slot_completion = 0u;
+        g_xhci_last_enable_slot_id = 0u;
+#endif
         return 0u;
     }
 
     completion = xhci64_completion_code(&event);
     slot = (event.control >> 24) & 0xFFu;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_enable_slot_completion = completion;
+    g_xhci_last_enable_slot_id = slot;
+#endif
     if ((completion != XHCI64_COMPLETION_SUCCESS)
         || (slot == 0u)
         || (slot > XHCI64_MAX_SLOTS))
@@ -1228,16 +1282,20 @@ static u32 xhci64_disable_slot(u32 slot_id)
         return 0u;
     }
 
-    if (xhci64_submit_command(
+    g_xhci_last_disable_slot_id = slot_id;
+    g_xhci_last_disable_slot_completion = 0u;
+    if (xhci64_submit_command_bounded(
             0ull,
             (XHCI64_TRB_TYPE_DISABLE_SLOT << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
+            XHCI64_DISABLE_SLOT_POLL_LIMIT,
             &event) == 0u)
     {
         ++g_xhci_slot_disable_failures;
         return 0u;
     }
 
-    if (xhci64_completion_code(&event) != XHCI64_COMPLETION_SUCCESS)
+    g_xhci_last_disable_slot_completion = xhci64_completion_code(&event);
+    if (g_xhci_last_disable_slot_completion != XHCI64_COMPLETION_SUCCESS)
     {
         ++g_xhci_slot_disable_failures;
         return 0u;
@@ -1268,6 +1326,13 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
     struct xhci64_event event;
     u32 max_packet = xhci64_initial_mps_for_speed(speed);
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_address_slot = slot_id;
+    g_xhci_last_address_port = port_id;
+    g_xhci_last_address_speed = speed;
+    g_xhci_last_address_completion = 0u;
+#endif
+
     xhci64_zero_memory(g_xhci_input_context, sizeof(g_xhci_input_context));
     xhci64_zero_memory(g_xhci_device_contexts[slot_id], XHCI64_PAGE_BYTES);
     xhci64_reset_ring(g_xhci_ep0_ring, XHCI64_RING_TRBS, &g_xhci_ep0_enqueue, &g_xhci_ep0_cycle);
@@ -1288,11 +1353,22 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
             (XHCI64_TRB_TYPE_ADDRESS_DEVICE << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
             &event) == 0u)
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        ++g_xhci_address_failure_count;
+#endif
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_address_completion = xhci64_completion_code(&event);
+    if (g_xhci_last_address_completion != XHCI64_COMPLETION_SUCCESS)
+#else
     if (xhci64_completion_code(&event) != XHCI64_COMPLETION_SUCCESS)
+#endif
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        ++g_xhci_address_failure_count;
+#endif
         return 0u;
     }
 
@@ -2517,6 +2593,17 @@ void xhci64_register_candidate(
     g_xhci_intel_workaround = 0u;
     g_xhci_intr_pending = 0u;
     g_xhci_mouse_intr_pending = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_last_enable_slot_completion = 0u;
+    g_xhci_last_enable_slot_id = 0u;
+    g_xhci_last_address_completion = 0u;
+    g_xhci_last_address_slot = 0u;
+    g_xhci_last_address_port = 0u;
+    g_xhci_last_address_speed = 0u;
+    g_xhci_address_failure_count = 0u;
+    g_xhci_last_disable_slot_completion = 0u;
+    g_xhci_last_disable_slot_id = 0u;
+#endif
     xhci64_zero_memory(g_xhci_port_protocol, sizeof(g_xhci_port_protocol));
 
     (void)g_xhci_address;
@@ -2823,6 +2910,16 @@ u32 xhci64_slot_disable_failures(void)
 {
     return g_xhci_slot_disable_failures;
 }
+
+u32 xhci64_last_disable_slot_completion(void)
+{
+    return g_xhci_last_disable_slot_completion;
+}
+
+u32 xhci64_last_disable_slot_id(void)
+{
+    return g_xhci_last_disable_slot_id;
+}
 #endif
 
 u32 xhci64_addressed(void)
@@ -3039,6 +3136,51 @@ u32 xhci64_last_endpoint_max_packet(void)
 u32 xhci64_broad_mouse_probe_count(void)
 {
     return g_xhci_broad_mouse_probe_count;
+}
+
+u32 xhci64_max_slots_limit(void)
+{
+    return XHCI64_MAX_SLOTS;
+}
+
+u32 xhci64_disable_slot_poll_limit(void)
+{
+    return XHCI64_DISABLE_SLOT_POLL_LIMIT;
+}
+
+u32 xhci64_last_enable_slot_completion(void)
+{
+    return g_xhci_last_enable_slot_completion;
+}
+
+u32 xhci64_last_enable_slot_id(void)
+{
+    return g_xhci_last_enable_slot_id;
+}
+
+u32 xhci64_last_address_completion(void)
+{
+    return g_xhci_last_address_completion;
+}
+
+u32 xhci64_last_address_slot(void)
+{
+    return g_xhci_last_address_slot;
+}
+
+u32 xhci64_last_address_port(void)
+{
+    return g_xhci_last_address_port;
+}
+
+u32 xhci64_last_address_speed(void)
+{
+    return g_xhci_last_address_speed;
+}
+
+u32 xhci64_address_failure_count(void)
+{
+    return g_xhci_address_failure_count;
 }
 
 u32 xhci64_port_probe_attempts(void)

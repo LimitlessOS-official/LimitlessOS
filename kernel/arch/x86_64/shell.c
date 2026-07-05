@@ -1705,6 +1705,17 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slots disabled: ", xhci64_slots_disabled());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slot disable failures: ", xhci64_slot_disable_failures());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci max slots: ", xhci64_max_slots_limit());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci disable slot poll limit: ", xhci64_disable_slot_poll_limit());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last enable completion: ", xhci64_last_enable_slot_completion());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last enable slot: ", xhci64_last_enable_slot_id());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address completion: ", xhci64_last_address_completion());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address slot: ", xhci64_last_address_slot());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address port: ", xhci64_last_address_port());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address speed: ", xhci64_last_address_speed());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci address failures: ", xhci64_address_failure_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable completion: ", xhci64_last_disable_slot_completion());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable slot: ", xhci64_last_disable_slot_id());
 #endif
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci error: ", xhci64_error());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
