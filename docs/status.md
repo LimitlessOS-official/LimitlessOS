@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-07-02
+Last updated: 2026-07-05
 
 ## Accepted Baseline
 
@@ -15,6 +15,12 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M174 is `universal Product hardware readiness UX`. This keeps the Product surface moving away from "toy OS" diagnostics without making false hardware claims. The UEFI Product Settings app now has real hardware and input-readiness panels backed by live kernel state instead of static copy: hardware inventory count, drivers bound/deferred, keyboard readiness, pointer readiness, PS/2 fallback presence, xHCI presence, xHCI mouse endpoint status, and I2C pointer status. Settings also shows a compact Display/Input/Storage/Network readiness strip so the desktop communicates whether the machine is usable before the user has to read raw telemetry. The existing `drs-gui` proof now includes `settings-hardware-panel` and `settings-input-panel`, proving those panels were rendered from the real Product state.
+
+The UEFI Product `hwval` command is now human-readable by default. Running `hwval` prints a concise universal hardware summary with display, keyboard, pointer, storage, network, hardware inventory, and driver status; running `hwval full` preserves the old full raw evidence dump for verifiers and physical capture reports. `tools\verify-qemu.ps1` now sends `hwval full` so existing automated gates continue to receive the detailed `drs-display-readability`, `drs-ui-polish`, `drs-cursor-path`, `drs-gui`, and storage/runtime telemetry. This is intentionally hardware-neutral: it does not hardcode the MSI Cyborg, Logitech receiver, ELAN touchpad, or any one machine. It makes the current universal driver-readiness state visible and honest while the real driver work continues.
+
+Accepted verification: Product x86_64 build passed the M1 production-slice gate, BIOS reserve stayed at `101` sectors, UEFI reserve is `711,328` bytes, `tools\verify-hardware-display-input-fixtures.ps1` passed `39/39`, and `tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed. QEMU evidence includes the new GUI proof fields `settings-hardware-panel 1` and `settings-input-panel 1`. A manual QEMU shell check of the new default `hwval` summary reported `display-readable 1`, `input-ready 1`, `keyboard-ready 1`, `pointer-ready 1`, `storage-ready 1`, `network-devices 1`, `hardware-inventory 11`, `driver-bound 9`, `driver-deferred 2`, and `driver-failed 0`. BIOS behavior is unchanged for this pass.
 
 M173 is `MSI bounded xHCI retry and first HID evidence`. This responds to the first physical M172 run on the MSI Cyborg, where the Product desktop still booted slowly and neither the built-in ELAN touchpad nor the Logitech USB receiver moved the pointer. The run produced new evidence: `xhci slots disabled 2701`, `xhci slot disable failures 675`, `xhci error 27`, `xhci last skip port 14`, and `xhci last interface class/subclass/protocol 8/6/80`. That means the M172 cleanup did work, but it was being exercised in an unbounded live-rescan loop and the useful HID evidence was overwritten by the last mass-storage interface seen.
 

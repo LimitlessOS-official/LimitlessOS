@@ -989,7 +989,7 @@ function Send-QemuKeyboardProbe
             return
         }
         if ($HardwareRegistryProbeEnabled -or $HardwareDisplayProbeEnabled -or $HardwareStorageProbeEnabled) {
-            & $sendTextLine "hwval"
+            & $sendTextLine "hwval full"
             if ($HardwareRegistryProbeEnabled) {
                 Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-hardware-registry' -TimeoutMilliseconds 180000
             }
@@ -1038,7 +1038,7 @@ function Send-QemuKeyboardProbe
             "net",
             "net curl example.com",
             "pkginfo",
-            "hwval"
+            "hwval full"
         )
         if ($LoginProbeEnabled) {
             $shellTextLines += @(

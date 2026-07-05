@@ -184,6 +184,8 @@ u32 display64_gui_settings_save_count(void);
 u32 display64_gui_settings_save_denial_count(void);
 u32 display64_gui_settings_export_count(void);
 u32 display64_gui_settings_export_denial_count(void);
+u32 display64_gui_settings_hardware_panel_count(void);
+u32 display64_gui_settings_input_panel_count(void);
 u32 display64_gui_settings_theme(void);
 u32 display64_gui_settings_pointer_speed(void);
 u32 display64_gui_settings_key_repeat(void);
