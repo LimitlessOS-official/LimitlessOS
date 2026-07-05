@@ -1648,6 +1648,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " launcher ", display64_desktop_launcher_count());
         shell64_write_decimal_field(console_capability_handle, owner_id, " windows ", display64_wm_window_created_count());
         shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-visible ", display64_cursor_visible());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " product-chrome ", display64_gui_product_chrome_count());
         (void)shell64_write_hex32_line(
             console_capability_handle,
             owner_id,
