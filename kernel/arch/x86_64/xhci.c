@@ -57,6 +57,8 @@
 #define XHCI64_PORTSC_PED 0x00000002u
 #define XHCI64_PORTSC_PR 0x00000010u
 #define XHCI64_PORTSC_PP 0x00000200u
+#define XHCI64_PORTSC_PLS_SHIFT 5u
+#define XHCI64_PORTSC_PLS_MASK 0x000001E0u
 #define XHCI64_PORTSC_SPEED_SHIFT 10u
 #define XHCI64_PORTSC_CHANGE_MASK 0x00FE0000u
 
@@ -253,6 +255,14 @@ static u32 g_xhci_last_address_completion = 0u;
 static u32 g_xhci_last_address_slot = 0u;
 static u32 g_xhci_last_address_port = 0u;
 static u32 g_xhci_last_address_speed = 0u;
+static u32 g_xhci_last_address_event_dw0 = 0u;
+static u32 g_xhci_last_address_event_dw1 = 0u;
+static u32 g_xhci_last_address_event_dw2 = 0u;
+static u32 g_xhci_last_address_event_dw3 = 0u;
+static u32 g_xhci_pre_address_portsc = 0u;
+static u32 g_xhci_pre_address_portsc_pls = 0u;
+static u32 g_xhci_post_address_portsc = 0u;
+static u32 g_xhci_post_address_portsc_pls = 0u;
 static u32 g_xhci_address_failure_count = 0u;
 static u32 g_xhci_last_disable_slot_completion = 0u;
 static u32 g_xhci_last_disable_slot_id = 0u;
@@ -726,6 +736,31 @@ static u32 xhci64_portsc_write_preserve(u32 portsc, u32 set_bits)
 {
     return (portsc & XHCI64_PORTSC_PP) | set_bits;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 xhci64_portsc_pls(u32 portsc)
+{
+    return (portsc & XHCI64_PORTSC_PLS_MASK) >> XHCI64_PORTSC_PLS_SHIFT;
+}
+
+static u32 xhci64_read_portsc_snapshot(u32 port_id)
+{
+    u32 port_offset;
+
+    if (port_id == 0u)
+    {
+        return 0u;
+    }
+
+    port_offset = g_xhci_cap_length + XHCI64_OP_PORTS + ((port_id - 1u) * XHCI64_PORT_REGISTER_BYTES);
+    if ((port_offset + 4u) > g_xhci_span_hint)
+    {
+        return 0u;
+    }
+
+    return xhci64_read32(port_offset);
+}
+#endif
 
 static u32 xhci64_initial_mps_for_speed(u32 speed)
 {
@@ -1331,6 +1366,14 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
     g_xhci_last_address_port = port_id;
     g_xhci_last_address_speed = speed;
     g_xhci_last_address_completion = 0u;
+    g_xhci_last_address_event_dw0 = 0u;
+    g_xhci_last_address_event_dw1 = 0u;
+    g_xhci_last_address_event_dw2 = 0u;
+    g_xhci_last_address_event_dw3 = 0u;
+    g_xhci_pre_address_portsc = 0u;
+    g_xhci_pre_address_portsc_pls = 0u;
+    g_xhci_post_address_portsc = 0u;
+    g_xhci_post_address_portsc_pls = 0u;
 #endif
 
     xhci64_zero_memory(g_xhci_input_context, sizeof(g_xhci_input_context));
@@ -1348,18 +1391,27 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
         xhci64_virtual_to_physical(g_xhci_ep0_ring),
         8u);
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_pre_address_portsc = xhci64_read_portsc_snapshot(port_id);
+    g_xhci_pre_address_portsc_pls = xhci64_portsc_pls(g_xhci_pre_address_portsc);
+#endif
+
     if (xhci64_submit_command(
             xhci64_virtual_to_physical(g_xhci_input_context),
             (XHCI64_TRB_TYPE_ADDRESS_DEVICE << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
             &event) == 0u)
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_xhci_post_address_portsc = xhci64_read_portsc_snapshot(port_id);
+        g_xhci_post_address_portsc_pls = xhci64_portsc_pls(g_xhci_post_address_portsc);
         ++g_xhci_address_failure_count;
 #endif
         return 0u;
     }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_post_address_portsc = xhci64_read_portsc_snapshot(port_id);
+    g_xhci_post_address_portsc_pls = xhci64_portsc_pls(g_xhci_post_address_portsc);
     g_xhci_last_address_completion = xhci64_completion_code(&event);
     if (g_xhci_last_address_completion != XHCI64_COMPLETION_SUCCESS)
 #else
@@ -1367,6 +1419,10 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
 #endif
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_xhci_last_address_event_dw0 = (u32)(event.parameter & 0xFFFFFFFFull);
+        g_xhci_last_address_event_dw1 = (u32)(event.parameter >> 32);
+        g_xhci_last_address_event_dw2 = event.status;
+        g_xhci_last_address_event_dw3 = event.control;
         ++g_xhci_address_failure_count;
 #endif
         return 0u;
@@ -2600,6 +2656,14 @@ void xhci64_register_candidate(
     g_xhci_last_address_slot = 0u;
     g_xhci_last_address_port = 0u;
     g_xhci_last_address_speed = 0u;
+    g_xhci_last_address_event_dw0 = 0u;
+    g_xhci_last_address_event_dw1 = 0u;
+    g_xhci_last_address_event_dw2 = 0u;
+    g_xhci_last_address_event_dw3 = 0u;
+    g_xhci_pre_address_portsc = 0u;
+    g_xhci_pre_address_portsc_pls = 0u;
+    g_xhci_post_address_portsc = 0u;
+    g_xhci_post_address_portsc_pls = 0u;
     g_xhci_address_failure_count = 0u;
     g_xhci_last_disable_slot_completion = 0u;
     g_xhci_last_disable_slot_id = 0u;
@@ -3176,6 +3240,46 @@ u32 xhci64_last_address_port(void)
 u32 xhci64_last_address_speed(void)
 {
     return g_xhci_last_address_speed;
+}
+
+u32 xhci64_last_address_event_dw0(void)
+{
+    return g_xhci_last_address_event_dw0;
+}
+
+u32 xhci64_last_address_event_dw1(void)
+{
+    return g_xhci_last_address_event_dw1;
+}
+
+u32 xhci64_last_address_event_dw2(void)
+{
+    return g_xhci_last_address_event_dw2;
+}
+
+u32 xhci64_last_address_event_dw3(void)
+{
+    return g_xhci_last_address_event_dw3;
+}
+
+u32 xhci64_pre_address_portsc(void)
+{
+    return g_xhci_pre_address_portsc;
+}
+
+u32 xhci64_pre_address_portsc_pls(void)
+{
+    return g_xhci_pre_address_portsc_pls;
+}
+
+u32 xhci64_post_address_portsc(void)
+{
+    return g_xhci_post_address_portsc;
+}
+
+u32 xhci64_post_address_portsc_pls(void)
+{
+    return g_xhci_post_address_portsc_pls;
 }
 
 u32 xhci64_address_failure_count(void)

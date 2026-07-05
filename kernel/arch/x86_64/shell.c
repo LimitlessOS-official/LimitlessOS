@@ -1713,6 +1713,14 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address slot: ", xhci64_last_address_slot());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address port: ", xhci64_last_address_port());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last address speed: ", xhci64_last_address_speed());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci last address event dw0: ", xhci64_last_address_event_dw0());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci last address event dw1: ", xhci64_last_address_event_dw1());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci last address event dw2: ", xhci64_last_address_event_dw2());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci last address event dw3: ", xhci64_last_address_event_dw3());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci pre-address portsc raw: ", xhci64_pre_address_portsc());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci pre-address portsc pls: ", xhci64_pre_address_portsc_pls());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci post-address portsc raw: ", xhci64_post_address_portsc());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci post-address portsc pls: ", xhci64_post_address_portsc_pls());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci address failures: ", xhci64_address_failure_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable completion: ", xhci64_last_disable_slot_completion());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable slot: ", xhci64_last_disable_slot_id());
