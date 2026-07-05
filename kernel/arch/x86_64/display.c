@@ -345,6 +345,10 @@ static u32 g_display_gui_fileman_opened = 0u;
 static u32 g_display_gui_settings_opened = 0u;
 static u32 g_display_gui_installer_opened = 0u;
 static u32 g_display_gui_assistant_opened = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_display_input_diag_suppressed_count = 0u;
+static u32 g_display_mouse_diag_suppressed_count = 0u;
+#endif
 static u32 g_display_gui_unfocused_key_denied = 0u;
 static u32 g_display_gui_unfocused_key_denial_count = 0u;
 static u32 g_display_gui_no_ambient_input = 0u;
@@ -7911,6 +7915,10 @@ void display64_init(const struct boot_info *boot_info)
     g_display_gui_settings_opened = 0u;
     g_display_gui_installer_opened = 0u;
     g_display_gui_assistant_opened = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_display_input_diag_suppressed_count = 0u;
+    g_display_mouse_diag_suppressed_count = 0u;
+#endif
     g_display_gui_unfocused_key_denied = 0u;
     g_display_gui_unfocused_key_denial_count = 0u;
     g_display_gui_no_ambient_input = 0u;
@@ -8217,6 +8225,14 @@ u32 display64_write_boot_diagnostics(
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_desktop_active != 0u)
+    {
+        ++g_display_input_diag_suppressed_count;
+        return 1u;
+    }
+#endif
+
     panel_width = display64_min_u32(DISPLAY64_DIAG_PANEL_WIDTH, g_display_boot_info->framebuffer_width);
     x = (g_display_boot_info->framebuffer_width > (panel_width + DISPLAY64_DIAG_MARGIN))
         ? (g_display_boot_info->framebuffer_width - panel_width - DISPLAY64_DIAG_MARGIN)
@@ -8344,6 +8360,7 @@ u32 display64_write_mouse_diagnostics(
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     if (g_display_desktop_active != 0u)
     {
+        ++g_display_mouse_diag_suppressed_count;
         return 1u;
     }
 #endif
@@ -9003,6 +9020,18 @@ u32 display64_gui_terminal_opened(void)
 {
     return g_display_gui_terminal_opened;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_gui_input_diag_suppressed_count(void)
+{
+    return g_display_input_diag_suppressed_count;
+}
+
+u32 display64_gui_mouse_diag_suppressed_count(void)
+{
+    return g_display_mouse_diag_suppressed_count;
+}
+#endif
 
 u32 display64_gui_drag_completed(void)
 {

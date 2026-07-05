@@ -149,6 +149,8 @@ u32 display64_gui_settings_opened(void);
 u32 display64_gui_installer_opened(void);
 u32 display64_gui_assistant_opened(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_gui_input_diag_suppressed_count(void);
+u32 display64_gui_mouse_diag_suppressed_count(void);
 u32 display64_gui_right_click_count(void);
 u32 display64_gui_context_menu_action_count(void);
 u32 display64_gui_scroll_count(void);

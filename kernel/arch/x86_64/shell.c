@@ -486,6 +486,8 @@ static void shell64_write_gui_interaction_telemetry(
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-fileman-opened ", display64_gui_fileman_opened());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-settings-opened ", display64_gui_settings_opened());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-installer-opened ", display64_gui_installer_opened());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " input-diag-suppressed ", display64_gui_input_diag_suppressed_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " mouse-diag-suppressed ", display64_gui_mouse_diag_suppressed_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-right-click ", display64_gui_right_click_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-context-action ", display64_gui_context_menu_action_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " wm-resize ", display64_wm_resize_count());
