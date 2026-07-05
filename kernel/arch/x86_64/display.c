@@ -6,8 +6,11 @@
 #include "account_association_x64.h"
 #include "capability_x64.h"
 #include "cloud_storage_x64.h"
+#include "hardware_registry_x64.h"
+#include "i2c_hid_x64.h"
 #include "identity_x64.h"
 #include "identity_transport_x64.h"
+#include "input_x64.h"
 #include "installer_ux_x64.h"
 #include "launch_x64.h"
 #include "mmio_x64.h"
@@ -17,6 +20,7 @@
 #include "runtime_image_x64.h"
 #include "services.h"
 #include "services_x64.h"
+#include "xhci_x64.h"
 
 #define DISPLAY64_MARKER_WIDTH 16u
 #define DISPLAY64_MARKER_HEIGHT 8u
@@ -178,9 +182,10 @@
 #define DISPLAY64_FILEMAN_NAV_RENAME 8u
 #define DISPLAY64_FILEMAN_NAV_MOVE 9u
 #define DISPLAY64_FILEMAN_NAV_COPY 10u
-#define DISPLAY64_SETTINGS_ROW_COUNT 12u
+#define DISPLAY64_SETTINGS_ROW_COUNT 14u
 #define DISPLAY64_SETTINGS_CFG_BYTES 192u
 #define DISPLAY64_SETTINGS_DIAG_BYTES 384u
+#define DISPLAY64_SETTINGS_DETAIL_BYTES 64u
 #define DISPLAY64_SETTINGS_THEME_DARK 0u
 #define DISPLAY64_SETTINGS_THEME_LIGHT 1u
 #define DISPLAY64_SETTINGS_POINTER_SLOW 1u
@@ -377,8 +382,14 @@ static u32 g_display_settings_save_count = 0u;
 static u32 g_display_settings_save_denial_count = 0u;
 static u32 g_display_settings_export_count = 0u;
 static u32 g_display_settings_export_denial_count = 0u;
+static u32 g_display_settings_hardware_panel_count = 0u;
+static u32 g_display_settings_input_panel_count = 0u;
 static u8 g_display_settings_config[DISPLAY64_SETTINGS_CFG_BYTES];
 static u8 g_display_settings_diag[DISPLAY64_SETTINGS_DIAG_BYTES];
+static char g_display_settings_hardware_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
+static char g_display_settings_input_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
+static char g_display_settings_storage_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
+static char g_display_settings_network_detail[DISPLAY64_SETTINGS_DETAIL_BYTES];
 static u32 g_display_fileman_selected_index = 0u;
 static u32 g_display_fileman_window_cursor = 0u;
 static u32 g_display_settings_selected_index = 0u;
@@ -2748,15 +2759,137 @@ static const char *display64_settings_title(u32 index)
         case 1u: return "Theme";
         case 2u: return "Pointer";
         case 3u: return "Keyboard";
-        case 4u: return "Export diagnostics";
-        case 5u: return "Storage";
-        case 6u: return "Network";
-        case 7u: return "Session lock";
-        case 8u: return "Installer";
-        case 9u: return "Identity";
-        case 10u: return "Account";
+        case 4u: return "Hardware";
+        case 5u: return "Input devices";
+        case 6u: return "Export diagnostics";
+        case 7u: return "Storage";
+        case 8u: return "Network";
+        case 9u: return "Session lock";
+        case 10u: return "Installer";
+        case 11u: return "Identity";
+        case 12u: return "Account";
         default: return "Package Trust";
     }
+}
+
+static const char *display64_settings_hardware_detail(void)
+{
+    u32 cursor = 0u;
+
+    cursor = display64_diag_append_u32(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        hardware64_registry_count());
+    cursor = display64_diag_append_text(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        " devices, ");
+    cursor = display64_diag_append_u32(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        hardware64_registry_driver_bound_count());
+    cursor = display64_diag_append_text(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        " bound, ");
+    cursor = display64_diag_append_u32(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        hardware64_registry_driver_deferred_count());
+    cursor = display64_diag_append_text(
+        g_display_settings_hardware_detail,
+        cursor,
+        sizeof(g_display_settings_hardware_detail),
+        " deferred");
+    g_display_settings_hardware_detail[cursor] = '\0';
+    return g_display_settings_hardware_detail;
+}
+
+static const char *display64_settings_input_detail(void)
+{
+    u32 cursor = 0u;
+    u32 pointer_live = ((input64_mouse_packet_count() != 0u)
+        || (xhci64_mouse_reports() != 0u)
+        || (i2c_hid64_pointer_report_count() != 0u)) ? 1u : 0u;
+
+    cursor = display64_diag_append_text(
+        g_display_settings_input_detail,
+        cursor,
+        sizeof(g_display_settings_input_detail),
+        "kbd ");
+    cursor = display64_diag_append_bool(
+        g_display_settings_input_detail,
+        cursor,
+        sizeof(g_display_settings_input_detail),
+        (input64_keyboard_scancode_count() != 0u) || (xhci64_report_count() != 0u));
+    cursor = display64_diag_append_text(
+        g_display_settings_input_detail,
+        cursor,
+        sizeof(g_display_settings_input_detail),
+        ", pointer ");
+    cursor = display64_diag_append_bool(
+        g_display_settings_input_detail,
+        cursor,
+        sizeof(g_display_settings_input_detail),
+        pointer_live);
+    cursor = display64_diag_append_text(
+        g_display_settings_input_detail,
+        cursor,
+        sizeof(g_display_settings_input_detail),
+        ", xhci/i2c/ps2 ");
+    cursor = display64_diag_append_bool(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), xhci64_found());
+    cursor = display64_diag_append_char(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), '/');
+    cursor = display64_diag_append_bool(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), i2c_hid64_controller_present());
+    cursor = display64_diag_append_char(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), '/');
+    cursor = display64_diag_append_bool(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), input64_ps2_present());
+    g_display_settings_input_detail[cursor] = '\0';
+    return g_display_settings_input_detail;
+}
+
+static const char *display64_settings_storage_detail(void)
+{
+    u32 cursor = 0u;
+
+    cursor = display64_diag_append_text(
+        g_display_settings_storage_detail,
+        cursor,
+        sizeof(g_display_settings_storage_detail),
+        (mmio64_nvme_fat_located() != 0u) ? "NVME FAT mounted, " : "NVME FAT unavailable, ");
+    cursor = display64_diag_append_text(
+        g_display_settings_storage_detail,
+        cursor,
+        sizeof(g_display_settings_storage_detail),
+        (mmio64_nvme_rw_delegated() != 0u) ? "scoped writes" : "read-only/no authority");
+    g_display_settings_storage_detail[cursor] = '\0';
+    return g_display_settings_storage_detail;
+}
+
+static const char *display64_settings_network_detail(void)
+{
+    u32 cursor = 0u;
+
+    cursor = display64_diag_append_u32(
+        g_display_settings_network_detail,
+        cursor,
+        sizeof(g_display_settings_network_detail),
+        hardware64_registry_network_device_count());
+    cursor = display64_diag_append_text(
+        g_display_settings_network_detail,
+        cursor,
+        sizeof(g_display_settings_network_detail),
+        " device(s), broker ");
+    cursor = display64_diag_append_text(
+        g_display_settings_network_detail,
+        cursor,
+        sizeof(g_display_settings_network_detail),
+        (hardware64_registry_network_device_count() != 0u) ? "detected" : "unavailable");
+    g_display_settings_network_detail[cursor] = '\0';
+    return g_display_settings_network_detail;
 }
 
 static const char *display64_settings_detail(u32 index)
@@ -2775,13 +2908,15 @@ static const char *display64_settings_detail(u32 index)
             return "normal cursor, persisted";
         case 3u:
             return (g_display_settings_key_repeat != 0u) ? "repeat policy on, persisted" : "repeat policy off, persisted";
-        case 4u: return "writes /DIAG.TXT on NVME FAT";
-        case 5u: return "NVME FAT status, read-only";
-        case 6u: return "brokered DHCP DNS HTTP";
-        case 7u: return "click to lock current session";
-        case 8u: return "dry-run only, writes disabled";
-        case 9u: return "local identity metadata";
-        case 10u: return "local-only account state";
+        case 4u: return display64_settings_hardware_detail();
+        case 5u: return display64_settings_input_detail();
+        case 6u: return "writes /DIAG.TXT on NVME FAT";
+        case 7u: return display64_settings_storage_detail();
+        case 8u: return display64_settings_network_detail();
+        case 9u: return "click to lock current session";
+        case 10u: return "dry-run only, writes disabled";
+        case 11u: return "local identity metadata";
+        case 12u: return "local-only account state";
         default: return "signed package inventory";
     }
 }
@@ -2794,14 +2929,16 @@ static u32 display64_settings_accent(u32 index)
         case 1u: return (g_display_settings_theme != 0u) ? DISPLAY64_RGB_WARNING : DISPLAY64_RGB_APP_SETTINGS;
         case 2u: return DISPLAY64_RGB_ACCENT;
         case 3u: return DISPLAY64_RGB_APP_ASSISTANT;
-        case 4u: return DISPLAY64_RGB_APP_FILES;
-        case 5u: return DISPLAY64_RGB_APP_FILES;
-        case 6u: return DISPLAY64_RGB_ACCENT;
-        case 7u: return DISPLAY64_RGB_APP_SETTINGS;
-        case 8u: return DISPLAY64_RGB_APP_INSTALLER;
-        case 9u:
-        case 10u: return DISPLAY64_RGB_APP_SETTINGS;
-        case 11u: return DISPLAY64_RGB_WARNING;
+        case 4u: return DISPLAY64_RGB_FOCUS_BLUE;
+        case 5u: return DISPLAY64_RGB_ACCENT;
+        case 6u: return DISPLAY64_RGB_APP_FILES;
+        case 7u: return DISPLAY64_RGB_APP_FILES;
+        case 8u: return DISPLAY64_RGB_ACCENT;
+        case 9u: return DISPLAY64_RGB_APP_SETTINGS;
+        case 10u: return DISPLAY64_RGB_APP_INSTALLER;
+        case 11u:
+        case 12u: return DISPLAY64_RGB_APP_SETTINGS;
+        case 13u: return DISPLAY64_RGB_WARNING;
         default: return DISPLAY64_RGB_TEXT_SECONDARY;
     }
 }
@@ -2837,15 +2974,76 @@ static void display64_settings_activate_row(u32 index)
         (void)display64_settings_save();
         return;
     }
-    if (index == 4u)
+    if (index == 6u)
     {
         (void)display64_settings_export_diagnostics();
         return;
     }
-    if (index == 7u)
+    if (index == 9u)
     {
         (void)auth64_lock_session();
     }
+}
+
+static void display64_desktop_draw_readiness_pill(
+    u32 x,
+    u32 y,
+    u32 width,
+    const char *label,
+    u32 ready,
+    u32 accent_rgb)
+{
+    u32 fill = (ready != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_FIELD;
+    u32 text = (ready != 0u) ? DISPLAY64_RGB_TEXT_PRIMARY : DISPLAY64_RGB_TEXT_MUTED;
+
+    display64_compositor_draw_surface(x, y, width, 22u, fill, DISPLAY64_RGB_SURFACE_BORDER, 0u);
+    display64_compositor_fill_rect(x + 6u, y + 6u, 4u, 10u, (ready != 0u) ? accent_rgb : DISPLAY64_RGB_DISABLED_TEXT);
+    (void)display64_draw_font_text(x + 16u, y + 5u, label, DISPLAY64_FONT_SMALL, text, DISPLAY64_FONT_TRANSPARENT);
+}
+
+static void display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 width)
+{
+    u32 pill_w;
+    u32 input_ready = ((input64_mouse_packet_count() != 0u)
+        || (xhci64_mouse_reports() != 0u)
+        || (i2c_hid64_pointer_report_count() != 0u)
+        || (input64_keyboard_scancode_count() != 0u)
+        || (xhci64_report_count() != 0u)) ? 1u : 0u;
+
+    if (width < 304u)
+    {
+        return;
+    }
+
+    pill_w = (width - 44u) / 4u;
+    display64_desktop_draw_readiness_pill(
+        body_x,
+        body_y,
+        pill_w,
+        "Display",
+        display64_readable(),
+        DISPLAY64_RGB_FOCUS_BLUE);
+    display64_desktop_draw_readiness_pill(
+        body_x + pill_w + 8u,
+        body_y,
+        pill_w,
+        "Input",
+        input_ready,
+        DISPLAY64_RGB_ACCENT);
+    display64_desktop_draw_readiness_pill(
+        body_x + ((pill_w + 8u) * 2u),
+        body_y,
+        pill_w,
+        "Storage",
+        mmio64_nvme_fat_located(),
+        DISPLAY64_RGB_APP_FILES);
+    display64_desktop_draw_readiness_pill(
+        body_x + ((pill_w + 8u) * 3u),
+        body_y,
+        pill_w,
+        "Network",
+        hardware64_registry_network_device_count(),
+        DISPLAY64_RGB_APP_ASSISTANT);
 }
 
 static void display64_desktop_draw_settings_summary(
@@ -2882,20 +3080,21 @@ static void display64_desktop_draw_settings_summary(
         ++visible_row;
     }
 
-    display64_compositor_fill_round_rect_4(body_x, body_y + 308u, 72u, 24u, DISPLAY64_RGB_ACCENT);
-    (void)display64_draw_font_text(body_x + 18u, body_y + 313u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_draw_badge(body_x + 84u, body_y + 309u, 116u, display64_settings_title(g_display_settings_selected_index), display64_settings_accent(g_display_settings_selected_index));
+    display64_desktop_draw_readiness_strip(body_x, body_y + 284u, row_w);
+    display64_compositor_fill_round_rect_4(body_x, body_y + 312u, 72u, 24u, DISPLAY64_RGB_ACCENT);
+    (void)display64_draw_font_text(body_x + 18u, body_y + 317u, "Lock", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    display64_compositor_draw_badge(body_x + 84u, body_y + 313u, 116u, display64_settings_title(g_display_settings_selected_index), display64_settings_accent(g_display_settings_selected_index));
     if (g_display_settings_save_count != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 314u, "Saved", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Saved", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
     }
     else if (g_display_settings_export_count != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 314u, "Exported", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Exported", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
     }
     else if ((g_display_settings_save_denial_count + g_display_settings_export_denial_count) != 0u)
     {
-        (void)display64_draw_font_text(body_x + 210u, body_y + 314u, "Denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 210u, body_y + 318u, "Denied", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
     }
 }
 #endif
@@ -5583,6 +5782,14 @@ static void display64_desktop_draw_settings(u32 handle)
     {
         ++g_display_pkg_settings_panel_count;
     }
+    if (g_display_settings_hardware_panel_count == 0u)
+    {
+        ++g_display_settings_hardware_panel_count;
+    }
+    if (g_display_settings_input_panel_count == 0u)
+    {
+        ++g_display_settings_input_panel_count;
+    }
     if (g_display_identity_settings_panel_count == 0u)
     {
         ++g_display_identity_settings_panel_count;
@@ -5846,7 +6053,7 @@ static int display64_desktop_settings_lock_hit(const struct display64_window *wi
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     body_x = window->x + 16u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
-    return display64_point_in_rect(x, y, body_x, body_y + 308u, 72u, 24u);
+    return display64_point_in_rect(x, y, body_x, body_y + 312u, 72u, 24u);
 #else
     body_x = window->x + 10u;
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 12u;
@@ -8902,6 +9109,16 @@ u32 display64_gui_settings_export_count(void)
 u32 display64_gui_settings_export_denial_count(void)
 {
     return g_display_settings_export_denial_count;
+}
+
+u32 display64_gui_settings_hardware_panel_count(void)
+{
+    return g_display_settings_hardware_panel_count;
+}
+
+u32 display64_gui_settings_input_panel_count(void)
+{
+    return g_display_settings_input_panel_count;
 }
 
 u32 display64_gui_settings_theme(void)

@@ -525,6 +525,8 @@ static void shell64_write_gui_interaction_telemetry(
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-save-denial ", display64_gui_settings_save_denial_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-export ", display64_gui_settings_export_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-export-denial ", display64_gui_settings_export_denial_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-hardware-panel ", display64_gui_settings_hardware_panel_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " settings-input-panel ", display64_gui_settings_input_panel_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-theme ", display64_gui_settings_theme());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-pointer ", display64_gui_settings_pointer_speed());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-keyrepeat ", display64_gui_settings_key_repeat());
@@ -2100,6 +2102,79 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage/installer/network/update/install\n");
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_print_hardware_validation_summary(u32 console_capability_handle, u32 owner_id)
+{
+    u32 hardware_capability;
+    u32 keyboard_ready;
+    u32 pointer_ready;
+    u32 input_ready;
+    u32 storage_ready;
+    u32 network_devices;
+    u32 driver_bound;
+    u32 driver_deferred;
+    u32 driver_failed;
+
+    hardware_capability =
+        capability64_grant_service(
+            SERVICE_ENDPOINT_CLASS_HARDWARE,
+            CAPABILITY64_RIGHT_QUERY,
+            owner_id);
+    if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
+    {
+        (void)hardware64_registry_refresh(hardware_capability, owner_id);
+        (void)capability64_revoke(hardware_capability, owner_id);
+    }
+
+    keyboard_ready =
+        ((input64_keyboard_scancode_count() != 0u) || (xhci64_report_count() != 0u)) ? 1u : 0u;
+    pointer_ready =
+        ((input64_mouse_packet_count() != 0u)
+            || (xhci64_mouse_reports() != 0u)
+            || (i2c_hid64_pointer_report_count() != 0u)) ? 1u : 0u;
+    input_ready = ((keyboard_ready != 0u) || (pointer_ready != 0u)) ? 1u : 0u;
+    storage_ready = mmio64_nvme_fat_located();
+    network_devices = hardware64_registry_network_device_count();
+    driver_bound = hardware64_registry_driver_bound_count();
+    driver_deferred = hardware64_registry_driver_deferred_count();
+    driver_failed = hardware64_registry_driver_failed_count();
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "LimitlessOS universal hardware summary\n");
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display readable: ", display64_readable());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display width: ", display64_width());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "display height: ", display64_height());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "display cursor visible: ", display64_cursor_visible());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "keyboard ready: ", keyboard_ready);
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "pointer ready: ", pointer_ready);
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 fallback enabled: ", input64_ps2_enabled());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci present: ", xhci64_found());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci mouse endpoint: ", xhci64_mouse_endpoint_present());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme fat mounted: ", storage_ready);
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme scoped writes: ", mmio64_nvme_rw_delegated());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "network devices: ", network_devices);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "hardware inventory: ", hardware64_registry_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers bound: ", driver_bound);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers deferred: ", driver_deferred);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers failed: ", driver_failed);
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-summary summary 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " display-readable ", display64_readable());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " input-ready ", input_ready);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " keyboard-ready ", keyboard_ready);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " pointer-ready ", pointer_ready);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " storage-ready ", storage_ready);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " network-devices ", network_devices);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " hardware-inventory ", hardware64_registry_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-bound ", driver_bound);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-deferred ", driver_deferred);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " driver-failed ", driver_failed);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-error ", xhci64_error());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " i2c-pointer-error ", i2c_hid64_pointer_error());
+    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Use hwval full for raw counters and handoff evidence.\n");
+}
+#endif
+
 static u8 shell64_lower(u8 value)
 {
     if ((value >= (u8)'A') && (value <= (u8)'Z'))
@@ -2745,7 +2820,11 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
 
     if (shell64_token_equals(token_start, token_length, "hwval"))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full] - show read-only hardware validation status\n");
+#else
         return shell64_write_text(console_capability_handle, owner_id, "usage: hwval - show read-only hardware validation status\n");
+#endif
     }
 
     if (shell64_token_equals(token_start, token_length, "pkginfo"))
@@ -3322,7 +3401,11 @@ static u32 shell64_list_apps(
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_text(console_capability_handle, owner_id, "Brokered socket API: capability-scoped TCP-client foundation in net\n");
 #endif
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; MSI evidence pending\n");
+#else
+    (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only\n");
+#endif
     (void)shell64_write_text(console_capability_handle, owner_id, "Package trust: use pkginfo or Settings\n");
     (void)shell64_write_apps_gui_line(console_capability_handle, owner_id);
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
@@ -3782,7 +3865,11 @@ static u32 shell64_execute_line_inner(
         (void)shell64_write_text(console_capability_handle, owner_id, "Redirection: command > path replaces file; command >> path appends built-in output\n");
 #endif
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET\n");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
+#else
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only\n");
+#endif
         (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
         (void)shell64_write_gui_status_line(console_capability_handle, owner_id);
         (void)shell64_write_service_status_line(console_capability_handle, owner_id);
@@ -3828,7 +3915,24 @@ static u32 shell64_execute_line_inner(
 
     if (shell64_token_equals(command_start, command_length, "hwval"))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+        if (first_length == 0u)
+        {
+            return shell64_print_hardware_validation_summary(console_capability_handle, owner_id);
+        }
+        if (shell64_token_equals(first_start, first_length, "summary"))
+        {
+            return shell64_print_hardware_validation_summary(console_capability_handle, owner_id);
+        }
+        if (shell64_token_equals(first_start, first_length, "full"))
+        {
+            return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full]\n");
+#else
         return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+#endif
     }
 
     if (shell64_token_equals(command_start, command_length, "pkginfo"))
