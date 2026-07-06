@@ -719,6 +719,41 @@ static u32 shell64_write_decimal_line(
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define SHELL64_HWVAL_COMPOSITE_INACTIVE 0u
+#define SHELL64_HWVAL_COMPOSITE_EMIT 1u
+#define SHELL64_HWVAL_COMPOSITE_SUPPRESS 2u
+
+static u32 g_shell64_hwval_composite_line_state;
+
+static u32 shell64_begin_hwval_composite_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *prefix)
+{
+    if (shell64_hwval_label_matches_filter(prefix) == 0u)
+    {
+        g_shell64_hwval_composite_line_state = SHELL64_HWVAL_COMPOSITE_SUPPRESS;
+        return 0u;
+    }
+
+    g_shell64_hwval_composite_line_state = SHELL64_HWVAL_COMPOSITE_EMIT;
+    return shell64_write_text(console_capability_handle, owner_id, prefix);
+}
+
+static u32 shell64_end_hwval_composite_line(
+    u32 console_capability_handle,
+    u32 owner_id)
+{
+    u32 state = g_shell64_hwval_composite_line_state;
+    g_shell64_hwval_composite_line_state = SHELL64_HWVAL_COMPOSITE_INACTIVE;
+    if (state != SHELL64_HWVAL_COMPOSITE_EMIT)
+    {
+        return 0u;
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
 static void shell64_write_decimal_field(
     u32 console_capability_handle,
     u32 owner_id,
@@ -727,6 +762,16 @@ static void shell64_write_decimal_field(
 {
     char buffer[10];
     u32 length;
+
+    if (g_shell64_hwval_composite_line_state == SHELL64_HWVAL_COMPOSITE_SUPPRESS)
+    {
+        return;
+    }
+    if ((g_shell64_hwval_composite_line_state == SHELL64_HWVAL_COMPOSITE_INACTIVE)
+        && (shell64_hwval_label_matches_filter(label) == 0u))
+    {
+        return;
+    }
 
     (void)shell64_write_text(console_capability_handle, owner_id, label);
     length = shell64_format_decimal_u32(buffer, value);
@@ -742,6 +787,16 @@ static void shell64_write_hex32_field(
     char buffer[10];
     u32 length;
 
+    if (g_shell64_hwval_composite_line_state == SHELL64_HWVAL_COMPOSITE_SUPPRESS)
+    {
+        return;
+    }
+    if ((g_shell64_hwval_composite_line_state == SHELL64_HWVAL_COMPOSITE_INACTIVE)
+        && (shell64_hwval_label_matches_filter(label) == 0u))
+    {
+        return;
+    }
+
     (void)shell64_write_text(console_capability_handle, owner_id, label);
     length = shell64_format_hex32(buffer, value);
     (void)shell64_write(console_capability_handle, owner_id, (const u8 *)buffer, length);
@@ -751,7 +806,7 @@ static void shell64_write_gui_interaction_telemetry(
     u32 console_capability_handle,
     u32 owner_id)
 {
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-gui drs-gui-interactive ");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-gui drs-gui-interactive ");
     shell64_write_decimal_field(console_capability_handle, owner_id, "", display64_gui_interactive());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-click-hittest ", display64_gui_click_hittest());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-launcher-opened ", display64_gui_launcher_opened());
@@ -831,7 +886,7 @@ static void shell64_write_gui_interaction_telemetry(
     shell64_write_hex32_field(console_capability_handle, owner_id, " display-token ", display64_gui_display_path_token());
     shell64_write_hex32_field(console_capability_handle, owner_id, " fs-token ", display64_gui_fs_path_token());
     shell64_write_decimal_field(console_capability_handle, owner_id, " assistant-opened ", display64_gui_assistant_opened());
-    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 }
 #endif
 
@@ -1507,7 +1562,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     token = shell64_storage_triage_mix(token, stage_match);
     token = shell64_storage_triage_mix(token, boot_media64_status());
 
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-triage storage-triage 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-nvme-triage storage-triage 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " nvme-found ", mmio64_nvme_probe_found());
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
@@ -1631,9 +1686,10 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " dynldlimit-match ", dynldlimit_match);
     shell64_write_decimal_field(console_capability_handle, owner_id, " ldlimit-match ", ldlimit_match);
     shell64_write_decimal_field(console_capability_handle, owner_id, " stage-match ", stage_match);
-    (void)shell64_write_hex32_line(console_capability_handle, owner_id, " token ", token);
+    shell64_write_hex32_field(console_capability_handle, owner_id, " token ", token);
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-vmd-nvme-bind bind 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-vmd-nvme-bind bind 1");
     shell64_write_hex32_field(console_capability_handle, owner_id, " result ", pci_vmd_nested_driver_bind_result);
     shell64_write_decimal_field(console_capability_handle, owner_id, " state ", mmio64_vmd_nvme_bind_state());
     shell64_write_hex32_field(console_capability_handle, owner_id, " flags ", mmio64_vmd_nvme_bind_flags());
@@ -1645,7 +1701,7 @@ static u32 shell64_print_nvme_storage_triage(u32 console_capability_handle, u32 
     shell64_write_decimal_field(console_capability_handle, owner_id, " candidate-deferred ", mmio64_nvme_candidate_deferred());
     shell64_write_hex32_field(console_capability_handle, owner_id, " candidate-bdf ", mmio64_nvme_candidate_bdf());
     shell64_write_hex32_field(console_capability_handle, owner_id, " candidate-token ", mmio64_nvme_candidate_token());
-    return shell64_write_text(console_capability_handle, owner_id, "\n");
+    return shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 #else
     return 1u;
 #endif
@@ -1925,7 +1981,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
             owner_id,
             "display ui polish token: ",
             display64_ui_polish_token());
-        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-display-readability display-readability 1");
+        (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-display-readability display-readability 1");
         shell64_write_decimal_field(console_capability_handle, owner_id, " available ", display64_available());
         shell64_write_decimal_field(console_capability_handle, owner_id, " width ", display64_width());
         shell64_write_decimal_field(console_capability_handle, owner_id, " height ", display64_height());
@@ -1945,12 +2001,13 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-visible ", display64_cursor_visible());
         shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-draws ", display64_compositor_cursor_count());
         shell64_write_decimal_field(console_capability_handle, owner_id, " direct-cursor-draws ", display64_direct_cursor_count());
-        (void)shell64_write_hex32_line(
+        shell64_write_hex32_field(
             console_capability_handle,
             owner_id,
             " token ",
             display64_layout_token());
-        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-ui-polish ui-polish 1");
+        (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
+        (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-ui-polish ui-polish 1");
         shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-active ", display64_compositor_init_done());
         shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-direct ", display64_compositor_direct_mode());
         shell64_write_decimal_field(console_capability_handle, owner_id, " font ", display64_font_init_done());
@@ -1970,12 +2027,13 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " network-ready ", display64_product_network_ready());
         shell64_write_decimal_field(console_capability_handle, owner_id, " diagnostic-overlays-suppressed ",
             display64_gui_input_diag_suppressed_count() + display64_gui_mouse_diag_suppressed_count());
-        (void)shell64_write_hex32_line(
+        shell64_write_hex32_field(
             console_capability_handle,
             owner_id,
             " token ",
             display64_ui_polish_token());
-        (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-cursor-path cursor-path 1");
+        (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
+        (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-cursor-path cursor-path 1");
         shell64_write_decimal_field(console_capability_handle, owner_id, " surface-ready ", display64_cursor_surface_ready());
         shell64_write_decimal_field(console_capability_handle, owner_id, " format-supported ", display64_cursor_framebuffer_format_supported());
         shell64_write_decimal_field(console_capability_handle, owner_id, " compositor-active ", display64_compositor_init_done());
@@ -1991,11 +2049,12 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " rect-h ", display64_cursor_rect_h());
         shell64_write_decimal_field(console_capability_handle, owner_id, " saved ", display64_cursor_saved_valid());
         shell64_write_decimal_field(console_capability_handle, owner_id, " drawn ", display64_cursor_drawn_valid());
-        (void)shell64_write_hex32_line(
+        shell64_write_hex32_field(
             console_capability_handle,
             owner_id,
             " token ",
             display64_cursor_path_token());
+        (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
         shell64_write_gui_interaction_telemetry(console_capability_handle, owner_id);
 #endif
     }
@@ -2348,7 +2407,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "vmd nvme bind count: ", mmio64_vmd_nvme_bind_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "vmd nvme bind denials: ", mmio64_vmd_nvme_bind_denial_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "vmd nvme bind unavailable: ", mmio64_vmd_nvme_bind_unavailable_count());
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-nvme-pci nvme-pci-diag 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-storage ", pci_storage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-nvme ", pci_nvme_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " pci-raid ", pci_raid_count);
@@ -2422,8 +2481,8 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-driver-plan-stage-count ", pci_vmd_nested_driver_plan_stage_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-driver-plan-denials ", pci_vmd_nested_driver_plan_denial_count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " vmd-nested-driver-plan-unavailable ", pci_vmd_nested_driver_plan_unavailable_count);
-    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-vmd-nvme-bind bind 1");
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-vmd-nvme-bind bind 1");
     shell64_write_hex32_field(console_capability_handle, owner_id, " result ", pci_vmd_nested_driver_bind_result);
     shell64_write_decimal_field(console_capability_handle, owner_id, " state ", mmio64_vmd_nvme_bind_state());
     shell64_write_hex32_field(console_capability_handle, owner_id, " flags ", mmio64_vmd_nvme_bind_flags());
@@ -2435,7 +2494,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_decimal_field(console_capability_handle, owner_id, " candidate-deferred ", mmio64_nvme_candidate_deferred());
     shell64_write_hex32_field(console_capability_handle, owner_id, " candidate-bdf ", mmio64_nvme_candidate_bdf());
     shell64_write_hex32_field(console_capability_handle, owner_id, " candidate-token ", mmio64_nvme_candidate_token());
-    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar high: ", (u32)(mmio64_nvme_probe_bar0() >> 32));
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "nvme bar low: ", (u32)mmio64_nvme_probe_bar0());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "nvme probe unavailable: ", mmio64_nvme_probe_unavailable());
@@ -2511,7 +2570,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "hardware driver failed: ",
         hardware64_registry_driver_failed_count());
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hardware-registry hardware-registry 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-hardware-registry hardware-registry 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " refresh ", hardware64_registry_refresh_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " limit ", hardware64_registry_limit());
     shell64_write_decimal_field(console_capability_handle, owner_id, " inventory ", hardware64_registry_count());
@@ -2529,11 +2588,12 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     shell64_write_decimal_field(console_capability_handle, owner_id, " driver-unsupported ", hardware64_registry_driver_unsupported_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " driver-failed ", hardware64_registry_driver_failed_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " overflow ", hardware64_registry_overflow_count());
-    (void)shell64_write_hex32_line(
+    shell64_write_hex32_field(
         console_capability_handle,
         owner_id,
         " token ",
         hardware64_registry_token());
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 #endif
     (void)shell64_write_yes_no_line(
         console_capability_handle,
@@ -2613,7 +2673,7 @@ static u32 shell64_print_hardware_validation_summary(u32 console_capability_hand
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers bound: ", driver_bound);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers deferred: ", driver_deferred);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "drivers failed: ", driver_failed);
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-summary summary 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-hw-summary summary 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " display-readable ", display64_readable());
     shell64_write_decimal_field(console_capability_handle, owner_id, " input-ready ", input_ready);
     shell64_write_decimal_field(console_capability_handle, owner_id, " keyboard-ready ", keyboard_ready);
@@ -2626,7 +2686,7 @@ static u32 shell64_print_hardware_validation_summary(u32 console_capability_hand
     shell64_write_decimal_field(console_capability_handle, owner_id, " driver-failed ", driver_failed);
     shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-error ", xhci64_error());
     shell64_write_decimal_field(console_capability_handle, owner_id, " i2c-pointer-error ", i2c_hid64_pointer_error());
-    (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
     return shell64_write_text(console_capability_handle, owner_id, "Use hwval full for raw counters and handoff evidence.\n");
 }
 
@@ -2750,13 +2810,13 @@ static u32 shell64_print_hardware_devices(u32 console_capability_handle, u32 own
         (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     }
 
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-devices devices 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-hw-devices devices 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " inventory ", count);
     shell64_write_decimal_field(console_capability_handle, owner_id, " bound ", hardware64_registry_driver_bound_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " deferred ", hardware64_registry_driver_deferred_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " failed ", hardware64_registry_driver_failed_count());
     shell64_write_hex32_field(console_capability_handle, owner_id, " token ", hardware64_registry_token());
-    return shell64_write_text(console_capability_handle, owner_id, "\n");
+    return shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 }
 
 static const char *shell64_xhci_protocol_name(u32 protocol)
@@ -2827,7 +2887,7 @@ static u32 shell64_print_hardware_ports(u32 console_capability_handle, u32 owner
         owner_id,
         "i2c acpi resource needed: ",
         ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-ports ports 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-hw-ports ports 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-root-ports ", xhci64_hcs_ports());
     shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-connected ", xhci64_connected_ports());
     shell64_write_decimal_field(console_capability_handle, owner_id, " port-lines ", printed);
@@ -2838,7 +2898,7 @@ static u32 shell64_print_hardware_ports(u32 console_capability_handle, u32 owner
         owner_id,
         " i2c-acpi-resource-needed ",
         ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
-    return shell64_write_text(console_capability_handle, owner_id, "\n");
+    return shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 }
 
 static u32 shell64_rescan_usb(u32 console_capability_handle, u32 owner_id)
@@ -2852,7 +2912,7 @@ static u32 shell64_rescan_usb(u32 console_capability_handle, u32 owner_id)
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "usb storage present: ", xhci64_usb_storage_present());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "usb storage ready: ", xhci64_usb_storage_ready());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage error: ", xhci64_usb_storage_error());
-    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-usbscan usbscan 1");
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-usbscan usbscan 1");
     shell64_write_decimal_field(console_capability_handle, owner_id, " result ", result);
     shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-connected ", xhci64_connected_ports());
     shell64_write_decimal_field(console_capability_handle, owner_id, " storage-present ", xhci64_usb_storage_present());
@@ -2860,7 +2920,7 @@ static u32 shell64_rescan_usb(u32 console_capability_handle, u32 owner_id)
     shell64_write_decimal_field(console_capability_handle, owner_id, " storage-error ", xhci64_usb_storage_error());
     shell64_write_decimal_field(console_capability_handle, owner_id, " last-skip-port ", xhci64_last_skip_port());
     shell64_write_decimal_field(console_capability_handle, owner_id, " last-skip-code ", xhci64_last_skip_code());
-    return shell64_write_text(console_capability_handle, owner_id, "\n");
+    return shell64_end_hwval_composite_line(console_capability_handle, owner_id);
 }
 #endif
 
