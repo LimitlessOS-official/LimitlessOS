@@ -118,6 +118,9 @@
 #define XHCI64_CONNECTION_RETRIES 10u
 #define XHCI64_PORT_RESET_WAIT_MS 100u
 #define XHCI64_DEVICE_SETTLE_MS 50u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define XHCI64_HID_INTERFACE_LIMIT 8u
+#endif
 
 struct xhci64_trb
 {
@@ -151,6 +154,15 @@ struct xhci64_keyboard_endpoint
     u32 interface_protocol;
     u32 report_length;
 };
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+struct xhci64_hid_candidate
+{
+    struct xhci64_keyboard_endpoint endpoint;
+};
+#endif
+
+static u32 xhci64_usb16(const u8 *bytes);
 
 static u32 g_xhci_address = 0xFFFFFFFFu;
 static u32 g_xhci_vendor_device = 0u;
@@ -264,6 +276,17 @@ static u32 g_xhci_pre_address_portsc_pls = 0u;
 static u32 g_xhci_post_address_portsc = 0u;
 static u32 g_xhci_post_address_portsc_pls = 0u;
 static u32 g_xhci_address_failure_count = 0u;
+static u32 g_xhci_hid_interface_inventory = 0u;
+static u32 g_xhci_boot_mouse_interface = 0xFFFFFFFFu;
+static u32 g_xhci_boot_mouse_port = 0u;
+static u32 g_xhci_boot_mouse_dci = 0u;
+static u32 g_xhci_boot_mouse_mps = 0u;
+static u32 g_xhci_boot_mouse_configured = 0u;
+static u32 g_xhci_mouse_last_completion = 0u;
+static u32 g_xhci_mouse_last_event_dw0 = 0u;
+static u32 g_xhci_mouse_last_event_dw1 = 0u;
+static u32 g_xhci_mouse_last_event_dw2 = 0u;
+static u32 g_xhci_mouse_last_event_dw3 = 0u;
 static u32 g_xhci_last_disable_slot_completion = 0u;
 static u32 g_xhci_last_disable_slot_id = 0u;
 #endif
@@ -445,6 +468,173 @@ static void xhci64_note_mouse_endpoint_probe(u32 max_packet)
     {
         g_xhci_first_mouse_candidate_endpoint_mps = max_packet;
     }
+}
+
+static void xhci64_clear_endpoint(struct xhci64_keyboard_endpoint *endpoint)
+{
+    if (endpoint == 0)
+    {
+        return;
+    }
+
+    endpoint->present = 0u;
+    endpoint->slot_id = 0u;
+    endpoint->dci = 0u;
+    endpoint->max_packet = 0u;
+    endpoint->interval = 0u;
+    endpoint->interface_number = 0u;
+    endpoint->interface_class = 0u;
+    endpoint->interface_subclass = 0u;
+    endpoint->interface_protocol = 0u;
+    endpoint->report_length = 0u;
+}
+
+static u32 xhci64_collect_hid_candidates(
+    const u8 *config,
+    u32 length,
+    struct xhci64_hid_candidate *candidates,
+    u32 limit,
+    u32 *configuration_value)
+{
+    u32 offset = 0u;
+    u32 count = 0u;
+    u32 current = 0xFFFFFFFFu;
+
+    if ((config == 0) || (candidates == 0) || (configuration_value == 0) || (limit == 0u))
+    {
+        return 0u;
+    }
+
+    *configuration_value = config[5];
+    while ((offset + 2u) <= length)
+    {
+        u32 descriptor_length = config[offset];
+        u32 descriptor_type = config[offset + 1u];
+
+        if ((descriptor_length == 0u) || ((offset + descriptor_length) > length))
+        {
+            break;
+        }
+
+        if ((descriptor_type == XHCI64_USB_DESC_INTERFACE) && (descriptor_length >= 9u))
+        {
+            u32 interface_class = config[offset + 5u];
+            u32 interface_subclass = config[offset + 6u];
+            u32 interface_protocol = config[offset + 7u];
+
+            current = 0xFFFFFFFFu;
+            g_xhci_last_interface_class = interface_class;
+            g_xhci_last_interface_subclass = interface_subclass;
+            g_xhci_last_interface_protocol = interface_protocol;
+            xhci64_note_hid_interface_probe(interface_class, interface_subclass, interface_protocol);
+            if ((interface_class == 0x03u) && (count < limit))
+            {
+                current = count;
+                xhci64_clear_endpoint(&candidates[current].endpoint);
+                candidates[current].endpoint.interface_number = config[offset + 2u];
+                candidates[current].endpoint.interface_class = interface_class;
+                candidates[current].endpoint.interface_subclass = interface_subclass;
+                candidates[current].endpoint.interface_protocol = interface_protocol;
+                ++count;
+            }
+        }
+        else if ((descriptor_type == XHCI64_USB_DESC_HID)
+            && (descriptor_length >= 9u)
+            && (current != 0xFFFFFFFFu))
+        {
+            if (config[offset + 6u] == XHCI64_USB_DESC_REPORT)
+            {
+                candidates[current].endpoint.report_length = xhci64_usb16(&config[offset + 7u]);
+                g_xhci_hid_report_read = 1u;
+            }
+        }
+        else if ((descriptor_type == XHCI64_USB_DESC_ENDPOINT)
+            && (descriptor_length >= 7u)
+            && (current != 0xFFFFFFFFu))
+        {
+            u32 endpoint_address = config[offset + 2u];
+            u32 attributes = config[offset + 3u];
+            if (((endpoint_address & 0x80u) != 0u)
+                && ((attributes & 0x3u) == 0x3u)
+                && (candidates[current].endpoint.present == 0u))
+            {
+                u32 endpoint_number = endpoint_address & 0xFu;
+                u32 max_packet = xhci64_usb16(&config[offset + 4u]) & 0x7FFu;
+
+                g_xhci_last_endpoint_max_packet = max_packet;
+                if (candidates[current].endpoint.interface_protocol == 0x02u)
+                {
+                    xhci64_note_mouse_endpoint_probe(max_packet);
+                }
+                candidates[current].endpoint.present = 1u;
+                candidates[current].endpoint.dci = (endpoint_number * 2u) + 1u;
+                candidates[current].endpoint.max_packet = (max_packet != 0u) ? max_packet : 8u;
+                candidates[current].endpoint.interval = config[offset + 6u];
+            }
+        }
+
+        offset += descriptor_length;
+    }
+
+    g_xhci_hid_interface_inventory += count;
+    return count;
+}
+
+static u32 xhci64_select_hid_candidate(
+    const struct xhci64_hid_candidate *candidates,
+    u32 count,
+    u32 interface_subclass,
+    u32 interface_protocol,
+    struct xhci64_keyboard_endpoint *endpoint)
+{
+    u32 index;
+
+    if ((candidates == 0) || (endpoint == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < count; ++index)
+    {
+        const struct xhci64_keyboard_endpoint *candidate = &candidates[index].endpoint;
+        if ((candidate->present != 0u)
+            && (candidate->interface_class == 0x03u)
+            && (candidate->interface_subclass == interface_subclass)
+            && (candidate->interface_protocol == interface_protocol))
+        {
+            *endpoint = *candidate;
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 xhci64_select_generic_hid_candidate(
+    const struct xhci64_hid_candidate *candidates,
+    u32 count,
+    struct xhci64_keyboard_endpoint *endpoint)
+{
+    u32 index;
+
+    if ((candidates == 0) || (endpoint == 0))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < count; ++index)
+    {
+        const struct xhci64_keyboard_endpoint *candidate = &candidates[index].endpoint;
+        if ((candidate->present != 0u)
+            && !((candidate->interface_subclass == 0x01u)
+                && (candidate->interface_protocol == 0x01u)))
+        {
+            *endpoint = *candidate;
+            return 1u;
+        }
+    }
+
+    return 0u;
 }
 #endif
 
@@ -2081,6 +2271,22 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
     u32 mouse_match;
     u32 generic_match = 0u;
     u32 probe_match = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    struct xhci64_hid_candidate hid_candidates[XHCI64_HID_INTERFACE_LIMIT];
+    u32 hid_candidate_count;
+    u32 hid_candidate_index;
+
+    xhci64_clear_endpoint(&keyboard_endpoint);
+    xhci64_clear_endpoint(&mouse_endpoint);
+    xhci64_clear_endpoint(&generic_endpoint);
+    xhci64_clear_endpoint(&probe_endpoint);
+    for (hid_candidate_index = 0u;
+        hid_candidate_index < XHCI64_HID_INTERFACE_LIMIT;
+        ++hid_candidate_index)
+    {
+        xhci64_clear_endpoint(&hid_candidates[hid_candidate_index].endpoint);
+    }
+#endif
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     g_xhci_descriptor_probe_port = port_id;
@@ -2164,6 +2370,63 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
     }
 
     g_xhci_config_read = 1u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    hid_candidate_count = xhci64_collect_hid_candidates(
+        g_xhci_control_buffer,
+        total_length,
+        hid_candidates,
+        XHCI64_HID_INTERFACE_LIMIT,
+        &configuration_value);
+    keyboard_match = xhci64_select_hid_candidate(
+        hid_candidates,
+        hid_candidate_count,
+        0x01u,
+        0x01u,
+        &keyboard_endpoint);
+    mouse_match = xhci64_select_hid_candidate(
+        hid_candidates,
+        hid_candidate_count,
+        0x01u,
+        0x02u,
+        &mouse_endpoint);
+    if ((keyboard_match == 0u) && (mouse_match == 0u))
+    {
+        generic_match = xhci64_select_generic_hid_candidate(
+            hid_candidates,
+        hid_candidate_count,
+        &generic_endpoint);
+        generic_report_length = generic_endpoint.report_length;
+    }
+    if (hid_candidate_count == 0u)
+    {
+        keyboard_match = xhci64_parse_hid_endpoint(
+            g_xhci_control_buffer,
+            total_length,
+            0x01u,
+            &keyboard_endpoint,
+            &configuration_value,
+            &keyboard_report_length);
+        mouse_match = xhci64_parse_hid_endpoint(
+            g_xhci_control_buffer,
+            total_length,
+            0x02u,
+            &mouse_endpoint,
+            &configuration_value,
+            &mouse_report_length);
+        if ((keyboard_match == 0u) && (mouse_match == 0u))
+        {
+            generic_match = xhci64_parse_hid_endpoint(
+                g_xhci_control_buffer,
+                total_length,
+                XHCI64_HID_PROTOCOL_ANY,
+                &generic_endpoint,
+                &configuration_value,
+                &generic_report_length);
+        }
+    }
+    keyboard_report_length = keyboard_endpoint.report_length;
+    mouse_report_length = mouse_endpoint.report_length;
+#else
     keyboard_match = xhci64_parse_hid_endpoint(
         g_xhci_control_buffer,
         total_length,
@@ -2188,6 +2451,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
             &configuration_value,
             &generic_report_length);
     }
+#endif
     if ((keyboard_match == 0u) && (mouse_match == 0u) && (generic_match == 0u))
     {
         probe_match = xhci64_parse_interrupt_mouse_probe_endpoint(
@@ -2241,6 +2505,13 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         g_xhci_mouse_endpoint = mouse_endpoint;
         g_xhci_mouse_device = 1u;
         g_xhci_hid_device = 1u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_xhci_boot_mouse_interface = mouse_endpoint.interface_number;
+        g_xhci_boot_mouse_port = port_id;
+        g_xhci_boot_mouse_dci = mouse_endpoint.dci;
+        g_xhci_boot_mouse_mps = mouse_endpoint.max_packet;
+        g_xhci_boot_mouse_configured = 1u;
+#endif
         return 1u;
     }
 
@@ -2295,6 +2566,13 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         g_xhci_mouse_endpoint = mouse_endpoint;
         g_xhci_mouse_device = 1u;
         g_xhci_hid_device = 1u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_xhci_boot_mouse_interface = mouse_endpoint.interface_number;
+        g_xhci_boot_mouse_port = port_id;
+        g_xhci_boot_mouse_dci = mouse_endpoint.dci;
+        g_xhci_boot_mouse_mps = mouse_endpoint.max_packet;
+        g_xhci_boot_mouse_configured = 1u;
+#endif
         return 1u;
     }
 
@@ -2665,6 +2943,17 @@ void xhci64_register_candidate(
     g_xhci_post_address_portsc = 0u;
     g_xhci_post_address_portsc_pls = 0u;
     g_xhci_address_failure_count = 0u;
+    g_xhci_hid_interface_inventory = 0u;
+    g_xhci_boot_mouse_interface = 0xFFFFFFFFu;
+    g_xhci_boot_mouse_port = 0u;
+    g_xhci_boot_mouse_dci = 0u;
+    g_xhci_boot_mouse_mps = 0u;
+    g_xhci_boot_mouse_configured = 0u;
+    g_xhci_mouse_last_completion = 0u;
+    g_xhci_mouse_last_event_dw0 = 0u;
+    g_xhci_mouse_last_event_dw1 = 0u;
+    g_xhci_mouse_last_event_dw2 = 0u;
+    g_xhci_mouse_last_event_dw3 = 0u;
     g_xhci_last_disable_slot_completion = 0u;
     g_xhci_last_disable_slot_id = 0u;
 #endif
@@ -2876,6 +3165,13 @@ void xhci64_poll_mouse(void)
     }
 
     completion = xhci64_completion_code(&event);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_xhci_mouse_last_completion = completion;
+    g_xhci_mouse_last_event_dw0 = (u32)(event.parameter & 0xFFFFFFFFull);
+    g_xhci_mouse_last_event_dw1 = (u32)(event.parameter >> 32);
+    g_xhci_mouse_last_event_dw2 = event.status;
+    g_xhci_mouse_last_event_dw3 = event.control;
+#endif
     g_xhci_mouse_intr_pending = 0u;
     if ((completion != XHCI64_COMPLETION_SUCCESS)
         && (completion != XHCI64_COMPLETION_SHORT_PACKET))
@@ -3285,6 +3581,61 @@ u32 xhci64_post_address_portsc_pls(void)
 u32 xhci64_address_failure_count(void)
 {
     return g_xhci_address_failure_count;
+}
+
+u32 xhci64_hid_interface_inventory(void)
+{
+    return g_xhci_hid_interface_inventory;
+}
+
+u32 xhci64_boot_mouse_interface(void)
+{
+    return g_xhci_boot_mouse_interface;
+}
+
+u32 xhci64_boot_mouse_port(void)
+{
+    return g_xhci_boot_mouse_port;
+}
+
+u32 xhci64_boot_mouse_dci(void)
+{
+    return g_xhci_boot_mouse_dci;
+}
+
+u32 xhci64_boot_mouse_mps(void)
+{
+    return g_xhci_boot_mouse_mps;
+}
+
+u32 xhci64_boot_mouse_configured(void)
+{
+    return g_xhci_boot_mouse_configured;
+}
+
+u32 xhci64_mouse_last_completion(void)
+{
+    return g_xhci_mouse_last_completion;
+}
+
+u32 xhci64_mouse_last_event_dw0(void)
+{
+    return g_xhci_mouse_last_event_dw0;
+}
+
+u32 xhci64_mouse_last_event_dw1(void)
+{
+    return g_xhci_mouse_last_event_dw1;
+}
+
+u32 xhci64_mouse_last_event_dw2(void)
+{
+    return g_xhci_mouse_last_event_dw2;
+}
+
+u32 xhci64_mouse_last_event_dw3(void)
+{
+    return g_xhci_mouse_last_event_dw3;
 }
 
 u32 xhci64_port_probe_attempts(void)

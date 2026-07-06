@@ -1722,6 +1722,17 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci post-address portsc raw: ", xhci64_post_address_portsc());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci post-address portsc pls: ", xhci64_post_address_portsc_pls());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci address failures: ", xhci64_address_failure_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci hid interfaces: ", xhci64_hid_interface_inventory());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci boot mouse interface: ", xhci64_boot_mouse_interface());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci boot mouse port: ", xhci64_boot_mouse_port());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci boot mouse dci: ", xhci64_boot_mouse_dci());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci boot mouse mps: ", xhci64_boot_mouse_mps());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci boot mouse configured: ", xhci64_boot_mouse_configured());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse last completion: ", xhci64_mouse_last_completion());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci mouse last event dw0: ", xhci64_mouse_last_event_dw0());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci mouse last event dw1: ", xhci64_mouse_last_event_dw1());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci mouse last event dw2: ", xhci64_mouse_last_event_dw2());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "xhci mouse last event dw3: ", xhci64_mouse_last_event_dw3());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable completion: ", xhci64_last_disable_slot_completion());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last disable slot: ", xhci64_last_disable_slot_id());
 #endif
