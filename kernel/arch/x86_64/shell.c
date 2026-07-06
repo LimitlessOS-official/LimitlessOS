@@ -628,6 +628,74 @@ static u32 shell64_format_hex32(char *buffer, u32 value)
     return offset;
 }
 
+static u32 g_shell64_hwval_filter_active;
+static u32 g_shell64_hwval_filter_start;
+static u32 g_shell64_hwval_filter_length;
+
+static u8 shell64_ascii_lower(u8 value)
+{
+    if ((value >= (u8)'A') && (value <= (u8)'Z'))
+    {
+        return (u8)(value + ((u8)'a' - (u8)'A'));
+    }
+
+    return value;
+}
+
+static u32 shell64_hwval_label_matches_filter(const char *label)
+{
+    u32 label_length = 0u;
+    u32 offset;
+    u32 filter_offset;
+
+    if ((g_shell64_hwval_filter_active == 0u) || (g_shell64_hwval_filter_length == 0u))
+    {
+        return 1u;
+    }
+
+    while (label[label_length] != '\0')
+    {
+        ++label_length;
+    }
+
+    if (g_shell64_hwval_filter_length > label_length)
+    {
+        return 0u;
+    }
+
+    for (offset = 0u; offset <= (label_length - g_shell64_hwval_filter_length); ++offset)
+    {
+        for (filter_offset = 0u; filter_offset < g_shell64_hwval_filter_length; ++filter_offset)
+        {
+            u8 label_byte = shell64_ascii_lower((u8)label[offset + filter_offset]);
+            u8 filter_byte = shell64_ascii_lower(g_shell64_line[g_shell64_hwval_filter_start + filter_offset]);
+            if (label_byte != filter_byte)
+            {
+                break;
+            }
+        }
+        if (filter_offset == g_shell64_hwval_filter_length)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+static u32 shell64_write_hwval_text_line(
+    u32 console_capability_handle,
+    u32 owner_id,
+    const char *line)
+{
+    if (shell64_hwval_label_matches_filter(line) == 0u)
+    {
+        return 0u;
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, line);
+}
+
 static u32 shell64_write_decimal_line(
     u32 console_capability_handle,
     u32 owner_id,
@@ -636,6 +704,13 @@ static u32 shell64_write_decimal_line(
 {
     char buffer[10];
     u32 length;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_hwval_label_matches_filter(label) == 0u)
+    {
+        return 0u;
+    }
+#endif
 
     (void)shell64_write_text(console_capability_handle, owner_id, label);
     length = shell64_format_decimal_u32(buffer, value);
@@ -768,6 +843,13 @@ static u32 shell64_write_hex32_line(
 {
     char buffer[10];
     u32 length;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_hwval_label_matches_filter(label) == 0u)
+    {
+        return 0u;
+    }
+#endif
 
     (void)shell64_write_text(console_capability_handle, owner_id, label);
     length = shell64_format_hex32(buffer, value);
@@ -1050,6 +1132,13 @@ static u32 shell64_write_status_line(
     const char *label,
     const char *value)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_hwval_label_matches_filter(label) == 0u)
+    {
+        return 0u;
+    }
+#endif
+
     (void)shell64_write_text(console_capability_handle, owner_id, label);
     (void)shell64_write_text(console_capability_handle, owner_id, value);
     return shell64_write_text(console_capability_handle, owner_id, "\n");
@@ -1742,10 +1831,10 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     }
 #endif
 
-    (void)shell64_write_text(console_capability_handle, owner_id, "hardware validation: read-only Product mode\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "machine model: unavailable from firmware table\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "secure boot: unavailable/not Product-detected\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "build profile: Product\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "hardware validation: read-only Product mode\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "machine model: unavailable from firmware table\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "secure boot: unavailable/not Product-detected\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "build profile: Product\n");
     (void)shell64_write_status_line(
         console_capability_handle,
         owner_id,
@@ -2915,6 +3004,27 @@ static u32 shell64_next_linux_arg(
         *out_length = copied;
     }
     return 1u;
+}
+
+static u32 shell64_print_hardware_validation_status_filtered(
+    u32 console_capability_handle,
+    u32 owner_id,
+    u32 filter_start,
+    u32 filter_length)
+{
+    u32 result;
+
+    g_shell64_hwval_filter_active = (filter_length != 0u) ? 1u : 0u;
+    g_shell64_hwval_filter_start = filter_start;
+    g_shell64_hwval_filter_length = filter_length;
+
+    result = shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+
+    g_shell64_hwval_filter_active = 0u;
+    g_shell64_hwval_filter_start = 0u;
+    g_shell64_hwval_filter_length = 0u;
+
+    return result;
 }
 #endif
 
@@ -4818,7 +4928,12 @@ static u32 shell64_execute_line_inner(
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
         if (shell64_token_equals(command_start, command_length, "hwfull"))
         {
-            return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+            first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+            return shell64_print_hardware_validation_status_filtered(
+                console_capability_handle,
+                owner_id,
+                first_start,
+                first_length);
         }
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
         if (first_length == 0u)
@@ -4831,9 +4946,14 @@ static u32 shell64_execute_line_inner(
         }
         if (shell64_token_equals(first_start, first_length, "full"))
         {
-            return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+            second_length = shell64_next_token(&cursor, line_byte_count, &second_start);
+            return shell64_print_hardware_validation_status_filtered(
+                console_capability_handle,
+                owner_id,
+                second_start,
+                second_length);
         }
-        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full]\n");
+        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full [filter]]\n");
 #else
         return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
 #endif

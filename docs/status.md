@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-07-05
+Last updated: 2026-07-06
 
 ## Accepted Baseline
 
@@ -15,6 +15,10 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M184 is `hwval full substring filtering`. This is a shell diagnostics usability fix for physical hardware bring-up: `hwval full` keeps the existing full-output behavior, while `hwval full <filter>` and `hwfull <filter>` now restrict the common labeled output rows to labels containing the filter token with case-insensitive substring matching. The implementation is intentionally centralized in the shared hardware-validation line writers (`decimal`, `hex32`, `status`, `yes/no`, and header-line output) rather than touching the long hardware-validation call list, so adding future `hwval full` rows automatically inherits the same filtering behavior.
+
+Accepted verification: Product x86_64 build completed and the M1 production-slice gate passed. BIOS reserve stayed at `101` sectors, and UEFI reserve is `681216` bytes. This milestone does not change any xHCI, USB storage, FAT, input, compositor, or hardware-driver behavior; it only makes the existing evidence surface easier to capture and inspect with commands such as `hwval full usb-`.
 
 M183 is `xHCI composite HID boot-mouse selection`. This responds to the Windows hardware inventory proof that the physical USB receiver exposes an ordinary composite USB HID boot mouse interface (`Class_03`, `SubClass_01`, `Prot_02`) and to the continuing physical report that LimitlessOS still produces no mouse output. The UEFI Product xHCI path now collects HID interfaces from each configuration descriptor into a fixed Product-only table, selects the boot mouse interface by the USB class/subclass/protocol contract instead of relying only on the older single-target parser, and retains the legacy parser as a zero-inventory fallback. This is hardware-neutral: no MSI, Logitech, ELAN, port, ACPI, or VID/PID policy was added.
 
