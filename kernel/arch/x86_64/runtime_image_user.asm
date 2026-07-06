@@ -82,7 +82,7 @@ org 0
 %assign HARDWARE_SHELL_REQUIRED_FLAGS 0x00000FFF
 %assign ROOT_PATH_LEN 1
 %assign KEYBOARD_READ_LEN 2
-%assign INTERACTIVE_SHELL_STACK_BYTES 0x100
+%assign INTERACTIVE_SHELL_STACK_BYTES 0xA00
 %assign INTERACTIVE_SHELL_LINE_OFF 0x00
 %assign INTERACTIVE_SHELL_BYTE_OFF 0x80
 %assign INTERACTIVE_SHELL_CONSOLE_CAP_OFF 0x90
@@ -90,7 +90,19 @@ org 0
 %assign INTERACTIVE_SHELL_RAMFS_CAP_OFF 0x98
 %assign INTERACTIVE_SHELL_ROOT_CAP_OFF 0x9C
 %assign INTERACTIVE_SHELL_LINE_LEN_OFF 0xA0
+%assign INTERACTIVE_SHELL_ESCAPE_STATE_OFF 0xA4
+%assign INTERACTIVE_SHELL_HISTORY_COUNT_OFF 0xA8
+%assign INTERACTIVE_SHELL_HISTORY_NEXT_OFF 0xAC
+%assign INTERACTIVE_SHELL_HISTORY_CURSOR_OFF 0xB0
+%assign INTERACTIVE_SHELL_HISTORY_BROWSING_OFF 0xB4
+%assign INTERACTIVE_SHELL_HISTORY_SAVED_LEN_OFF 0xB8
+%assign INTERACTIVE_SHELL_TEMP_OFF 0xBC
+%assign INTERACTIVE_SHELL_HISTORY_SAVED_OFF 0xC0
+%assign INTERACTIVE_SHELL_HISTORY_LENGTHS_OFF 0x140
+%assign INTERACTIVE_SHELL_HISTORY_LINES_OFF 0x180
 %assign INTERACTIVE_SHELL_LINE_CAPACITY 128
+%assign INTERACTIVE_SHELL_HISTORY_CAPACITY 16
+%assign INTERACTIVE_SHELL_HISTORY_LINE_STRIDE 128
 
 %assign USER_ENTRY_OFFSET 0x10
 %assign USER_PREEMPT_OFFSET 0x40
@@ -331,30 +343,39 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
 
     grant_service SERVICE_CONSOLE
     cmp eax, 0xFFFFFFFF
-    je .interactive_shell_halt
+    je interactive_shell_halt
     mov [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF], eax
 
     grant_service SERVICE_INPUT
     cmp eax, 0xFFFFFFFF
-    je .interactive_shell_halt
+    je interactive_shell_halt
     mov [rsp + INTERACTIVE_SHELL_INPUT_CAP_OFF], eax
 
     grant_service SERVICE_RAMFS
     cmp eax, 0xFFFFFFFF
-    je .interactive_shell_halt
+    je interactive_shell_halt
     mov [rsp + INTERACTIVE_SHELL_RAMFS_CAP_OFF], eax
 
     mov ebx, [rsp + INTERACTIVE_SHELL_RAMFS_CAP_OFF]
     fs_open_root
     cmp eax, 0xFFFFFFFF
-    je .interactive_shell_halt
+    je interactive_shell_halt
     mov [rsp + INTERACTIVE_SHELL_ROOT_CAP_OFF], eax
 
     mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
     console_write_address USER_BASE + interactive_shell_banner, interactive_shell_banner_len
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_COUNT_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_NEXT_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_SAVED_LEN_OFF], 0
 
 .interactive_shell_new_line:
     mov dword [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF], 0
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_SAVED_LEN_OFF], 0
     mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
     console_write_address USER_BASE + interactive_shell_prompt, interactive_shell_prompt_len
 
@@ -371,6 +392,11 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
 
 .interactive_shell_byte:
     mov al, [rsp + INTERACTIVE_SHELL_BYTE_OFF]
+    mov edx, [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF]
+    cmp edx, 0
+    jne .interactive_shell_escape_continue
+    cmp al, 27
+    je .interactive_shell_escape_start
     cmp al, 13
     je .interactive_shell_read
     cmp al, 10
@@ -394,6 +420,90 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
     console_write_stack_at INTERACTIVE_SHELL_BYTE_OFF, 1
     jmp .interactive_shell_read
 
+.interactive_shell_escape_start:
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 1
+    jmp .interactive_shell_read
+
+.interactive_shell_escape_continue:
+    cmp edx, 1
+    jne .interactive_shell_escape_final
+    cmp al, '['
+    jne .interactive_shell_escape_reset
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 2
+    jmp .interactive_shell_read
+
+.interactive_shell_escape_final:
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 0
+    cmp al, 'A'
+    je .interactive_shell_history_up
+    cmp al, 'B'
+    je .interactive_shell_history_down
+    jmp .interactive_shell_read
+
+.interactive_shell_escape_reset:
+    mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 0
+    jmp .interactive_shell_read
+
+.interactive_shell_history_up:
+    mov ecx, [rsp + INTERACTIVE_SHELL_HISTORY_COUNT_OFF]
+    cmp ecx, 0
+    je .interactive_shell_read
+    mov edx, [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    call interactive_shell_history_repaint_clear
+    mov eax, [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF]
+    cmp eax, 0
+    jne .interactive_shell_history_up_browsing
+    call interactive_shell_history_save_current
+    mov eax, [rsp + INTERACTIVE_SHELL_HISTORY_COUNT_OFF]
+    sub eax, 1
+    mov [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF], eax
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF], 1
+    jmp .interactive_shell_history_load_and_print
+
+.interactive_shell_history_up_browsing:
+    mov eax, [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF]
+    cmp eax, 0
+    je .interactive_shell_history_load_and_print
+    sub eax, 1
+    mov [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF], eax
+    jmp .interactive_shell_history_load_and_print
+
+.interactive_shell_history_down:
+    mov eax, [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF]
+    cmp eax, 0
+    je .interactive_shell_read
+    mov edx, [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    call interactive_shell_history_repaint_clear
+    mov eax, [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF]
+    add eax, 1
+    mov ecx, [rsp + INTERACTIVE_SHELL_HISTORY_COUNT_OFF]
+    cmp eax, ecx
+    jb .interactive_shell_history_down_load
+    mov dword [rsp + INTERACTIVE_SHELL_HISTORY_BROWSING_OFF], 0
+    call interactive_shell_history_restore_saved
+    jmp .interactive_shell_history_print_current
+
+.interactive_shell_history_down_load:
+    mov [rsp + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF], eax
+    jmp .interactive_shell_history_load_and_print
+
+.interactive_shell_history_load_and_print:
+    call interactive_shell_history_load_cursor
+
+.interactive_shell_history_print_current:
+    mov ecx, [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    cmp ecx, 0
+    je .interactive_shell_read
+    mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
+    lea rcx, [rsp + INTERACTIVE_SHELL_LINE_OFF]
+    mov edx, [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    mov r8, OWNER_CONSOLE_CLIENT
+    shl r8, 32
+    or rdx, r8
+    mov eax, SYSCALL_CONSOLE_WRITE
+    int 0x80
+    jmp .interactive_shell_read
+
 .interactive_shell_backspace:
     mov ecx, [rsp + INTERACTIVE_SHELL_LINE_LEN_OFF]
     cmp ecx, 0
@@ -407,6 +517,7 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
 .interactive_shell_execute:
     mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
     console_write_address USER_BASE + USER_NEWLINE_OFFSET, NEWLINE_LEN
+    call interactive_shell_history_commit
     mov eax, SYSCALL_SHELL_EXECUTE_LINE
     mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
     mov r8d, [rsp + INTERACTIVE_SHELL_ROOT_CAP_OFF]
@@ -427,9 +538,123 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
     console_write_address USER_BASE + interactive_shell_denied, interactive_shell_denied_len
     jmp .interactive_shell_new_line
 
-.interactive_shell_halt:
+interactive_shell_history_repaint_clear:
+    mov [rsp + 8 + INTERACTIVE_SHELL_TEMP_OFF], edx
+.interactive_shell_history_repaint_clear_loop:
+    mov edx, [rsp + 8 + INTERACTIVE_SHELL_TEMP_OFF]
+    cmp edx, 0
+    je .interactive_shell_history_repaint_clear_done
+    mov ebx, [rsp + 8 + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
+    console_write_address USER_BASE + interactive_shell_backspace, interactive_shell_backspace_len
+    mov edx, [rsp + 8 + INTERACTIVE_SHELL_TEMP_OFF]
+    sub edx, 1
+    mov [rsp + 8 + INTERACTIVE_SHELL_TEMP_OFF], edx
+    jmp .interactive_shell_history_repaint_clear_loop
+.interactive_shell_history_repaint_clear_done:
+    ret
+
+interactive_shell_history_save_current:
+    mov ecx, [rsp + 8 + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    mov [rsp + 8 + INTERACTIVE_SHELL_HISTORY_SAVED_LEN_OFF], ecx
+    lea rsi, [rsp + 8 + INTERACTIVE_SHELL_LINE_OFF]
+    lea rdi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_SAVED_OFF]
+.interactive_shell_history_save_current_loop:
+    cmp ecx, 0
+    je .interactive_shell_history_save_current_done
+    mov al, [rsi]
+    mov [rdi], al
+    add rsi, 1
+    add rdi, 1
+    sub ecx, 1
+    jmp .interactive_shell_history_save_current_loop
+.interactive_shell_history_save_current_done:
+    ret
+
+interactive_shell_history_restore_saved:
+    mov ecx, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_SAVED_LEN_OFF]
+    mov [rsp + 8 + INTERACTIVE_SHELL_LINE_LEN_OFF], ecx
+    lea rsi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_SAVED_OFF]
+    lea rdi, [rsp + 8 + INTERACTIVE_SHELL_LINE_OFF]
+.interactive_shell_history_restore_saved_loop:
+    cmp ecx, 0
+    je .interactive_shell_history_restore_saved_done
+    mov al, [rsi]
+    mov [rdi], al
+    add rsi, 1
+    add rdi, 1
+    sub ecx, 1
+    jmp .interactive_shell_history_restore_saved_loop
+.interactive_shell_history_restore_saved_done:
+    ret
+
+interactive_shell_history_commit:
+    mov ecx, [rsp + 8 + INTERACTIVE_SHELL_LINE_LEN_OFF]
+    cmp ecx, 0
+    je .interactive_shell_history_commit_done
+    mov eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_NEXT_OFF]
+    lea rdi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_LENGTHS_OFF]
+    mov [rdi + rax * 4], ecx
+    mov edx, eax
+    shl edx, 7
+    lea rdi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_LINES_OFF]
+    add rdi, rdx
+    lea rsi, [rsp + 8 + INTERACTIVE_SHELL_LINE_OFF]
+.interactive_shell_history_commit_copy_loop:
+    cmp ecx, 0
+    je .interactive_shell_history_commit_copy_done
+    mov dl, [rsi]
+    mov [rdi], dl
+    add rsi, 1
+    add rdi, 1
+    sub ecx, 1
+    jmp .interactive_shell_history_commit_copy_loop
+.interactive_shell_history_commit_copy_done:
+    mov eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_NEXT_OFF]
+    add eax, 1
+    and eax, 0x0F
+    mov [rsp + 8 + INTERACTIVE_SHELL_HISTORY_NEXT_OFF], eax
+    mov eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_COUNT_OFF]
+    cmp eax, INTERACTIVE_SHELL_HISTORY_CAPACITY
+    jae .interactive_shell_history_commit_done
+    add eax, 1
+    mov [rsp + 8 + INTERACTIVE_SHELL_HISTORY_COUNT_OFF], eax
+.interactive_shell_history_commit_done:
+    ret
+
+interactive_shell_history_load_cursor:
+    mov eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_COUNT_OFF]
+    cmp eax, INTERACTIVE_SHELL_HISTORY_CAPACITY
+    jne .interactive_shell_history_load_not_full
+    mov eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_NEXT_OFF]
+    jmp .interactive_shell_history_load_have_oldest
+.interactive_shell_history_load_not_full:
+    mov eax, 0
+.interactive_shell_history_load_have_oldest:
+    add eax, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_CURSOR_OFF]
+    and eax, 0x0F
+    lea rsi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_LENGTHS_OFF]
+    mov ecx, [rsi + rax * 4]
+    mov [rsp + 8 + INTERACTIVE_SHELL_LINE_LEN_OFF], ecx
+    mov edx, eax
+    shl edx, 7
+    lea rsi, [rsp + 8 + INTERACTIVE_SHELL_HISTORY_LINES_OFF]
+    add rsi, rdx
+    lea rdi, [rsp + 8 + INTERACTIVE_SHELL_LINE_OFF]
+.interactive_shell_history_load_copy_loop:
+    cmp ecx, 0
+    je .interactive_shell_history_load_done
+    mov dl, [rsi]
+    mov [rdi], dl
+    add rsi, 1
+    add rdi, 1
+    sub ecx, 1
+    jmp .interactive_shell_history_load_copy_loop
+.interactive_shell_history_load_done:
+    ret
+
+interactive_shell_halt:
     pause
-    jmp .interactive_shell_halt
+    jmp interactive_shell_halt
 
 interactive_shell_banner:
 db 10, "[x64:shell] persistent ring3 shell online", 10
