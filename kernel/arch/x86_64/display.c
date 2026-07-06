@@ -7191,6 +7191,18 @@ static void display64_desktop_redraw_existing_dirty(void)
     g_display_compositor_dirty_h = dirty_h;
     (void)display64_compositor_present();
 }
+
+static void display64_desktop_redraw_window_dirty(const struct display64_window *window)
+{
+    if (window == 0)
+    {
+        display64_desktop_redraw();
+        return;
+    }
+
+    display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
+    display64_desktop_redraw_existing_dirty();
+}
 #endif
 
 static u32 display64_desktop_hit_taskbar_button(u32 x, u32 y)
@@ -7843,7 +7855,7 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                 u32 new_h = (y > resized_window->y) ? (y - resized_window->y + 4u) : DISPLAY64_WM_MIN_WINDOW_HEIGHT;
                 z_before = display64_wm_window_z(g_display_wm_resize_handle);
                 display64_wm_resize_window(g_display_wm_resize_handle, new_w, new_h);
-                display64_desktop_redraw();
+                display64_desktop_redraw_existing_dirty();
                 display64_gui_record_event(
                     x,
                     y,
@@ -8505,7 +8517,7 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
         }
         ++g_display_gui_scroll_count;
         display64_wm_focus_and_route_console(window->handle);
-        display64_desktop_redraw();
+        display64_desktop_redraw_window_dirty(window);
         return 1u;
     }
     if ((window != 0) && display64_wm_window_is_terminal(window))
@@ -8536,7 +8548,7 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
         ++g_display_terminal_action_count;
         ++g_display_gui_scroll_count;
         display64_wm_focus_and_route_console(window->handle);
-        display64_desktop_redraw();
+        display64_desktop_redraw_window_dirty(window);
         return 1u;
     }
     if ((window != 0) && (window->handle == g_display_desktop_fileman_handle))
@@ -8569,7 +8581,7 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
         display64_fileman_preview_selected();
         ++g_display_gui_scroll_count;
         display64_wm_focus_and_route_console(window->handle);
-        display64_desktop_redraw();
+        display64_desktop_redraw_window_dirty(window);
         return 1u;
     }
     if ((window != 0) && (window->handle == g_display_desktop_installer_handle))
@@ -8587,7 +8599,7 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
         }
         ++g_display_gui_scroll_count;
         display64_wm_focus_and_route_console(window->handle);
-        display64_desktop_redraw();
+        display64_desktop_redraw_window_dirty(window);
         return 1u;
     }
 
