@@ -7145,6 +7145,54 @@ static void display64_desktop_redraw(void)
     (void)display64_compositor_present();
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_desktop_redraw_existing_dirty(void)
+{
+    u32 dirty;
+    u32 dirty_x;
+    u32 dirty_y;
+    u32 dirty_w;
+    u32 dirty_h;
+
+    if ((g_display_desktop_active == 0u)
+        || (g_display_compositor_active == 0u)
+        || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    dirty = g_display_compositor_dirty;
+    dirty_x = g_display_compositor_dirty_x;
+    dirty_y = g_display_compositor_dirty_y;
+    dirty_w = g_display_compositor_dirty_w;
+    dirty_h = g_display_compositor_dirty_h;
+    if ((dirty == 0u) || (dirty_w == 0u) || (dirty_h == 0u))
+    {
+        display64_desktop_redraw();
+        return;
+    }
+
+    display64_compositor_restore_cursor_saved();
+    g_display_compositor_dirty = 0u;
+    display64_desktop_draw_background();
+    display64_desktop_draw_windows_by_z();
+    if (g_display_desktop_launcher_open != 0u)
+    {
+        display64_desktop_draw_launcher_panel();
+    }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_desktop_draw_context_menu();
+#endif
+    display64_desktop_draw_taskbar();
+    g_display_compositor_dirty = dirty;
+    g_display_compositor_dirty_x = dirty_x;
+    g_display_compositor_dirty_y = dirty_y;
+    g_display_compositor_dirty_w = dirty_w;
+    g_display_compositor_dirty_h = dirty_h;
+    (void)display64_compositor_present();
+}
+#endif
+
 static u32 display64_desktop_hit_taskbar_button(u32 x, u32 y)
 {
     u32 taskbar_y = display64_desktop_taskbar_y();
@@ -7744,7 +7792,11 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
             u32 new_y = (y > g_display_wm_drag_offset_y) ? (y - g_display_wm_drag_offset_y) : 0u;
             z_before = display64_wm_window_z(g_display_wm_drag_handle);
             display64_wm_move_window(g_display_wm_drag_handle, new_x, new_y);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            display64_desktop_redraw_existing_dirty();
+#else
             display64_desktop_redraw();
+#endif
             display64_gui_record_event(
                 x,
                 y,
