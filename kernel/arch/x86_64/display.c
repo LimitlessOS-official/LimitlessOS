@@ -7131,6 +7131,7 @@ static void display64_desktop_redraw(void)
         return;
     }
 
+    display64_compositor_restore_cursor_saved();
     display64_desktop_draw_background();
     display64_desktop_draw_windows_by_z();
     if (g_display_desktop_launcher_open != 0u)
