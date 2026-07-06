@@ -76,7 +76,11 @@
 #define LIMITLESS_X64_ACTIVE_VIRTUAL_BASE 0xFFFFFFFF80010000ull
 #define LIMITLESS_X64_PAGE_LEVELS 4u
 #define LIMITLESS_X64_COMPAT32_LANE 1u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define SCAFFOLD_TIMER_WAIT_SPIN_BUDGET 20000000u
+#else
 #define SCAFFOLD_TIMER_WAIT_SPIN_BUDGET 500000000u
+#endif
 #define SCAFFOLD_KEYBOARD_WAIT_SPIN_BUDGET 100000u
 #define SCAFFOLD_MOUSE_WAIT_SPIN_BUDGET 100000u
 
@@ -40805,6 +40809,11 @@ u32 boot_diag64_timing_ticks(u32 index)
     }
 
     return g_boot_diag64_timing_ticks[index];
+}
+
+u32 boot_diag64_timer_wait_spin_budget(void)
+{
+    return SCAFFOLD_TIMER_WAIT_SPIN_BUDGET;
 }
 #endif
 

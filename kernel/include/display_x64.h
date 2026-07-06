@@ -105,10 +105,17 @@ u32 display64_wm_window_created_count(void);
 u32 display64_wm_focus_count(void);
 u32 display64_wm_present_count(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define DISPLAY64_DESKTOP_APP_TERMINAL 1u
+#define DISPLAY64_DESKTOP_APP_FILES 2u
+#define DISPLAY64_DESKTOP_APP_SETTINGS 3u
+#define DISPLAY64_DESKTOP_APP_INSTALLER 4u
+#define DISPLAY64_DESKTOP_APP_ASSISTANT 5u
+
 u32 display64_wm_resize_count(void);
 u32 display64_wm_minimize_count(void);
 u32 display64_wm_restore_count(void);
 u32 display64_wm_zorder_count(void);
+u32 display64_desktop_open_app_by_id(u32 app_id);
 #endif
 void display64_desktop_probe(void);
 u32 display64_desktop_init_done(void);
@@ -149,6 +156,7 @@ u32 display64_gui_settings_opened(void);
 u32 display64_gui_installer_opened(void);
 u32 display64_gui_assistant_opened(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 display64_gui_keyboard_open_count(void);
 u32 display64_gui_input_diag_suppressed_count(void);
 u32 display64_gui_mouse_diag_suppressed_count(void);
 u32 display64_gui_right_click_count(void);
@@ -191,6 +199,12 @@ u32 display64_gui_settings_input_panel_count(void);
 u32 display64_gui_settings_readiness_strip_count(void);
 u32 display64_gui_fileman_storage_card_count(void);
 u32 display64_gui_product_chrome_count(void);
+u32 display64_product_layout_active(void);
+u32 display64_product_display_ready(void);
+u32 display64_product_input_ready(void);
+u32 display64_product_storage_ready(void);
+u32 display64_product_network_ready(void);
+u32 display64_product_startup_minimized_count(void);
 u32 display64_gui_settings_theme(void);
 u32 display64_gui_settings_pointer_speed(void);
 u32 display64_gui_settings_key_repeat(void);

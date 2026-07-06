@@ -25,6 +25,7 @@ void xhci64_register_candidate(
 void xhci64_init(void);
 void xhci64_set_live_polling_enabled(u32 enabled);
 u32 xhci64_live_polling_supported(void);
+u32 xhci64_rescan_devices(void);
 void xhci64_poll_keyboard(void);
 void xhci64_poll_mouse(void);
 
@@ -62,6 +63,9 @@ u32 xhci64_mouse_endpoint_present(void);
 u32 xhci64_mouse_transfer_pending(void);
 u32 xhci64_mouse_reports(void);
 u32 xhci64_mouse_report_bytes(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 xhci64_mouse_report_size(void);
+#endif
 u32 xhci64_live_polling_enabled(void);
 u32 xhci64_extcaps_scanned(void);
 u32 xhci64_legacy_cap_found(void);
@@ -90,6 +94,7 @@ u32 xhci64_last_interface_subclass(void);
 u32 xhci64_last_interface_protocol(void);
 u32 xhci64_last_endpoint_max_packet(void);
 u32 xhci64_broad_mouse_probe_count(void);
+u32 xhci64_vendor_mouse_candidate_count(void);
 u32 xhci64_max_slots_limit(void);
 u32 xhci64_disable_slot_poll_limit(void);
 u32 xhci64_last_enable_slot_completion(void);
@@ -129,5 +134,18 @@ u32 xhci64_first_mouse_candidate_interface_class(void);
 u32 xhci64_first_mouse_candidate_interface_subclass(void);
 u32 xhci64_first_mouse_candidate_interface_protocol(void);
 u32 xhci64_first_mouse_candidate_endpoint_mps(void);
+u32 xhci64_port_protocol(u32 port_id);
+u32 xhci64_portsc_snapshot(u32 port_id);
+u32 xhci64_portsc_snapshot_pls(u32 port_id);
+u32 xhci64_usb_storage_present(void);
+u32 xhci64_usb_storage_ready(void);
+u32 xhci64_usb_storage_block_bytes(void);
+u32 xhci64_usb_storage_last_lba(void);
+u32 xhci64_usb_storage_error(void);
+u32 xhci64_usb_storage_read_count(void);
+u32 xhci64_usb_storage_write_count(void);
+u32 xhci64_usb_storage_last_completion(void);
+u32 xhci64_usb_storage_read_sector(u32 lba, u8 *destination, u32 byte_count);
+u32 xhci64_usb_storage_write_sector(u32 lba, const u8 *source, u32 byte_count);
 
 #endif

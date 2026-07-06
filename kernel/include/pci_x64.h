@@ -70,6 +70,7 @@
 #define PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO 0x00000008u
 #define PCI64_LPSS_I2C_MMIO_FLAG_PAGE_ALIGNED 0x00000010u
 #define PCI64_LPSS_I2C_MMIO_FLAG_CONFIG_ONLY_DETECT 0x00000020u
+#define PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED 0x00000040u
 
 struct boot_info;
 
@@ -169,6 +170,17 @@ u32 pci64_ecam_bus_end(void);
 u32 pci64_ecam_active(void);
 u32 pci64_ecam_fallback_io(void);
 u32 pci64_ecam_ahci_found(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u64 pci64_acpi_xsdt(void);
+u64 pci64_acpi_fadt(void);
+u32 pci64_acpi_fadt_bytes(void);
+u64 pci64_acpi_dsdt(void);
+u32 pci64_acpi_dsdt_bytes(void);
+u32 pci64_acpi_ssdt_count(void);
+u32 pci64_acpi_ssdt_total_bytes(void);
+u64 pci64_acpi_ssdt0(void);
+u32 pci64_acpi_ssdt0_bytes(void);
+#endif
 u32 pci64_lpss_i2c_hid_found(void);
 u32 pci64_lpss_i2c_count(void);
 u32 pci64_lpss_i2c_address(void);
@@ -193,6 +205,8 @@ u32 pci64_lpss_i2c_second_mmio_flags(void);
 u32 pci64_lpss_i2c_second_mmio_token(void);
 u32 pci64_lpss_i2c_pointer_candidate_count(void);
 u32 pci64_lpss_i2c_pointer_candidate_address(u32 index);
+u32 pci64_lpss_i2c_pointer_candidate_bar0(u32 index);
+u32 pci64_lpss_i2c_pointer_candidate_bar1(u32 index);
 u32 pci64_lpss_i2c_pointer_candidate_base_low(u32 index);
 u32 pci64_lpss_i2c_pointer_candidate_base_high(u32 index);
 u32 pci64_lpss_i2c_pointer_candidate_mmio_flags(u32 index);

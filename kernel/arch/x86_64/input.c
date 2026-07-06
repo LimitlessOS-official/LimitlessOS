@@ -16,6 +16,15 @@
 #define INPUT64_KEYBOARD_QUEUE_CAPACITY 256u
 #define INPUT64_MOUSE_QUEUE_CAPACITY 64u
 #define INPUT64_MOUSE_RECORD_BYTES 20u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define INPUT64_HID_USAGE_PAGE_GENERIC_DESKTOP 0x01u
+#define INPUT64_HID_USAGE_PAGE_BUTTON 0x09u
+#define INPUT64_HID_USAGE_X 0x30u
+#define INPUT64_HID_USAGE_Y 0x31u
+#define INPUT64_HID_USAGE_WHEEL 0x38u
+#define INPUT64_HID_MOUSE_USAGE_SLOTS 8u
+#define INPUT64_HID_MOUSE_INVALID_BIT 0xFFFFFFFFu
+#endif
 #define INPUT64_KERNEL_HIGH_BASE_HIGH32 0xFFFFFFFFu
 #define INPUT64_KERNEL_HIGH_BASE_LOW32 0x80000000u
 #define INPUT64_PS2_STATUS_PORT 0x64u
@@ -65,6 +74,23 @@ struct input64_mouse_event
     u32 y;
 };
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+struct input64_hid_mouse_layout
+{
+    u32 ready;
+    u32 report_id;
+    u32 report_bytes;
+    u32 buttons_bit_offset;
+    u32 buttons_bit_count;
+    u32 x_bit_offset;
+    u32 x_bit_count;
+    u32 y_bit_offset;
+    u32 y_bit_count;
+    u32 wheel_bit_offset;
+    u32 wheel_bit_count;
+};
+#endif
+
 static u32 g_read_count = 0u;
 static u32 g_byte_count = 0u;
 static u32 g_denial_count = 0u;
@@ -102,6 +128,12 @@ static u32 g_ps2_reset_ack = 0u;
 static u32 g_ps2_reset_self_test = 0u;
 static u8 g_keyboard_extended_prefix = 0u;
 static u8 g_keyboard_break_prefix = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u8 g_keyboard_left_shift = 0u;
+static u8 g_keyboard_right_shift = 0u;
+static u8 g_keyboard_caps_lock = 0u;
+static u8 g_usb_hid_last_modifier = 0u;
+#endif
 static u32 g_keyboard_scancode_set = INPUT64_KEYBOARD_SCANCODE_SET1;
 static u8 g_usb_hid_last_keys[6];
 static struct input64_mouse_event g_mouse_queue[INPUT64_MOUSE_QUEUE_CAPACITY];
@@ -174,6 +206,11 @@ static u32 g_mouse_diag_i2c_pointer_error = 0u;
 static u32 g_i2c_touchpad_contact_active = 0u;
 static u32 g_i2c_touchpad_last_x = 0u;
 static u32 g_i2c_touchpad_last_y = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static struct input64_hid_mouse_layout g_usb_hid_mouse_layout;
+static u32 g_usb_hid_mouse_layout_reports = 0u;
+static u32 g_usb_hid_mouse_layout_fallbacks = 0u;
+#endif
 
 static void input64_copy(void *destination, const void *source, u32 byte_count)
 {
@@ -274,6 +311,11 @@ static void input64_keyboard_reset(void)
     g_ps2_status_snapshot = 0u;
     g_keyboard_extended_prefix = 0u;
     g_keyboard_break_prefix = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_keyboard_left_shift = 0u;
+    g_keyboard_right_shift = 0u;
+    g_keyboard_caps_lock = 0u;
+#endif
     for (index = 0u; index < 6u; ++index)
     {
         g_usb_hid_last_keys[index] = 0u;
@@ -287,6 +329,10 @@ static void input64_keyboard_clear_pending(void)
     g_keyboard_pending = 0u;
     g_keyboard_extended_prefix = 0u;
     g_keyboard_break_prefix = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_keyboard_left_shift = 0u;
+    g_keyboard_right_shift = 0u;
+#endif
 }
 
 void input64_clear_keyboard_pending(void)
@@ -349,6 +395,114 @@ static s32 input64_sign_extend_byte(u8 value)
 {
     return ((value & 0x80u) != 0u) ? (s32)((u32)value | 0xFFFFFF00u) : (s32)value;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void input64_usb_hid_mouse_layout_reset(void)
+{
+    g_usb_hid_mouse_layout.ready = 0u;
+    g_usb_hid_mouse_layout.report_id = 0u;
+    g_usb_hid_mouse_layout.report_bytes = 0u;
+    g_usb_hid_mouse_layout.buttons_bit_offset = INPUT64_HID_MOUSE_INVALID_BIT;
+    g_usb_hid_mouse_layout.buttons_bit_count = 0u;
+    g_usb_hid_mouse_layout.x_bit_offset = INPUT64_HID_MOUSE_INVALID_BIT;
+    g_usb_hid_mouse_layout.x_bit_count = 0u;
+    g_usb_hid_mouse_layout.y_bit_offset = INPUT64_HID_MOUSE_INVALID_BIT;
+    g_usb_hid_mouse_layout.y_bit_count = 0u;
+    g_usb_hid_mouse_layout.wheel_bit_offset = INPUT64_HID_MOUSE_INVALID_BIT;
+    g_usb_hid_mouse_layout.wheel_bit_count = 0u;
+}
+
+static u32 input64_hid_short_item_value(const u8 *bytes, u32 byte_count)
+{
+    u32 value = 0u;
+    u32 index;
+
+    for (index = 0u; index < byte_count; ++index)
+    {
+        value |= ((u32)bytes[index]) << (index * 8u);
+    }
+
+    return value;
+}
+
+static u32 input64_hid_field_value(
+    const u8 *report,
+    u32 report_bytes,
+    u32 bit_offset,
+    u32 bit_count)
+{
+    u32 value = 0u;
+    u32 bit_index;
+
+    if ((report == 0) || (bit_count == 0u) || (bit_count > 31u))
+    {
+        return 0u;
+    }
+
+    if ((bit_offset + bit_count) > (report_bytes * 8u))
+    {
+        return 0u;
+    }
+
+    for (bit_index = 0u; bit_index < bit_count; ++bit_index)
+    {
+        u32 absolute_bit = bit_offset + bit_index;
+        u32 byte_index = absolute_bit / 8u;
+        u32 bit_in_byte = absolute_bit % 8u;
+        if ((report[byte_index] & (u8)(1u << bit_in_byte)) != 0u)
+        {
+            value |= 1u << bit_index;
+        }
+    }
+
+    return value;
+}
+
+static s32 input64_hid_signed_field(
+    const u8 *report,
+    u32 report_bytes,
+    u32 bit_offset,
+    u32 bit_count)
+{
+    u32 value = input64_hid_field_value(report, report_bytes, bit_offset, bit_count);
+    u32 sign_bit;
+    u32 extend_mask;
+
+    if ((bit_count == 0u) || (bit_count >= 32u))
+    {
+        return (s32)value;
+    }
+
+    sign_bit = 1u << (bit_count - 1u);
+    if ((value & sign_bit) == 0u)
+    {
+        return (s32)value;
+    }
+
+    extend_mask = 0xFFFFFFFFu << bit_count;
+    return (s32)(value | extend_mask);
+}
+
+static u32 input64_hid_local_usage(
+    const u32 *usages,
+    u32 usage_count,
+    u32 usage_min,
+    u32 usage_max,
+    u32 index)
+{
+    if (index < usage_count)
+    {
+        return usages[index];
+    }
+
+    if ((usage_max >= usage_min) && ((usage_min + index) <= usage_max))
+    {
+        return usage_min + index;
+    }
+
+    return 0u;
+}
+#endif
 
 static s32 input64_ps2_mouse_delta(u8 flags, u8 value, u8 sign_bit)
 {
@@ -436,6 +590,11 @@ static void input64_mouse_reset(void)
     g_i2c_touchpad_contact_active = 0u;
     g_i2c_touchpad_last_x = 0u;
     g_i2c_touchpad_last_y = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    input64_usb_hid_mouse_layout_reset();
+    g_usb_hid_mouse_layout_reports = 0u;
+    g_usb_hid_mouse_layout_fallbacks = 0u;
+#endif
     g_mouse_diag_valid = 0u;
 }
 
@@ -692,8 +851,13 @@ static u8 input64_usb_hid_key_was_down(const u8 *keys, u8 keycode)
     return 0u;
 }
 
-static u8 input64_usb_hid_translate_key(u8 keycode, u8 shifted)
+static u8 input64_usb_hid_translate_key(u8 keycode)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u8 shifted = ((g_keyboard_left_shift != 0u) || (g_keyboard_right_shift != 0u)) ? 1u : 0u;
+#else
+    u8 shifted = 0u;
+#endif
     static const u8 digit_unshifted[10] = {
         (u8)'1', (u8)'2', (u8)'3', (u8)'4', (u8)'5',
         (u8)'6', (u8)'7', (u8)'8', (u8)'9', (u8)'0'
@@ -706,7 +870,11 @@ static u8 input64_usb_hid_translate_key(u8 keycode, u8 shifted)
     if ((keycode >= 0x04u) && (keycode <= 0x1Du))
     {
         u8 base = (u8)('a' + (keycode - 0x04u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        return ((shifted ^ g_keyboard_caps_lock) != 0u) ? (u8)(base - 32u) : base;
+#else
         return shifted != 0u ? (u8)(base - 32u) : base;
+#endif
     }
 
     if ((keycode >= 0x1Eu) && (keycode <= 0x27u))
@@ -734,6 +902,58 @@ static u8 input64_usb_hid_translate_key(u8 keycode, u8 shifted)
         case 0x38u: return shifted != 0u ? (u8)'?' : (u8)'/';
         default: return 0u;
     }
+}
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u8 input64_keyboard_shift_active(void)
+{
+    return ((g_keyboard_left_shift != 0u) || (g_keyboard_right_shift != 0u)) ? 1u : 0u;
+}
+#endif
+
+static u8 input64_keyboard_apply_modifiers(u8 value)
+{
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u8 shifted = input64_keyboard_shift_active();
+
+    if ((value >= (u8)'a') && (value <= (u8)'z'))
+    {
+        return ((shifted ^ g_keyboard_caps_lock) != 0u) ? (u8)(value - 32u) : value;
+    }
+
+    if (shifted == 0u)
+    {
+        return value;
+    }
+
+    switch (value)
+    {
+        case (u8)'1': return (u8)'!';
+        case (u8)'2': return (u8)'@';
+        case (u8)'3': return (u8)'#';
+        case (u8)'4': return (u8)'$';
+        case (u8)'5': return (u8)'%';
+        case (u8)'6': return (u8)'^';
+        case (u8)'7': return (u8)'&';
+        case (u8)'8': return (u8)'*';
+        case (u8)'9': return (u8)'(';
+        case (u8)'0': return (u8)')';
+        case (u8)'-': return (u8)'_';
+        case (u8)'=': return (u8)'+';
+        case (u8)'[': return (u8)'{';
+        case (u8)']': return (u8)'}';
+        case (u8)'\\': return (u8)'|';
+        case (u8)';': return (u8)':';
+        case (u8)'\'': return (u8)'"';
+        case (u8)'`': return (u8)'~';
+        case (u8)',': return (u8)'<';
+        case (u8)'.': return (u8)'>';
+        case (u8)'/': return (u8)'?';
+        default: return value;
+    }
+#else
+    return value;
+#endif
 }
 
 static u8 input64_keyboard_translate_scancode(u8 scancode)
@@ -876,6 +1096,16 @@ static void input64_keyboard_accept_set2_scancode(u8 scancode)
     {
         g_keyboard_break_prefix = 0u;
         g_keyboard_extended_prefix = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if (scancode == 0x12u)
+        {
+            g_keyboard_left_shift = 0u;
+        }
+        else if (scancode == 0x59u)
+        {
+            g_keyboard_right_shift = 0u;
+        }
+#endif
         return;
     }
 
@@ -917,16 +1147,35 @@ static void input64_keyboard_accept_set2_scancode(u8 scancode)
         }
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (scancode == 0x12u)
+    {
+        g_keyboard_left_shift = 1u;
+        return;
+    }
+    if (scancode == 0x59u)
+    {
+        g_keyboard_right_shift = 1u;
+        return;
+    }
+    if (scancode == 0x58u)
+    {
+        g_keyboard_caps_lock = (g_keyboard_caps_lock == 0u) ? 1u : 0u;
+        return;
+    }
+#endif
+
     translated = input64_keyboard_translate_set2_scancode(scancode);
     if (translated != 0u)
     {
-        input64_keyboard_enqueue_byte(translated);
+        input64_keyboard_enqueue_byte(input64_keyboard_apply_modifiers(translated));
     }
 }
 
 static void input64_keyboard_accept_set1_scancode(u8 scancode)
 {
     u8 translated;
+    u8 released;
 
     ++g_keyboard_scancode_count;
     g_keyboard_last_scancode = scancode;
@@ -980,7 +1229,27 @@ static void input64_keyboard_accept_set1_scancode(u8 scancode)
         }
     }
 
-    if ((scancode & 0x80u) != 0u)
+    released = (scancode & 0x80u) != 0u ? 1u : 0u;
+    scancode &= 0x7Fu;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (scancode == 0x2Au)
+    {
+        g_keyboard_left_shift = (released == 0u) ? 1u : 0u;
+        return;
+    }
+    if (scancode == 0x36u)
+    {
+        g_keyboard_right_shift = (released == 0u) ? 1u : 0u;
+        return;
+    }
+    if ((scancode == 0x3Au) && (released == 0u))
+    {
+        g_keyboard_caps_lock = (g_keyboard_caps_lock == 0u) ? 1u : 0u;
+        return;
+    }
+#endif
+
+    if (released != 0u)
     {
         return;
     }
@@ -988,7 +1257,7 @@ static void input64_keyboard_accept_set1_scancode(u8 scancode)
     translated = input64_keyboard_translate_scancode(scancode);
     if (translated != 0u)
     {
-        input64_keyboard_enqueue_byte(translated);
+        input64_keyboard_enqueue_byte(input64_keyboard_apply_modifiers(translated));
     }
 }
 
@@ -1649,7 +1918,6 @@ void input64_handle_mouse_interrupt(void)
 
 void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
 {
-    u8 shifted;
     u32 index;
 
     if ((report == 0) || (byte_count < 8u))
@@ -1657,7 +1925,12 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
         return;
     }
 
-    shifted = ((report[0] & 0x22u) != 0u) ? 1u : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_usb_hid_last_modifier = report[0];
+    g_keyboard_left_shift = ((report[0] & 0x02u) != 0u) ? 1u : 0u;
+    g_keyboard_right_shift = ((report[0] & 0x20u) != 0u) ? 1u : 0u;
+#endif
+
     for (index = 0u; index < 6u; ++index)
     {
         u8 keycode = report[2u + index];
@@ -1671,7 +1944,14 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
 
         ++g_keyboard_scancode_count;
         g_keyboard_last_scancode = 0x700u | (u32)keycode;
-        translated = input64_usb_hid_translate_key(keycode, shifted);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if (keycode == 0x39u)
+        {
+            g_keyboard_caps_lock = (g_keyboard_caps_lock == 0u) ? 1u : 0u;
+            continue;
+        }
+#endif
+        translated = input64_usb_hid_translate_key(keycode);
         if (translated != 0u)
         {
             input64_keyboard_enqueue_byte(translated);
@@ -1684,6 +1964,252 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
     }
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_configure_usb_hid_mouse_report_layout(const u8 *descriptor, u32 byte_count)
+{
+    u32 index = 0u;
+    u32 usage_page = 0u;
+    u32 report_size = 0u;
+    u32 report_count = 0u;
+    u32 report_id = 0u;
+    u32 report_bit_offset = 0u;
+    u32 local_usages[INPUT64_HID_MOUSE_USAGE_SLOTS];
+    u32 local_usage_count = 0u;
+    u32 usage_min = 0u;
+    u32 usage_max = 0u;
+
+    input64_usb_hid_mouse_layout_reset();
+    if ((descriptor == 0) || (byte_count == 0u))
+    {
+        return 0u;
+    }
+
+    while (index < byte_count)
+    {
+        u8 prefix = descriptor[index++];
+        u32 item_size_code;
+        u32 item_size;
+        u32 item_type;
+        u32 item_tag;
+        u32 value;
+
+        if (prefix == 0xFEu)
+        {
+            if ((index + 2u) > byte_count)
+            {
+                break;
+            }
+            item_size = descriptor[index];
+            index += 2u;
+            if ((index + item_size) > byte_count)
+            {
+                break;
+            }
+            index += item_size;
+            continue;
+        }
+
+        item_size_code = (u32)(prefix & 0x03u);
+        item_size = (item_size_code == 3u) ? 4u : item_size_code;
+        item_type = ((u32)prefix >> 2) & 0x03u;
+        item_tag = ((u32)prefix >> 4) & 0x0Fu;
+        if ((index + item_size) > byte_count)
+        {
+            break;
+        }
+        value = input64_hid_short_item_value(&descriptor[index], item_size);
+        index += item_size;
+
+        if (item_type == 1u)
+        {
+            if (item_tag == 0u)
+            {
+                usage_page = value;
+            }
+            else if (item_tag == 7u)
+            {
+                report_size = value;
+            }
+            else if (item_tag == 8u)
+            {
+                report_id = value;
+                report_bit_offset = 0u;
+            }
+            else if (item_tag == 9u)
+            {
+                report_count = value;
+            }
+            continue;
+        }
+
+        if (item_type == 2u)
+        {
+            if (item_tag == 0u)
+            {
+                if (local_usage_count < INPUT64_HID_MOUSE_USAGE_SLOTS)
+                {
+                    local_usages[local_usage_count] = value;
+                    ++local_usage_count;
+                }
+            }
+            else if (item_tag == 1u)
+            {
+                usage_min = value;
+            }
+            else if (item_tag == 2u)
+            {
+                usage_max = value;
+            }
+            continue;
+        }
+
+        if ((item_type == 0u) && (item_tag == 8u))
+        {
+            u32 field_index;
+            u32 is_constant = value & 0x01u;
+
+            if ((is_constant == 0u) && (report_size != 0u) && (report_count != 0u))
+            {
+                if ((usage_page == INPUT64_HID_USAGE_PAGE_BUTTON)
+                    && (g_usb_hid_mouse_layout.buttons_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT))
+                {
+                    g_usb_hid_mouse_layout.buttons_bit_offset = report_bit_offset;
+                    g_usb_hid_mouse_layout.buttons_bit_count =
+                        (report_count > 8u) ? 8u : report_count;
+                }
+
+                for (field_index = 0u; field_index < report_count; ++field_index)
+                {
+                    u32 usage = input64_hid_local_usage(
+                        local_usages,
+                        local_usage_count,
+                        usage_min,
+                        usage_max,
+                        field_index);
+                    u32 bit_offset = report_bit_offset + (field_index * report_size);
+
+                    if (usage_page != INPUT64_HID_USAGE_PAGE_GENERIC_DESKTOP)
+                    {
+                        continue;
+                    }
+
+                    if ((usage == INPUT64_HID_USAGE_X)
+                        && (g_usb_hid_mouse_layout.x_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT))
+                    {
+                        g_usb_hid_mouse_layout.x_bit_offset = bit_offset;
+                        g_usb_hid_mouse_layout.x_bit_count = report_size;
+                    }
+                    else if ((usage == INPUT64_HID_USAGE_Y)
+                        && (g_usb_hid_mouse_layout.y_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT))
+                    {
+                        g_usb_hid_mouse_layout.y_bit_offset = bit_offset;
+                        g_usb_hid_mouse_layout.y_bit_count = report_size;
+                    }
+                    else if ((usage == INPUT64_HID_USAGE_WHEEL)
+                        && (g_usb_hid_mouse_layout.wheel_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT))
+                    {
+                        g_usb_hid_mouse_layout.wheel_bit_offset = bit_offset;
+                        g_usb_hid_mouse_layout.wheel_bit_count = report_size;
+                    }
+                }
+            }
+
+            report_bit_offset += report_size * report_count;
+            local_usage_count = 0u;
+            usage_min = 0u;
+            usage_max = 0u;
+        }
+    }
+
+    if ((g_usb_hid_mouse_layout.x_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT)
+        || (g_usb_hid_mouse_layout.y_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT)
+        || (g_usb_hid_mouse_layout.x_bit_count == 0u)
+        || (g_usb_hid_mouse_layout.y_bit_count == 0u)
+        || (g_usb_hid_mouse_layout.x_bit_count > 31u)
+        || (g_usb_hid_mouse_layout.y_bit_count > 31u))
+    {
+        input64_usb_hid_mouse_layout_reset();
+        return 0u;
+    }
+
+    if (g_usb_hid_mouse_layout.buttons_bit_offset == INPUT64_HID_MOUSE_INVALID_BIT)
+    {
+        g_usb_hid_mouse_layout.buttons_bit_offset = 0u;
+        g_usb_hid_mouse_layout.buttons_bit_count = 0u;
+    }
+    g_usb_hid_mouse_layout.report_id = report_id;
+    g_usb_hid_mouse_layout.report_bytes = (report_bit_offset + 7u) >> 3;
+    g_usb_hid_mouse_layout.ready = 1u;
+    return 1u;
+}
+
+static u32 input64_accept_usb_hid_mouse_report_by_layout(const u8 *report, u32 byte_count)
+{
+    u32 buttons = 0u;
+    s32 dx;
+    s32 dy;
+
+    if ((g_usb_hid_mouse_layout.ready == 0u) || (report == 0))
+    {
+        return 0u;
+    }
+
+    if (((g_usb_hid_mouse_layout.x_bit_offset + g_usb_hid_mouse_layout.x_bit_count) > (byte_count * 8u))
+        || ((g_usb_hid_mouse_layout.y_bit_offset + g_usb_hid_mouse_layout.y_bit_count) > (byte_count * 8u)))
+    {
+        return 0u;
+    }
+
+    if ((g_usb_hid_mouse_layout.buttons_bit_count != 0u)
+        && (g_usb_hid_mouse_layout.buttons_bit_offset != INPUT64_HID_MOUSE_INVALID_BIT))
+    {
+        if ((g_usb_hid_mouse_layout.buttons_bit_offset + g_usb_hid_mouse_layout.buttons_bit_count)
+            > (byte_count * 8u))
+        {
+            return 0u;
+        }
+        buttons = input64_hid_field_value(
+            report,
+            byte_count,
+            g_usb_hid_mouse_layout.buttons_bit_offset,
+            g_usb_hid_mouse_layout.buttons_bit_count) & 0x7u;
+    }
+
+    dx = input64_hid_signed_field(
+        report,
+        byte_count,
+        g_usb_hid_mouse_layout.x_bit_offset,
+        g_usb_hid_mouse_layout.x_bit_count);
+    dy = input64_hid_signed_field(
+        report,
+        byte_count,
+        g_usb_hid_mouse_layout.y_bit_offset,
+        g_usb_hid_mouse_layout.y_bit_count);
+
+    if (input64_mouse_enqueue_delta(dx, dy, buttons) != 0u)
+    {
+        ++g_usb_hid_mouse_layout_reports;
+    }
+
+    if ((g_usb_hid_mouse_layout.wheel_bit_offset != INPUT64_HID_MOUSE_INVALID_BIT)
+        && (g_usb_hid_mouse_layout.wheel_bit_count != 0u)
+        && (g_usb_hid_mouse_layout.wheel_bit_count <= 31u))
+    {
+        s32 wheel = input64_hid_signed_field(
+            report,
+            byte_count,
+            g_usb_hid_mouse_layout.wheel_bit_offset,
+            g_usb_hid_mouse_layout.wheel_bit_count);
+        if (wheel != 0)
+        {
+            (void)display64_wm_process_mouse_wheel(wheel);
+        }
+    }
+
+    return 1u;
+}
+#endif
+
 void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count)
 {
     u32 offset;
@@ -1693,6 +2219,14 @@ void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count)
     {
         return;
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (input64_accept_usb_hid_mouse_report_by_layout(report, byte_count) != 0u)
+    {
+        return;
+    }
+    ++g_usb_hid_mouse_layout_fallbacks;
+#endif
 
     accepted = input64_mouse_enqueue_delta(
         input64_sign_extend_byte(report[1]),
@@ -2094,6 +2628,28 @@ u32 input64_keyboard_last_scancode(void)
     return g_keyboard_last_scancode;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_keyboard_left_shift(void)
+{
+    return g_keyboard_left_shift;
+}
+
+u32 input64_keyboard_right_shift(void)
+{
+    return g_keyboard_right_shift;
+}
+
+u32 input64_keyboard_caps_lock(void)
+{
+    return g_keyboard_caps_lock;
+}
+
+u32 input64_usb_hid_last_modifier(void)
+{
+    return g_usb_hid_last_modifier;
+}
+#endif
+
 u32 input64_keyboard_last_byte(void)
 {
     return g_keyboard_last_byte;
@@ -2328,5 +2884,45 @@ u32 input64_ps2_mouse_wheel_enabled(void)
 u32 input64_ps2_mouse_wheel_count(void)
 {
     return g_ps2_mouse_wheel_count;
+}
+
+u32 input64_usb_hid_mouse_layout_ready(void)
+{
+    return g_usb_hid_mouse_layout.ready;
+}
+
+u32 input64_usb_hid_mouse_layout_reports(void)
+{
+    return g_usb_hid_mouse_layout_reports;
+}
+
+u32 input64_usb_hid_mouse_layout_fallbacks(void)
+{
+    return g_usb_hid_mouse_layout_fallbacks;
+}
+
+u32 input64_usb_hid_mouse_layout_buttons_offset(void)
+{
+    return g_usb_hid_mouse_layout.buttons_bit_offset;
+}
+
+u32 input64_usb_hid_mouse_layout_report_bytes(void)
+{
+    return g_usb_hid_mouse_layout.report_bytes;
+}
+
+u32 input64_usb_hid_mouse_layout_x_offset(void)
+{
+    return g_usb_hid_mouse_layout.x_bit_offset;
+}
+
+u32 input64_usb_hid_mouse_layout_y_offset(void)
+{
+    return g_usb_hid_mouse_layout.y_bit_offset;
+}
+
+u32 input64_usb_hid_mouse_layout_wheel_offset(void)
+{
+    return g_usb_hid_mouse_layout.wheel_bit_offset;
 }
 #endif

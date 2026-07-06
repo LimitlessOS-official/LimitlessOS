@@ -38,5 +38,13 @@ u32 hardware64_registry_driver_candidate_count(void);
 u32 hardware64_registry_driver_deferred_count(void);
 u32 hardware64_registry_driver_unsupported_count(void);
 u32 hardware64_registry_driver_failed_count(void);
+u32 hardware64_registry_record_active(u32 index);
+u32 hardware64_registry_record_class(u32 index);
+u32 hardware64_registry_record_subclass(u32 index);
+u32 hardware64_registry_record_binding(u32 index);
+u32 hardware64_registry_record_source(u32 index);
+u32 hardware64_registry_record_address(u32 index);
+u32 hardware64_registry_record_flags(u32 index);
+u32 hardware64_registry_record_token(u32 index);
 
 #endif

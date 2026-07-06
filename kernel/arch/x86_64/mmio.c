@@ -11,6 +11,7 @@
 #include "serial.h"
 #include "services.h"
 #include "services_x64.h"
+#include "xhci_x64.h"
 
 static int mmio64_authorize_nvme_probe(u32 hardware_capability_handle, u32 owner_id);
 
@@ -14637,6 +14638,9 @@ u32 mmio64_scan_nvme_gpt(
 
 typedef struct Mmio64NvmeFatReader
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    u32 backend;
+#endif
     volatile u32 *registers;
     u64 data_physical;
     u32 io_sq_tail_offset;
@@ -14645,6 +14649,19 @@ typedef struct Mmio64NvmeFatReader
     u32 next_tail;
     u32 expected_phase;
 } Mmio64NvmeFatReader;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define MMIO64_FAT_BACKEND_NVME 1u
+#define MMIO64_FAT_BACKEND_USB 2u
+static u32 g_usb_fat_located = 0u;
+static u32 g_usb_fat_error = 0u;
+static u32 g_usb_fat_write_count = 0u;
+static u32 g_usb_fat_append_count = 0u;
+static u32 g_usb_fat_last_bytes = 0u;
+static u32 g_usb_fat_last_partition_start = 0u;
+static u32 g_usb_fat_last_partition_sectors = 0u;
+static u32 g_usb_fat_partition_scheme = 0u;
+#endif
 
 typedef struct Mmio64Fat32Volume
 {
@@ -14789,6 +14806,9 @@ static u32 mmio64_nvme_fat_open_runtime(
     }
 
     reader->registers = registers;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    reader->backend = MMIO64_FAT_BACKEND_NVME;
+#endif
     reader->data_physical = data_physical;
     reader->io_sq_tail_offset = io_sq_tail_offset;
     reader->io_cq_head_offset = io_cq_head_offset;
@@ -14806,6 +14826,274 @@ static void mmio64_nvme_fat_close_runtime(
     mmio64_nvme_fat_save_runtime(reader, volume);
     (void)paging64_kernel_mmio_write_window_close(doorbell_page);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 mmio64_fat32_fill_volume_from_bpb(
+    Mmio64Fat32Volume *volume,
+    u32 partition_start_lba,
+    u32 partition_sectors)
+{
+    u64 cluster_bytes;
+    u64 fat_end_sector;
+    u64 data_start_sector;
+
+    volume->bytes_per_sector = mmio64_read_u16(g_nvme_io_data_buffer, 11u);
+    volume->sectors_per_cluster = (u32)g_nvme_io_data_buffer[13u];
+    volume->reserved_sectors = mmio64_read_u16(g_nvme_io_data_buffer, 14u);
+    volume->fat_count = (u32)g_nvme_io_data_buffer[16u];
+    volume->total_sectors = mmio64_read_u32(g_nvme_io_data_buffer, 32u);
+    volume->sectors_per_fat = mmio64_read_u32(g_nvme_io_data_buffer, 36u);
+    volume->root_cluster = mmio64_read_u32(g_nvme_io_data_buffer, 44u);
+    volume->partition_start_lba = partition_start_lba;
+    volume->partition_sectors = partition_sectors;
+    volume->fat_sector_base = volume->reserved_sectors;
+    volume->data_sector_base =
+        volume->reserved_sectors + (volume->fat_count * volume->sectors_per_fat);
+    volume->lbas_per_fat_sector = volume->bytes_per_sector / 512u;
+    cluster_bytes = (u64)volume->bytes_per_sector * (u64)volume->sectors_per_cluster;
+    volume->lbas_per_cluster = (u32)(cluster_bytes / 512ull);
+    fat_end_sector = (u64)volume->reserved_sectors
+        + ((u64)volume->fat_count * (u64)volume->sectors_per_fat);
+    data_start_sector = fat_end_sector;
+
+    if ((g_nvme_io_data_buffer[510u] != 0x55u)
+        || (g_nvme_io_data_buffer[511u] != 0xAAu)
+        || ((volume->bytes_per_sector != 512u)
+            && (volume->bytes_per_sector != 1024u)
+            && (volume->bytes_per_sector != 2048u)
+            && (volume->bytes_per_sector != 4096u))
+        || (volume->sectors_per_cluster == 0u)
+        || ((volume->sectors_per_cluster & (volume->sectors_per_cluster - 1u)) != 0u)
+        || (volume->reserved_sectors == 0u)
+        || (volume->fat_count == 0u)
+        || (volume->sectors_per_fat == 0u)
+        || (volume->root_cluster < 2u)
+        || (volume->total_sectors == 0u)
+        || (volume->total_sectors > volume->partition_sectors)
+        || ((cluster_bytes % 512ull) != 0ull)
+        || (cluster_bytes == 0ull)
+        || (cluster_bytes > 0x100000ull)
+        || (volume->lbas_per_cluster == 0u)
+        || (data_start_sector >= (u64)volume->total_sectors))
+    {
+        return 0u;
+    }
+
+    return 1u;
+}
+
+static u32 mmio64_usb_fat_try_partition(
+    Mmio64NvmeFatReader *reader,
+    Mmio64Fat32Volume *volume,
+    u32 partition_start,
+    u32 partition_sectors)
+{
+    if ((partition_start == 0u)
+        || (partition_sectors == 0u)
+        || (xhci64_usb_storage_read_sector(partition_start, g_nvme_io_data_buffer, 512u) == 0u))
+    {
+        (void)reader;
+        return 0u;
+    }
+
+    return mmio64_fat32_fill_volume_from_bpb(volume, partition_start, partition_sectors);
+}
+
+static u32 mmio64_usb_fat_try_gpt(
+    Mmio64NvmeFatReader *reader,
+    Mmio64Fat32Volume *volume,
+    u32 total_device_sectors)
+{
+    u32 header_size;
+    u32 header_crc;
+    u32 computed_crc;
+    u64 entries_lba;
+    u32 entry_count;
+    u32 entry_size;
+    u32 entries_per_sector;
+    u32 entry_index;
+    u32 entry_sector = 0xFFFFFFFFu;
+    u32 entry_offset;
+    u32 guid_nonzero;
+    u32 guid_index;
+    u64 first_lba;
+    u64 last_lba;
+    u32 candidate_start;
+    u32 candidate_sectors;
+
+    if ((total_device_sectors < 34u)
+        || (xhci64_usb_storage_read_sector(1u, g_nvme_io_data_buffer, 512u) == 0u))
+    {
+        g_usb_fat_error = 6u;
+        return 0u;
+    }
+
+    header_size = mmio64_read_u32(g_nvme_io_data_buffer, 12u);
+    header_crc = mmio64_read_u32(g_nvme_io_data_buffer, 16u);
+    computed_crc = (header_size <= 512u)
+        ? mmio64_crc32_bytes_with_zeroed_dword(g_nvme_io_data_buffer, header_size, 16u)
+        : 0u;
+    entries_lba = mmio64_read_u64(g_nvme_io_data_buffer, 72u);
+    entry_count = mmio64_read_u32(g_nvme_io_data_buffer, 80u);
+    entry_size = mmio64_read_u32(g_nvme_io_data_buffer, 84u);
+
+    if ((g_nvme_io_data_buffer[0] != (u8)'E')
+        || (g_nvme_io_data_buffer[1] != (u8)'F')
+        || (g_nvme_io_data_buffer[2] != (u8)'I')
+        || (g_nvme_io_data_buffer[3] != (u8)' ')
+        || (g_nvme_io_data_buffer[4] != (u8)'P')
+        || (g_nvme_io_data_buffer[5] != (u8)'A')
+        || (g_nvme_io_data_buffer[6] != (u8)'R')
+        || (g_nvme_io_data_buffer[7] != (u8)'T')
+        || (mmio64_read_u32(g_nvme_io_data_buffer, 8u) != 0x00010000u)
+        || (header_size < 92u)
+        || (header_size > 512u)
+        || (header_crc == 0u)
+        || (computed_crc != header_crc)
+        || (entries_lba == 0ull)
+        || (entries_lba > 0xFFFFFFFFull)
+        || (entry_count == 0u)
+        || (entry_count > 128u)
+        || (entry_size < 128u)
+        || (entry_size > 512u)
+        || ((512u % entry_size) != 0u))
+    {
+        g_usb_fat_error = 6u;
+        return 0u;
+    }
+
+    entries_per_sector = 512u / entry_size;
+    for (entry_index = 0u; entry_index < entry_count; ++entry_index)
+    {
+        u32 current_sector = (u32)entries_lba + (entry_index / entries_per_sector);
+        if ((current_sector >= total_device_sectors)
+            || ((entry_sector != current_sector)
+                && (xhci64_usb_storage_read_sector(current_sector, g_nvme_io_data_buffer, 512u) == 0u)))
+        {
+            g_usb_fat_error = 7u;
+            return 0u;
+        }
+        entry_sector = current_sector;
+        entry_offset = (entry_index % entries_per_sector) * entry_size;
+
+        guid_nonzero = 0u;
+        for (guid_index = 0u; guid_index < 16u; ++guid_index)
+        {
+            if (g_nvme_io_data_buffer[entry_offset + guid_index] != 0u)
+            {
+                guid_nonzero = 1u;
+            }
+        }
+
+        if ((guid_nonzero == 0u)
+            || ((mmio64_guid_is_gpt_basic_data(g_nvme_io_data_buffer, entry_offset) == 0u)
+                && (mmio64_guid_is_gpt_efi_system(g_nvme_io_data_buffer, entry_offset) == 0u)))
+        {
+            continue;
+        }
+
+        first_lba = mmio64_read_u64(g_nvme_io_data_buffer, entry_offset + 32u);
+        last_lba = mmio64_read_u64(g_nvme_io_data_buffer, entry_offset + 40u);
+        if ((first_lba == 0ull)
+            || (last_lba < first_lba)
+            || (last_lba > 0xFFFFFFFFull)
+            || (last_lba >= (u64)total_device_sectors))
+        {
+            continue;
+        }
+
+        candidate_start = (u32)first_lba;
+        candidate_sectors = (u32)(last_lba - first_lba + 1ull);
+        if (mmio64_usb_fat_try_partition(reader, volume, candidate_start, candidate_sectors) != 0u)
+        {
+            g_usb_fat_partition_scheme = 2u;
+            return 1u;
+        }
+    }
+
+    g_usb_fat_error = 7u;
+    return 0u;
+}
+
+static u32 mmio64_usb_fat_open_runtime(
+    Mmio64NvmeFatReader *reader,
+    Mmio64Fat32Volume *volume)
+{
+    u32 partition_type;
+    u32 partition_start;
+    u32 partition_sectors;
+    u32 total_device_sectors;
+
+    if ((reader == (Mmio64NvmeFatReader *)0)
+        || (volume == (Mmio64Fat32Volume *)0)
+        || (xhci64_usb_storage_ready() == 0u)
+        || (xhci64_usb_storage_block_bytes() != 512u))
+    {
+        g_usb_fat_error = 1u;
+        return 0u;
+    }
+
+    reader->backend = MMIO64_FAT_BACKEND_USB;
+    reader->registers = (volatile u32 *)0;
+    reader->data_physical = mmio64_lower_half_alias((const void *)g_nvme_io_data_buffer);
+    reader->io_sq_tail_offset = 0u;
+    reader->io_cq_head_offset = 0u;
+    reader->queue_slot = 0u;
+    reader->next_tail = 0u;
+    reader->expected_phase = 0u;
+    if ((reader->data_physical & 0xFFFull) != 0ull)
+    {
+        g_usb_fat_error = 2u;
+        return 0u;
+    }
+
+    total_device_sectors = xhci64_usb_storage_last_lba() + 1u;
+    if ((total_device_sectors == 0u)
+        || (xhci64_usb_storage_read_sector(0u, g_nvme_io_data_buffer, 512u) == 0u))
+    {
+        g_usb_fat_error = 3u;
+        return 0u;
+    }
+
+    partition_type = (u32)g_nvme_io_data_buffer[450u];
+    partition_start = mmio64_read_u32(g_nvme_io_data_buffer, 454u);
+    partition_sectors = mmio64_read_u32(g_nvme_io_data_buffer, 458u);
+    if (((partition_type == 0x0Bu) || (partition_type == 0x0Cu) || (partition_type == 0x1Bu) || (partition_type == 0x1Cu))
+        && (partition_start != 0u)
+        && (partition_sectors != 0u)
+        && (partition_start < total_device_sectors))
+    {
+        if (mmio64_usb_fat_try_partition(reader, volume, partition_start, partition_sectors) == 0u)
+        {
+            g_usb_fat_error = 4u;
+            return 0u;
+        }
+        g_usb_fat_partition_scheme = 1u;
+    }
+    else if (partition_type == 0xEEu)
+    {
+        if (mmio64_usb_fat_try_gpt(reader, volume, total_device_sectors) == 0u)
+        {
+            return 0u;
+        }
+    }
+    else
+    {
+        if (mmio64_fat32_fill_volume_from_bpb(volume, 0u, total_device_sectors) == 0u)
+        {
+            g_usb_fat_error = 5u;
+            return 0u;
+        }
+        g_usb_fat_partition_scheme = 3u;
+    }
+
+    g_usb_fat_located = 1u;
+    g_usb_fat_error = 0u;
+    g_usb_fat_last_partition_start = volume->partition_start_lba;
+    g_usb_fat_last_partition_sectors = volume->partition_sectors;
+    return 1u;
+}
+#endif
 
 static void mmio64_nvme_fat_advance_queue(Mmio64NvmeFatReader *reader)
 {
@@ -14828,6 +15116,14 @@ static u32 mmio64_nvme_fat_read_lba(
     u32 command_id)
 {
     u32 status = 0u;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (reader->backend == MMIO64_FAT_BACKEND_USB)
+    {
+        (void)command_id;
+        return xhci64_usb_storage_read_sector(lba, g_nvme_io_data_buffer, 512u);
+    }
+#endif
 
     if (mmio64_nvme_submit_single_block_read(
             reader->registers,
@@ -14854,6 +15150,19 @@ static u32 mmio64_nvme_fat_write_lba(
     u32 command_id)
 {
     u32 status = 0u;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (reader->backend == MMIO64_FAT_BACKEND_USB)
+    {
+        (void)command_id;
+        if (xhci64_usb_storage_write_sector(lba, g_nvme_io_data_buffer, 512u) == 0u)
+        {
+            return 0u;
+        }
+        ++g_nvme_fat_flushes;
+        return 1u;
+    }
+#endif
 
     if (mmio64_nvme_submit_single_block_write(
             reader->registers,
@@ -20395,6 +20704,237 @@ u32 mmio64_nvme_fat_shell_append_file(
     return ok;
 }
 
+u32 mmio64_usb_fat_shell_write_file(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 *data,
+    u32 byte_count,
+    u32 owner_id)
+{
+    u8 normalized[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    Mmio64NvmeFatReader reader;
+    Mmio64Fat32Volume volume;
+    Mmio64Fat32EntryLocation location;
+    u32 bytes = 0u;
+    u32 checksum = 0u;
+    u32 expected_crc;
+    u32 ok = 0u;
+
+    if (((byte_count != 0u) && (data == (const u8 *)0))
+        || (byte_count > MMIO64_NVME_RW_SHELL_MAX_FILE_BYTES)
+        || (mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
+        || (mmio64_nvme_rw_normalize_path(
+                path,
+                path_byte_count,
+                normalized,
+                sizeof(normalized)) == 0u)
+        || (mmio64_usb_fat_open_runtime(&reader, &volume) == 0u))
+    {
+        return 0u;
+    }
+
+    if (mmio64_fat32_find_path_location(&reader, &volume, normalized, &location) != 0u)
+    {
+        ok = mmio64_nvme_rw_write_existing_file(
+            &reader,
+            &volume,
+            &location,
+            data,
+            byte_count);
+    }
+    else
+    {
+        ok = mmio64_nvme_rw_create_path_file(
+            &reader,
+            &volume,
+            normalized,
+            data,
+            byte_count);
+    }
+
+    expected_crc = mmio64_crc32_update(0xFFFFFFFFu, data, byte_count) ^ 0xFFFFFFFFu;
+    if ((ok != 0u)
+        && (mmio64_nvme_fat_verify_file(
+                &reader,
+                &volume,
+                normalized,
+                byte_count,
+                expected_crc,
+                &bytes,
+                &checksum) != 0u)
+        && (bytes == byte_count))
+    {
+        ++g_usb_fat_write_count;
+        g_usb_fat_last_bytes = bytes;
+        g_usb_fat_error = 0u;
+    }
+    else if (ok == 0u)
+    {
+        g_usb_fat_error = 30u;
+    }
+    else
+    {
+        g_usb_fat_error = 31u;
+        ok = 0u;
+    }
+
+    (void)checksum;
+    return ok;
+}
+
+u32 mmio64_usb_fat_shell_append_file(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 *data,
+    u32 byte_count,
+    u32 owner_id)
+{
+    u8 normalized[MMIO64_NVME_RW_MAX_PATH_BYTES + 2u];
+    Mmio64NvmeFatReader reader;
+    Mmio64Fat32Volume volume;
+    Mmio64Fat32EntryLocation location;
+    u32 old_size = 0u;
+    u32 verify_offset = 0u;
+    u32 verify_bytes = 0u;
+    u32 verify_size = 0u;
+    u32 checksum = 0u;
+    u32 attr = 0u;
+    u32 read_error = 0u;
+    u32 remaining;
+    u32 data_offset = 0u;
+    u32 take;
+    u32 index;
+    u32 ok = 0u;
+
+    if ((data == (const u8 *)0)
+        || (byte_count == 0u)
+        || (mmio64_nvme_rw_shell_authorized(owner_id) == 0u)
+        || (mmio64_nvme_rw_normalize_path(
+                path,
+                path_byte_count,
+                normalized,
+                sizeof(normalized)) == 0u)
+        || (mmio64_usb_fat_open_runtime(&reader, &volume) == 0u))
+    {
+        return 0u;
+    }
+
+    if (mmio64_fat32_find_path_location(&reader, &volume, normalized, &location) != 0u)
+    {
+        old_size = location.size;
+        ok = mmio64_fat32_append_data_to_file(
+            &reader,
+            &volume,
+            &location,
+            data,
+            byte_count);
+    }
+    else
+    {
+        old_size = 0u;
+        ok = mmio64_nvme_rw_create_path_file(
+            &reader,
+            &volume,
+            normalized,
+            data,
+            byte_count);
+    }
+
+    remaining = byte_count;
+    verify_offset = old_size;
+    while ((ok != 0u) && (remaining != 0u))
+    {
+        take = (remaining < 512u) ? remaining : 512u;
+        if ((mmio64_nvme_fat_read_path_range_detailed(
+                    &reader,
+                    &volume,
+                    normalized,
+                    verify_offset,
+                    g_nvme_io_data_buffer,
+                    take,
+                    &verify_bytes,
+                    &checksum,
+                    &verify_size,
+                    &attr,
+                    &read_error) == 0u)
+            || (verify_bytes != take)
+            || (verify_size != (old_size + byte_count))
+            || ((attr & 0x10u) != 0u))
+        {
+            ok = 0u;
+            break;
+        }
+
+        for (index = 0u; index < take; ++index)
+        {
+            if (g_nvme_io_data_buffer[index] != data[data_offset + index])
+            {
+                ok = 0u;
+                break;
+            }
+        }
+
+        data_offset += take;
+        verify_offset += take;
+        remaining -= take;
+    }
+
+    if (ok != 0u)
+    {
+        ++g_usb_fat_append_count;
+        g_usb_fat_last_bytes = byte_count;
+        g_usb_fat_error = 0u;
+    }
+    else
+    {
+        g_usb_fat_error = 32u;
+    }
+
+    (void)checksum;
+    (void)read_error;
+    return ok;
+}
+
+u32 mmio64_usb_fat_located(void)
+{
+    return g_usb_fat_located;
+}
+
+u32 mmio64_usb_fat_error(void)
+{
+    return g_usb_fat_error;
+}
+
+u32 mmio64_usb_fat_write_count(void)
+{
+    return g_usb_fat_write_count;
+}
+
+u32 mmio64_usb_fat_append_count(void)
+{
+    return g_usb_fat_append_count;
+}
+
+u32 mmio64_usb_fat_last_bytes(void)
+{
+    return g_usb_fat_last_bytes;
+}
+
+u32 mmio64_usb_fat_last_partition_start(void)
+{
+    return g_usb_fat_last_partition_start;
+}
+
+u32 mmio64_usb_fat_last_partition_sectors(void)
+{
+    return g_usb_fat_last_partition_sectors;
+}
+
+u32 mmio64_usb_fat_partition_scheme(void)
+{
+    return g_usb_fat_partition_scheme;
+}
+
 u32 mmio64_nvme_fat_shell_touch_file(
     const u8 *path,
     u32 path_byte_count,
@@ -20902,6 +21442,9 @@ u32 mmio64_scan_nvme_fat(
     }
 
     reader.registers = registers;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    reader.backend = MMIO64_FAT_BACKEND_NVME;
+#endif
     reader.data_physical = data_physical;
     reader.io_sq_tail_offset = io_sq_tail_offset;
     reader.io_cq_head_offset = io_cq_head_offset;

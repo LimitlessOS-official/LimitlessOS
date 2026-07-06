@@ -7453,6 +7453,26 @@ u32 mmio64_nvme_fat_shell_append_file(
     const u8 *data,
     u32 byte_count,
     u32 owner_id);
+u32 mmio64_usb_fat_shell_write_file(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 *data,
+    u32 byte_count,
+    u32 owner_id);
+u32 mmio64_usb_fat_shell_append_file(
+    const u8 *path,
+    u32 path_byte_count,
+    const u8 *data,
+    u32 byte_count,
+    u32 owner_id);
+u32 mmio64_usb_fat_located(void);
+u32 mmio64_usb_fat_error(void);
+u32 mmio64_usb_fat_write_count(void);
+u32 mmio64_usb_fat_append_count(void);
+u32 mmio64_usb_fat_last_bytes(void);
+u32 mmio64_usb_fat_last_partition_start(void);
+u32 mmio64_usb_fat_last_partition_sectors(void);
+u32 mmio64_usb_fat_partition_scheme(void);
 u32 mmio64_nvme_fat_shell_touch_file(
     const u8 *path,
     u32 path_byte_count,

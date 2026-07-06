@@ -336,11 +336,21 @@ struct uefi_acpi_handoff
     u32 madt_found;
     u32 lapic_found;
     u32 ioapic_found;
+    u32 fadt_found;
+    u32 dsdt_found;
+    u32 ssdt_count;
+    u32 fadt_bytes;
+    u32 dsdt_bytes;
+    u32 ssdt_total_bytes;
     u32 flags;
     u64 rsdp;
     u64 xsdt;
     u64 mcfg;
     u64 madt;
+    u64 fadt;
+    u64 dsdt;
+    u64 ssdt[LIMITLESS_BOOT_ACPI_SSDT_SLOTS];
+    u32 ssdt_bytes[LIMITLESS_BOOT_ACPI_SSDT_SLOTS];
     u64 ecam_base;
     u64 lapic_base;
     u64 ioapic_base;
@@ -382,6 +392,23 @@ struct acpi_sdt_header
     u32 creator_id;
     u32 creator_revision;
 } __attribute__((packed));
+
+struct acpi_fadt_minimal
+{
+    struct acpi_sdt_header header;
+    u32 firmware_ctrl;
+    u32 dsdt;
+    u8 reserved0;
+    u8 preferred_pm_profile;
+    u16 sci_interrupt;
+    u32 smi_command_port;
+    u8 reserved1[80];
+    u64 x_firmware_ctrl;
+    u64 x_dsdt;
+} __attribute__((packed));
+
+typedef char acpi_fadt_x_dsdt_offset_must_match_acpi_x64[
+    (__builtin_offsetof(struct acpi_fadt_minimal, x_dsdt) == 140u) ? 1 : -1];
 
 struct acpi_mcfg_allocation
 {
@@ -1266,11 +1293,19 @@ static void init_acpi_handoff(struct uefi_acpi_handoff *acpi)
     acpi->madt_found = 0u;
     acpi->lapic_found = 0u;
     acpi->ioapic_found = 0u;
+    acpi->fadt_found = 0u;
+    acpi->dsdt_found = 0u;
+    acpi->ssdt_count = 0u;
+    acpi->fadt_bytes = 0u;
+    acpi->dsdt_bytes = 0u;
+    acpi->ssdt_total_bytes = 0u;
     acpi->flags = 0u;
     acpi->rsdp = 0ull;
     acpi->xsdt = 0ull;
     acpi->mcfg = 0ull;
     acpi->madt = 0ull;
+    acpi->fadt = 0ull;
+    acpi->dsdt = 0ull;
     acpi->ecam_base = 0ull;
     acpi->lapic_base = 0ull;
     acpi->ioapic_base = 0ull;
@@ -1287,6 +1322,11 @@ static void init_acpi_handoff(struct uefi_acpi_handoff *acpi)
         acpi->interrupt_override_source[index] = 0u;
         acpi->interrupt_override_gsi[index] = 0u;
         acpi->interrupt_override_flags[index] = 0u;
+    }
+    for (index = 0u; index < LIMITLESS_BOOT_ACPI_SSDT_SLOTS; ++index)
+    {
+        acpi->ssdt[index] = 0ull;
+        acpi->ssdt_bytes[index] = 0u;
     }
 }
 
@@ -1316,6 +1356,73 @@ static const struct acpi_rsdp *find_acpi_rsdp(struct efi_system_table *system_ta
     }
 
     return fallback;
+}
+
+static void discover_acpi_fadt(const struct acpi_sdt_header *table, struct uefi_acpi_handoff *acpi)
+{
+    const struct acpi_fadt_minimal *fadt;
+    const struct acpi_sdt_header *dsdt;
+    u64 dsdt_address;
+
+    if (table == NULL ||
+        acpi == NULL ||
+        table->length < (sizeof(struct acpi_sdt_header) + 8u) ||
+        acpi_signature_equals(table->signature, "FACP", 4u) == 0u)
+    {
+        return;
+    }
+
+    acpi->fadt_found = 1u;
+    acpi->fadt = (u64)(const void *)table;
+    acpi->fadt_bytes = table->length;
+    acpi->flags |= LIMITLESS_BOOT_ACPI_FLAG_FADT;
+
+    fadt = (const struct acpi_fadt_minimal *)(const void *)table;
+    dsdt_address = (u64)fadt->dsdt;
+    if ((table->length >= sizeof(struct acpi_fadt_minimal))
+        && (fadt->x_dsdt != 0ull))
+    {
+        dsdt_address = fadt->x_dsdt;
+    }
+
+    dsdt = (const struct acpi_sdt_header *)dsdt_address;
+    if (dsdt == NULL ||
+        dsdt->length < sizeof(struct acpi_sdt_header) ||
+        acpi_signature_equals(dsdt->signature, "DSDT", 4u) == 0u)
+    {
+        return;
+    }
+
+    acpi->dsdt_found = 1u;
+    acpi->dsdt = (u64)(const void *)dsdt;
+    acpi->dsdt_bytes = dsdt->length;
+    acpi->flags |= LIMITLESS_BOOT_ACPI_FLAG_DSDT;
+}
+
+static void discover_acpi_ssdt(const struct acpi_sdt_header *table, struct uefi_acpi_handoff *acpi)
+{
+    u32 slot;
+
+    if (table == NULL ||
+        acpi == NULL ||
+        table->length < sizeof(struct acpi_sdt_header) ||
+        acpi_signature_equals(table->signature, "SSDT", 4u) == 0u)
+    {
+        return;
+    }
+
+    slot = acpi->ssdt_count;
+    ++acpi->ssdt_count;
+    acpi->ssdt_total_bytes += table->length;
+    acpi->flags |= LIMITLESS_BOOT_ACPI_FLAG_SSDT;
+
+    if (slot >= LIMITLESS_BOOT_ACPI_SSDT_SLOTS)
+    {
+        return;
+    }
+
+    acpi->ssdt[slot] = (u64)(const void *)table;
+    acpi->ssdt_bytes[slot] = table->length;
 }
 
 static void discover_acpi_madt(const struct acpi_sdt_header *table, struct uefi_acpi_handoff *acpi)
@@ -1457,6 +1564,18 @@ static void discover_acpi_tables(struct efi_system_table *system_table, struct u
         if (acpi_signature_equals(table->signature, "APIC", 4u) != 0u)
         {
             discover_acpi_madt(table, acpi);
+            continue;
+        }
+
+        if (acpi_signature_equals(table->signature, "FACP", 4u) != 0u)
+        {
+            discover_acpi_fadt(table, acpi);
+            continue;
+        }
+
+        if (acpi_signature_equals(table->signature, "SSDT", 4u) != 0u)
+        {
+            discover_acpi_ssdt(table, acpi);
             continue;
         }
 
@@ -3130,6 +3249,25 @@ static void write_boot_handoff_line(
                     (acpi != NULL && acpi->madt_found != 0u) ? acpi->interrupt_override_gsi[identity_index] : 0u;
                 boot_info->apic_interrupt_override_flags[identity_index] =
                     (acpi != NULL && acpi->madt_found != 0u) ? acpi->interrupt_override_flags[identity_index] : 0u;
+            }
+            boot_info->acpi_xsdt =
+                (acpi != NULL && acpi->xsdt_found != 0u) ? acpi->xsdt : 0ull;
+            boot_info->acpi_fadt =
+                (acpi != NULL && acpi->fadt_found != 0u) ? acpi->fadt : 0ull;
+            boot_info->acpi_fadt_bytes =
+                (acpi != NULL && acpi->fadt_found != 0u) ? acpi->fadt_bytes : 0u;
+            boot_info->acpi_dsdt =
+                (acpi != NULL && acpi->dsdt_found != 0u) ? acpi->dsdt : 0ull;
+            boot_info->acpi_dsdt_bytes =
+                (acpi != NULL && acpi->dsdt_found != 0u) ? acpi->dsdt_bytes : 0u;
+            boot_info->acpi_ssdt_count = (acpi != NULL) ? acpi->ssdt_count : 0u;
+            boot_info->acpi_ssdt_total_bytes = (acpi != NULL) ? acpi->ssdt_total_bytes : 0u;
+            for (identity_index = 0u; identity_index < LIMITLESS_BOOT_ACPI_SSDT_SLOTS; ++identity_index)
+            {
+                boot_info->acpi_ssdt[identity_index] =
+                    (acpi != NULL) ? acpi->ssdt[identity_index] : 0ull;
+                boot_info->acpi_ssdt_bytes[identity_index] =
+                    (acpi != NULL) ? acpi->ssdt_bytes[identity_index] : 0u;
             }
             boot_info->boot_media_app_base =
                 (boot_linux_stage != NULL && boot_linux_stage->app.copied != 0u) ? boot_linux_stage->app.base : 0ull;

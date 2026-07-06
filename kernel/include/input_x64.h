@@ -16,6 +16,17 @@ void input64_poll_mouse(void);
 void input64_handle_keyboard_interrupt(void);
 void input64_handle_mouse_interrupt(void);
 void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_configure_usb_hid_mouse_report_layout(const u8 *descriptor, u32 byte_count);
+u32 input64_usb_hid_mouse_layout_ready(void);
+u32 input64_usb_hid_mouse_layout_reports(void);
+u32 input64_usb_hid_mouse_layout_fallbacks(void);
+u32 input64_usb_hid_mouse_layout_buttons_offset(void);
+u32 input64_usb_hid_mouse_layout_report_bytes(void);
+u32 input64_usb_hid_mouse_layout_x_offset(void);
+u32 input64_usb_hid_mouse_layout_y_offset(void);
+u32 input64_usb_hid_mouse_layout_wheel_offset(void);
+#endif
 void input64_accept_usb_hid_mouse_report(const u8 *report, u32 byte_count);
 void input64_accept_i2c_hid_touchpad_sample(u32 x, u32 y, u32 contact_active, u32 buttons);
 void input64_set_mouse_bounds(u32 width, u32 height);
@@ -44,6 +55,12 @@ u32 input64_keyboard_byte_count(void);
 u32 input64_keyboard_pending_count(void);
 u32 input64_keyboard_drop_count(void);
 u32 input64_keyboard_last_scancode(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_keyboard_left_shift(void);
+u32 input64_keyboard_right_shift(void);
+u32 input64_keyboard_caps_lock(void);
+u32 input64_usb_hid_last_modifier(void);
+#endif
 u32 input64_keyboard_last_byte(void);
 u32 input64_keyboard_read_count(void);
 u32 input64_keyboard_read_byte_count(void);

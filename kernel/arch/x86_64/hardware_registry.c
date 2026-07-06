@@ -557,6 +557,64 @@ u32 hardware64_registry_driver_failed_count(void)
     return g_hardware64_failed_count;
 }
 
+static const struct hardware64_device_record *hardware64_record_at(u32 index)
+{
+    if (index >= g_hardware64_count)
+    {
+        return 0;
+    }
+
+    return &g_hardware64_records[index];
+}
+
+u32 hardware64_registry_record_active(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->active : 0u;
+}
+
+u32 hardware64_registry_record_class(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->class_id : 0u;
+}
+
+u32 hardware64_registry_record_subclass(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->subclass_id : 0u;
+}
+
+u32 hardware64_registry_record_binding(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->binding : HARDWARE64_BINDING_NONE;
+}
+
+u32 hardware64_registry_record_source(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->source : 0u;
+}
+
+u32 hardware64_registry_record_address(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->address : 0u;
+}
+
+u32 hardware64_registry_record_flags(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->flags : 0u;
+}
+
+u32 hardware64_registry_record_token(u32 index)
+{
+    const struct hardware64_device_record *record = hardware64_record_at(index);
+    return (record != 0) ? record->token : 0u;
+}
+
 #else
 
 void hardware64_registry_refresh(u32 hardware_capability_handle, u32 owner_id)

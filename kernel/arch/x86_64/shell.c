@@ -41,6 +41,19 @@
 #define SHELL64_REDIRECT_INVALID 2u
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #define SHELL64_REDIRECT_BUFFER_BYTES 8192u
+#define SHELL64_REDIRECT_RAMFS_CHUNK_BYTES 256u
+#define SHELL64_REDIRECT_BACKEND_NONE 0u
+#define SHELL64_REDIRECT_BACKEND_FAT 1u
+#define SHELL64_REDIRECT_BACKEND_USB 2u
+#define SHELL64_REDIRECT_BACKEND_RAMFS 3u
+#define SHELL64_REDIRECT_ERROR_NONE 0u
+#define SHELL64_REDIRECT_ERROR_ARGUMENT 1u
+#define SHELL64_REDIRECT_ERROR_RAMFS 2u
+#define SHELL64_REDIRECT_ERROR_FAT 3u
+#define SHELL64_REDIRECT_ERROR_USB_UNAVAILABLE 4u
+#define SHELL64_XHCI_PORTSC_CCS 0x00000001u
+#define SHELL64_XHCI_PORTSC_PED 0x00000002u
+#define SHELL64_XHCI_PORTSC_SPEED_SHIFT 10u
 #endif
 
 static u8 g_shell64_line[SHELL64_MAX_LINE_BYTES + 1u];
@@ -62,9 +75,19 @@ static u32 g_shell64_redirect_denial_count = 0u;
 static u32 g_shell64_redirect_last_result = 0u;
 static u32 g_shell64_redirect_commit_count = 0u;
 static u32 g_shell64_redirect_path_length = 0u;
+static u32 g_shell64_redirect_committed = 0u;
+static u32 g_shell64_redirect_usb_requested = 0u;
+static u32 g_shell64_redirect_usb_unavailable = 0u;
+static u32 g_shell64_redirect_backend = SHELL64_REDIRECT_BACKEND_NONE;
+static u32 g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
 static u8 g_shell64_redirect_path[SHELL64_MAX_PATH_BYTES];
 static u8 g_shell64_redirect_buffer[SHELL64_REDIRECT_BUFFER_BYTES];
 static char g_shell64_linux_argv_storage[LINUX_EXEC64_ARG_MAX][SHELL64_MAX_LINE_BYTES + 1u];
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_redirect_flush(u32 owner_id);
+static u32 shell64_stat_size(const u8 *bytes, u32 byte_count);
 #endif
 
 static u32 shell64_length(const char *text)
@@ -103,6 +126,159 @@ static void shell64_copy(u8 *destination, const u8 *source, u32 byte_count)
         destination[index] = source[index];
     }
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_redirect_flush_ramfs(u32 owner_id)
+{
+    u32 stat_count;
+    u32 file_offset = 0u;
+    u32 flush_offset = 0u;
+    u32 chunk;
+    u32 written;
+
+    if ((g_shell64_redirect_capability == FS64_INVALID_HANDLE)
+        || (g_shell64_redirect_offset == 0u))
+    {
+        return 1u;
+    }
+
+    if ((g_shell64_redirect_append != 0u) || (g_shell64_redirect_committed != 0u))
+    {
+        stat_count = fs64_stat_kernel(
+            g_shell64_redirect_capability,
+            g_shell64_stat,
+            sizeof(g_shell64_stat),
+            owner_id);
+        if (stat_count == FS64_INVALID_HANDLE)
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_last_result = 0u;
+            g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_RAMFS;
+            return 0u;
+        }
+        file_offset = shell64_stat_size(g_shell64_stat, stat_count);
+    }
+
+    while (flush_offset < g_shell64_redirect_offset)
+    {
+        chunk = g_shell64_redirect_offset - flush_offset;
+        if (chunk > SHELL64_REDIRECT_RAMFS_CHUNK_BYTES)
+        {
+            chunk = SHELL64_REDIRECT_RAMFS_CHUNK_BYTES;
+        }
+
+        written = fs64_write_kernel(
+            g_shell64_redirect_capability,
+            g_shell64_redirect_buffer + flush_offset,
+            file_offset + flush_offset,
+            chunk,
+            owner_id);
+        if (written != chunk)
+        {
+            ++g_shell64_redirect_denial_count;
+            g_shell64_redirect_last_result = flush_offset + written;
+            g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_RAMFS;
+            return 0u;
+        }
+
+        flush_offset += written;
+    }
+
+    ++g_shell64_redirect_commit_count;
+    g_shell64_redirect_last_result = g_shell64_redirect_offset;
+    g_shell64_redirect_committed = 1u;
+    g_shell64_redirect_backend = SHELL64_REDIRECT_BACKEND_RAMFS;
+    g_shell64_redirect_offset = 0u;
+    shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+    g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
+    return 1u;
+}
+
+static u32 shell64_redirect_flush(u32 owner_id)
+{
+    u32 commit_ok;
+
+    if ((g_shell64_redirect_path_length == 0u) || (g_shell64_redirect_offset == 0u))
+    {
+        return 1u;
+    }
+
+    if (g_shell64_redirect_backend == SHELL64_REDIRECT_BACKEND_RAMFS)
+    {
+        return shell64_redirect_flush_ramfs(owner_id);
+    }
+
+    if (g_shell64_redirect_backend == SHELL64_REDIRECT_BACKEND_USB)
+    {
+        if ((g_shell64_redirect_append != 0u) || (g_shell64_redirect_committed != 0u))
+        {
+            commit_ok = mmio64_usb_fat_shell_append_file(
+                g_shell64_redirect_path,
+                g_shell64_redirect_path_length,
+                g_shell64_redirect_buffer,
+                g_shell64_redirect_offset,
+                owner_id);
+        }
+        else
+        {
+            commit_ok = mmio64_usb_fat_shell_write_file(
+                g_shell64_redirect_path,
+                g_shell64_redirect_path_length,
+                g_shell64_redirect_buffer,
+                g_shell64_redirect_offset,
+                owner_id);
+        }
+
+        if (commit_ok != 0u)
+        {
+            ++g_shell64_redirect_commit_count;
+            g_shell64_redirect_last_result = g_shell64_redirect_offset;
+            g_shell64_redirect_committed = 1u;
+            g_shell64_redirect_offset = 0u;
+            shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+            g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
+            return 1u;
+        }
+
+        ++g_shell64_redirect_usb_unavailable;
+        ++g_shell64_redirect_denial_count;
+        g_shell64_redirect_last_result = 0u;
+        g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_USB_UNAVAILABLE;
+        return 0u;
+    }
+
+    if ((g_shell64_redirect_append != 0u) || (g_shell64_redirect_committed != 0u))
+    {
+        commit_ok = mmio64_nvme_fat_shell_append_file(
+            g_shell64_redirect_path,
+            g_shell64_redirect_path_length,
+            g_shell64_redirect_buffer,
+            g_shell64_redirect_offset,
+            owner_id);
+    }
+    else
+    {
+        commit_ok = mmio64_nvme_fat_shell_write_file(
+            g_shell64_redirect_path,
+            g_shell64_redirect_path_length,
+            g_shell64_redirect_buffer,
+            g_shell64_redirect_offset,
+            owner_id);
+    }
+
+    if (commit_ok != 0u)
+    {
+        ++g_shell64_redirect_commit_count;
+        g_shell64_redirect_last_result = g_shell64_redirect_offset;
+        g_shell64_redirect_committed = 1u;
+        g_shell64_redirect_offset = 0u;
+        shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+        return 1u;
+    }
+
+    return shell64_redirect_flush_ramfs(owner_id);
+}
+#endif
 
 static int shell64_range_overflows(u64 address, u32 byte_count)
 {
@@ -194,19 +370,36 @@ static u32 shell64_write(u32 console_capability_handle, u32 owner_id, const u8 *
             return 0u;
         }
 
-        writable_bytes = byte_count;
-        if ((g_shell64_redirect_offset + writable_bytes) > SHELL64_REDIRECT_BUFFER_BYTES)
+        writable_bytes = 0u;
+        while (writable_bytes < byte_count)
         {
-            writable_bytes = SHELL64_REDIRECT_BUFFER_BYTES - g_shell64_redirect_offset;
-            ++g_shell64_redirect_denial_count;
+            u32 available = SHELL64_REDIRECT_BUFFER_BYTES - g_shell64_redirect_offset;
+            u32 take;
+
+            if (available == 0u)
+            {
+                if (shell64_redirect_flush(owner_id) == 0u)
+                {
+                    return writable_bytes;
+                }
+                available = SHELL64_REDIRECT_BUFFER_BYTES;
+            }
+
+            take = byte_count - writable_bytes;
+            if (take > available)
+            {
+                take = available;
+            }
+
+            for (index = 0u; index < take; ++index)
+            {
+                g_shell64_redirect_buffer[g_shell64_redirect_offset + index] = bytes[writable_bytes + index];
+            }
+
+            g_shell64_redirect_offset += take;
+            writable_bytes += take;
         }
 
-        for (index = 0u; index < writable_bytes; ++index)
-        {
-            g_shell64_redirect_buffer[g_shell64_redirect_offset + index] = bytes[index];
-        }
-
-        g_shell64_redirect_offset += writable_bytes;
         g_shell64_redirect_byte_count += writable_bytes;
         ++g_shell64_redirect_write_count;
         g_shell64_redirect_last_result = writable_bytes;
@@ -266,12 +459,21 @@ static u32 shell64_login_available(void)
 
 static u32 shell64_write_builtins_line(u32 console_capability_handle, u32 owner_id)
 {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_login_available() != 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd usbscan\n");
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux net open pkginfo port ports pwd usbscan\n");
+#else
     if (shell64_login_available() != 0u)
     {
         return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info linux lock net pkginfo pwd\n");
     }
 
     return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps help hwval info linux net pkginfo pwd\n");
+#endif
 }
 
 static u32 shell64_write_login_status_line(u32 console_capability_handle, u32 owner_id)
@@ -535,6 +737,7 @@ static void shell64_write_gui_interaction_telemetry(
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-pointer ", display64_gui_settings_pointer_speed());
     shell64_write_decimal_field(console_capability_handle, owner_id, " settings-keyrepeat ", display64_gui_settings_key_repeat());
     shell64_write_decimal_field(console_capability_handle, owner_id, " installer-actions ", display64_gui_installer_action_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " keyboard-open ", display64_gui_keyboard_open_count());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-unfocused-key-denied ", display64_gui_unfocused_key_denied());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-no-ambient-input ", display64_gui_no_ambient_input());
     shell64_write_decimal_field(console_capability_handle, owner_id, " drs-gui-no-ambient-display ", display64_gui_no_ambient_display());
@@ -1556,6 +1759,26 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect commits: ", g_shell64_redirect_commit_count);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect denials: ", g_shell64_redirect_denial_count);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect last result: ", g_shell64_redirect_last_result);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect last error: ", g_shell64_redirect_last_error);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect backend: ", g_shell64_redirect_backend);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect usb requested: ", g_shell64_redirect_usb_requested);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell redirect usb unavailable: ", g_shell64_redirect_usb_unavailable);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage present: ", xhci64_usb_storage_present());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage ready: ", xhci64_usb_storage_ready());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage block bytes: ", xhci64_usb_storage_block_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage last lba: ", xhci64_usb_storage_last_lba());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage error: ", xhci64_usb_storage_error());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage reads: ", xhci64_usb_storage_read_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage writes: ", xhci64_usb_storage_write_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage last completion: ", xhci64_usb_storage_last_completion());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat located: ", mmio64_usb_fat_located());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat error: ", mmio64_usb_fat_error());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat writes: ", mmio64_usb_fat_write_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat appends: ", mmio64_usb_fat_append_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat last bytes: ", mmio64_usb_fat_last_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat partition start: ", mmio64_usb_fat_last_partition_start());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat partition sectors: ", mmio64_usb_fat_last_partition_sectors());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb fat partition scheme: ", mmio64_usb_fat_partition_scheme());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last error: ", mmio64_nvme_fat_shell_read_last_error());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last bytes: ", mmio64_nvme_fat_shell_read_last_bytes());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "shell fat read last capacity: ", mmio64_nvme_fat_shell_read_last_capacity());
@@ -1649,6 +1872,15 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         shell64_write_decimal_field(console_capability_handle, owner_id, " windows ", display64_wm_window_created_count());
         shell64_write_decimal_field(console_capability_handle, owner_id, " cursor-visible ", display64_cursor_visible());
         shell64_write_decimal_field(console_capability_handle, owner_id, " product-chrome ", display64_gui_product_chrome_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " product-layout ", display64_product_layout_active());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " startup-minimized ", display64_product_startup_minimized_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " readiness-strip ", display64_gui_settings_readiness_strip_count());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " display-ready ", display64_product_display_ready());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " input-ready ", display64_product_input_ready());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " storage-ready ", display64_product_storage_ready());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " network-ready ", display64_product_network_ready());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " diagnostic-overlays-suppressed ",
+            display64_gui_input_diag_suppressed_count() + display64_gui_mouse_diag_suppressed_count());
         (void)shell64_write_hex32_line(
             console_capability_handle,
             owner_id,
@@ -1688,6 +1920,12 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "keyboard backend: ",
         shell64_keyboard_backend_label());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "keyboard left shift: ", input64_keyboard_left_shift());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "keyboard right shift: ", input64_keyboard_right_shift());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "keyboard caps lock: ", input64_keyboard_caps_lock());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "usb keyboard modifier: ", input64_usb_hid_last_modifier());
+#endif
     (void)shell64_write_status_line(
         console_capability_handle,
         owner_id,
@@ -1703,6 +1941,15 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse reports: ", xhci64_mouse_reports());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse bytes: ", xhci64_mouse_report_bytes());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci mouse report size: ", xhci64_mouse_report_size());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "usb mouse layout ready: ", input64_usb_hid_mouse_layout_ready());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse layout reports: ", input64_usb_hid_mouse_layout_reports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse layout fallbacks: ", input64_usb_hid_mouse_layout_fallbacks());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse layout bytes: ", input64_usb_hid_mouse_layout_report_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse buttons bit: ", input64_usb_hid_mouse_layout_buttons_offset());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse x bit: ", input64_usb_hid_mouse_layout_x_offset());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse y bit: ", input64_usb_hid_mouse_layout_y_offset());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb mouse wheel bit: ", input64_usb_hid_mouse_layout_wheel_offset());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slots disabled: ", xhci64_slots_disabled());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci slot disable failures: ", xhci64_slot_disable_failures());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci max slots: ", xhci64_max_slots_limit());
@@ -1749,6 +1996,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last interface protocol: ", xhci64_last_interface_protocol());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci last endpoint mps: ", xhci64_last_endpoint_max_packet());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci broad mouse probes: ", xhci64_broad_mouse_probe_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci vendor mouse candidates: ", xhci64_vendor_mouse_candidate_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci port probe attempts: ", xhci64_port_probe_attempts());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci port probe retry skips: ", xhci64_port_probe_retry_skips());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci first hid port: ", xhci64_first_hid_port());
@@ -1774,6 +2022,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks desktop probe: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_DESKTOP_PROBE));
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks virtio net init: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_VIRTIO_NET_INIT));
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot ticks pit to shell: ", boot_diag64_timing_ticks(BOOT_DIAG64_TIMING_PIT_TO_SHELL));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "boot timer wait spin budget: ", boot_diag64_timer_wait_spin_budget());
 #endif
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer found: ", i2c_hid64_pointer_found());
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -1790,11 +2039,39 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer reports: ", i2c_hid64_pointer_report_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer error: ", i2c_hid64_pointer_error());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c controllers: ", pci64_lpss_i2c_count());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c primary probe addresses: ", i2c_hid64_primary_probe_address_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer probe addresses: ", i2c_hid64_pointer_probe_address_count());
+#endif
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer candidates: ", pci64_lpss_i2c_pointer_candidate_count());
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary pci: ", pci64_lpss_i2c_address());
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary bar0: ", pci64_lpss_i2c_bar0());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary bar1: ", pci64_lpss_i2c_bar1());
+#endif
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary base low: ", pci64_lpss_i2c_base_low());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary base high: ", pci64_lpss_i2c_base_high());
+#endif
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary flags: ", pci64_lpss_i2c_mmio_flags());
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "i2c primary acpi resource needed: ",
+        ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second pci: ", pci64_lpss_i2c_second_address());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second bar0: ", pci64_lpss_i2c_second_bar0());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second bar1: ", pci64_lpss_i2c_second_bar1());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second base low: ", pci64_lpss_i2c_second_base_low());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second base high: ", pci64_lpss_i2c_second_base_high());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second flags: ", pci64_lpss_i2c_second_mmio_flags());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "i2c second acpi resource needed: ",
+        ((pci64_lpss_i2c_second_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+#endif
     if (pci64_lpss_i2c_pointer_candidate_count() != 0u)
     {
         (void)shell64_write_hex32_line(
@@ -1802,16 +2079,42 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
             owner_id,
             "i2c pointer0 pci: ",
             pci64_lpss_i2c_pointer_candidate_address(0u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 bar0: ",
+            pci64_lpss_i2c_pointer_candidate_bar0(0u));
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 bar1: ",
+            pci64_lpss_i2c_pointer_candidate_bar1(0u));
+#endif
         (void)shell64_write_hex32_line(
             console_capability_handle,
             owner_id,
             "i2c pointer0 base low: ",
             pci64_lpss_i2c_pointer_candidate_base_low(0u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_hex32_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 base high: ",
+            pci64_lpss_i2c_pointer_candidate_base_high(0u));
+#endif
         (void)shell64_write_hex32_line(
             console_capability_handle,
             owner_id,
             "i2c pointer0 flags: ",
             pci64_lpss_i2c_pointer_candidate_mmio_flags(0u));
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_yes_no_line(
+            console_capability_handle,
+            owner_id,
+            "i2c pointer0 acpi resource needed: ",
+            ((pci64_lpss_i2c_pointer_candidate_mmio_flags(0u) & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+#endif
     }
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse packets: ", input64_mouse_packet_count());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "mouse x: ", input64_mouse_x());
@@ -1833,6 +2136,21 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "pci/ecam status: ",
         (pci64_ecam_active() != 0u) ? "ECAM active" : "legacy/fallback");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi xsdt high: ", (u32)(pci64_acpi_xsdt() >> 32));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi xsdt low: ", (u32)(pci64_acpi_xsdt() & 0xFFFFFFFFull));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi fadt high: ", (u32)(pci64_acpi_fadt() >> 32));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi fadt low: ", (u32)(pci64_acpi_fadt() & 0xFFFFFFFFull));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "acpi fadt bytes: ", pci64_acpi_fadt_bytes());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi dsdt high: ", (u32)(pci64_acpi_dsdt() >> 32));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi dsdt low: ", (u32)(pci64_acpi_dsdt() & 0xFFFFFFFFull));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "acpi dsdt bytes: ", pci64_acpi_dsdt_bytes());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "acpi ssdt count: ", pci64_acpi_ssdt_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "acpi ssdt total bytes: ", pci64_acpi_ssdt_total_bytes());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi ssdt0 high: ", (u32)(pci64_acpi_ssdt0() >> 32));
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "acpi ssdt0 low: ", (u32)(pci64_acpi_ssdt0() & 0xFFFFFFFFull));
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "acpi ssdt0 bytes: ", pci64_acpi_ssdt0_bytes());
+#endif
     (void)shell64_write_decimal_line(
         console_capability_handle,
         owner_id,
@@ -2222,6 +2540,239 @@ static u32 shell64_print_hardware_validation_summary(u32 console_capability_hand
     (void)shell64_write_text(console_capability_handle, owner_id, "\n");
     return shell64_write_text(console_capability_handle, owner_id, "Use hwval full for raw counters and handoff evidence.\n");
 }
+
+static void shell64_refresh_hardware_registry(u32 owner_id)
+{
+    u32 hardware_capability =
+        capability64_grant_service(
+            SERVICE_ENDPOINT_CLASS_HARDWARE,
+            CAPABILITY64_RIGHT_QUERY,
+            owner_id);
+    if (hardware_capability != CAPABILITY64_INVALID_HANDLE)
+    {
+        (void)hardware64_registry_refresh(hardware_capability, owner_id);
+        (void)capability64_revoke(hardware_capability, owner_id);
+    }
+}
+
+static const char *shell64_hardware_class_name(u32 class_id)
+{
+    if (class_id == HARDWARE64_CLASS_PLATFORM) { return "platform"; }
+    if (class_id == HARDWARE64_CLASS_DISPLAY) { return "display"; }
+    if (class_id == HARDWARE64_CLASS_INPUT) { return "input"; }
+    if (class_id == HARDWARE64_CLASS_STORAGE) { return "storage"; }
+    if (class_id == HARDWARE64_CLASS_USB) { return "usb"; }
+    if (class_id == HARDWARE64_CLASS_NETWORK) { return "network"; }
+    return "unknown";
+}
+
+static const char *shell64_hardware_source_name(u32 source)
+{
+    if (source == 1u) { return "pci"; }
+    if (source == 2u) { return "uefi"; }
+    if (source == 3u) { return "ps2"; }
+    if (source == 4u) { return "xhci"; }
+    if (source == 5u) { return "i2c"; }
+    if (source == 6u) { return "nvme"; }
+    if (source == 7u) { return "network"; }
+    return "unknown";
+}
+
+static const char *shell64_hardware_binding_name(u32 binding)
+{
+    if (binding == HARDWARE64_BINDING_CANDIDATE) { return "candidate"; }
+    if (binding == HARDWARE64_BINDING_BOUND) { return "bound"; }
+    if (binding == HARDWARE64_BINDING_DEFERRED) { return "deferred"; }
+    if (binding == HARDWARE64_BINDING_UNSUPPORTED) { return "unsupported"; }
+    if (binding == HARDWARE64_BINDING_FAILED) { return "failed"; }
+    return "none";
+}
+
+static const char *shell64_hardware_device_name(u32 class_id, u32 subclass_id)
+{
+    if (class_id == HARDWARE64_CLASS_PLATFORM)
+    {
+        if (subclass_id == 1u) { return "pci-ecam"; }
+        if (subclass_id == 2u) { return "legacy-pci"; }
+    }
+    else if (class_id == HARDWARE64_CLASS_DISPLAY)
+    {
+        if (subclass_id == 1u) { return "gop-framebuffer"; }
+        if (subclass_id == 2u) { return "pci-display"; }
+    }
+    else if (class_id == HARDWARE64_CLASS_INPUT)
+    {
+        if (subclass_id == 1u) { return "keyboard"; }
+        if (subclass_id == 2u) { return "pointer"; }
+    }
+    else if (class_id == HARDWARE64_CLASS_STORAGE)
+    {
+        if (subclass_id == 1u) { return "nvme"; }
+        if (subclass_id == 2u) { return "ahci"; }
+    }
+    else if (class_id == HARDWARE64_CLASS_USB)
+    {
+        if (subclass_id == 1u) { return "uhci"; }
+        if (subclass_id == 2u) { return "ohci"; }
+        if (subclass_id == 3u) { return "ehci"; }
+        if (subclass_id == 4u) { return "xhci"; }
+    }
+    else if (class_id == HARDWARE64_CLASS_NETWORK)
+    {
+        if (subclass_id == 1u) { return "virtio-net"; }
+        if (subclass_id == 2u) { return "e1000e"; }
+    }
+
+    return "device";
+}
+
+static u32 shell64_print_hardware_devices(u32 console_capability_handle, u32 owner_id)
+{
+    u32 index;
+    u32 count;
+
+    shell64_refresh_hardware_registry(owner_id);
+    count = hardware64_registry_count();
+    (void)shell64_write_text(console_capability_handle, owner_id, "devices\n");
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "inventory: ", count);
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "bound: ", hardware64_registry_driver_bound_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "deferred: ", hardware64_registry_driver_deferred_count());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "failed: ", hardware64_registry_driver_failed_count());
+
+    for (index = 0u; index < count; ++index)
+    {
+        u32 class_id = hardware64_registry_record_class(index);
+        u32 subclass_id = hardware64_registry_record_subclass(index);
+        u32 binding = hardware64_registry_record_binding(index);
+        u32 source = hardware64_registry_record_source(index);
+
+        (void)shell64_write_text(console_capability_handle, owner_id, "  ");
+        shell64_write_decimal_field(console_capability_handle, owner_id, "", index);
+        (void)shell64_write_text(console_capability_handle, owner_id, " ");
+        (void)shell64_write_text(console_capability_handle, owner_id, shell64_hardware_class_name(class_id));
+        (void)shell64_write_text(console_capability_handle, owner_id, " ");
+        (void)shell64_write_text(console_capability_handle, owner_id, shell64_hardware_device_name(class_id, subclass_id));
+        (void)shell64_write_text(console_capability_handle, owner_id, " ");
+        (void)shell64_write_text(console_capability_handle, owner_id, shell64_hardware_source_name(source));
+        (void)shell64_write_text(console_capability_handle, owner_id, " ");
+        (void)shell64_write_text(console_capability_handle, owner_id, shell64_hardware_binding_name(binding));
+        shell64_write_hex32_field(console_capability_handle, owner_id, " addr ", hardware64_registry_record_address(index));
+        shell64_write_hex32_field(console_capability_handle, owner_id, " flags ", hardware64_registry_record_flags(index));
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-devices devices 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " inventory ", count);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " bound ", hardware64_registry_driver_bound_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " deferred ", hardware64_registry_driver_deferred_count());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " failed ", hardware64_registry_driver_failed_count());
+    shell64_write_hex32_field(console_capability_handle, owner_id, " token ", hardware64_registry_token());
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static const char *shell64_xhci_protocol_name(u32 protocol)
+{
+    if (protocol == 2u) { return "usb2"; }
+    if (protocol == 3u) { return "usb3"; }
+    return "usb";
+}
+
+static u32 shell64_print_hardware_ports(u32 console_capability_handle, u32 owner_id)
+{
+    u32 port_id;
+    u32 port_limit = xhci64_hcs_ports();
+    u32 printed = 0u;
+
+    if (port_limit > 32u)
+    {
+        port_limit = 32u;
+    }
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "ports\n");
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci present: ", xhci64_found());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci root ports: ", xhci64_hcs_ports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci connected: ", xhci64_connected_ports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci usb2 ports: ", xhci64_usb2_ports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci usb3 ports: ", xhci64_usb3_ports());
+
+    for (port_id = 1u; port_id <= port_limit; ++port_id)
+    {
+        u32 protocol = xhci64_port_protocol(port_id);
+        u32 portsc = xhci64_portsc_snapshot(port_id);
+        u32 connected = ((portsc & SHELL64_XHCI_PORTSC_CCS) != 0u) ? 1u : 0u;
+        if ((connected == 0u) && (protocol == 0u))
+        {
+            continue;
+        }
+
+        ++printed;
+        (void)shell64_write_text(console_capability_handle, owner_id, "  xhci port ");
+        shell64_write_decimal_field(console_capability_handle, owner_id, "", port_id);
+        (void)shell64_write_text(console_capability_handle, owner_id, " ");
+        (void)shell64_write_text(console_capability_handle, owner_id, shell64_xhci_protocol_name(protocol));
+        shell64_write_decimal_field(console_capability_handle, owner_id, " connected ", connected);
+        shell64_write_decimal_field(
+            console_capability_handle,
+            owner_id,
+            " enabled ",
+            ((portsc & SHELL64_XHCI_PORTSC_PED) != 0u) ? 1u : 0u);
+        shell64_write_decimal_field(console_capability_handle, owner_id, " pls ", xhci64_portsc_snapshot_pls(port_id));
+        shell64_write_decimal_field(
+            console_capability_handle,
+            owner_id,
+            " speed ",
+            (portsc >> SHELL64_XHCI_PORTSC_SPEED_SHIFT) & 0xFu);
+        shell64_write_hex32_field(console_capability_handle, owner_id, " raw ", portsc);
+        (void)shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 keyboard: ", input64_ps2_enabled());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "ps2 mouse: ", input64_mouse_enabled());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "i2c pointer: ", i2c_hid64_pointer_found());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer address: ", i2c_hid64_pointer_address());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c controllers: ", pci64_lpss_i2c_count());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary pci: ", pci64_lpss_i2c_address());
+    (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c primary flags: ", pci64_lpss_i2c_mmio_flags());
+    (void)shell64_write_yes_no_line(
+        console_capability_handle,
+        owner_id,
+        "i2c acpi resource needed: ",
+        ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-hw-ports ports 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-root-ports ", xhci64_hcs_ports());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-connected ", xhci64_connected_ports());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " port-lines ", printed);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-mouse-port ", xhci64_boot_mouse_port());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " i2c-pointer-address ", i2c_hid64_pointer_address());
+    shell64_write_decimal_field(
+        console_capability_handle,
+        owner_id,
+        " i2c-acpi-resource-needed ",
+        ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static u32 shell64_rescan_usb(u32 console_capability_handle, u32 owner_id)
+{
+    u32 result = xhci64_rescan_devices();
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "usbscan\n");
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "xhci present: ", xhci64_found());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci root ports: ", xhci64_hcs_ports());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "xhci connected: ", xhci64_connected_ports());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "usb storage present: ", xhci64_usb_storage_present());
+    (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "usb storage ready: ", xhci64_usb_storage_ready());
+    (void)shell64_write_decimal_line(console_capability_handle, owner_id, "usb storage error: ", xhci64_usb_storage_error());
+    (void)shell64_write_text(console_capability_handle, owner_id, "[x64] drs-usbscan usbscan 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " result ", result);
+    shell64_write_decimal_field(console_capability_handle, owner_id, " xhci-connected ", xhci64_connected_ports());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " storage-present ", xhci64_usb_storage_present());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " storage-ready ", xhci64_usb_storage_ready());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " storage-error ", xhci64_usb_storage_error());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " last-skip-port ", xhci64_last_skip_port());
+    shell64_write_decimal_field(console_capability_handle, owner_id, " last-skip-code ", xhci64_last_skip_code());
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
 #endif
 
 static u8 shell64_lower(u8 value)
@@ -2388,6 +2939,58 @@ static int shell64_token_equals(u32 token_start, u32 token_length, const char *t
     return 1;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_gui_app_id_from_token(u32 token_start, u32 token_length)
+{
+    if (shell64_token_equals(token_start, token_length, "terminal")
+        || shell64_token_equals(token_start, token_length, "term")
+        || shell64_token_equals(token_start, token_length, "shell"))
+    {
+        return DISPLAY64_DESKTOP_APP_TERMINAL;
+    }
+    if (shell64_token_equals(token_start, token_length, "files")
+        || shell64_token_equals(token_start, token_length, "file")
+        || shell64_token_equals(token_start, token_length, "fileman")
+        || shell64_token_equals(token_start, token_length, "file-manager"))
+    {
+        return DISPLAY64_DESKTOP_APP_FILES;
+    }
+    if (shell64_token_equals(token_start, token_length, "settings"))
+    {
+        return DISPLAY64_DESKTOP_APP_SETTINGS;
+    }
+    if (shell64_token_equals(token_start, token_length, "installer")
+        || shell64_token_equals(token_start, token_length, "install"))
+    {
+        return DISPLAY64_DESKTOP_APP_INSTALLER;
+    }
+    if (shell64_token_equals(token_start, token_length, "assistant"))
+    {
+        return DISPLAY64_DESKTOP_APP_ASSISTANT;
+    }
+    return 0u;
+}
+
+static u32 shell64_open_product_app(
+    u32 console_capability_handle,
+    u32 owner_id,
+    u32 token_start,
+    u32 token_length)
+{
+    u32 app_id = shell64_gui_app_id_from_token(token_start, token_length);
+
+    if (app_id == 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: open <terminal|files|settings|installer|assistant>\n");
+    }
+    if (display64_desktop_open_app_by_id(app_id) == 0u)
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "gui open unavailable\n");
+    }
+    return shell64_write_text(console_capability_handle, owner_id, "gui open ok\n");
+}
+#endif
+
 static u32 shell64_normalize_path(u32 token_start, u32 token_length, u8 *destination)
 {
     u32 source_index = token_start;
@@ -2411,6 +3014,50 @@ static u32 shell64_normalize_path(u32 token_start, u32 token_length, u8 *destina
 
     return token_length;
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static int shell64_token_has_usb_prefix(u32 token_start, u32 token_length)
+{
+    return (token_length >= 4u)
+        && (shell64_lower(g_shell64_line[token_start]) == (u8)'u')
+        && (shell64_lower(g_shell64_line[token_start + 1u]) == (u8)'s')
+        && (shell64_lower(g_shell64_line[token_start + 2u]) == (u8)'b')
+        && (g_shell64_line[token_start + 3u] == (u8)':');
+}
+
+static u32 shell64_normalize_redirect_path(u32 token_start, u32 token_length, u8 *destination)
+{
+    u32 source_index = token_start;
+    u32 copy_index;
+
+    g_shell64_redirect_backend = SHELL64_REDIRECT_BACKEND_FAT;
+    if (shell64_token_has_usb_prefix(token_start, token_length))
+    {
+        source_index += 4u;
+        token_length -= 4u;
+        g_shell64_redirect_backend = SHELL64_REDIRECT_BACKEND_USB;
+        ++g_shell64_redirect_usb_requested;
+    }
+
+    while ((token_length > 0u) && (g_shell64_line[source_index] == (u8)'/'))
+    {
+        ++source_index;
+        --token_length;
+    }
+
+    if ((token_length == 0u) || (token_length >= SHELL64_MAX_PATH_BYTES))
+    {
+        return 0u;
+    }
+
+    for (copy_index = 0u; copy_index < token_length; ++copy_index)
+    {
+        destination[copy_index] = shell64_upper(g_shell64_line[source_index + copy_index]);
+    }
+
+    return token_length;
+}
+#endif
 
 static int shell64_token_is_root(u32 token_start, u32 token_length)
 {
@@ -2628,28 +3275,76 @@ static u32 shell64_parse_redirection(
     return SHELL64_REDIRECT_NONE;
 }
 
-static void shell64_end_redirect(u32 owner_id)
+static u32 shell64_end_redirect(u32 owner_id)
 {
-    u32 commit_ok;
+    u32 ok = 1u;
 
-    if (g_shell64_redirect_path_length != 0u)
+    (void)shell64_redirect_flush(owner_id);
+    if ((g_shell64_redirect_path_length != 0u)
+        && (g_shell64_redirect_offset == 0u)
+        && (g_shell64_redirect_append == 0u)
+        && (g_shell64_redirect_committed == 0u))
     {
-        commit_ok = mmio64_nvme_fat_shell_write_file(
-            g_shell64_redirect_path,
-            g_shell64_redirect_path_length,
-            g_shell64_redirect_buffer,
-            g_shell64_redirect_offset,
-            owner_id);
-        if (commit_ok != 0u)
+        if (g_shell64_redirect_backend == SHELL64_REDIRECT_BACKEND_USB)
+        {
+            if (mmio64_usb_fat_shell_write_file(
+                    g_shell64_redirect_path,
+                    g_shell64_redirect_path_length,
+                    g_shell64_redirect_buffer,
+                    0u,
+                    owner_id) != 0u)
+            {
+                ++g_shell64_redirect_commit_count;
+                g_shell64_redirect_last_result = 0u;
+                g_shell64_redirect_committed = 1u;
+                g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
+            }
+            else
+            {
+                ++g_shell64_redirect_usb_unavailable;
+                ++g_shell64_redirect_denial_count;
+                g_shell64_redirect_last_result = 0u;
+                g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_USB_UNAVAILABLE;
+                ok = 0u;
+            }
+        }
+        else if (mmio64_nvme_fat_shell_write_file(
+                g_shell64_redirect_path,
+                g_shell64_redirect_path_length,
+                g_shell64_redirect_buffer,
+                0u,
+                owner_id) != 0u)
         {
             ++g_shell64_redirect_commit_count;
-            g_shell64_redirect_last_result = g_shell64_redirect_offset;
+            g_shell64_redirect_last_result = 0u;
+            g_shell64_redirect_committed = 1u;
+        }
+        else if (g_shell64_redirect_capability != FS64_INVALID_HANDLE)
+        {
+            ++g_shell64_redirect_commit_count;
+            g_shell64_redirect_last_result = 0u;
+            g_shell64_redirect_committed = 1u;
+            g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
         }
         else
         {
             ++g_shell64_redirect_denial_count;
             g_shell64_redirect_last_result = 0u;
+            g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_RAMFS;
+            ok = 0u;
         }
+    }
+    else if ((g_shell64_redirect_path_length != 0u)
+        && (g_shell64_redirect_offset != 0u))
+    {
+        if (g_shell64_redirect_last_error == SHELL64_REDIRECT_ERROR_NONE)
+        {
+            g_shell64_redirect_last_error =
+                (g_shell64_redirect_backend == SHELL64_REDIRECT_BACKEND_USB)
+                    ? SHELL64_REDIRECT_ERROR_USB_UNAVAILABLE
+                    : SHELL64_REDIRECT_ERROR_FAT;
+        }
+        ok = 0u;
     }
 
     if (g_shell64_redirect_capability != FS64_INVALID_HANDLE)
@@ -2661,9 +3356,12 @@ static void shell64_end_redirect(u32 owner_id)
     g_shell64_redirect_capability = FS64_INVALID_HANDLE;
     g_shell64_redirect_offset = 0u;
     g_shell64_redirect_append = 0u;
+    g_shell64_redirect_committed = 0u;
+    g_shell64_redirect_backend = SHELL64_REDIRECT_BACKEND_NONE;
     g_shell64_redirect_path_length = 0u;
     shell64_zero(g_shell64_redirect_path, sizeof(g_shell64_redirect_path));
     shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+    return ok;
 }
 
 static u32 shell64_begin_redirect(
@@ -2675,19 +3373,18 @@ static u32 shell64_begin_redirect(
 {
     u32 path_length;
     u32 file_capability;
-    u32 existing_bytes = 0u;
-    u32 existing_size = 0u;
 
     if (g_shell64_redirect_active != 0u)
     {
-        shell64_end_redirect(owner_id);
+        (void)shell64_end_redirect(owner_id);
     }
 
-    path_length = shell64_normalize_path(token_start, token_length, g_shell64_redirect_path);
-    if ((path_length == 0u) || shell64_token_is_root(token_start, token_length))
+    path_length = shell64_normalize_redirect_path(token_start, token_length, g_shell64_redirect_path);
+    if (path_length == 0u)
     {
         ++g_shell64_redirect_denial_count;
         g_shell64_redirect_last_result = FS64_INVALID_HANDLE;
+        g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_ARGUMENT;
         return 0u;
     }
 
@@ -2719,58 +3416,19 @@ static u32 shell64_begin_redirect(
     {
         ++g_shell64_redirect_denial_count;
         g_shell64_redirect_last_result = FS64_INVALID_HANDLE;
+        g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_RAMFS;
         return 0u;
     }
 
-    if (append != 0u)
-    {
-        if (mmio64_nvme_fat_shell_read_file_range(
-                g_shell64_redirect_path,
-                path_length,
-                0u,
-                g_shell64_redirect_buffer,
-                sizeof(g_shell64_redirect_buffer),
-                owner_id,
-                &existing_bytes,
-                &existing_size) != 0u)
-        {
-            if (existing_size > existing_bytes)
-            {
-                ++g_shell64_redirect_denial_count;
-                (void)fs64_revoke(file_capability, owner_id);
-                g_shell64_redirect_capability = FS64_INVALID_HANDLE;
-                g_shell64_redirect_path_length = 0u;
-                shell64_zero(g_shell64_redirect_path, sizeof(g_shell64_redirect_path));
-                shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
-                return 0u;
-            }
-            g_shell64_redirect_offset = existing_bytes;
-        }
-        else
-        {
-            existing_bytes = fs64_read_kernel(
-                file_capability,
-                g_shell64_redirect_buffer,
-                0u,
-                sizeof(g_shell64_redirect_buffer),
-                owner_id);
-            if (existing_bytes == FS64_INVALID_HANDLE)
-            {
-                existing_bytes = 0u;
-            }
-            g_shell64_redirect_offset = existing_bytes;
-        }
-    }
-    else
-    {
-        shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
-        g_shell64_redirect_offset = 0u;
-    }
+    shell64_zero(g_shell64_redirect_buffer, sizeof(g_shell64_redirect_buffer));
+    g_shell64_redirect_offset = 0u;
 
     g_shell64_redirect_capability = file_capability;
     g_shell64_redirect_path_length = path_length;
     g_shell64_redirect_active = 1u;
     g_shell64_redirect_append = (append != 0u) ? 1u : 0u;
+    g_shell64_redirect_committed = 0u;
+    g_shell64_redirect_last_error = SHELL64_REDIRECT_ERROR_NONE;
     ++g_shell64_redirect_count;
     if (append != 0u)
     {
@@ -2778,6 +3436,116 @@ static u32 shell64_begin_redirect(
     }
     g_shell64_redirect_last_result = 0u;
     return 1u;
+}
+
+static u32 shell64_write_redirect_failure(u32 console_capability_handle, u32 owner_id)
+{
+    if (g_shell64_redirect_last_error == SHELL64_REDIRECT_ERROR_USB_UNAVAILABLE)
+    {
+        return shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "redirect failed: USB storage export backend unavailable\n");
+    }
+    if (g_shell64_redirect_last_error == SHELL64_REDIRECT_ERROR_FAT)
+    {
+        return shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "redirect failed: writable FAT backend unavailable\n");
+    }
+    return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
+}
+
+static u32 shell64_export_usb_file(
+    u32 console_capability_handle,
+    u32 root_capability_handle,
+    u32 owner_id,
+    const char *usb_path,
+    u32 content_id)
+{
+    u32 path_length;
+
+    path_length = shell64_length(usb_path);
+    if ((path_length == 0u) || (path_length >= SHELL64_MAX_LINE_BYTES))
+    {
+        return 0u;
+    }
+
+    shell64_zero(g_shell64_line, sizeof(g_shell64_line));
+    shell64_copy(g_shell64_line, (const u8 *)usb_path, path_length);
+    if (shell64_begin_redirect(root_capability_handle, 0u, path_length, 0u, owner_id) == 0u)
+    {
+        (void)shell64_write_redirect_failure(console_capability_handle, owner_id);
+        return 0u;
+    }
+
+    if (content_id == 1u)
+    {
+        (void)shell64_print_hardware_validation_summary(console_capability_handle, owner_id);
+    }
+    else if (content_id == 2u)
+    {
+        (void)shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+    }
+    else if (content_id == 3u)
+    {
+        (void)shell64_print_hardware_devices(console_capability_handle, owner_id);
+    }
+    else
+    {
+        (void)shell64_print_hardware_ports(console_capability_handle, owner_id);
+    }
+
+    if (shell64_end_redirect(owner_id) == 0u)
+    {
+        (void)shell64_write_redirect_failure(console_capability_handle, owner_id);
+        return 0u;
+    }
+
+    (void)shell64_write_text(console_capability_handle, owner_id, "wrote ");
+    (void)shell64_write_text(console_capability_handle, owner_id, usb_path);
+    return shell64_write_text(console_capability_handle, owner_id, "\n");
+}
+
+static u32 shell64_export_hardware_bundle(
+    u32 console_capability_handle,
+    u32 root_capability_handle,
+    u32 owner_id)
+{
+    u32 ok = 1u;
+
+    (void)shell64_write_text(
+        console_capability_handle,
+        owner_id,
+        "exporthw: writing hardware evidence bundle to USB FAT32\n");
+
+    if (shell64_export_usb_file(console_capability_handle, root_capability_handle, owner_id, "USB:HWVAL.TXT", 1u) == 0u)
+    {
+        ok = 0u;
+    }
+    if (shell64_export_usb_file(console_capability_handle, root_capability_handle, owner_id, "USB:HWFULL.TXT", 2u) == 0u)
+    {
+        ok = 0u;
+    }
+    if (shell64_export_usb_file(console_capability_handle, root_capability_handle, owner_id, "USB:DEVICES.TXT", 3u) == 0u)
+    {
+        ok = 0u;
+    }
+    if (shell64_export_usb_file(console_capability_handle, root_capability_handle, owner_id, "USB:PORTS.TXT", 4u) == 0u)
+    {
+        ok = 0u;
+    }
+
+    if (ok == 0u)
+    {
+        return shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "exporthw failed: run hwval full to inspect usb storage/fat fields\n");
+    }
+
+    return shell64_write_text(console_capability_handle, owner_id, "exporthw ok\n");
 }
 #endif
 
@@ -2838,6 +3606,18 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: append <path> <text>\n");
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(token_start, token_length, "exporthw")
+        || shell64_token_equals(token_start, token_length, "hwexport")
+        || shell64_token_equals(token_start, token_length, "export"))
+    {
+        return shell64_write_text(
+            console_capability_handle,
+            owner_id,
+            "usage: exporthw | hwexport | export - write HWVAL.TXT HWFULL.TXT DEVICES.TXT PORTS.TXT to USB\n");
+    }
+#endif
+
     if (shell64_token_equals(token_start, token_length, "nethello"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "usage: nethello - native app-model socket client\n");
@@ -2867,14 +3647,40 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: net [curl example.com]\n");
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(token_start, token_length, "open"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: open <terminal|files|settings|installer|assistant>\n");
+    }
+#endif
+
     if (shell64_token_equals(token_start, token_length, "hwval"))
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full] - show read-only hardware validation status\n");
+        return shell64_write_text(console_capability_handle, owner_id, "usage: hwval [summary|full] or hwfull - show read-only hardware validation status\n");
 #else
         return shell64_write_text(console_capability_handle, owner_id, "usage: hwval - show read-only hardware validation status\n");
 #endif
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(token_start, token_length, "devices")
+        || shell64_token_equals(token_start, token_length, "dev")
+        || shell64_token_equals(token_start, token_length, "hwdevices")
+        || shell64_token_equals(token_start, token_length, "lsdev"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: devices | dev | hwdevices | lsdev - compact connected hardware and driver-binding inventory\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "ports")
+        || shell64_token_equals(token_start, token_length, "port"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: ports | port - compact USB/PS2/I2C port and pointer inventory\n");
+    }
+
+    if (shell64_token_equals(token_start, token_length, "usbscan"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: usbscan - rescan xHCI ports for newly attached USB input/storage devices\n");
+    }
+#endif
 
     if (shell64_token_equals(token_start, token_length, "pkginfo"))
     {
@@ -2935,13 +3741,30 @@ static int shell64_token_is_product_command(u32 token_start, u32 token_length)
 static int shell64_token_is_builtin_command(u32 token_start, u32 token_length)
 {
     return shell64_token_equals(token_start, token_length, "apps")
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || shell64_token_equals(token_start, token_length, "devices")
+        || shell64_token_equals(token_start, token_length, "dev")
+        || shell64_token_equals(token_start, token_length, "hwdevices")
+        || shell64_token_equals(token_start, token_length, "lsdev")
+        || shell64_token_equals(token_start, token_length, "export")
+        || shell64_token_equals(token_start, token_length, "exporthw")
+        || shell64_token_equals(token_start, token_length, "hwexport")
+        || shell64_token_equals(token_start, token_length, "hwfull")
+#endif
         || shell64_token_equals(token_start, token_length, "help")
         || shell64_token_equals(token_start, token_length, "hwval")
         || shell64_token_equals(token_start, token_length, "info")
         || shell64_token_equals(token_start, token_length, "linux")
         || shell64_token_equals(token_start, token_length, "lock")
         || shell64_token_equals(token_start, token_length, "net")
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || shell64_token_equals(token_start, token_length, "open")
+#endif
         || shell64_token_equals(token_start, token_length, "pkginfo")
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || shell64_token_equals(token_start, token_length, "ports")
+        || shell64_token_equals(token_start, token_length, "port")
+#endif
         || shell64_token_equals(token_start, token_length, "pwd");
 }
 
@@ -3911,7 +4734,10 @@ static u32 shell64_execute_line_inner(
         (void)shell64_write_builtins_line(console_capability_handle, owner_id);
         (void)shell64_write_text(console_capability_handle, owner_id, "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write\n");
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        (void)shell64_write_text(console_capability_handle, owner_id, "Redirection: command > path replaces file; command >> path appends built-in output\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Redirection: command > file writes a live shell file; command > USB:file writes real USB FAT when available\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Hardware export: exporthw, hwexport, or export writes HWVAL.TXT HWFULL.TXT DEVICES.TXT PORTS.TXT to USB\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Hardware: hwfull shows full validation; dev/devices/hwdevices/lsdev shows inventory; port/ports shows port/input mapping\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "GUI fallback: open terminal/files/settings/installer/assistant focuses Product windows from the keyboard\n");
 #endif
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET\n");
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -3962,9 +4788,38 @@ static u32 shell64_execute_line_inner(
         return shell64_write_text(console_capability_handle, owner_id, "usage: net [curl example.com]\n");
     }
 
-    if (shell64_token_equals(command_start, command_length, "hwval"))
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(command_start, command_length, "open"))
+    {
+        first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+        return shell64_open_product_app(
+            console_capability_handle,
+            owner_id,
+            first_start,
+            first_length);
+    }
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(command_start, command_length, "exporthw")
+        || shell64_token_equals(command_start, command_length, "hwexport")
+        || shell64_token_equals(command_start, command_length, "export"))
+    {
+        return shell64_export_hardware_bundle(console_capability_handle, root_capability_handle, owner_id);
+    }
+#endif
+
+    if (shell64_token_equals(command_start, command_length, "hwval")
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        || shell64_token_equals(command_start, command_length, "hwfull")
+#endif
+    )
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if (shell64_token_equals(command_start, command_length, "hwfull"))
+        {
+            return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
+        }
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
         if (first_length == 0u)
         {
@@ -3983,6 +4838,27 @@ static u32 shell64_execute_line_inner(
         return shell64_print_hardware_validation_status(console_capability_handle, owner_id);
 #endif
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(command_start, command_length, "devices")
+        || shell64_token_equals(command_start, command_length, "dev")
+        || shell64_token_equals(command_start, command_length, "hwdevices")
+        || shell64_token_equals(command_start, command_length, "lsdev"))
+    {
+        return shell64_print_hardware_devices(console_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "ports")
+        || shell64_token_equals(command_start, command_length, "port"))
+    {
+        return shell64_print_hardware_ports(console_capability_handle, owner_id);
+    }
+
+    if (shell64_token_equals(command_start, command_length, "usbscan"))
+    {
+        return shell64_rescan_usb(console_capability_handle, owner_id);
+    }
+#endif
 
     if (shell64_token_equals(command_start, command_length, "pkginfo"))
     {
@@ -4351,7 +5227,7 @@ u32 shell64_execute_line(
                 redirect_append,
                 owner_id) == 0u)
         {
-            return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
+            return shell64_write_redirect_failure(console_capability_handle, owner_id);
         }
         redirect_started = 1u;
         if (redirect_linux != 0u)
@@ -4362,9 +5238,9 @@ u32 shell64_execute_line(
                     g_shell64_redirect_buffer + g_shell64_redirect_offset,
                     SHELL64_REDIRECT_BUFFER_BYTES - g_shell64_redirect_offset) == 0u)
             {
-                shell64_end_redirect(owner_id);
+                (void)shell64_end_redirect(owner_id);
                 ++g_shell64_redirect_denial_count;
-                return shell64_write_text(console_capability_handle, owner_id, "redirect failed\n");
+                return shell64_write_redirect_failure(console_capability_handle, owner_id);
             }
             capture_started = 1u;
         }
@@ -4407,7 +5283,10 @@ u32 shell64_execute_line(
     }
     if (redirect_started != 0u)
     {
-        shell64_end_redirect(owner_id);
+        if (shell64_end_redirect(owner_id) == 0u)
+        {
+            return shell64_write_redirect_failure(console_capability_handle, owner_id);
+        }
     }
 #endif
 

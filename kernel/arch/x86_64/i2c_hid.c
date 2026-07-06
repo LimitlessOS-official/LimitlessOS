@@ -100,8 +100,8 @@ u32 i2c_hid64_pointer_error(void)
 #define I2C_DW_INTR_TX_ABRT 0x00000040u
 #define I2C_DW_COMP_TYPE_VALUE 0x44570140u
 
-#define I2C_HID64_PRIMARY_ADDRESS_COUNT 2u
-#define I2C_HID64_POINTER_ADDRESS_COUNT 4u
+#define I2C_HID64_PRIMARY_ADDRESS_COUNT 8u
+#define I2C_HID64_POINTER_ADDRESS_COUNT 16u
 #define I2C_HID64_DESCRIPTOR_REGISTER_COUNT 2u
 #define I2C_HID64_DESCRIPTOR_BYTES 30u
 #define I2C_HID64_DESCRIPTOR_MIN_LENGTH 30u
@@ -116,9 +116,12 @@ u32 i2c_hid64_pointer_error(void)
 #define I2C_HID64_POINTER_KIND_MOUSE 1u
 #define I2C_HID64_POINTER_KIND_TOUCHPAD 2u
 
-static const u8 g_i2c_hid64_primary_addresses[I2C_HID64_PRIMARY_ADDRESS_COUNT] = { 0x15u, 0x2Cu };
+static const u8 g_i2c_hid64_primary_addresses[I2C_HID64_PRIMARY_ADDRESS_COUNT] = {
+    0x15u, 0x2Cu, 0x10u, 0x11u, 0x2Du, 0x38u, 0x3Au, 0x40u
+};
 static const u8 g_i2c_hid64_pointer_addresses[I2C_HID64_POINTER_ADDRESS_COUNT] = {
-    0x15u, 0x2Cu, 0x35u, 0x38u
+    0x10u, 0x11u, 0x12u, 0x13u, 0x14u, 0x15u, 0x18u, 0x1Au,
+    0x2Cu, 0x2Du, 0x35u, 0x38u, 0x3Au, 0x40u, 0x41u, 0x5Du
 };
 static const u16 g_i2c_hid64_descriptor_registers[I2C_HID64_DESCRIPTOR_REGISTER_COUNT] = { 0x0001u, 0x0000u };
 
@@ -1507,6 +1510,16 @@ u32 i2c_hid64_error(void)
 u32 i2c_hid64_pointer_found(void)
 {
     return g_i2c_hid64_pointer_found;
+}
+
+u32 i2c_hid64_primary_probe_address_count(void)
+{
+    return I2C_HID64_PRIMARY_ADDRESS_COUNT;
+}
+
+u32 i2c_hid64_pointer_probe_address_count(void)
+{
+    return I2C_HID64_POINTER_ADDRESS_COUNT;
 }
 
 u32 i2c_hid64_pointer_kind(void)

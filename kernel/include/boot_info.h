@@ -19,10 +19,14 @@
 #define LIMITLESS_BOOT_ACPI_FLAG_LAPIC 0x00000010u
 #define LIMITLESS_BOOT_ACPI_FLAG_IOAPIC 0x00000020u
 #define LIMITLESS_BOOT_ACPI_FLAG_APIC_OVERRIDES 0x00000040u
+#define LIMITLESS_BOOT_ACPI_FLAG_FADT 0x00000080u
+#define LIMITLESS_BOOT_ACPI_FLAG_DSDT 0x00000100u
+#define LIMITLESS_BOOT_ACPI_FLAG_SSDT 0x00000200u
 
 #define LIMITLESS_BOOT_FRAMEBUFFER_FORMAT_RGB 0u
 #define LIMITLESS_BOOT_FRAMEBUFFER_FORMAT_BGR 1u
 #define LIMITLESS_BOOT_MEDIA_PATH_BYTES 64u
+#define LIMITLESS_BOOT_ACPI_SSDT_SLOTS 4u
 
 struct boot_info
 {
@@ -65,6 +69,15 @@ struct boot_info
     u32 apic_interrupt_override_source[16];
     u32 apic_interrupt_override_gsi[16];
     u32 apic_interrupt_override_flags[16];
+    u64 acpi_xsdt;
+    u64 acpi_fadt;
+    u32 acpi_fadt_bytes;
+    u32 acpi_dsdt_bytes;
+    u64 acpi_dsdt;
+    u32 acpi_ssdt_count;
+    u32 acpi_ssdt_total_bytes;
+    u64 acpi_ssdt[LIMITLESS_BOOT_ACPI_SSDT_SLOTS];
+    u32 acpi_ssdt_bytes[LIMITLESS_BOOT_ACPI_SSDT_SLOTS];
     u64 boot_media_app_base;
     u32 boot_media_app_bytes;
     u32 boot_media_app_token;

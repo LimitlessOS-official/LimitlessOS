@@ -20,5 +20,6 @@
 #define BOOT_DIAG64_TIMING_COUNT 14u
 
 u32 boot_diag64_timing_ticks(u32 index);
+u32 boot_diag64_timer_wait_spin_budget(void);
 
 #endif

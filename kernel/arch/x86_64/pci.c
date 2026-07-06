@@ -278,6 +278,17 @@ static u32 g_ecam_bus_end = 0u;
 static u32 g_ecam_active = 0u;
 static u32 g_ecam_fallback_io = 0u;
 static u32 g_ecam_ahci_found = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u64 g_acpi_xsdt = 0ull;
+static u64 g_acpi_fadt = 0ull;
+static u64 g_acpi_dsdt = 0ull;
+static u32 g_acpi_fadt_bytes = 0u;
+static u32 g_acpi_dsdt_bytes = 0u;
+static u32 g_acpi_ssdt_count = 0u;
+static u32 g_acpi_ssdt_total_bytes = 0u;
+static u64 g_acpi_ssdt0 = 0ull;
+static u32 g_acpi_ssdt0_bytes = 0u;
+#endif
 static u32 g_ecam_mapped_bus = PCI_ECAM_INVALID_BUS;
 static u32 g_ecam_map_success_count = 0u;
 static u32 g_ecam_map_failed = 0u;
@@ -1737,6 +1748,10 @@ static void pci64_build_lpss_i2c_mmio_plan(
             {
                 flags |= PCI64_LPSS_I2C_MMIO_FLAG_BASE_NONZERO;
             }
+            else
+            {
+                flags |= PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED;
+            }
 
             if ((base_low & 0xFFFu) == 0u)
             {
@@ -1962,6 +1977,17 @@ static void pci64_configure_ecam(const struct boot_info *boot_info)
          boot_info->pci_ecam_base != 0ull &&
          boot_info->pci_ecam_segment == 0u &&
          boot_info->pci_ecam_bus_end >= boot_info->pci_ecam_bus_start) ? 1u : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    g_acpi_xsdt = boot_info->acpi_xsdt;
+    g_acpi_fadt = boot_info->acpi_fadt;
+    g_acpi_dsdt = boot_info->acpi_dsdt;
+    g_acpi_fadt_bytes = boot_info->acpi_fadt_bytes;
+    g_acpi_dsdt_bytes = boot_info->acpi_dsdt_bytes;
+    g_acpi_ssdt_count = boot_info->acpi_ssdt_count;
+    g_acpi_ssdt_total_bytes = boot_info->acpi_ssdt_total_bytes;
+    g_acpi_ssdt0 = boot_info->acpi_ssdt[0u];
+    g_acpi_ssdt0_bytes = boot_info->acpi_ssdt_bytes[0u];
+#endif
 
     if (g_ecam_mcfg_found != 0u)
     {
@@ -2790,6 +2816,53 @@ u32 pci64_ecam_ahci_found(void)
     return g_ecam_ahci_found;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u64 pci64_acpi_xsdt(void)
+{
+    return g_acpi_xsdt;
+}
+
+u64 pci64_acpi_fadt(void)
+{
+    return g_acpi_fadt;
+}
+
+u32 pci64_acpi_fadt_bytes(void)
+{
+    return g_acpi_fadt_bytes;
+}
+
+u64 pci64_acpi_dsdt(void)
+{
+    return g_acpi_dsdt;
+}
+
+u32 pci64_acpi_dsdt_bytes(void)
+{
+    return g_acpi_dsdt_bytes;
+}
+
+u32 pci64_acpi_ssdt_count(void)
+{
+    return g_acpi_ssdt_count;
+}
+
+u32 pci64_acpi_ssdt_total_bytes(void)
+{
+    return g_acpi_ssdt_total_bytes;
+}
+
+u64 pci64_acpi_ssdt0(void)
+{
+    return g_acpi_ssdt0;
+}
+
+u32 pci64_acpi_ssdt0_bytes(void)
+{
+    return g_acpi_ssdt0_bytes;
+}
+#endif
+
 u32 pci64_lpss_i2c_hid_found(void)
 {
     return (g_lpss_i2c_count != 0u) ? 1u : 0u;
@@ -2910,6 +2983,20 @@ u32 pci64_lpss_i2c_pointer_candidate_address(u32 index)
     return (index < g_lpss_i2c_pointer_candidate_count)
         ? g_lpss_i2c_pointer_candidate_address[index]
         : 0xFFFFFFFFu;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_bar0(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_bar0[index]
+        : 0u;
+}
+
+u32 pci64_lpss_i2c_pointer_candidate_bar1(u32 index)
+{
+    return (index < g_lpss_i2c_pointer_candidate_count)
+        ? g_lpss_i2c_pointer_candidate_bar1[index]
+        : 0u;
 }
 
 u32 pci64_lpss_i2c_pointer_candidate_base_low(u32 index)

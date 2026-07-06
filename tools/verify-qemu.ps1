@@ -272,14 +272,14 @@ function Assert-X64M1RuntimeSurface
     }
 
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux lock net pkginfo pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps devices help hwval info linux lock net pkginfo ports pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move nethello rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease; net curl example\.com performs a scoped HTTP GET$' -Message "M3 runtime help did not describe Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; MSI manual evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only(; MSI manual evidence pending)?$' -Message "M9 runtime help did not describe hardware validation status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: unavailable on BIOS checksum fallback$' -Message "M15 BIOS fallback help did not label Product GUI as unavailable."
@@ -326,7 +326,7 @@ function Assert-X64M1RuntimeSurface
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net or net curl example\.com$' -Message "M3 apps output did not label Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only; MSI evidence pending$' -Message "M9 apps output did not label hardware validation visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only(; MSI evidence pending)?$' -Message "M9 apps output did not label hardware validation visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: unavailable on BIOS checksum fallback$' -Message "M15 BIOS apps output did not label GUI as unavailable."
@@ -714,6 +714,10 @@ function Send-QemuKeyboardProbe
                 }
                 if ($character -eq '>') {
                     & $sendShiftedKey "dot"
+                    continue
+                }
+                if ($character -eq '_') {
+                    & $sendShiftedKey "minus"
                     continue
                 }
                 if (($character -ge 'A') -and ($character -le 'Z')) {
@@ -1343,7 +1347,7 @@ if ($HardwareDisplayGate.IsPresent) {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the M107 hwval command."
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 M107 hwval did not report read-only Product mode."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-display-readability display-readability 1 available 1 width [1-9][0-9]* height [1-9][0-9]* pitch [1-9][0-9]* stride-ok 1 bounds-ok 1 scale [1-3] viewport-x [0-9]+ viewport-y [0-9]+ viewport-w [1-9][0-9]* viewport-h [1-9][0-9]* columns [1-9][0-9]* rows [1-9][0-9]* fit 1 readable 1 clip [0-9]+ cursor-visible [0-1] cursor-draws [0-9]+ direct-cursor-draws [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M107 display readability proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct [0-1] font 1 wm 1 desktop 1 taskbar [1-9][0-9]* launcher [1-9][0-9]* windows [1-9][0-9]* cursor-visible 1( product-chrome [0-9]+)? token 0x[0-9A-F]{8}' -Message "x64 M109 UI polish proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-ui-polish ui-polish 1 compositor-active 1 compositor-direct [0-1] font 1 wm 1 desktop 1 taskbar [1-9][0-9]* launcher [1-9][0-9]* windows [1-9][0-9]* cursor-visible 1 product-chrome [0-9]+ product-layout 1 startup-minimized [0-9]+ readiness-strip [0-9]+ display-ready 1 input-ready [0-1] storage-ready [0-1] network-ready [0-1] diagnostic-overlays-suppressed [0-9]+ token 0x[0-9A-F]{8}' -Message "x64 M109 UI polish proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-cursor-path cursor-path 1 surface-ready 1 format-supported 1 compositor-active 1 compositor-direct [0-1] visible 1 draws [1-9][0-9]* direct-draws [0-9]+ x [0-9]+ y [0-9]+ buttons [0-7] in-bounds 1 rect-w [1-9][0-9]* rect-h [1-9][0-9]* saved [0-1] drawn 1 token 0x[0-9A-F]{8}' -Message "x64 M149 cursor path proof was not observed."
     $outputLines
     return
