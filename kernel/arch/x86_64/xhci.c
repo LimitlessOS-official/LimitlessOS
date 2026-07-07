@@ -97,6 +97,7 @@
 #define XHCI64_TRB_TYPE_COMMAND_COMPLETION 33u
 
 #define XHCI64_COMPLETION_SUCCESS 1u
+#define XHCI64_COMPLETION_USB_TRANSACTION_ERROR 4u
 #define XHCI64_COMPLETION_SHORT_PACKET 13u
 
 #define XHCI64_EP_TYPE_BULK_OUT 2u
@@ -141,6 +142,7 @@
 #define XHCI64_LEGACY_HANDOFF_POLL_LIMIT 1000000u
 #define XHCI64_DELAY_1MS_POLLS 25000u
 #define XHCI64_CONNECTION_RETRIES 10u
+#define XHCI64_ADDRESS_RECOVERY_RETRIES 2u
 #define XHCI64_PORT_RESET_WAIT_MS 100u
 #define XHCI64_DEVICE_SETTLE_MS 50u
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -1658,10 +1660,21 @@ static u32 xhci64_disable_slot(u32 slot_id)
 #define XHCI64_CLEANUP_FAILED_SLOT(slot_id)
 #endif
 
-static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
+static u32 xhci64_address_device(u32 *slot_id_inout, u32 port_id, u32 *speed_inout)
 {
     struct xhci64_event event;
-    u32 max_packet = xhci64_initial_mps_for_speed(speed);
+    u32 slot_id;
+    u32 speed;
+    u32 max_packet;
+    u32 attempt;
+
+    if ((slot_id_inout == 0) || (speed_inout == 0))
+    {
+        return 0u;
+    }
+
+    slot_id = *slot_id_inout;
+    speed = *speed_inout;
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     g_xhci_last_address_slot = slot_id;
@@ -1678,60 +1691,87 @@ static u32 xhci64_address_device(u32 slot_id, u32 port_id, u32 speed)
     g_xhci_post_address_portsc_pls = 0u;
 #endif
 
-    xhci64_zero_memory(g_xhci_input_context, sizeof(g_xhci_input_context));
-    xhci64_zero_memory(g_xhci_device_contexts[slot_id], XHCI64_PAGE_BYTES);
-    xhci64_reset_ring(g_xhci_ep0_ring, XHCI64_RING_TRBS, &g_xhci_ep0_enqueue, &g_xhci_ep0_cycle);
-    g_xhci_dcbaa[slot_id] = xhci64_virtual_to_physical(g_xhci_device_contexts[slot_id]);
-    xhci64_context_write(g_xhci_input_context, 0u, 1u, 0x3u);
-    xhci64_prepare_slot_context(g_xhci_input_context, XHCI64_DCI_EP0, port_id, speed);
-    xhci64_prepare_ep_context(
-        g_xhci_input_context,
-        XHCI64_DCI_EP0,
-        XHCI64_EP_TYPE_CONTROL,
-        max_packet,
-        0u,
-        xhci64_virtual_to_physical(g_xhci_ep0_ring),
-        8u);
+    for (attempt = 0u; attempt <= XHCI64_ADDRESS_RECOVERY_RETRIES; ++attempt)
+    {
+        max_packet = xhci64_initial_mps_for_speed(speed);
+
+        xhci64_zero_memory(g_xhci_input_context, sizeof(g_xhci_input_context));
+        xhci64_zero_memory(g_xhci_device_contexts[slot_id], XHCI64_PAGE_BYTES);
+        xhci64_reset_ring(g_xhci_ep0_ring, XHCI64_RING_TRBS, &g_xhci_ep0_enqueue, &g_xhci_ep0_cycle);
+        g_xhci_dcbaa[slot_id] = xhci64_virtual_to_physical(g_xhci_device_contexts[slot_id]);
+        xhci64_context_write(g_xhci_input_context, 0u, 1u, 0x3u);
+        xhci64_prepare_slot_context(g_xhci_input_context, XHCI64_DCI_EP0, port_id, speed);
+        xhci64_prepare_ep_context(
+            g_xhci_input_context,
+            XHCI64_DCI_EP0,
+            XHCI64_EP_TYPE_CONTROL,
+            max_packet,
+            0u,
+            xhci64_virtual_to_physical(g_xhci_ep0_ring),
+            8u);
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    g_xhci_pre_address_portsc = xhci64_read_portsc_snapshot(port_id);
-    g_xhci_pre_address_portsc_pls = xhci64_portsc_pls(g_xhci_pre_address_portsc);
+        g_xhci_last_address_slot = slot_id;
+        g_xhci_last_address_speed = speed;
+        g_xhci_pre_address_portsc = xhci64_read_portsc_snapshot(port_id);
+        g_xhci_pre_address_portsc_pls = xhci64_portsc_pls(g_xhci_pre_address_portsc);
 #endif
 
-    if (xhci64_submit_command(
-            xhci64_virtual_to_physical(g_xhci_input_context),
-            (XHCI64_TRB_TYPE_ADDRESS_DEVICE << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
-            &event) == 0u)
-    {
+        if (xhci64_submit_command(
+                xhci64_virtual_to_physical(g_xhci_input_context),
+                (XHCI64_TRB_TYPE_ADDRESS_DEVICE << XHCI64_TRB_TYPE_SHIFT) | (slot_id << 24),
+                &event) == 0u)
+        {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            g_xhci_post_address_portsc = xhci64_read_portsc_snapshot(port_id);
+            g_xhci_post_address_portsc_pls = xhci64_portsc_pls(g_xhci_post_address_portsc);
+            ++g_xhci_address_failure_count;
+#endif
+            return 0u;
+        }
+
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
         g_xhci_post_address_portsc = xhci64_read_portsc_snapshot(port_id);
         g_xhci_post_address_portsc_pls = xhci64_portsc_pls(g_xhci_post_address_portsc);
-        ++g_xhci_address_failure_count;
-#endif
-        return 0u;
-    }
-
-#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    g_xhci_post_address_portsc = xhci64_read_portsc_snapshot(port_id);
-    g_xhci_post_address_portsc_pls = xhci64_portsc_pls(g_xhci_post_address_portsc);
-    g_xhci_last_address_completion = xhci64_completion_code(&event);
-    if (g_xhci_last_address_completion != XHCI64_COMPLETION_SUCCESS)
+        g_xhci_last_address_completion = xhci64_completion_code(&event);
+        if (g_xhci_last_address_completion == XHCI64_COMPLETION_SUCCESS)
 #else
-    if (xhci64_completion_code(&event) != XHCI64_COMPLETION_SUCCESS)
+        if (xhci64_completion_code(&event) == XHCI64_COMPLETION_SUCCESS)
 #endif
-    {
+        {
+            *slot_id_inout = slot_id;
+            *speed_inout = speed;
+            g_xhci_addressed = 1u;
+            return 1u;
+        }
+
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
         g_xhci_last_address_event_dw0 = (u32)(event.parameter & 0xFFFFFFFFull);
         g_xhci_last_address_event_dw1 = (u32)(event.parameter >> 32);
         g_xhci_last_address_event_dw2 = event.status;
         g_xhci_last_address_event_dw3 = event.control;
         ++g_xhci_address_failure_count;
+
+        if ((g_xhci_last_address_completion == XHCI64_COMPLETION_USB_TRANSACTION_ERROR)
+            && (attempt < XHCI64_ADDRESS_RECOVERY_RETRIES))
+        {
+            (void)xhci64_disable_slot(slot_id);
+            if (xhci64_reset_port(port_id, &speed) == 0u)
+            {
+                return 0u;
+            }
+            if (xhci64_enable_slot(&slot_id) == 0u)
+            {
+                return 0u;
+            }
+            continue;
+        }
 #endif
+
         return 0u;
     }
 
-    g_xhci_addressed = 1u;
-    return 1u;
+    return 0u;
 }
 
 static u32 xhci64_control_transfer(
@@ -2856,7 +2896,7 @@ static u32 xhci64_try_enumerate_port(u32 port_id)
         return 0u;
     }
 
-    if (xhci64_address_device(slot_id, port_id, speed) == 0u)
+    if (xhci64_address_device(&slot_id, port_id, &speed) == 0u)
     {
         xhci64_log_port_skip(port_id, 22u);
         XHCI64_CLEANUP_FAILED_SLOT(slot_id);
