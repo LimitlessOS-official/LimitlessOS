@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager edit status wording
+
+- Task: Visual/UX - replace the File Manager sidebar edit-mode status `Type, Enter` with a clearer path-entry cue while preserving the existing edit-mode and Enter-apply behavior.
+- Commit: `e079b687f9de5a1af1606adbac38d1ff66496ed3`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager sidebar now shows `Type path` instead of `Type, Enter` when edit mode is waiting for path input, matching the existing edit preview title and avoiding a terse internal-style instruction. This changes only visible copy: the edit buffer, Enter handling, NVMe FAT authority, mutation denials, and storage behavior are unchanged. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the File Manager surface but does not enter edit mode, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager edit helper wording
 
 - Task: Visual/UX - replace the File Manager edit-mode helper's technical `Enter commits` wording with a clearer action instruction while preserving the existing edit commit behavior.
