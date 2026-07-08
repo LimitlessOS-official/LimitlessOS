@@ -1124,8 +1124,8 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud token storage: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud encrypted transport: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud sync: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "cloud upload/download: denied\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "cloud auto-upload/download: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "cloud transfers: denied\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "cloud automatic transfers: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud AI access: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud app direct authority: denied\n");
     installer_ux64_init();

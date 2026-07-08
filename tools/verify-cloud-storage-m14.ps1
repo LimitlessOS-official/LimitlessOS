@@ -102,10 +102,10 @@ Assert-Line -Lines $outputLines -Pattern '^cloud storage mode: policy only; sync
 Assert-Line -Lines $outputLines -Pattern '^cloud token storage: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report token storage denial."
 Assert-Line -Lines $outputLines -Pattern '^cloud encrypted transport: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report encrypted transport unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud sync: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report cloud sync unavailable."
-Assert-Line -Lines $outputLines -Pattern '^cloud upload/download: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report upload/download denial."
-Assert-Line -Lines $outputLines -Pattern '^cloud auto-upload/download: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report automatic upload/download unavailable."
+Assert-Line -Lines $outputLines -Pattern '^cloud transfers: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report transfer denial."
+Assert-Line -Lines $outputLines -Pattern '^cloud automatic transfers: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report automatic transfers unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud AI access: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report AI cloud access unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud app direct authority: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report app direct cloud authority denied."
-Assert-Line -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret(/ai)?$' -Message "M14 cloud storage verifier failed: pkginfo did not report no ambient cloud/filesystem/network/identity/secret authority."
+Assert-Line -Lines $outputLines -Pattern '^authority: no ambient install, update, network, cloud, file, identity, secret, or AI access$' -Message "M14 cloud storage verifier failed: pkginfo did not report no ambient cloud, file, network, identity, or secret authority."
 
 Write-Host "M14 cloud storage verifier passed for $Architecture $BootMedia ($BuildProfile profile)."
