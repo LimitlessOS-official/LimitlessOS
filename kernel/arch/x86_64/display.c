@@ -6246,7 +6246,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
     }
     else if (g_display_fileman_last_delete_status == 3u)
     {
-        (void)display64_draw_font_text(body_x + 16u, body_y + 300u, "Click again", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 16u, body_y + 300u, "Confirm delete", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
     }
     if (g_display_fileman_last_mutation_status == 1u)
     {
