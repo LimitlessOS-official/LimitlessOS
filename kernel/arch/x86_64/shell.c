@@ -1110,7 +1110,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "identity token storage: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "identity remote login: unavailable\n");
     account_association64_init();
-    (void)shell64_write_text(console_capability_handle, owner_id, "account association mode: Mode B status only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "account association mode: status only\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "local association: active/offline-capable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "personal association: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "enterprise association: unavailable\n");
