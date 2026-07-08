@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps installer UX status wording
+
+- Task: Visual/UX - replace the `apps` output Installer UX slash-style `launcher/Settings; dry-run planning only; writes disabled` wording with clearer launcher and Settings wording while preserving the same dry-run planning and disabled-write behavior.
+- Commit: `e65591f1d0c5fb89cd64f6f915d25f18dc57c286`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now says `Installer UX: launcher and Settings show dry-run planning; writes disabled` instead of `Installer UX: launcher/Settings; dry-run planning only; writes disabled`, keeping the same launcher visibility, Settings visibility, dry-run installer planning, and disabled-write behavior. The M1 Product source assertion, UEFI QEMU runtime assertion, and dedicated M15 verifier expectations were updated so the gates prove the revised `apps` output and the already-polished help wording rather than stale copy. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps AI assistant status wording
 
 - Task: Visual/UX - replace the `apps` output AI Assistant slash-style `launcher/Settings/pkginfo` wording with clearer launcher, Settings, and pkginfo wording while preserving the same consent-scoped action templates and inference-unavailable behavior.
