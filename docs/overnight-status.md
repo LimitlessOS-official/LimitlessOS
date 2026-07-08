@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps installer dry-run wording
+
+- Task: Visual/UX - replace the `apps` status line `Installer dry-run: safe tooling only; writes disabled` with `Installer dry-run: validation tools only; writes disabled` while preserving the same dry-run installer and disabled-write behavior.
+- Commit: `3a9e2e6cc71c17868181f45afbbd8365a4bf8b70`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now reports `Installer dry-run: validation tools only; writes disabled` instead of `Installer dry-run: safe tooling only; writes disabled`, keeping the same installer dry-run boundary, validation-only status surface, disabled write authority, and no-real-install behavior. The M1 source gate and UEFI QEMU runtime assertion now require the revised visible line so the vaguer wording cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should clearly communicate state; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps identity status wording
 
 - Task: Visual/UX - replace the `apps` status line `Identity/account/vault/transport status: Settings; local only; no secret storage` slash label with `Identity, account, vault, and transport status: Settings; local only; no secret storage` while preserving the same Settings-visible identity/account/vault/transport status behavior.
