@@ -4461,7 +4461,7 @@ static u32 shell64_list_apps(
     (void)shell64_write_apps_gui_line(console_capability_handle, owner_id);
     (void)shell64_write_text(console_capability_handle, owner_id, "Service/session status: Settings\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Identity/account/vault/transport status: Settings; local only; no secret storage\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud storage status: Settings/File Manager; unavailable/planned; no sync\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Cloud storage status: Settings and File Manager; policy only; sync unavailable\n");
     (void)shell64_write_apps_installer_line(console_capability_handle, owner_id);
     (void)shell64_write_apps_ai_line(console_capability_handle, owner_id);
     if (shell64_login_available() != 0u)

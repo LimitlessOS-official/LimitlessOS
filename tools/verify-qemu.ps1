@@ -336,7 +336,7 @@ function Assert-X64M1RuntimeSurface
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/account/vault/transport status: Settings; local only; no secret storage$' -Message "M13 apps output did not label identity/account/vault/transport visibility."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage status: Settings/File Manager; unavailable/planned; no sync$' -Message "M14 apps output did not label cloud storage status visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage status: Settings and File Manager; policy only; sync unavailable$' -Message "M14 apps output did not label cloud storage status visibility."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS apps output did not label installer UX as unavailable."
     }

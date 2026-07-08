@@ -534,7 +534,7 @@ function Assert-RuntimeShellSurfaceSource
         "GUI desktop: unavailable on BIOS checksum fallback",
         "Service/session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
-        "Cloud storage status: Settings/File Manager; unavailable/planned; no sync",
+        "Cloud storage status: Settings and File Manager; policy only; sync unavailable",
         "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
         "AI Assistant: launcher/Settings/pkginfo; consent-scoped action templates; inference unavailable",
         "AI policy: unavailable on BIOS checksum fallback; no actions",
