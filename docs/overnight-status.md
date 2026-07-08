@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Identity descriptor pkginfo wording
+
+- Task: Visual/UX - replace the `pkginfo` identity descriptor line `identity descriptor: signed local fixture verified` with `identity descriptor: signed local provider verified` while preserving the same signed local descriptor verification behavior.
+- Commit: `8c5fe355212afd6fa3ae6ee57cf5a927f02ab8db`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `identity descriptor: signed local provider verified` instead of the implementation-facing `identity descriptor: signed local fixture verified`, keeping the same signed local identity descriptor, verification state, encrypted-transport-unavailable status, credential-transport denial, token-storage denial, remote-login unavailability, and internal DRS fixture proof. The UEFI QEMU runtime assertion now requires the revised visible line so the old test-fixture wording cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear state wording without implementation jargon; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Cloud provider descriptor pkginfo wording
 
 - Task: Visual/UX - replace the `pkginfo` cloud-provider descriptor line `cloud provider descriptor: signed local fixture verified` with `cloud provider descriptor: signed local provider verified` while preserving the same signed local descriptor verification behavior.
