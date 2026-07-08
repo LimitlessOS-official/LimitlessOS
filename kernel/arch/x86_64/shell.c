@@ -3898,7 +3898,7 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "unavailable in M1: alias/experimental command\n");
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "unknown command\n");
+    return shell64_write_text(console_capability_handle, owner_id, "unknown: help\n");
 }
 
 static int shell64_token_is_product_command(u32 token_start, u32 token_length)
@@ -5342,7 +5342,7 @@ static u32 shell64_execute_line_inner(
             1);
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "unknown command\n");
+    return shell64_write_text(console_capability_handle, owner_id, "unknown: help\n");
 }
 
 u32 shell64_execute_line(
