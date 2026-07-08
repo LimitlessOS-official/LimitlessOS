@@ -326,7 +326,7 @@ function Assert-X64M1RuntimeSurface
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net or net curl example\.com$' -Message "M3 apps output did not label Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only(; MSI evidence pending)?$' -Message "M9 apps output did not label hardware validation visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only; hardware evidence pending$' -Message "M9 apps output did not label hardware validation visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: unavailable on BIOS checksum fallback$' -Message "M15 BIOS apps output did not label GUI as unavailable."

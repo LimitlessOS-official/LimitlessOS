@@ -4453,7 +4453,7 @@ static u32 shell64_list_apps(
     (void)shell64_write_text(console_capability_handle, owner_id, "Brokered socket API: capability-scoped TCP-client foundation in net\n");
 #endif
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; MSI evidence pending\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only; hardware evidence pending\n");
 #else
     (void)shell64_write_text(console_capability_handle, owner_id, "Hardware validation: use hwval; read-only\n");
 #endif

@@ -528,7 +528,7 @@ function Assert-RuntimeShellSurfaceSource
         "ASK (not AI)",
         "Network (hardware-gated): use net or net curl example.com",
         "Brokered socket API: capability-scoped TCP-client foundation in net",
-        "Hardware validation: use hwval; read-only; MSI evidence pending",
+        "Hardware validation: use hwval; read-only; hardware evidence pending",
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings Installer Assistant",
         "GUI desktop: unavailable on BIOS checksum fallback",
