@@ -6372,7 +6372,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
             (void)display64_draw_font_text(body_x + 148u, preview_y + 36u, (const char *)g_display_fileman_edit_buffer, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
             if (preview_h >= 70u)
             {
-                (void)display64_draw_font_text(body_x + 138u, preview_y + 60u, "Enter commits", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+                (void)display64_draw_font_text(body_x + 138u, preview_y + 60u, "Enter to apply", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
             }
         }
         else if ((selected_entry != (mmio64_nvme_fat_dirent_t *)0)
