@@ -1104,7 +1104,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable\n");
     identity_transport64_init();
-    (void)shell64_write_text(console_capability_handle, owner_id, "identity descriptor: signed local fixture verified\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "identity descriptor: signed local provider verified\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "identity encrypted transport: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "identity credential transport: denied\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "identity token storage: denied\n");

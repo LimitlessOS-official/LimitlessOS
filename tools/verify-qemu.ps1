@@ -4472,6 +4472,7 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '^auto-install: unavailable$' -Message "x64 UEFI pkginfo did not report auto-install as unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '^public update fetch: unavailable$' -Message "x64 UEFI pkginfo did not report public update fetch as unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '^trusted-time expiry: unavailable$' -Message "x64 UEFI pkginfo did not report trusted-time expiry as unavailable."
+        Assert-OutputContains -Lines $outputLines -Pattern '^identity descriptor: signed local provider verified$' -Message "x64 UEFI pkginfo did not report identity descriptor verification."
         Assert-OutputContains -Lines $outputLines -Pattern '^account association mode: status only$' -Message "x64 UEFI pkginfo did not report M13 account association status-only mode."
         Assert-OutputContains -Lines $outputLines -Pattern '^local association: active and offline-capable$' -Message "x64 UEFI pkginfo did not report local association active."
         Assert-OutputContains -Lines $outputLines -Pattern '^personal association: unavailable$' -Message "x64 UEFI pkginfo did not report personal association unavailable."
