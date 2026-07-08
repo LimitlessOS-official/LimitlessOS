@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Hwval authority wording
+
+- Task: Visual/UX - replace the `hwval full` authority slash-list `storage/installer/network/update/install` with comma-separated user-facing authority wording while preserving the same no-ambient-authority behavior.
+- Commit: `10ac3b813991032cc6f2af1b48049e7d5e65fb38`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `hwval full` now reports `authority: read-only scoped validation; no ambient storage, installer, network, update, or install authority` instead of the slash-combined `authority: read-only scoped validation; no ambient storage/installer/network/update/install`, keeping the same read-only validation mode and the same no ambient storage, installer, network, update, or install authority contract. The UEFI QEMU Product gate and the M9 hardware-validation verifier now assert the revised visible line while the existing structured `drs-hwval` no-authority proof remains unchanged. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should avoid slash-combined shorthand when plain wording is clearer; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes wording only.
+
 ## 2026-07-08 - Real install status wording
 
 - Task: Visual/UX - replace the visible real-install approval boolean wording with direct not-approved status wording in `hwval full` and `pkginfo` while preserving the same no-real-install approval behavior.
