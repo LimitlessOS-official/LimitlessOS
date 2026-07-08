@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Pkginfo authority wording
+
+- Task: Visual/UX - replace the `pkginfo` no-ambient-authority slash-list `install/update/network/cloud/fs/identity/secret/ai` with comma-separated user-facing authority wording while preserving the same no-ambient-authority behavior.
+- Commit: `2e9c358404779832e247235d3b7fe1cbb7fd38c1`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `authority: no ambient install, update, network, cloud, file, identity, secret, or AI access` instead of the slash-combined `no ambient install/update/network/cloud/fs/identity/secret/ai`, keeping the same package, update, cloud, identity, secret, and AI authority denials and leaving the machine-readable DRS no-ambient proofs unchanged. The UEFI QEMU Product gate plus the M16, M17, and M18 targeted verifiers now assert the revised visible line so the shell copy cannot silently drift back to the terse slash-list. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording and normal list punctuation; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Hwval authority wording
 
 - Task: Visual/UX - replace the `hwval full` authority slash-list `storage/installer/network/update/install` with comma-separated user-facing authority wording while preserving the same no-ambient-authority behavior.
