@@ -6563,7 +6563,7 @@ static void display64_desktop_draw_settings(u32 handle)
     cloud_storage64_init();
     (void)display64_draw_font_text(body_x, body_y + 360u, "Cloud storage", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 378u, "Broker foundation; descriptor verified", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 396u, "No sync/upload/download; AI denied", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 396u, "Sync unavailable; transfers denied", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_cloud_settings_panel_count == 0u)
     {
         ++g_display_cloud_settings_panel_count;
