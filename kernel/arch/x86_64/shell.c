@@ -1889,7 +1889,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
 
     (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "hardware validation: read-only Product mode\n");
     (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "machine model: unavailable from firmware table\n");
-    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "secure boot: unavailable/not Product-detected\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "secure boot: not detected by Product\n");
     (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "build profile: Product\n");
     (void)shell64_write_status_line(
         console_capability_handle,
