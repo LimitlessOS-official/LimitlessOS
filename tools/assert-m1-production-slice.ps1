@@ -522,7 +522,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied",
         "Product installer UX: launcher and Settings show dry-run planning; writes, formatting, and boot-entry changes disabled",
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
-        "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable",
+        "Product AI assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable",
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
         "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",

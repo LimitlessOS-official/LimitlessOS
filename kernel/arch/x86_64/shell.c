@@ -525,7 +525,7 @@ static u32 shell64_write_installer_status_line(u32 console_capability_handle, u3
 static u32 shell64_write_ai_status_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product AI assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable\n");
 #endif
