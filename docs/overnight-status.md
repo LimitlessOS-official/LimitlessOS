@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps package action wording
+
+- Task: Visual/UX - replace the `apps` unavailable-list `Package install/update actions` slash label with `Package installation and update actions` while preserving the same unavailable package installation and update behavior.
+- Commit: `f4aefe4e278dd6a6d06fbdb08ec5be47cde33c9d`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` unavailable list now reports `Package installation and update actions` instead of `Package install/update actions`, keeping the same package-action quarantine boundary and the same unavailable package installation/update authority behavior. The M1 source gate and UEFI QEMU runtime assertion now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps network transfer wording
 
 - Task: Visual/UX - replace the `apps` unavailable-list `Arbitrary network send/receive` slash label with `Arbitrary network transfers` while preserving the same unavailable arbitrary network send and receive behavior.
