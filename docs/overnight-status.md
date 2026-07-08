@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Assistant generated-reply status wording
+
+- Task: Visual/UX - replace the Assistant panel's implementation-centered generated-response status with clearer user-facing availability wording while preserving the existing Mode B consent and audit behavior.
+- Commit: `99211308e51f19b47e5914e75aa7f803f5eb9bb8`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Assistant panel now says `Generated replies unavailable` instead of `No model call or scripted response`, keeping the same Mode B policy initialization, action probe, consent-scoped templates, denied-capability display, and audit query. This is grounded in the existing Assistant status surface and UI writing guidance favoring crisp, scan-first status text over implementation details. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the Product GUI surface but does not open the Assistant window, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager preview empty-state wording
 
 - Task: Visual/UX - replace the File Manager file-preview empty-state wording with a clearer preview-unavailable message while preserving preview detection and storage behavior.
