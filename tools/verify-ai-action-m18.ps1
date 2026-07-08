@@ -98,10 +98,10 @@ if ($actionLine -notmatch ' action-id 18 note-bytes [1-9][0-9]* audit-records [1
     throw "M18 AI action verifier failed: action broker detail did not match the Mode B scoped-action contract."
 }
 
-Assert-Line -Lines $outputLines -Pattern '^Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable$' -Message "M18 AI action verifier failed: help output did not describe action templates truthfully."
-Assert-Line -Lines $outputLines -Pattern '^AI Assistant: launcher/Settings/pkginfo; consent-scoped action templates; inference unavailable$' -Message "M18 AI action verifier failed: apps output did not expose action templates truthfully."
+Assert-Line -Lines $outputLines -Pattern '^Product AI assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable$' -Message "M18 AI action verifier failed: help output did not describe action templates truthfully."
+Assert-Line -Lines $outputLines -Pattern '^AI Assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable$' -Message "M18 AI action verifier failed: apps output did not expose action templates truthfully."
 Assert-Line -Lines $outputLines -Pattern '^ai actions: consent-scoped templates only$' -Message "M18 AI action verifier failed: pkginfo did not expose consent-scoped action status."
-Assert-Line -Lines $outputLines -Pattern '^ai action broker: Mode B deterministic templates$' -Message "M18 AI action verifier failed: pkginfo did not expose Mode B action broker status."
+Assert-Line -Lines $outputLines -Pattern '^ai action broker: deterministic templates only$' -Message "M18 AI action verifier failed: pkginfo did not expose deterministic action broker status."
 Assert-Line -Lines $outputLines -Pattern '^ai action templates: assistant-note-write installer-dryrun open-settings-panel package-trust-status$' -Message "M18 AI action verifier failed: allowed action templates were not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai forbidden actions: package-install package-update settings-mutation cloud-enable secret-token model-transport self-modification$' -Message "M18 AI action verifier failed: forbidden action templates were not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai note action: /HOME/ASSIST/NOTE\.TXT committed readback verified$' -Message "M18 AI action verifier failed: assistant note action status was not visible."

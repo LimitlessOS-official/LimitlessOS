@@ -1154,7 +1154,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "ai cloud memory: unavailable\n");
     ai_policy64_action_probe();
     (void)shell64_write_text(console_capability_handle, owner_id, "ai actions: consent-scoped templates only\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "ai action broker: Mode B deterministic templates\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai action broker: deterministic templates only\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai action templates: assistant-note-write installer-dryrun open-settings-panel package-trust-status\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai forbidden actions: package-install package-update settings-mutation cloud-enable secret-token model-transport self-modification\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai note action: /HOME/ASSIST/NOTE.TXT committed readback verified\n");

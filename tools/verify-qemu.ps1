@@ -4490,7 +4490,7 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '^ai action request: modeled$' -Message "x64 UEFI pkginfo did not report AI action requests as modeled."
         Assert-OutputContains -Lines $outputLines -Pattern '^ai consent: required no auto-approve$' -Message "x64 UEFI pkginfo did not report consent as required."
         Assert-OutputContains -Lines $outputLines -Pattern '^ai actions: (unavailable|consent-scoped templates only)$' -Message "x64 UEFI pkginfo did not report AI action availability truthfully."
-        Assert-OutputContains -Lines $outputLines -Pattern '^ai action broker: Mode B deterministic templates$' -Message "x64 UEFI pkginfo did not report M18 AI action broker Mode B status."
+        Assert-OutputContains -Lines $outputLines -Pattern '^ai action broker: deterministic templates only$' -Message "x64 UEFI pkginfo did not report M18 AI action broker status."
         Assert-OutputContains -Lines $outputLines -Pattern '^ai action templates: assistant-note-write installer-dryrun open-settings-panel package-trust-status$' -Message "x64 UEFI pkginfo did not report M18 allowed action templates."
         Assert-OutputContains -Lines $outputLines -Pattern '^ai action audit: request consent grant result revocation recorded$' -Message "x64 UEFI pkginfo did not report M18 action audit status."
         Assert-OutputContains -Lines $outputLines -Pattern '^ai audit: immutable queryable settings-visible$' -Message "x64 UEFI pkginfo did not report the AI audit log surface."
