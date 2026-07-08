@@ -119,6 +119,10 @@ u32 i2c_hid64_pointer_error(void)
 #define I2C_HID64_POINTER_KIND_NONE 0u
 #define I2C_HID64_POINTER_KIND_MOUSE 1u
 #define I2C_HID64_POINTER_KIND_TOUCHPAD 2u
+#define I2C_HID64_ACPI_BIND_SOURCE_NONE 0u
+#define I2C_HID64_ACPI_BIND_SOURCE_ACPI 1u
+#define I2C_HID64_ACPI_BIND_SOURCE_FALLBACK_PRIMARY 2u
+#define I2C_HID64_ACPI_BIND_SOURCE_FALLBACK_POINTER 3u
 #define I2C_HID64_ACPI_TABLE_HEADER_BYTES 36u
 #define I2C_HID64_AML_EXT_OP 0x5Bu
 #define I2C_HID64_AML_DEVICE_OP 0x82u
@@ -198,6 +202,9 @@ static u32 g_i2c_hid64_pointer_max_input_length = 0u;
 static u32 g_i2c_hid64_pointer_report_has_id = 0u;
 static u32 g_i2c_hid64_pointer_report_count = 0u;
 static u32 g_i2c_hid64_pointer_error = 0u;
+static struct i2c_hid64_acpi_touchpad g_i2c_hid64_acpi_touchpad;
+static u32 g_i2c_hid64_acpi_address_plausible = 0u;
+static u32 g_i2c_hid64_acpi_bind_source = I2C_HID64_ACPI_BIND_SOURCE_NONE;
 static u64 g_i2c_hid64_mapped_physical_base = 0ull;
 static u64 g_i2c_hid64_keyboard_physical_base = 0ull;
 static u64 g_i2c_hid64_pointer_physical_base = 0ull;
@@ -215,6 +222,26 @@ static volatile u32 *i2c_hid64_reg(u32 offset)
 }
 
 static u32 i2c_hid64_program_controller(void);
+
+static u32 i2c_hid64_known_probe_address(u32 address)
+{
+    u32 index;
+
+    if ((address == 0u) || (address > 0x7Fu))
+    {
+        return 0u;
+    }
+
+    for (index = 0u; index < I2C_HID64_POINTER_ADDRESS_COUNT; ++index)
+    {
+        if (g_i2c_hid64_pointer_addresses[index] == (u8)address)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
 
 static u32 i2c_hid64_mmio_flags_valid(u32 flags)
 {
@@ -353,80 +380,6 @@ static void i2c_hid64_fail(u32 code)
     g_i2c_hid64_initialized = 0u;
     g_i2c_hid64_device_found = 0u;
     serial_write_string("[x64] I2C HID disabled after bounded timeout/failure\n");
-}
-
-static void i2c_hid64_serial_write_dec(u32 value)
-{
-    char digits[10];
-    u32 count = 0u;
-
-    if (value == 0u)
-    {
-        serial_write_char('0');
-        return;
-    }
-
-    while ((value != 0u) && (count < (u32)sizeof(digits)))
-    {
-        digits[count] = (char)('0' + (value % 10u));
-        value /= 10u;
-        ++count;
-    }
-
-    while (count != 0u)
-    {
-        --count;
-        serial_write_char(digits[count]);
-    }
-}
-
-static void i2c_hid64_log_status(const char *prefix)
-{
-    serial_write_string("[x64] I2C HID ");
-    serial_write_string(prefix);
-    serial_write_string(" addr ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_address);
-    serial_write_string(" desc-reg ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_descriptor_register);
-    serial_write_string(" in-reg ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_input_register);
-    serial_write_string(" cmd-reg ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_command_register);
-    serial_write_string(" max-in ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_max_input_length);
-    serial_write_string(" err ");
-    i2c_hid64_serial_write_dec(g_i2c_hid64_error);
-    serial_write_string("\n");
-}
-
-static void i2c_hid64_log_acpi_touchpad(const struct i2c_hid64_acpi_touchpad *touchpad)
-{
-    u32 shift;
-
-    if ((touchpad == 0) || (touchpad->found == 0u))
-    {
-        return;
-    }
-
-    serial_write_string("[x64] I2C HID ACPI touchpad device ");
-    for (shift = 0u; shift < 32u; shift += 8u)
-    {
-        serial_write_char((char)((touchpad->device_name >> shift) & 0xFFu));
-    }
-    serial_write_string(" addr ");
-    i2c_hid64_serial_write_dec(touchpad->address);
-    serial_write_string(" speed ");
-    i2c_hid64_serial_write_dec(touchpad->speed_hz);
-    serial_write_string(" gpio ");
-    if (touchpad->gpio_pin_found != 0u)
-    {
-        i2c_hid64_serial_write_dec(touchpad->gpio_pin);
-    }
-    else
-    {
-        serial_write_string("none");
-    }
-    serial_write_string("\n");
 }
 
 static u32 i2c_hid64_tx_aborted(void)
@@ -909,7 +862,6 @@ static u32 i2c_hid64_probe_descriptor(u32 address, u16 descriptor_register)
     g_i2c_hid64_data_register = data_register;
     g_i2c_hid64_max_input_length = max_input_length;
     g_i2c_hid64_device_found = 1u;
-    i2c_hid64_log_status("descriptor found");
     return 1u;
 }
 
@@ -1633,12 +1585,10 @@ static u32 i2c_hid64_acpi_find_touchpad(struct i2c_hid64_acpi_touchpad *out)
         out->device_name = i2c_hid64_acpi_u32(&dsdt[body]);
         if (i2c_hid64_acpi_parse_crs_buffer(dsdt, body, end, out) != 0u)
         {
-            i2c_hid64_log_acpi_touchpad(out);
             return 1u;
         }
         if (i2c_hid64_acpi_parse_named_resource_buffers(dsdt, body, end, &fields, out) != 0u)
         {
-            i2c_hid64_log_acpi_touchpad(out);
             return 1u;
         }
     }
@@ -1669,7 +1619,6 @@ static u32 i2c_hid64_try_pointer_address(u32 address, u64 physical_base, u32 all
             u32 is_mouse = 0u;
             u32 is_touchpad = 0u;
             u32 has_report_id = 0u;
-            u32 tentative_touchpad = 0u;
 
             if (i2c_hid64_read_report_descriptor(
                     found_address,
@@ -1694,7 +1643,6 @@ static u32 i2c_hid64_try_pointer_address(u32 address, u64 physical_base, u32 all
             if ((is_mouse == 0u) && (is_touchpad == 0u) && (allow_tentative != 0u))
             {
                 is_touchpad = 1u;
-                tentative_touchpad = 1u;
             }
             if ((is_mouse == 0u) && (is_touchpad == 0u))
             {
@@ -1736,12 +1684,6 @@ static u32 i2c_hid64_try_pointer_address(u32 address, u64 physical_base, u32 all
             g_i2c_hid64_pointer_physical_base = physical_base;
             g_i2c_hid64_pointer_virtual_base = g_i2c_hid64_active_virtual_base;
             g_i2c_hid64_pointer_error = 0u;
-            i2c_hid64_log_status(
-                (tentative_touchpad != 0u)
-                    ? "ACPI tentative touchpad ready"
-                    : (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
-                    ? "ACPI pointer mouse ready"
-                    : "ACPI touchpad ready");
             return 1u;
         }
         if (g_i2c_hid64_error == 4u)
@@ -1777,7 +1719,6 @@ void i2c_hid64_init(void)
     u32 keyboard_data_register = 0u;
     u32 keyboard_max_input_length = 0u;
     u64 keyboard_physical_base = 0ull;
-    struct i2c_hid64_acpi_touchpad acpi_touchpad;
 
     g_i2c_hid64_controller_present = pci64_lpss_i2c_hid_found();
     g_i2c_hid64_mapped = 0u;
@@ -1806,13 +1747,20 @@ void i2c_hid64_init(void)
     g_i2c_hid64_pointer_report_has_id = 0u;
     g_i2c_hid64_pointer_report_count = 0u;
     g_i2c_hid64_pointer_error = 0u;
+    g_i2c_hid64_acpi_address_plausible = 0u;
+    g_i2c_hid64_acpi_bind_source = I2C_HID64_ACPI_BIND_SOURCE_NONE;
     g_i2c_hid64_mapped_physical_base = 0ull;
     g_i2c_hid64_keyboard_physical_base = 0ull;
     g_i2c_hid64_pointer_physical_base = 0ull;
     g_i2c_hid64_active_virtual_base = I2C_HID64_MAP_VIRTUAL_BASE;
     g_i2c_hid64_keyboard_virtual_base = 0ull;
     g_i2c_hid64_pointer_virtual_base = 0ull;
-    (void)i2c_hid64_acpi_find_touchpad(&acpi_touchpad);
+    (void)i2c_hid64_acpi_find_touchpad(&g_i2c_hid64_acpi_touchpad);
+    if (g_i2c_hid64_acpi_touchpad.found != 0u)
+    {
+        g_i2c_hid64_acpi_address_plausible =
+            i2c_hid64_known_probe_address(g_i2c_hid64_acpi_touchpad.address);
+    }
 
     if (g_i2c_hid64_controller_present == 0u)
     {
@@ -1833,9 +1781,14 @@ void i2c_hid64_init(void)
     }
     else
     {
-        if (acpi_touchpad.found != 0u)
+        if ((g_i2c_hid64_acpi_touchpad.found != 0u)
+            && (g_i2c_hid64_acpi_address_plausible != 0u))
         {
-            (void)i2c_hid64_try_pointer_address(acpi_touchpad.address, physical_base, 0u);
+            (void)i2c_hid64_try_pointer_address(g_i2c_hid64_acpi_touchpad.address, physical_base, 0u);
+            if (g_i2c_hid64_pointer_found != 0u)
+            {
+                g_i2c_hid64_acpi_bind_source = I2C_HID64_ACPI_BIND_SOURCE_ACPI;
+            }
         }
 
         /* Last-resort fallback when ACPI did not identify or bind the device. */
@@ -1908,7 +1861,6 @@ void i2c_hid64_init(void)
                         keyboard_physical_base = physical_base;
                         g_i2c_hid64_keyboard_virtual_base = g_i2c_hid64_active_virtual_base;
                         keyboard_ready = 1u;
-                        i2c_hid64_log_status("keyboard ready");
                     }
                     else if ((g_i2c_hid64_pointer_found == 0u)
                         && ((is_mouse != 0u) || (is_touchpad != 0u)))
@@ -1930,10 +1882,8 @@ void i2c_hid64_init(void)
                         g_i2c_hid64_pointer_report_has_id = has_report_id;
                         g_i2c_hid64_pointer_physical_base = physical_base;
                         g_i2c_hid64_pointer_virtual_base = g_i2c_hid64_active_virtual_base;
-                        i2c_hid64_log_status(
-                            (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
-                                ? "pointer mouse ready"
-                                : "touchpad ready");
+                        g_i2c_hid64_acpi_bind_source =
+                            I2C_HID64_ACPI_BIND_SOURCE_FALLBACK_PRIMARY;
                     }
 
                     if ((keyboard_ready != 0u) && (g_i2c_hid64_pointer_found != 0u))
@@ -1986,9 +1936,14 @@ void i2c_hid64_init(void)
             continue;
         }
 
-        if (acpi_touchpad.found != 0u)
+        if ((g_i2c_hid64_acpi_touchpad.found != 0u)
+            && (g_i2c_hid64_acpi_address_plausible != 0u))
         {
-            (void)i2c_hid64_try_pointer_address(acpi_touchpad.address, pointer_physical_base, 1u);
+            (void)i2c_hid64_try_pointer_address(g_i2c_hid64_acpi_touchpad.address, pointer_physical_base, 1u);
+            if (g_i2c_hid64_pointer_found != 0u)
+            {
+                g_i2c_hid64_acpi_bind_source = I2C_HID64_ACPI_BIND_SOURCE_ACPI;
+            }
         }
 
         if (g_i2c_hid64_pointer_found != 0u)
@@ -2013,7 +1968,6 @@ void i2c_hid64_init(void)
                     u32 is_mouse = 0u;
                     u32 is_touchpad = 0u;
                     u32 has_report_id = 0u;
-                    u32 tentative_touchpad = 0u;
 
                     if (i2c_hid64_read_report_descriptor(
                             found_address,
@@ -2038,7 +1992,6 @@ void i2c_hid64_init(void)
                     if ((is_mouse == 0u) && (is_touchpad == 0u))
                     {
                         is_touchpad = 1u;
-                        tentative_touchpad = 1u;
                     }
                     if (i2c_hid64_send_command_to(
                             found_address,
@@ -2076,12 +2029,8 @@ void i2c_hid64_init(void)
                     g_i2c_hid64_pointer_physical_base = pointer_physical_base;
                     g_i2c_hid64_pointer_virtual_base = g_i2c_hid64_active_virtual_base;
                     g_i2c_hid64_pointer_error = 0u;
-                    i2c_hid64_log_status(
-                        (tentative_touchpad != 0u)
-                            ? "second controller tentative touchpad ready"
-                            : (g_i2c_hid64_pointer_kind == I2C_HID64_POINTER_KIND_MOUSE)
-                            ? "second controller pointer mouse ready"
-                            : "second controller touchpad ready");
+                    g_i2c_hid64_acpi_bind_source =
+                        I2C_HID64_ACPI_BIND_SOURCE_FALLBACK_POINTER;
                     break;
                 }
                 if (g_i2c_hid64_error == 4u)
@@ -2469,6 +2418,39 @@ u32 i2c_hid64_pointer_kind(void)
 u32 i2c_hid64_pointer_address(void)
 {
     return g_i2c_hid64_pointer_address;
+}
+
+u32 i2c_hid64_acpi_telemetry(u32 field)
+{
+    if (field == I2C_HID64_ACPI_TELEMETRY_FOUND)
+    {
+        return g_i2c_hid64_acpi_touchpad.found;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_BIND_SOURCE)
+    {
+        return g_i2c_hid64_acpi_bind_source;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_ADDRESS)
+    {
+        return g_i2c_hid64_acpi_touchpad.address;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_ADDRESS_PLAUSIBLE)
+    {
+        return g_i2c_hid64_acpi_address_plausible;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_SPEED_HZ)
+    {
+        return g_i2c_hid64_acpi_touchpad.speed_hz;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_GPIO_FOUND)
+    {
+        return g_i2c_hid64_acpi_touchpad.gpio_pin_found;
+    }
+    if (field == I2C_HID64_ACPI_TELEMETRY_GPIO_PIN)
+    {
+        return g_i2c_hid64_acpi_touchpad.gpio_pin;
+    }
+    return 0u;
 }
 
 u32 i2c_hid64_pointer_descriptor_register(void)

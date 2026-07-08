@@ -2176,6 +2176,15 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer kind: ", i2c_hid64_pointer_kind());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer address: ", i2c_hid64_pointer_address());
+    (void)shell64_begin_hwval_composite_line(console_capability_handle, owner_id, "[x64] drs-i2c-acpi i2c-acpi 1");
+    shell64_write_decimal_field(console_capability_handle, owner_id, " found ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_FOUND));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " source ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_BIND_SOURCE));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " addr ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_ADDRESS));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " plausible ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_ADDRESS_PLAUSIBLE));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " speed ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_SPEED_HZ));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " gpio-found ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_GPIO_FOUND));
+    shell64_write_decimal_field(console_capability_handle, owner_id, " gpio-pin ", i2c_hid64_acpi_telemetry(I2C_HID64_ACPI_TELEMETRY_GPIO_PIN));
+    (void)shell64_end_hwval_composite_line(console_capability_handle, owner_id);
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer desc-reg: ", i2c_hid64_pointer_descriptor_register());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer report-reg: ", i2c_hid64_pointer_report_descriptor_register());
     (void)shell64_write_decimal_line(console_capability_handle, owner_id, "i2c pointer report-len: ", i2c_hid64_pointer_report_descriptor_length());
