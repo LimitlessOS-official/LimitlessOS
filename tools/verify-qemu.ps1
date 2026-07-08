@@ -304,7 +304,7 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product identity: unavailable on BIOS checksum fallback$' -Message "M11 BIOS fallback help did not label identity/vault as unavailable."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable$' -Message "M14 runtime help did not describe Product cloud storage status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied$' -Message "M14 runtime help did not describe Product cloud storage status."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS fallback help did not label installer UX as unavailable."
     }

@@ -4929,7 +4929,7 @@ static u32 shell64_execute_line_inner(
         (void)shell64_write_service_status_line(console_capability_handle, owner_id);
         (void)shell64_write_login_status_line(console_capability_handle, owner_id);
         (void)shell64_write_identity_status_line(console_capability_handle, owner_id);
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied\n");
         (void)shell64_write_installer_status_line(console_capability_handle, owner_id);
         (void)shell64_write_ai_status_line(console_capability_handle, owner_id);
         return shell64_write_text(

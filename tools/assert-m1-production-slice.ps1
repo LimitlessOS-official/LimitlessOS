@@ -514,7 +514,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product services: BIOS service/session stubs active; installer UX unavailable",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
         "Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable",
-        "Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable",
+        "Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied",
         "Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled",
         "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable",
