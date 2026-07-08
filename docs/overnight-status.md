@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Ambient-authority UI wording
+
+- Task: Visual/UX - replace visible ambient-authority shorthand in the UEFI login badge and Settings AI policy details with clearer user-facing access-state wording while preserving the existing scoped-authority/no-ambient-access behavior.
+- Commit: `9e6cdac5c09b5e6bd95395160e211d37bfdb7c94`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The UEFI login panel now says `No file access` instead of `No ambient fs`, and Settings AI policy now says `No automatic system access` instead of `No ambient fs/net/pkg/secret/cloud`. This is grounded in the existing Product authority model and UI writing guidance favoring concise, direct text over implementation shorthand; it changes only visible copy and does not change capability grants, AI policy checks, login flow, filesystem access, package access, secret access, cloud access, or telemetry. Verified by Product build and the UEFI QEMU hardware/display gate; the gate proves the Product GUI/readiness surface but does not visually inspect this exact Settings AI policy row on physical MSI, so MSI rendering remains unverified.
+
 ## 2026-07-08 - Settings identity status wording
 
 - Task: Visual/UX - replace the Settings identity row's ambient-authority shorthand with clearer identity-availability wording while preserving the existing local identity and vault metadata behavior.
