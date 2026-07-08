@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps hardware evidence wording
+
+- Task: Visual/UX - replace the `apps` status line `Hardware validation: use hwval; read-only; MSI evidence pending` with `Hardware validation: use hwval; read-only; hardware evidence pending` while preserving the same read-only hardware validation path.
+- Commit: `5e835cd4e3201ce6bc6b920605b226310ff8e36b`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now reports `Hardware validation: use hwval; read-only; hardware evidence pending` instead of the MSI-specific `Hardware validation: use hwval; read-only; MSI evidence pending`, keeping the same `hwval` command surface and read-only validation behavior. The M1 source gate and UEFI QEMU runtime assertion now require the generalized visible line so the Product app-discovery surface does not imply the hardware-validation workflow is MSI-only. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should clearly communicate state; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI evidence capture and rendering remain unverified in this pass because it changes visible shell copy only.
+
 ## 2026-07-08 - Apps installer dry-run wording
 
 - Task: Visual/UX - replace the `apps` status line `Installer dry-run: safe tooling only; writes disabled` with `Installer dry-run: validation tools only; writes disabled` while preserving the same dry-run installer and disabled-write behavior.
