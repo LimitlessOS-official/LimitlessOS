@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Account association pkginfo mode wording
+
+- Task: Visual/UX - replace the `pkginfo` account-association `Mode B status only` implementation shorthand with direct status-only wording while preserving the same account association policy/status-only behavior and no remote account authority.
+- Commit: `7a5a5b71c14eacf9e31bb9b9d3b7940a78f9bde4`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `account association mode: status only` instead of `account association mode: Mode B status only`, keeping the same local association active/offline-capable state, personal/enterprise/cloud/security-key unavailable states, credential/token/enterprise-policy denials, and no remote account authority. The dedicated M13 account association verifier and UEFI QEMU pkginfo assertion were updated so the gates prove the revised user-facing line while leaving internal M13 Mode B telemetry intact. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without internal-mode shorthand; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Cloud storage pkginfo mode wording
 
 - Task: Visual/UX - replace the `pkginfo` cloud-storage `unavailable/planned` shorthand with clearer policy-only and sync-unavailable wording while preserving the same broker-policy-only behavior and no real cloud sync.
