@@ -1112,10 +1112,10 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     account_association64_init();
     (void)shell64_write_text(console_capability_handle, owner_id, "account association mode: Mode B status only\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "local association: active/offline-capable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "personal association: unavailable/planned\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "enterprise association: unavailable/planned\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "cloud association: unavailable/planned\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "security key login: unavailable/planned\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "personal association: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "enterprise association: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "cloud association: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "security key login: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "remote account authority: none\n");
     cloud_storage64_init();
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage broker: foundation active\n");

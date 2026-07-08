@@ -84,10 +84,10 @@ if ($accountLine -notmatch ' mode mode-b-status-only local active personal plann
 
 Assert-Line -Lines $outputLines -Pattern '^account association mode: Mode B status only$' -Message "M13 account association verifier failed: pkginfo did not report Mode B status."
 Assert-Line -Lines $outputLines -Pattern '^local association: active/offline-capable$' -Message "M13 account association verifier failed: pkginfo did not report local association active."
-Assert-Line -Lines $outputLines -Pattern '^personal association: unavailable/planned$' -Message "M13 account association verifier failed: pkginfo did not report personal association unavailable."
-Assert-Line -Lines $outputLines -Pattern '^enterprise association: unavailable/planned$' -Message "M13 account association verifier failed: pkginfo did not report enterprise association unavailable."
-Assert-Line -Lines $outputLines -Pattern '^cloud association: unavailable/planned$' -Message "M13 account association verifier failed: pkginfo did not report cloud association unavailable."
-Assert-Line -Lines $outputLines -Pattern '^security key login: unavailable/planned$' -Message "M13 account association verifier failed: pkginfo did not report security-key status."
+Assert-Line -Lines $outputLines -Pattern '^personal association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report personal association unavailable."
+Assert-Line -Lines $outputLines -Pattern '^enterprise association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report enterprise association unavailable."
+Assert-Line -Lines $outputLines -Pattern '^cloud association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report cloud association unavailable."
+Assert-Line -Lines $outputLines -Pattern '^security key login: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report security-key status."
 Assert-Line -Lines $outputLines -Pattern '^remote account authority: none$' -Message "M13 account association verifier failed: pkginfo did not report no remote account authority."
 Assert-Line -Lines $outputLines -Pattern '^Identity/account/vault/transport status: Settings; local only; no secret storage$' -Message "M13 account association verifier failed: apps output did not expose truthful account status."
 
