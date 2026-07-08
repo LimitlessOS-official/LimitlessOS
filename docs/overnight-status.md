@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Installer dry-run hwval wording
+
+- Task: Visual/UX - replace the `hwval full` installer-dry-run `pending manual evidence; dry-run only` wording with direct hardware-evidence and disabled-write status while preserving the same no-real-install behavior.
+- Commit: `fc2a9deaaf4f95498a0b48d7d5dcee5bb008ac3e`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `hwval full` now reports `installer dry-run: awaiting hardware evidence; writes disabled` instead of `installer dry-run: pending manual evidence; dry-run only`, keeping the same read-only hardware validation mode, disabled internal writes, unavailable format and NVRAM boot-entry authority, and `real install approved: false` state. The UEFI QEMU Product gate now asserts the revised line alongside the existing M9 no-write hardware-validation proof so this visible status wording cannot regress silently. This is grounded in Microsoft UI text guidance that users scan interface text and that status labels should be concise and action-state oriented; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI installer evidence remains unverified because this pass changes wording only.
+
 ## 2026-07-08 - Machine model hwval wording
 
 - Task: Visual/UX - replace the `hwval full` machine-model `unavailable from firmware table` source-implementation wording with direct Product-reporting wording while preserving the same no-machine-model-reporting behavior.
