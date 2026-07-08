@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Account association pkginfo wording
+
+- Task: Visual/UX - replace the `pkginfo` account-association `unavailable/planned` shorthand with direct unavailable status wording while preserving the same Mode B status-only account association behavior and no remote account authority.
+- Commit: `a84adab49847bc20dc3ff08f87d93b1892b3fc42`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `personal association: unavailable`, `enterprise association: unavailable`, `cloud association: unavailable`, and `security key login: unavailable` instead of the previous `unavailable/planned` wording, keeping the same Mode B status-only account association surface, active local association, and remote-account-authority denial. The dedicated M13 verifier and UEFI QEMU pkginfo assertions were updated so the gates prove the revised user-facing copy rather than stale text. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Product services help wording
 
 - Task: Visual/UX - replace the Product help line's `service/session` shorthand with clearer service and session wording while preserving the same Settings service/session status and installer-planning write-disabled behavior.
