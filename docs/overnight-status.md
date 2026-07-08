@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps service status wording
+
+- Task: Visual/UX - replace the `apps` status line `Service/session status: Settings` slash label with `Service and session status: Settings` while preserving the same Settings-visible service/session status behavior.
+- Commit: `287ae6e5ccd24b6be41d642d3e7f1964e09b38b3`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now reports `Service and session status: Settings` instead of `Service/session status: Settings`, keeping the same service-status and session-status visibility through Settings and changing no service, session, or capability behavior. The M1 source gate and UEFI QEMU runtime assertion now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should clearly communicate objects without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps internal install wording
 
 - Task: Visual/UX - replace the `apps` unavailable-list `Real internal install/write` slash label with `Real internal installation and write access` while preserving the same disabled internal installation and write authority behavior.
