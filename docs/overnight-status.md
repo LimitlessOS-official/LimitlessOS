@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - BIOS service help wording
+
+- Task: Visual/UX - replace the Product help BIOS fallback `service/session stubs active` implementation shorthand with clearer service and session status wording while preserving the same BIOS fallback and installer-UX-unavailable behavior.
+- Commit: `22c7ba6cf448a6904b2fd181c05ef73425f42478`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now says `Product services: BIOS fallback shows service and session status; installer UX unavailable` instead of `Product services: BIOS service/session stubs active; installer UX unavailable`, keeping the same BIOS fallback path, service/session status meaning, and installer UX unavailable status. The M1 Product source assertion and BIOS fallback QEMU assertion were updated so the gates protect the revised text instead of stale copy. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without implementation shorthand; verified by Product build and UEFI QEMU, while a disk/BIOS boot rendering and physical MSI rendering remain unverified because this pass changes BIOS fallback help copy only.
+
 ## 2026-07-08 - Package trust pkginfo availability wording
 
 - Task: Visual/UX - replace `pkginfo` package-trust `unavailable/non-product` shorthand with direct unavailable status wording while preserving the same no-public-update-fetch and no-trusted-time-expiry-enforcement behavior.
