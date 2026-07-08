@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Hardware validation help wording
+
+- Task: Generality/Visual/UX - replace the Product help line `Product hardware validation: hwval is read-only; MSI manual evidence pending` with `Product hardware validation: hwval is read-only; hardware evidence pending` while preserving the same read-only hardware-validation workflow.
+- Commit: `35eba5eb8417c3db195c6a564d1e40b71d74a136`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now uses the generalized `hardware evidence pending` wording instead of implying that the validation workflow is MSI-only, matching the already-polished `apps` hardware-validation line and leaving `hwval`, read-only validation mode, hardware telemetry, installer dry-run evidence, and authority boundaries unchanged. The M1 Product source inventory and UEFI QEMU runtime assertion now require the generalized help text so the MSI-specific wording cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should communicate state clearly without unnecessary implementation/device specificity; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI capture/rendering and non-MSI hardware behavior remain unverified in this pass.
+
 ## 2026-07-08 - BIOS installer UX fallback wording
 
 - Task: Visual/UX - replace the BIOS-fallback installer UX wording `dry-run safety tooling only` with `validation tools only` in the Product help and `apps` installer status lines while preserving the same unavailable installer UX and no-write fallback behavior.
