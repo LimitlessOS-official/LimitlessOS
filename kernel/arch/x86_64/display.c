@@ -3066,7 +3066,7 @@ static const char *display64_settings_input_detail(void)
         g_display_settings_input_detail,
         cursor,
         sizeof(g_display_settings_input_detail),
-        ", usb reports ");
+        ", USB reports ");
     cursor = display64_diag_append_u32(
         g_display_settings_input_detail,
         cursor,
@@ -3076,7 +3076,7 @@ static const char *display64_settings_input_detail(void)
         g_display_settings_input_detail,
         cursor,
         sizeof(g_display_settings_input_detail),
-        ", i2c ");
+        ", I2C ");
     cursor = display64_diag_append_bool(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), i2c_hid64_pointer_found());
     cursor = display64_diag_append_char(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), '/');
     cursor = display64_diag_append_u32(g_display_settings_input_detail, cursor, sizeof(g_display_settings_input_detail), i2c_hid64_pointer_error());
@@ -3092,7 +3092,7 @@ static const char *display64_settings_storage_detail(void)
         g_display_settings_storage_detail,
         cursor,
         sizeof(g_display_settings_storage_detail),
-        (mmio64_nvme_fat_located() != 0u) ? "NVME FAT mounted, " : "NVME FAT unavailable, ");
+        (mmio64_nvme_fat_located() != 0u) ? "NVMe FAT mounted, " : "NVMe FAT unavailable, ");
     cursor = display64_diag_append_text(
         g_display_settings_storage_detail,
         cursor,
@@ -3102,7 +3102,7 @@ static const char *display64_settings_storage_detail(void)
         g_display_settings_storage_detail,
         cursor,
         sizeof(g_display_settings_storage_detail),
-        (mmio64_nvme_rw_delegated() != 0u) ? "NVME writes scoped" : "NVME read-only");
+        (mmio64_nvme_rw_delegated() != 0u) ? "NVMe writes scoped" : "NVMe read-only");
     g_display_settings_storage_detail[cursor] = '\0';
     return g_display_settings_storage_detail;
 }
@@ -3120,7 +3120,7 @@ static const char *display64_settings_network_detail(void)
         g_display_settings_network_detail,
         cursor,
         sizeof(g_display_settings_network_detail),
-        " device(s), broker ");
+        " devices, broker ");
     cursor = display64_diag_append_text(
         g_display_settings_network_detail,
         cursor,
@@ -3472,7 +3472,7 @@ static void display64_desktop_draw_settings_detail_card(
     }
     else if (selected_index == 7u)
     {
-        display64_draw_label_value(body_x + 18u, card_y + 26u, "NVME FAT ", mmio64_nvme_fat_located(), DISPLAY64_RGB_TEXT_SECONDARY);
+        display64_draw_label_value(body_x + 18u, card_y + 26u, "NVMe FAT ", mmio64_nvme_fat_located(), DISPLAY64_RGB_TEXT_SECONDARY);
         display64_draw_label_value(body_x + 120u, card_y + 26u, "USB FAT ", mmio64_usb_fat_located(), DISPLAY64_RGB_TEXT_SECONDARY);
         display64_draw_label_value(body_x + 222u, card_y + 26u, "RW ", mmio64_nvme_rw_delegated(), DISPLAY64_RGB_TEXT_SECONDARY);
         if (card_w > 236u)
@@ -6206,7 +6206,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
         : (mmio64_nvme_fat_dirent_t *)0;
     display64_compositor_draw_surface(body_x, body_y, 110u, body_h, DISPLAY64_RGB_SURFACE, DISPLAY64_RGB_SURFACE_BORDER, 0u);
     display64_compositor_fill_rect(body_x + 6u, body_y + 10u, 3u, 18u, DISPLAY64_RGB_APP_FILES);
-    (void)display64_draw_font_text(body_x + 16u, body_y + 10u, "NVME FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 16u, body_y + 10u, "NVMe FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 36u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
     (void)display64_draw_font_text(body_x + 31u, body_y + 40u, "Up", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 60u, 78u, 20u, DISPLAY64_RGB_SURFACE_HIGH);
@@ -6432,7 +6432,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
         : 0u;
     display64_compositor_draw_rect(body_x + 100u, body_y - 4u, 1u, body_h, DISPLAY64_RGB_SURFACE_BORDER);
     (void)display64_draw_font_text(body_x, body_y, "RAMFS /", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 20u, "NVME FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 20u, "NVMe FAT32", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 40u, "Cloud", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y, "README.TXT", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
@@ -6524,7 +6524,7 @@ static void display64_desktop_draw_settings(u32 handle)
     display64_draw_label_value(body_x, body_y + 18u, "W ", g_display_boot_info->framebuffer_width, DISPLAY64_RGB_TEXT_SECONDARY);
     display64_draw_label_value(body_x + 88u, body_y + 18u, "H ", g_display_boot_info->framebuffer_height, DISPLAY64_RGB_TEXT_SECONDARY);
     (void)display64_draw_font_text(body_x, body_y + 40u, "FB BGR", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 64u, "Storage RAMFS NVME", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 64u, "Storage RAMFS NVMe", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 88u, "Network DHCP DNS HTTP", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 112u, "About LimitlessOS", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     display64_draw_label_value(body_x, body_y + 130u, "Sectors ", g_display_boot_info->kernel_sector_count, DISPLAY64_RGB_TEXT_SECONDARY);
