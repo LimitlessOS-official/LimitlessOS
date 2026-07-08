@@ -6437,7 +6437,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
     (void)display64_draw_font_text(body_x + 116u, body_y, "README.TXT", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 20u, "APPS/", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x + 116u, body_y + 40u, "Cloud unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "No sync/upload", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x + 116u, body_y + 60u, "Sync unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
 #endif
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     cloud_storage64_init();
