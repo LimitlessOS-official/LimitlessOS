@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Shell unknown-command error state
+
+- Task: Visual/UX - replace the placeholder-like bare shell `unknown command` response with a concise actionable error state that points users back to the existing `help` discovery surface.
+- Commit: `c2c407ced8aada96ebea91306452a99d8f7a5628`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product shell now prints `unknown: help` from both unknown-command fallbacks instead of the dead-end `unknown command` text, keeping the command surface unchanged while making the error state more intentional and discoverable. This was grounded in the existing LimitlessOS `help` command surface and general CLI guidance that errors should suggest what to do next; the fuller token-echoing version was attempted but abandoned because it exceeded the 1.44 MiB UEFI FAT image budget. Verified in QEMU through the existing mistyped `imitless`, `limitless`, and `exit` transcript paths; unverified on physical MSI because this is shell text behavior rather than hardware-dependent functionality.
+
 ## 2026-07-08 - I2C HID GNVS field-offset derivation
 
 - Task: Generality - replace the remaining MSI-specific `TPDB`/`TPDS` GNVS byte-offset constants in the I2C HID ACPI path with a targeted AML `FieldOp` walker that derives those byte offsets from `Field (GNVS, ...)` definitions.
