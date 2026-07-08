@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - AI backend pkginfo mode wording
+
+- Task: Visual/UX - replace the `pkginfo` AI backend `Mode B host and consent foundation only` implementation shorthand with direct consent-host and inference-unavailable wording while preserving the same Assistant host, consent, audit, and no-inference behavior.
+- Commit: `288e70e29e78442183ab31a5365e3cc18827fbf3`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `ai backend mode: consent host only; inference unavailable` instead of `ai backend mode: Mode B host and consent foundation only`, keeping the same Assistant host active status, required consent, read-only scoped context, audit visibility, zero denied-request data, and no model/inference backend. The dedicated M17 AI Assistant verifier was updated so the expected visible line matches the revised user-facing copy while internal Mode B telemetry remains unchanged. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without internal-mode shorthand; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Account association pkginfo mode wording
 
 - Task: Visual/UX - replace the `pkginfo` account-association `Mode B status only` implementation shorthand with direct status-only wording while preserving the same account association policy/status-only behavior and no remote account authority.
