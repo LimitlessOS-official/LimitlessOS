@@ -106,6 +106,6 @@ Assert-Line -Lines $outputLines -Pattern '^installer selected profile: general-u
 Assert-Line -Lines $outputLines -Pattern '^installer writes planned: 0$' -Message "M15 installer UX verifier failed: pkginfo did not report zero write operations."
 Assert-Line -Lines $outputLines -Pattern '^installer formats planned: 0$' -Message "M15 installer UX verifier failed: pkginfo did not report zero format operations."
 Assert-Line -Lines $outputLines -Pattern '^installer boot entries planned: 0$' -Message "M15 installer UX verifier failed: pkginfo did not report zero boot-entry operations."
-Assert-Line -Lines $outputLines -Pattern '^installer real install approved: false$' -Message "M15 installer UX verifier failed: pkginfo did not report real install approval as false."
+Assert-Line -Lines $outputLines -Pattern '^installer real install: not approved$' -Message "M15 installer UX verifier failed: pkginfo did not report real install as not approved."
 
 Write-Host "M15 installer UX verifier passed for $Architecture $BootMedia ($BuildProfile profile)."

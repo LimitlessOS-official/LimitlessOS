@@ -4428,7 +4428,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 hwval did not report read-only Product mode."
     Assert-OutputContains -Lines $outputLines -Pattern '^installer dry-run: awaiting hardware evidence; writes disabled$' -Message "x64 hwval did not report installer dry-run as awaiting hardware evidence with writes disabled."
     Assert-OutputContains -Lines $outputLines -Pattern '^internal writes: disabled by default$' -Message "x64 hwval did not report internal writes disabled."
-    Assert-OutputContains -Lines $outputLines -Pattern '^real install approved: false$' -Message "x64 hwval did not report real install as unapproved."
+    Assert-OutputContains -Lines $outputLines -Pattern '^real install: not approved$' -Message "x64 hwval did not report real install as unapproved."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
     if (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hardware-registry hardware-registry 1 refresh [1-9][0-9]* limit 32 inventory [1-9][0-9]* pci-enumerated [1-9][0-9]* pci-query-denial 0 .* driver-bound [1-9][0-9]* .* driver-failed 0 overflow 0 token 0x[0-9A-F]{8}' -Message "x64 M106 hardware registry proof was not observed."

@@ -1134,7 +1134,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "installer writes planned: 0\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "installer formats planned: 0\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "installer boot entries planned: 0\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "installer real install approved: false\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer real install: not approved\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "installer unavailable components: personal enterprise security-key cloud-sync ai-assisted-setup package-install browser gaming developer-toolchain\n");
     ai_policy64_init();
     (void)shell64_write_text(console_capability_handle, owner_id, "ai policy broker: foundation active\n");
@@ -2623,7 +2623,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_text(console_capability_handle, owner_id, "internal writes: disabled by default\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "format authority: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "real install approved: false\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "real install: not approved\n");
     return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage/installer/network/update/install\n");
 }
 
