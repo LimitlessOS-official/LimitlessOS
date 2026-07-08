@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Open command failure error state
+
+- Task: Visual/UX - replace the `open` command's GUI-specific runtime failure copy with a concise command-scoped error state while preserving the existing usage text for invalid targets.
+- Commit: `bdb85db833fe2c9ef23c64999f168d3844326528`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product shell now reports a failed GUI-launch request as `open: not ready` instead of `gui open unavailable`, keeping the runtime failure tied to the command the user ran while leaving `usage: open <terminal|files|settings|installer|assistant>` as the invalid-target path. This is grounded in the existing LimitlessOS `open` command surface and general CLI guidance that usage text and runtime errors should stay distinct and succinct. Verified by Product build and the UEFI QEMU display/hardware gate; the exact `open` failure branch is not exercised by the default gate and remains unverified on physical MSI because this is shell copy only, not hardware behavior.
+
 ## 2026-07-08 - Settings hardware terminology polish
 
 - Task: Visual/UX - normalize visible Settings and File Manager hardware terminology so Product panels use standard names such as `NVMe`, `USB`, and `I2C` instead of inconsistent acronym casing.
