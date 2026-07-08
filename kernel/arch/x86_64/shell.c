@@ -4920,7 +4920,7 @@ static u32 shell64_execute_line_inner(
 #endif
         (void)shell64_write_text(console_capability_handle, owner_id, "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET\n");
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; MSI manual evidence pending\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only; hardware evidence pending\n");
 #else
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only\n");
 #endif

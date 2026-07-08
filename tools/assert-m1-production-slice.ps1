@@ -511,7 +511,7 @@ function Assert-RuntimeShellSurfaceSource
         "Builtins: apps help hwval info linux lock net pkginfo pwd",
         "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write",
         "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET",
-        "Product hardware validation: hwval is read-only; MSI manual evidence pending",
+        "Product hardware validation: hwval is read-only; hardware evidence pending",
         "Product package trust: pkginfo and Settings are read-only; installation disabled",
         "Product GUI: Terminal, File Manager, Settings, Installer, Assistant through brokered desktop input/display",
         "Product GUI: unavailable on BIOS checksum fallback",
