@@ -1068,8 +1068,8 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
         (void)shell64_write_text(console_capability_handle, owner_id, "uefi package mode: unavailable on BIOS boot\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "signature verification: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
-        (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "identity transport: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "account association: unavailable on BIOS fallback\n");
         (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage broker: unavailable on BIOS fallback\n");
@@ -1101,8 +1101,8 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "update-index: local signed fixture verified\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "rollback/replay: denied/handled\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "auto-install: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable/non-product\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable/non-product\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "public update fetch: unavailable\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "trusted-time expiry: unavailable\n");
     identity_transport64_init();
     (void)shell64_write_text(console_capability_handle, owner_id, "identity descriptor: signed local fixture verified\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "identity encrypted transport: unavailable\n");
