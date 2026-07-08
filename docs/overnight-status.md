@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Shell cloud storage help wording
+
+- Task: Visual/UX - replace the Product shell help cloud-storage line's slash-style sync/upload/download status with clearer sync and transfer wording while keeping the same cloud broker policy and denial behavior.
+- Commit: `67c1f0bd1dbfecdee3a68b72900d3444d24c41e2`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product shell help now says `Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied` instead of `Product cloud storage: Settings/File Manager show broker policy; sync/upload/download unavailable`, keeping the same cloud broker policy, Settings/File Manager surfaces, and verifier-enforced runtime help checkpoint. The matching M1 source assertion and QEMU help assertion were updated so the gate proves the new user-facing text, not stale copy. This is grounded in Microsoft UI text guidance to keep status text concise and avoid over-communication; verified by Product build and the UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this is shell help text rather than a hardware path.
+
 ## 2026-07-08 - Settings package trust status wording
 
 - Task: Visual/UX - replace the Settings Package Trust row's slash-style auto-install/public-fetch status with clearer auto-install availability wording while preserving the existing signed-package, local-index, and install/apply disabled behavior.
