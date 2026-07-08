@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Settings package trust status wording
+
+- Task: Visual/UX - replace the Settings Package Trust row's slash-style auto-install/public-fetch status with clearer auto-install availability wording while preserving the existing signed-package, local-index, and install/apply disabled behavior.
+- Commit: `a40761a7ef99c2233a754068f7c35e2c257aabc3`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Settings Package Trust panel now says `Auto-install unavailable` instead of `No auto-install/public fetch`, keeping the same package signing status, local fixture index, signed-package count, install/apply disabled state, and package trust telemetry. This is grounded in Microsoft UI text guidance to keep interface status text concise and focused on the essential state rather than combining multiple slash-separated implementation labels in one row. Verified by Product build and the UEFI QEMU hardware/display gate; the gate proves the Product GUI/readiness path and package trust surface telemetry, but it does not directly inspect this exact Settings row on the physical MSI, so live MSI rendering remains unverified.
+
 ## 2026-07-08 - Settings cloud storage status wording
 
 - Task: Visual/UX - replace the Settings cloud storage row's slash-heavy sync/upload/download status with clearer unavailable/denied wording while preserving the existing cloud broker, transfer denial, and read-only policy behavior.
