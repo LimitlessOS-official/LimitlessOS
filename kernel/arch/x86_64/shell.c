@@ -1173,7 +1173,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "install authority: disabled; scoped capability required\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-check authority: scoped; no ambient network\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "update-apply authority: disabled; scoped install required\n");
-    return shell64_write_text(console_capability_handle, owner_id, "no ambient install/update/network/cloud/fs/identity/secret/ai\n");
+    return shell64_write_text(console_capability_handle, owner_id, "authority: no ambient install, update, network, cloud, file, identity, secret, or AI access\n");
 }
 
 static const char *shell64_yes_no(u32 value)

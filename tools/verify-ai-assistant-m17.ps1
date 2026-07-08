@@ -114,6 +114,6 @@ Assert-Line -Lines $outputLines -Pattern '^ai scripted response: none$' -Message
 Assert-Line -Lines $outputLines -Pattern '^ai package integrity: signed Product component$' -Message "M17 AI Assistant verifier failed: Assistant package integrity status was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai self-modification: denied$' -Message "M17 AI Assistant verifier failed: Assistant self-modification denial was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai cloud memory: unavailable$' -Message "M17 AI Assistant verifier failed: cloud memory unavailability was not visible."
-Assert-Line -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret/ai$' -Message "M17 AI Assistant verifier failed: no-ambient AI authority status was not visible."
+Assert-Line -Lines $outputLines -Pattern '^authority: no ambient install, update, network, cloud, file, identity, secret, or AI access$' -Message "M17 AI Assistant verifier failed: no-ambient AI authority status was not visible."
 
 Write-Host "M17 AI Assistant read-only verifier passed for $Architecture $BootMedia ($BuildProfile profile)."

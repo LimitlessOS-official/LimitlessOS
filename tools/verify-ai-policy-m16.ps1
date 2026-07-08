@@ -97,6 +97,6 @@ Assert-Line -Lines $outputLines -Pattern '^ai secret access: denied$' -Message "
 Assert-Line -Lines $outputLines -Pattern '^ai cloud access: denied$' -Message "M16 AI policy verifier failed: AI cloud denial was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai assistant: (unavailable|host active; inference unavailable)$' -Message "M16 AI policy verifier failed: AI assistant status was not labeled truthfully."
 Assert-Line -Lines $outputLines -Pattern '^ai automation: unavailable$' -Message "M16 AI policy verifier failed: AI automation was not labeled unavailable."
-Assert-Line -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret/ai$' -Message "M16 AI policy verifier failed: no-ambient AI authority status was not visible."
+Assert-Line -Lines $outputLines -Pattern '^authority: no ambient install, update, network, cloud, file, identity, secret, or AI access$' -Message "M16 AI policy verifier failed: no-ambient AI authority status was not visible."
 
 Write-Host "M16 AI policy verifier passed for $Architecture $BootMedia ($BuildProfile profile)."

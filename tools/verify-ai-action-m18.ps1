@@ -112,6 +112,6 @@ Assert-Line -Lines $outputLines -Pattern '^ai autonomous actions: unavailable$' 
 Assert-Line -Lines $outputLines -Pattern '^ai model call: none$' -Message "M18 AI action verifier failed: no-model-call status was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai scripted response: none$' -Message "M18 AI action verifier failed: scripted-response absence was not visible."
 Assert-Line -Lines $outputLines -Pattern '^ai self-modification: denied$' -Message "M18 AI action verifier failed: self-modification denial was not visible."
-Assert-Line -Lines $outputLines -Pattern '^no ambient install/update/network/cloud/fs/identity/secret/ai$' -Message "M18 AI action verifier failed: no-ambient AI authority status was not visible."
+Assert-Line -Lines $outputLines -Pattern '^authority: no ambient install, update, network, cloud, file, identity, secret, or AI access$' -Message "M18 AI action verifier failed: no-ambient AI authority status was not visible."
 
 Write-Host "M18 AI consent-scoped action verifier passed for $Architecture $BootMedia ($BuildProfile profile)."
