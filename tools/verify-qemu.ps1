@@ -379,7 +379,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Real internal install/write$' -Message "M15 apps output did not quarantine internal install/write authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Formatting$' -Message "M15 apps output did not quarantine formatting authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Boot entry changes$' -Message "M15 apps output did not quarantine boot-entry authority."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Package install/update actions$' -Message "M8 apps output did not quarantine package install/update authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Package installation and update actions$' -Message "M8 apps output did not quarantine package installation and update authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Auto-install$' -Message "M8 apps output did not quarantine auto-install."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Public update fetch$' -Message "M8 apps output did not quarantine public update fetch."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Internal files hidden from app output: HELLO\.TXT INDEX\.TXT$' -Message "M1 apps output did not label hidden internal app files."

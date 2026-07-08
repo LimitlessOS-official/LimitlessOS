@@ -544,6 +544,7 @@ function Assert-RuntimeShellSurfaceSource
         "Real internal install/write",
         "Formatting",
         "Boot entry changes",
+        "Package installation and update actions",
         "Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT",
         "Personal login",
         "Enterprise login",
