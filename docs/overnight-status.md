@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - AI action broker pkginfo mode wording
+
+- Task: Visual/UX - replace the `pkginfo` AI action broker `Mode B deterministic templates` implementation shorthand with direct deterministic-template wording while preserving the same consent-scoped predefined action-template behavior.
+- Commit: `2ccc54c1ce31eb8af0d739fbcc634d6f8f29c01d`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `ai action broker: deterministic templates only` instead of `ai action broker: Mode B deterministic templates`, keeping the same consent-scoped template set, forbidden action list, note-write proof, consent/grant/audit/revocation status, and no autonomous action or model-call behavior. The M18 AI action verifier and the required UEFI QEMU pkginfo assertion were updated to expect the revised user-facing line, and the M18 verifier's help/app expectations were aligned to the already-polished launcher, Settings, and pkginfo wording. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without internal-mode shorthand; verified by the required Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified and an extra non-required M18 wrapper run did not reach its M18 assertions because its internal QEMU path failed on an unrelated NVMe admin-identify proof.
+
 ## 2026-07-08 - AI backend pkginfo mode wording
 
 - Task: Visual/UX - replace the `pkginfo` AI backend `Mode B host and consent foundation only` implementation shorthand with direct consent-host and inference-unavailable wording while preserving the same Assistant host, consent, audit, and no-inference behavior.
