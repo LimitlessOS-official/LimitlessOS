@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - AI assistant help wording
+
+- Task: Visual/UX - replace the Product help line's slash-style AI Assistant launcher/Settings/pkginfo wording with clearer launcher, Settings, and pkginfo wording while preserving the same consent-scoped action templates and inference-unavailable behavior.
+- Commit: `7e7a88e5e720091ec45112dba0fc8c24e08d7e40`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now says `Product AI assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable` instead of `Product AI assistant: launcher/Settings/pkginfo show consent-scoped action templates; inference unavailable`, keeping the same launcher, Settings, pkginfo, consent-scoped action-template, and inference-unavailable behavior. The M1 Product source assertion and QEMU runtime assertion were updated so both gates prove the new user-facing text. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell help copy only.
+
 ## 2026-07-08 - Installer UX help wording
 
 - Task: Visual/UX - replace the Product help line's slash-heavy installer wording with clearer launcher/Settings and write/format/boot-entry status text while preserving the same dry-run installer planning behavior and disabled write/format/boot-entry authority.
