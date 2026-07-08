@@ -134,13 +134,14 @@ u32 i2c_hid64_pointer_error(void)
 #define I2C_HID64_AML_BUFFER_OP 0x11u
 #define I2C_HID64_AML_PACKAGE_OP 0x12u
 #define I2C_HID64_AML_OPERATION_REGION_OP 0x80u
+#define I2C_HID64_AML_FIELD_OP 0x81u
 #define I2C_HID64_ACPI_SYSTEM_MEMORY_SPACE 0x00u
 #define I2C_HID64_ACPI_NAME_GNVS 0x53564E47u
+#define I2C_HID64_ACPI_NAME_TPDB 0x42445054u
+#define I2C_HID64_ACPI_NAME_TPDS 0x53445054u
 #define I2C_HID64_ACPI_NAME_SBFB 0x42464253u
 #define I2C_HID64_ACPI_NAME_SBFG 0x47464253u
 #define I2C_HID64_ACPI_NAME_SBFI 0x49464253u
-#define I2C_HID64_MSI_TPDB_GNVS_OFFSET 1038u
-#define I2C_HID64_MSI_TPDS_GNVS_OFFSET 1041u
 #define I2C_HID64_ACPI_RESOURCE_I2C_SERIAL_BUS 0x8Eu
 #define I2C_HID64_ACPI_RESOURCE_GPIO_CONNECTION 0x8Cu
 #define I2C_HID64_ACPI_RESOURCE_END_TAG 0x0Fu
@@ -1032,6 +1033,114 @@ static u32 i2c_hid64_acpi_read_physical_byte(u32 physical_address, u32 *value_ou
     return 1u;
 }
 
+static u32 i2c_hid64_acpi_find_field_offsets(
+    const u8 *aml,
+    u32 aml_bytes,
+    u32 region_name,
+    u32 *address_offset_out,
+    u32 *speed_offset_out)
+{
+    u32 offset;
+    u32 length;
+    u32 length_bytes;
+    u32 cursor;
+    u32 end;
+    u32 bit_offset;
+    u32 bit_length;
+    u32 field_name;
+    u32 found = 0u;
+
+    if ((aml == 0) || (address_offset_out == 0) || (speed_offset_out == 0))
+    {
+        return 0u;
+    }
+
+    *address_offset_out = 0u;
+    *speed_offset_out = 0u;
+
+    for (offset = I2C_HID64_ACPI_TABLE_HEADER_BYTES; (offset + 8u) < aml_bytes; ++offset)
+    {
+        if ((aml[offset] != I2C_HID64_AML_EXT_OP)
+            || (aml[offset + 1u] != I2C_HID64_AML_FIELD_OP)
+            || (i2c_hid64_aml_pkg_length(aml, aml_bytes, offset + 2u, &length, &length_bytes) == 0u))
+        {
+            continue;
+        }
+
+        cursor = offset + 2u + length_bytes;
+        end = offset + 2u + length;
+        if ((end > aml_bytes)
+            || ((cursor + 5u) > end)
+            || (i2c_hid64_acpi_u32(&aml[cursor]) != region_name))
+        {
+            continue;
+        }
+
+        cursor += 5u; /* region NameSeg plus FieldFlags */
+        bit_offset = 0u;
+        while (cursor < end)
+        {
+            if (aml[cursor] == 0x00u)
+            {
+                if (i2c_hid64_aml_pkg_length(aml, end, cursor + 1u, &bit_length, &length_bytes) == 0u)
+                {
+                    break;
+                }
+                bit_offset += bit_length;
+                cursor += 1u + length_bytes;
+                continue;
+            }
+            if (aml[cursor] == 0x01u)
+            {
+                cursor += 3u;
+                continue;
+            }
+            if (aml[cursor] == 0x03u)
+            {
+                cursor += 4u;
+                continue;
+            }
+            if (aml[cursor] == 0x02u)
+            {
+                ++cursor;
+                continue;
+            }
+
+            if (((cursor + 5u) > end)
+                || (i2c_hid64_aml_pkg_length(aml, end, cursor + 4u, &bit_length, &length_bytes) == 0u))
+            {
+                ++cursor;
+                continue;
+            }
+
+            field_name = i2c_hid64_acpi_u32(&aml[cursor]);
+            if ((field_name == I2C_HID64_ACPI_NAME_TPDB)
+                && ((bit_offset & 7u) == 0u)
+                && (bit_length >= 8u))
+            {
+                *address_offset_out = bit_offset >> 3;
+                found |= 1u;
+            }
+            else if ((field_name == I2C_HID64_ACPI_NAME_TPDS)
+                && ((bit_offset & 7u) == 0u)
+                && (bit_length >= 8u))
+            {
+                *speed_offset_out = bit_offset >> 3;
+                found |= 2u;
+            }
+
+            bit_offset += bit_length;
+            cursor += 4u + length_bytes;
+            if (found == 3u)
+            {
+                return 1u;
+            }
+        }
+    }
+
+    return 0u;
+}
+
 static u32 i2c_hid64_acpi_load_touchpad_fields(
     const u8 *aml,
     u32 aml_bytes,
@@ -1041,6 +1150,8 @@ static u32 i2c_hid64_acpi_load_touchpad_fields(
     u32 gnvs_bytes;
     u32 address;
     u32 speed_selector;
+    u32 address_offset;
+    u32 speed_offset;
 
     if (fields == 0)
     {
@@ -1057,17 +1168,23 @@ static u32 i2c_hid64_acpi_load_touchpad_fields(
             I2C_HID64_ACPI_NAME_GNVS,
             &gnvs_base,
             &gnvs_bytes) == 0u)
-        || (I2C_HID64_MSI_TPDB_GNVS_OFFSET >= gnvs_bytes)
-        || (I2C_HID64_MSI_TPDS_GNVS_OFFSET >= gnvs_bytes))
+        || (i2c_hid64_acpi_find_field_offsets(
+            aml,
+            aml_bytes,
+            I2C_HID64_ACPI_NAME_GNVS,
+            &address_offset,
+            &speed_offset) == 0u)
+        || (address_offset >= gnvs_bytes)
+        || (speed_offset >= gnvs_bytes))
     {
         return 0u;
     }
 
     if ((i2c_hid64_acpi_read_physical_byte(
-            gnvs_base + I2C_HID64_MSI_TPDB_GNVS_OFFSET,
+            gnvs_base + address_offset,
             &address) == 0u)
         || (i2c_hid64_acpi_read_physical_byte(
-            gnvs_base + I2C_HID64_MSI_TPDS_GNVS_OFFSET,
+            gnvs_base + speed_offset,
             &speed_selector) == 0u)
         || ((address & 0x7Fu) == 0u))
     {
