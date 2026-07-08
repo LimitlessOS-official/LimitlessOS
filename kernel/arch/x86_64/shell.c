@@ -2624,7 +2624,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_text(console_capability_handle, owner_id, "format authority: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "real install: not approved\n");
-    return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage/installer/network/update/install\n");
+    return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage, installer, network, update, or install authority\n");
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
