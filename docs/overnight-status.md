@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps AI assistant status wording
+
+- Task: Visual/UX - replace the `apps` output AI Assistant slash-style `launcher/Settings/pkginfo` wording with clearer launcher, Settings, and pkginfo wording while preserving the same consent-scoped action templates and inference-unavailable behavior.
+- Commit: `bbfcf8df6180b0a48816ed310af81a6da130f3cf`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now says `AI Assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable` instead of `AI Assistant: launcher/Settings/pkginfo; consent-scoped action templates; inference unavailable`, keeping the same launcher, Settings, pkginfo, consent-scoped action-template, and inference-unavailable behavior. The M1 Product source assertion and QEMU runtime assertion were updated so both gates prove the revised `apps` output instead of stale copy. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - AI assistant help wording
 
 - Task: Visual/UX - replace the Product help line's slash-style AI Assistant launcher/Settings/pkginfo wording with clearer launcher, Settings, and pkginfo wording while preserving the same consent-scoped action templates and inference-unavailable behavior.
