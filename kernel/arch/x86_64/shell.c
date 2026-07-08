@@ -3164,7 +3164,7 @@ static u32 shell64_open_product_app(
     }
     if (display64_desktop_open_app_by_id(app_id) == 0u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "gui open unavailable\n");
+        return shell64_write_text(console_capability_handle, owner_id, "open: not ready\n");
     }
     return shell64_write_text(console_capability_handle, owner_id, "gui open ok\n");
 }
