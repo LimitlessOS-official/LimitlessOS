@@ -535,7 +535,7 @@ function Assert-RuntimeShellSurfaceSource
         "Service/session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings and File Manager; policy only; sync unavailable",
-        "Installer UX: launcher/Settings; dry-run planning only; writes disabled",
+        "Installer UX: launcher and Settings show dry-run planning; writes disabled",
         "AI Assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable",
         "AI policy: unavailable on BIOS checksum fallback; no actions",
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",

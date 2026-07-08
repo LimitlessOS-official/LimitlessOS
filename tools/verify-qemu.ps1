@@ -341,7 +341,7 @@ function Assert-X64M1RuntimeSurface
         Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS apps output did not label installer UX as unavailable."
     }
     else {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: launcher/Settings; dry-run planning only; writes disabled$' -Message "M15 apps output did not label installer UX visibility."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: launcher and Settings show dry-run planning; writes disabled$' -Message "M15 apps output did not label installer UX visibility."
     }
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^AI policy: unavailable on BIOS checksum fallback; no actions$' -Message "M16 BIOS apps output did not label AI policy as unavailable."
