@@ -2619,7 +2619,7 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "package trust surface: ",
         (package_signing64_signed() != 0u) ? "UEFI Ed25519 verified" : "BIOS checksum-only fallback");
-    (void)shell64_write_text(console_capability_handle, owner_id, "installer dry-run: pending manual evidence; dry-run only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "installer dry-run: awaiting hardware evidence; writes disabled\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "internal writes: disabled by default\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "format authority: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");

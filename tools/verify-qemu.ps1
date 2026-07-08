@@ -4426,7 +4426,7 @@ if ($Architecture -eq "x86_64") {
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ pkginfo' -Message "x64 persistent shell did not accept the Product pkginfo command."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval' -Message "x64 persistent shell did not accept the Product hwval command."
     Assert-OutputContains -Lines $outputLines -Pattern '^hardware validation: read-only Product mode$' -Message "x64 hwval did not report read-only Product mode."
-    Assert-OutputContains -Lines $outputLines -Pattern '^installer dry-run: pending manual evidence; dry-run only$' -Message "x64 hwval did not report installer dry-run as manual/pending."
+    Assert-OutputContains -Lines $outputLines -Pattern '^installer dry-run: awaiting hardware evidence; writes disabled$' -Message "x64 hwval did not report installer dry-run as awaiting hardware evidence with writes disabled."
     Assert-OutputContains -Lines $outputLines -Pattern '^internal writes: disabled by default$' -Message "x64 hwval did not report internal writes disabled."
     Assert-OutputContains -Lines $outputLines -Pattern '^real install approved: false$' -Message "x64 hwval did not report real install as unapproved."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-hwval drs-hwval-product 1 drs-hwval-readonly 1 drs-hwval-no-internal-write 1 drs-hwval-no-format 1 drs-hwval-no-nvram 1 drs-hwval-storage-enumeration-scoped 1 drs-hwval-network-status-scoped 1 drs-hwval-package-status-scoped 1 drs-hwval-installer-dryrun-only 1 drs-hwval-msi-checklist-present 1 .* real-install-approved 0' -Message "x64 M9 hardware-validation read-only proof was not observed."
