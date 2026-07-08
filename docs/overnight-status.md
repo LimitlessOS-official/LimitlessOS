@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Settings package trust installation wording
+
+- Task: Visual/UX - replace the Settings Package Trust panel's slash-style `Install/apply disabled` line with clearer installation-disabled wording while preserving the same signed-package trust surface and disabled install/apply behavior.
+- Commit: `69fe1ae4f863416da613e934df33cf3a89bb6664`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Settings Package Trust panel now says `Installation disabled` instead of `Install/apply disabled`, keeping the same UEFI Ed25519/package-signing status, local fixture index display, auto-install-unavailable line, package install/apply denial telemetry, and read-only Settings behavior. A Product source assertion now checks the GUI wording in `display.c` so the build gate protects this user-facing text as well as the existing package trust telemetry. This is grounded in Microsoft UI text guidance that users scan UI text and that essential state should be concise without over-communication; verified by Product build and the UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible copy only.
+
 ## 2026-07-08 - Shell package trust help wording
 
 - Task: Visual/UX - replace the Product shell help package-trust line's slash-style install/apply status with clearer installation-disabled wording while preserving the same read-only package trust surface and disabled install/apply behavior.
