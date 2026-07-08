@@ -369,6 +369,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Enterprise policy$' -Message "M13 apps output did not label enterprise policy unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud sync$' -Message "M14 apps output did not label cloud sync unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Automatic cloud transfers$' -Message "M14 apps output did not label automatic cloud transfers unavailable."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Arbitrary network transfers$' -Message "M19 apps output did not label arbitrary network transfers unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI cloud access$' -Message "M14 apps output did not label AI cloud access unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^(AI assistant|AI inference backend)$' -Message "M16-M18 apps output did not label unavailable AI assistant or inference surface."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI (actions|autonomous actions)$' -Message "M16-M18 apps output did not label unavailable AI autonomy."

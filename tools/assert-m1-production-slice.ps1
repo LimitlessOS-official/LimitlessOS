@@ -557,6 +557,7 @@ function Assert-RuntimeShellSurfaceSource
         "Enterprise policy",
         "Cloud sync",
         "Automatic cloud transfers",
+        "Arbitrary network transfers",
         "AI cloud access",
         "AI assistant",
         "AI autonomous actions",
