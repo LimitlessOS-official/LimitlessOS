@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Settings identity status wording
+
+- Task: Visual/UX - replace the Settings identity row's ambient-authority shorthand with clearer identity-availability wording while preserving the existing local identity and vault metadata behavior.
+- Commit: `0bde71ef6dcca39f09f39a98422995e370d171d1`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Settings identity panel now says `Identity unavailable` instead of `No ambient identity/secret`, keeping the same local-active status, vault metadata note, identity panel telemetry, capability policy, and storage behavior. This is grounded in the existing Settings identity surface and UI writing guidance favoring direct, scan-friendly status text over authority-model shorthand. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the Product GUI and Settings hardware/input/readiness surfaces but does not directly open the identity row, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager cloud sync status wording
 
 - Task: Visual/UX - replace the File Manager cloud row's slash-style sync/upload status with clearer availability wording while preserving the existing cloud storage status and read-only policy path.
