@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Secure boot hwval wording
+
+- Task: Visual/UX - replace the `hwval full` secure-boot `unavailable/not Product-detected` slash shorthand with direct Product-detection wording while preserving the same no-secure-boot-detection behavior.
+- Commit: `d800219ea7fc738c9014f92cb322b728d927544b`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `hwval full` now reports `secure boot: not detected by Product` instead of `secure boot: unavailable/not Product-detected`, keeping the same read-only hardware validation mode and the same lack of a Product secure-boot detection signal. The UEFI hardware/display QEMU gate now asserts the revised line alongside the existing `hardware validation: read-only Product mode` proof so this visible status wording cannot regress silently. This is grounded in Microsoft UI text guidance that users scan interface text and that status labels should be concise without slash-combined implementation shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI secure-boot reporting remains unverified because this pass changes wording only.
+
 ## 2026-07-08 - Cloud token storage pkginfo wording
 
 - Task: Visual/UX - replace the `pkginfo` cloud token storage `denied while vault Mode B` implementation shorthand with direct denial wording while preserving the same cloud token-storage denial behavior.
