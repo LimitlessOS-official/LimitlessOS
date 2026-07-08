@@ -283,7 +283,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; installation disabled$' -Message "M8 runtime help did not describe Product package trust status."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: unavailable on BIOS checksum fallback$' -Message "M15 BIOS fallback help did not label Product GUI as unavailable."
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: BIOS service/session stubs active; installer UX unavailable$' -Message "M15 BIOS fallback help did not label service/session and installer status truthfully."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: BIOS fallback shows service and session status; installer UX unavailable$' -Message "M15 BIOS fallback help did not label service/session and installer status truthfully."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings, Installer(, Assistant)? through brokered desktop input/display$' -Message "M15/M17 runtime help did not describe Product GUI, installer, and Assistant status."

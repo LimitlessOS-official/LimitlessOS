@@ -516,7 +516,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product GUI: Terminal, File Manager, Settings, Installer, Assistant through brokered desktop input/display",
         "Product GUI: unavailable on BIOS checksum fallback",
         "Product services: Settings shows service and session status; installer planning writes disabled",
-        "Product services: BIOS service/session stubs active; installer UX unavailable",
+        "Product services: BIOS fallback shows service and session status; installer UX unavailable",
         "Product login: first-run setup, authenticated session, lock/unlock through brokered input",
         "Product identity/cloud/installer: Settings shows local account, cloud policy, and dry-run installer planning; remote/cloud login unavailable",
         "Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied",
