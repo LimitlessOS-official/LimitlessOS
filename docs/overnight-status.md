@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps identity status wording
+
+- Task: Visual/UX - replace the `apps` status line `Identity/account/vault/transport status: Settings; local only; no secret storage` slash label with `Identity, account, vault, and transport status: Settings; local only; no secret storage` while preserving the same Settings-visible identity/account/vault/transport status behavior.
+- Commit: `a2b90ff788e59d6fae5be25e01f779157c84f1cd`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now reports `Identity, account, vault, and transport status: Settings; local only; no secret storage` instead of the slash-combined `Identity/account/vault/transport status: Settings; local only; no secret storage`, keeping the same local-only identity/account status, Settings visibility, vault/transport status visibility, and no-secret-storage behavior. The M1 source gate, UEFI QEMU runtime assertion, and M13 account-association verifier now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should clearly communicate objects without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps service status wording
 
 - Task: Visual/UX - replace the `apps` status line `Service/session status: Settings` slash label with `Service and session status: Settings` while preserving the same Settings-visible service/session status behavior.
