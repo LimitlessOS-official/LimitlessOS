@@ -507,7 +507,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product apps: append cat copy delete ls mkdir move nethello rename stat touch write",
         "Product network: net shows DHCP lease; net curl example.com performs a scoped HTTP GET",
         "Product hardware validation: hwval is read-only; MSI manual evidence pending",
-        "Product package trust: pkginfo and Settings are read-only; install/apply disabled",
+        "Product package trust: pkginfo and Settings are read-only; installation disabled",
         "Product GUI: Terminal, File Manager, Settings, Installer, Assistant through brokered desktop input/display",
         "Product GUI: unavailable on BIOS checksum fallback",
         "Product services: Settings shows service/session status; installer planning writes disabled",

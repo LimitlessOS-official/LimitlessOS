@@ -280,7 +280,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move nethello rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease; net curl example\.com performs a scoped HTTP GET$' -Message "M3 runtime help did not describe Product network status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only(; MSI manual evidence pending)?$' -Message "M9 runtime help did not describe hardware validation status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; install/apply disabled$' -Message "M8 runtime help did not describe Product package trust status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; installation disabled$' -Message "M8 runtime help did not describe Product package trust status."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: unavailable on BIOS checksum fallback$' -Message "M15 BIOS fallback help did not label Product GUI as unavailable."
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: BIOS service/session stubs active; installer UX unavailable$' -Message "M15 BIOS fallback help did not label service/session and installer status truthfully."

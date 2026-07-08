@@ -4924,7 +4924,7 @@ static u32 shell64_execute_line_inner(
 #else
         (void)shell64_write_text(console_capability_handle, owner_id, "Product hardware validation: hwval is read-only\n");
 #endif
-        (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; install/apply disabled\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "Product package trust: pkginfo and Settings are read-only; installation disabled\n");
         (void)shell64_write_gui_status_line(console_capability_handle, owner_id);
         (void)shell64_write_service_status_line(console_capability_handle, owner_id);
         (void)shell64_write_login_status_line(console_capability_handle, owner_id);
