@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager edit helper wording
+
+- Task: Visual/UX - replace the File Manager edit-mode helper's technical `Enter commits` wording with a clearer action instruction while preserving the existing edit commit behavior.
+- Commit: `940881755b50ddea4f8c2a147132ffdbc479b4e0`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager edit preview now says `Enter to apply` instead of `Enter commits`, keeping the same edit buffer, Enter handling, NVMe FAT authority, and mutation policy while using a plain user-facing action phrase. This is grounded in the existing File Manager edit-mode surface and UI writing guidance that instructions should use concise, specific verbs and reduce cognitive load. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the File Manager surface but does not enter edit mode, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager delete confirmation wording
 
 - Task: Visual/UX - replace the File Manager's vague destructive-action confirmation hint with explicit delete-confirmation wording while preserving the existing two-step delete behavior.
