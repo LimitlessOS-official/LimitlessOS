@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Local association pkginfo wording
+
+- Task: Visual/UX - replace the `pkginfo` local account-association slash label `local association: active/offline-capable` with `local association: active and offline-capable` while preserving the same local active/offline-capable account state.
+- Commit: `7ccaf39c8a54347acfcf61bffae462f66f5b7566`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `local association: active and offline-capable` instead of the slash-combined `local association: active/offline-capable`, keeping the same local account active state, offline-capable identity/account behavior, remote-account unavailability, and structured identity/account telemetry. The UEFI QEMU runtime assertion and M13 account-association verifier now require the revised visible line so the old slash-combined status cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear natural wording; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps hardware evidence wording
 
 - Task: Visual/UX - replace the `apps` status line `Hardware validation: use hwval; read-only; MSI evidence pending` with `Hardware validation: use hwval; read-only; hardware evidence pending` while preserving the same read-only hardware validation path.
