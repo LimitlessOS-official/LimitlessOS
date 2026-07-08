@@ -532,7 +532,7 @@ function Assert-RuntimeShellSurfaceSource
         "Package trust: use pkginfo or Settings",
         "GUI desktop: Terminal File Manager Settings Installer Assistant",
         "GUI desktop: unavailable on BIOS checksum fallback",
-        "Service/session status: Settings",
+        "Service and session status: Settings",
         "Identity/account/vault/transport status: Settings; local only; no secret storage",
         "Cloud storage status: Settings and File Manager; policy only; sync unavailable",
         "Installer UX: launcher and Settings show dry-run planning; writes disabled",

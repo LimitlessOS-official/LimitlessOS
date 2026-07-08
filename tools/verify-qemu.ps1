@@ -334,7 +334,7 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer( Assistant)?$' -Message "M15/M17 apps output did not label Product GUI apps."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Service/session status: Settings$' -Message "M6 apps output did not label service/session status visibility."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Service and session status: Settings$' -Message "M6 apps output did not label service and session status visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Identity/account/vault/transport status: Settings; local only; no secret storage$' -Message "M13 apps output did not label identity/account/vault/transport visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage status: Settings and File Manager; policy only; sync unavailable$' -Message "M14 apps output did not label cloud storage status visibility."
     if ($BootMedia -eq "disk") {
