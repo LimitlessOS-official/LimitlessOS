@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - BIOS installer UX fallback wording
+
+- Task: Visual/UX - replace the BIOS-fallback installer UX wording `dry-run safety tooling only` with `validation tools only` in the Product help and `apps` installer status lines while preserving the same unavailable installer UX and no-write fallback behavior.
+- Commit: `d2ed9f3eb2161b44cc336b62e985e9ee133168d9`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The BIOS-fallback help line now reports `Product installer UX: unavailable on BIOS checksum fallback; validation tools only`, and the BIOS-fallback `apps` line now reports `Installer UX: unavailable on BIOS checksum fallback; validation tools only`, replacing the less precise `dry-run safety tooling only` wording without changing installer planning, disabled writes, unavailable formatting, unavailable boot-entry authority, or real-install approval state. The M1 Product source inventory and BIOS runtime assertions now require the revised text so the old wording cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use concise state wording; verified by Product build and the required UEFI QEMU hardware/display gate, while a separate BIOS/disk runtime rendering check and physical MSI rendering remain unverified in this pass.
+
 ## 2026-07-08 - Identity descriptor pkginfo wording
 
 - Task: Visual/UX - replace the `pkginfo` identity descriptor line `identity descriptor: signed local fixture verified` with `identity descriptor: signed local provider verified` while preserving the same signed local descriptor verification behavior.
