@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Installer UX help wording
+
+- Task: Visual/UX - replace the Product help line's slash-heavy installer wording with clearer launcher/Settings and write/format/boot-entry status text while preserving the same dry-run installer planning behavior and disabled write/format/boot-entry authority.
+- Commit: `a54f980c791e7e04c10ad3f3967cbbca16febdb7`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now says `Product installer UX: launcher and Settings show dry-run planning; writes, formatting, and boot-entry changes disabled` instead of `Product installer UX: launcher/Settings show dry-run planning; writes/format/boot-entry disabled`, keeping the same read-only dry-run installer planning surface, launcher and Settings visibility, and disabled write/format/boot-entry behavior. The M1 Product source assertion and QEMU runtime assertion were updated so both gates prove the new user-facing text. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell help copy only.
+
 ## 2026-07-08 - Apps cloud storage status wording
 
 - Task: Visual/UX - replace the `apps` output cloud-storage status line's slash-style `Settings/File Manager; unavailable/planned; no sync` wording with clearer policy-only and sync-unavailable wording while preserving the same cloud broker, Settings/File Manager visibility, and denial behavior.
