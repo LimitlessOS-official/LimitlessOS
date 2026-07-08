@@ -83,7 +83,7 @@ if ($accountLine -notmatch ' mode mode-b-status-only local active personal plann
 }
 
 Assert-Line -Lines $outputLines -Pattern '^account association mode: status only$' -Message "M13 account association verifier failed: pkginfo did not report status-only mode."
-Assert-Line -Lines $outputLines -Pattern '^local association: active/offline-capable$' -Message "M13 account association verifier failed: pkginfo did not report local association active."
+Assert-Line -Lines $outputLines -Pattern '^local association: active and offline-capable$' -Message "M13 account association verifier failed: pkginfo did not report local association active."
 Assert-Line -Lines $outputLines -Pattern '^personal association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report personal association unavailable."
 Assert-Line -Lines $outputLines -Pattern '^enterprise association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report enterprise association unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report cloud association unavailable."
