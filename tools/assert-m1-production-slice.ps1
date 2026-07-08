@@ -540,7 +540,7 @@ function Assert-RuntimeShellSurfaceSource
         "AI policy: unavailable on BIOS checksum fallback; no actions",
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
-        "Installer dry-run: safe tooling only; writes disabled",
+        "Installer dry-run: validation tools only; writes disabled",
         "Real internal installation and write access",
         "Formatting",
         "Boot entry changes",

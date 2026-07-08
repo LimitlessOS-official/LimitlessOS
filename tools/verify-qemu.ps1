@@ -355,7 +355,7 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: unavailable on BIOS checksum fallback$' -Message "M10 BIOS apps output did not label login/session lock as unavailable."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: safe tooling only; writes disabled$' -Message "M6 apps output did not label installer dry-run write-disable status."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Installer dry-run: validation tools only; writes disabled$' -Message "M6 apps output did not label installer dry-run validation-only write-disable status."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Aliases: SAY SHOW LIST MAKE PUT SWAP SHIFT$' -Message "M1 apps output did not label alias descriptors."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Personal login$' -Message "M11 apps output did not label personal login unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Enterprise login$' -Message "M11 apps output did not label enterprise login unavailable."

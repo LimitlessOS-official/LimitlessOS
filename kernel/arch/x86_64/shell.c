@@ -4472,7 +4472,7 @@ static u32 shell64_list_apps(
     {
         (void)shell64_write_text(console_capability_handle, owner_id, "Login/session lock: unavailable on BIOS checksum fallback\n");
     }
-    (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: safe tooling only; writes disabled\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: validation tools only; writes disabled\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M21:\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nAccount linking\nReal cloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
