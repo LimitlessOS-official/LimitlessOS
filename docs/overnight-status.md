@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps network transfer wording
+
+- Task: Visual/UX - replace the `apps` unavailable-list `Arbitrary network send/receive` slash label with `Arbitrary network transfers` while preserving the same unavailable arbitrary network send and receive behavior.
+- Commit: `3e0f754cbd0f791a6b130023568fd55bc6a23c35`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` unavailable list now reports `Arbitrary network transfers` instead of `Arbitrary network send/receive`, keeping the same brokered-network status surface and the same denial/unavailability boundary for arbitrary app-controlled send and receive behavior. The M1 source gate and UEFI QEMU runtime assertion now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps cloud transfer wording
 
 - Task: Visual/UX - replace the `apps` unavailable-list `Automatic cloud upload/download` slash label with `Automatic cloud transfers` while preserving the same unavailable automatic cloud upload and download behavior.
