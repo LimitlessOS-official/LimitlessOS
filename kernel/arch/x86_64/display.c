@@ -3260,7 +3260,7 @@ static void display64_desktop_draw_status_card(
     (void)display64_draw_font_text(x + 18u, y + 8u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(x + 18u, y + 25u, detail, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(x + width - 50u, y + 14u, 34u, 20u, (ready != 0u) ? DISPLAY64_RGB_SURFACE_HIGH : DISPLAY64_RGB_FIELD);
-    (void)display64_draw_font_text(x + width - 42u, y + 18u, (ready != 0u) ? "OK" : "WAIT", DISPLAY64_FONT_SMALL, (ready != 0u) ? DISPLAY64_RGB_TEXT_PRIMARY : DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(x + width - 42u, y + 18u, (ready != 0u) ? "Ready" : "Down", DISPLAY64_FONT_SMALL, (ready != 0u) ? DISPLAY64_RGB_TEXT_PRIMARY : DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
 }
 
 static u32 display64_desktop_draw_readiness_strip(u32 body_x, u32 body_y, u32 width)
