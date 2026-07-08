@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps cloud transfer wording
+
+- Task: Visual/UX - replace the `apps` unavailable-list `Automatic cloud upload/download` slash label with `Automatic cloud transfers` while preserving the same unavailable automatic cloud upload and download behavior.
+- Commit: `2693903205c81169cf215e1191254b659fcacf7f`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` unavailable list now reports `Automatic cloud transfers` instead of `Automatic cloud upload/download`, aligning the app-discovery surface with the already-polished `pkginfo` cloud transfer wording while leaving the cloud broker, sync-unavailable state, upload/download denial telemetry, and automatic upload/download unavailability unchanged. The M1 source gate and UEFI QEMU runtime assertion now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Pkginfo cloud transfer wording
 
 - Task: Visual/UX - replace the `pkginfo` cloud `upload/download` and `auto-upload/download` slash labels with transfer-focused status wording while preserving the same cloud upload, download, automatic-upload, and automatic-download denial behavior.
