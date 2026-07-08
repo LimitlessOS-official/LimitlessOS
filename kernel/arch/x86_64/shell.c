@@ -1120,7 +1120,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     cloud_storage64_init();
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage broker: foundation active\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud provider descriptor: signed local fixture verified\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage mode: unavailable/planned\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "cloud storage mode: policy only; sync unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud token storage: denied while vault Mode B\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud encrypted transport: unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "cloud sync: unavailable\n");
