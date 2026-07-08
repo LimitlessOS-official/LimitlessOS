@@ -6394,7 +6394,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
             }
             else if (preview_h >= 58u)
             {
-                (void)display64_draw_font_text(body_x + 138u, preview_y + 42u, "No readable preview bytes", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+                (void)display64_draw_font_text(body_x + 138u, preview_y + 42u, "Preview unavailable", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
             }
         }
         else if ((selected_entry != (mmio64_nvme_fat_dirent_t *)0)
