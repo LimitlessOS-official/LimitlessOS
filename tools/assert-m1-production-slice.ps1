@@ -576,6 +576,17 @@ function Assert-RuntimeShellSurfaceSource
     if (-not $displaySource.Contains("Installation disabled")) {
         Fail-M1 "Settings Package Trust panel must report installation disabled with concise user-facing wording."
     }
+    if (-not $displaySource.Contains("Consent host; inference unavailable")) {
+        Fail-M1 "Settings AI policy panel must report Assistant availability without internal Mode B wording."
+    }
+    if (-not $displaySource.Contains("Consent-scoped action templates")) {
+        Fail-M1 "Assistant window must report action templates without internal Mode B wording."
+    }
+    foreach ($staleDisplayText in @("Assistant Mode B; inference unavailable", "Mode B: predefined action templates")) {
+        if ($displaySource.Contains($staleDisplayText)) {
+            Fail-M1 "x86_64 display source still contains stale internal AI mode wording: $staleDisplayText"
+        }
+    }
 
     foreach ($forbiddenCommand in @("ask", "echo", "say", "show", "list", "make", "put", "swap", "shift")) {
         $pattern = 'shell64_token_equals\(command_start,\s*command_length,\s*"{0}"\)' -f [regex]::Escape($forbiddenCommand)
