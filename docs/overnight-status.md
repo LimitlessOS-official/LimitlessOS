@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Cloud storage pkginfo mode wording
+
+- Task: Visual/UX - replace the `pkginfo` cloud-storage `unavailable/planned` shorthand with clearer policy-only and sync-unavailable wording while preserving the same broker-policy-only behavior and no real cloud sync.
+- Commit: `35d016d8c407bad4740f5e7e3e8d38df218e4e77`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `cloud storage mode: policy only; sync unavailable` instead of `cloud storage mode: unavailable/planned`, keeping the same cloud broker foundation, signed local provider descriptor status, denied token storage, unavailable encrypted transport, unavailable sync, and transfer-denial behavior. The dedicated M14 cloud-storage verifier was also brought back in sync with the already-polished apps output wording, and the UEFI QEMU pkginfo assertion now proves the revised status line. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without planning shorthand; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Cloud storage help surface wording
 
 - Task: Visual/UX - replace the Product help cloud-storage `Settings/File Manager` slash shorthand with clearer `Settings and File Manager` wording while preserving the same broker-policy, sync-unavailable, and transfer-denied behavior.
