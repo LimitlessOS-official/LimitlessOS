@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager status badge wording
+
+- Task: Visual/UX - replace terse File Manager status-card badges with clearer state words while preserving the existing storage-ready and storage-unavailable behavior.
+- Commit: `275afde22b3d63a0771dfcd8d1f4d52dbe96e6b9`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager status card now labels ready storage states as `Ready` and unavailable storage states as `Down` instead of the terse `OK`/`WAIT` pair, keeping the same detection path and card layout while making the visible state easier to scan. This is grounded in the existing Product File Manager status surface and UI writing guidance favoring clear, concise, helpful language. Verified in QEMU through the Product GUI/readiness and hardware/display gate, including `fileman-storage-card 1`; unverified on physical MSI because this is visible text polish and does not change storage, NVMe, USB, ACPI, or input behavior.
+
 ## 2026-07-08 - Open command failure error state
 
 - Task: Visual/UX - replace the `open` command's GUI-specific runtime failure copy with a concise command-scoped error state while preserving the existing usage text for invalid targets.
