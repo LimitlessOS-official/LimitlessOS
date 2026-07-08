@@ -541,7 +541,7 @@ function Assert-RuntimeShellSurfaceSource
         "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only",
         "Login/session lock: use lock; first-run user stored on NVMe",
         "Installer dry-run: safe tooling only; writes disabled",
-        "Real internal install/write",
+        "Real internal installation and write access",
         "Formatting",
         "Boot entry changes",
         "Package installation and update actions",
@@ -1440,7 +1440,7 @@ function Assert-X64Artifacts
         $m15Inventory.unavailableFeatures = @(
             $m14Inventory.unavailableFeatures +
             @(
-                "Real internal install/write",
+                "Real internal installation and write access",
                 "Formatting",
                 "Boot entry changes",
                 "AI-assisted setup",
@@ -1454,7 +1454,7 @@ function Assert-X64Artifacts
                 "Developer toolchain"
             )
         ) | Select-Object -Unique
-        $m15Inventory | Add-Member -Force -NotePropertyName installerUxStatus -NotePropertyValue "Product planning and dry-run UI; no real internal install/write"
+        $m15Inventory | Add-Member -Force -NotePropertyName installerUxStatus -NotePropertyValue "Product planning and dry-run UI; no real internal installation or write access"
         $m15Inventory | Add-Member -Force -NotePropertyName installerWelcomeVerified -NotePropertyValue $true
         $m15Inventory | Add-Member -Force -NotePropertyName installerBeginnerModeVerified -NotePropertyValue $true
         $m15Inventory | Add-Member -Force -NotePropertyName installerAdvancedModeVerified -NotePropertyValue $true

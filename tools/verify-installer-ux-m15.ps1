@@ -98,7 +98,7 @@ Assert-Line -Lines $outputLines -Pattern '^GUI desktop: Terminal File Manager Se
 Assert-Line -Lines $outputLines -Pattern '^Installer UX: launcher and Settings show dry-run planning; writes disabled$' -Message "M15 installer UX verifier failed: apps output did not describe dry-run installer planning."
 Assert-Line -Lines $outputLines -Pattern '^Product installer UX: launcher and Settings show dry-run planning; writes, formatting, and boot-entry changes disabled$' -Message "M15 installer UX verifier failed: help output did not describe installer UX."
 Assert-Line -Lines $outputLines -Pattern '^AI-assisted setup$' -Message "M15 installer UX verifier failed: AI-assisted setup was not labeled unavailable."
-Assert-Line -Lines $outputLines -Pattern '^Real internal install/write$' -Message "M15 installer UX verifier failed: real internal install/write was not labeled unavailable."
+Assert-Line -Lines $outputLines -Pattern '^Real internal installation and write access$' -Message "M15 installer UX verifier failed: real internal installation and write access was not labeled unavailable."
 Assert-Line -Lines $outputLines -Pattern '^Formatting$' -Message "M15 installer UX verifier failed: formatting was not labeled unavailable."
 Assert-Line -Lines $outputLines -Pattern '^Boot entry changes$' -Message "M15 installer UX verifier failed: boot-entry changes were not labeled unavailable."
 Assert-Line -Lines $outputLines -Pattern '^installer ux: planning and dry-run only$' -Message "M15 installer UX verifier failed: pkginfo did not expose installer UX status."

@@ -376,7 +376,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI automation$' -Message "M16 apps output did not label AI automation unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud AI$' -Message "M16 apps output did not label cloud AI unavailable."
     Assert-OutputContains -Lines $persistentLines -Pattern '^AI-assisted setup$' -Message "M15 apps output did not label AI-assisted setup unavailable."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Real internal install/write$' -Message "M15 apps output did not quarantine internal install/write authority."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Real internal installation and write access$' -Message "M15 apps output did not quarantine internal installation and write authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Formatting$' -Message "M15 apps output did not quarantine formatting authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Boot entry changes$' -Message "M15 apps output did not quarantine boot-entry authority."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package installation and update actions$' -Message "M8 apps output did not quarantine package installation and update authority."
