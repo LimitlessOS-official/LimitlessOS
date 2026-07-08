@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Cloud storage help surface wording
+
+- Task: Visual/UX - replace the Product help cloud-storage `Settings/File Manager` slash shorthand with clearer `Settings and File Manager` wording while preserving the same broker-policy, sync-unavailable, and transfer-denied behavior.
+- Commit: `fd7bfe9e81810480ddd1468e14945f2c201a5c49`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now says `Product cloud storage: Settings and File Manager show broker policy; sync unavailable; transfers denied` instead of `Product cloud storage: Settings/File Manager show broker policy; sync unavailable; transfers denied`, keeping the same read-only cloud broker policy surface, sync unavailable status, and transfer denial behavior. The M1 Product source assertion and UEFI QEMU runtime help assertion were updated so the gates prove the revised user-facing copy rather than stale text. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should clearly communicate objects without slash-combined shorthand; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell help copy only.
+
 ## 2026-07-08 - BIOS service help wording
 
 - Task: Visual/UX - replace the Product help BIOS fallback `service/session stubs active` implementation shorthand with clearer service and session status wording while preserving the same BIOS fallback and installer-UX-unavailable behavior.
