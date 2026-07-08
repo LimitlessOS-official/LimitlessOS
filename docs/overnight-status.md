@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Real install status wording
+
+- Task: Visual/UX - replace the visible real-install approval boolean wording with direct not-approved status wording in `hwval full` and `pkginfo` while preserving the same no-real-install approval behavior.
+- Commit: `00d6285042ce805efa4482a83042b2dec882f725`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `hwval full` now reports `real install: not approved` instead of `real install approved: false`, and `pkginfo` now reports `installer real install: not approved` instead of `installer real install approved: false`, keeping the same read-only validation mode, zero planned writes/formats/boot entries, disabled write authority, and verifier telemetry `real-install-approved 0`. The UEFI QEMU Product gate and the M9/M15 targeted verifiers now assert the revised user-facing wording while preserving the machine-readable no-install proof. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should present state directly rather than as boolean literals; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI installer approval remains unverified because this pass changes wording only.
+
 ## 2026-07-08 - Installer dry-run hwval wording
 
 - Task: Visual/UX - replace the `hwval full` installer-dry-run `pending manual evidence; dry-run only` wording with direct hardware-evidence and disabled-write status while preserving the same no-real-install behavior.
