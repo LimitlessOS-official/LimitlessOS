@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Settings cloud storage status wording
+
+- Task: Visual/UX - replace the Settings cloud storage row's slash-heavy sync/upload/download status with clearer unavailable/denied wording while preserving the existing cloud broker, transfer denial, and read-only policy behavior.
+- Commit: `3e430608c69b6f270625862b2e61bc1e6e7bab59`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Settings cloud storage panel now says `Sync unavailable; transfers denied` instead of `No sync/upload/download; AI denied`, keeping the same `cloud_storage64_init()`, read-only Settings status query, cloud broker foundation state, upload/download/sync denial policy, and telemetry. This is grounded in Microsoft UI text guidance to keep status text concise and focused on the essential state instead of packing several slash-separated implementation labels into one line. Verified by Product build and the UEFI QEMU hardware/display gate; the gate proves the Product GUI/readiness path and Settings hardware/input/readiness telemetry but does not directly open this exact cloud storage row, and physical MSI rendering remains unverified.
+
 ## 2026-07-08 - Ambient-authority UI wording
 
 - Task: Visual/UX - replace visible ambient-authority shorthand in the UEFI login badge and Settings AI policy details with clearer user-facing access-state wording while preserving the existing scoped-authority/no-ambient-access behavior.
