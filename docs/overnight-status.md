@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - AI GUI mode wording
+
+- Task: Visual/UX - replace the Settings AI policy panel and Assistant window `Mode B` implementation shorthand with direct consent-host and consent-scoped-template wording while preserving the same inference-unavailable and consent-required action behavior.
+- Commit: `fca5002a30475e614e1c322468cbb98abff52615`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Settings AI policy row now says `Consent host; inference unavailable` instead of `Assistant Mode B; inference unavailable`, and the Assistant window now says `Consent-scoped action templates` instead of `Mode B: predefined action templates`, keeping the same AI policy initialization, action probe, consent-required templates, inference-unavailable state, no automatic system access, denied action list, and audit behavior. The M1 Product source gate now requires the revised GUI strings and rejects the stale internal-mode labels so this user-facing copy cannot regress silently. This is grounded in Microsoft UI text guidance that users scan interface text and that static status text should be concise without internal-mode shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes GUI copy only.
+
 ## 2026-07-08 - AI action broker pkginfo mode wording
 
 - Task: Visual/UX - replace the `pkginfo` AI action broker `Mode B deterministic templates` implementation shorthand with direct deterministic-template wording while preserving the same consent-scoped predefined action-template behavior.
