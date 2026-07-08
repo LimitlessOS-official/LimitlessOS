@@ -6733,7 +6733,7 @@ static void display64_desktop_draw_assistant(u32 handle)
     (void)display64_draw_font_text(body_x, body_y + 68u, "Actions require explicit consent", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 92u, "Templates: note, dry-run, settings, pkg", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 116u, "Denied: package, settings, cloud, secret", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_WARNING, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 140u, "No model call or scripted response", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 140u, "Generated replies unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 164u, "Audit: request, consent, grant, result", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)ai_policy64_audit_query();
 #else
