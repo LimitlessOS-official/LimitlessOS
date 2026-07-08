@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Cloud provider descriptor pkginfo wording
+
+- Task: Visual/UX - replace the `pkginfo` cloud-provider descriptor line `cloud provider descriptor: signed local fixture verified` with `cloud provider descriptor: signed local provider verified` while preserving the same signed local descriptor verification behavior.
+- Commit: `e8351fc994d1fb84c4f7a854d27dbbfb323e6305`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `cloud provider descriptor: signed local provider verified` instead of the implementation-facing `cloud provider descriptor: signed local fixture verified`, keeping the same signed local cloud-provider descriptor, verification state, policy-only cloud storage mode, sync-unavailable status, transfer-denial behavior, and internal DRS fixture proof. The UEFI QEMU runtime assertion, M14 cloud-storage verifier, and M1 production-slice inventory expectation now require the revised visible line so the old test-fixture wording cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear state wording without implementation jargon; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Local association pkginfo wording
 
 - Task: Visual/UX - replace the `pkginfo` local account-association slash label `local association: active/offline-capable` with `local association: active and offline-capable` while preserving the same local active/offline-capable account state.
