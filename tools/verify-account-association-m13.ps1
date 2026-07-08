@@ -89,6 +89,6 @@ Assert-Line -Lines $outputLines -Pattern '^enterprise association: unavailable$'
 Assert-Line -Lines $outputLines -Pattern '^cloud association: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report cloud association unavailable."
 Assert-Line -Lines $outputLines -Pattern '^security key login: unavailable$' -Message "M13 account association verifier failed: pkginfo did not report security-key status."
 Assert-Line -Lines $outputLines -Pattern '^remote account authority: none$' -Message "M13 account association verifier failed: pkginfo did not report no remote account authority."
-Assert-Line -Lines $outputLines -Pattern '^Identity/account/vault/transport status: Settings; local only; no secret storage$' -Message "M13 account association verifier failed: apps output did not expose truthful account status."
+Assert-Line -Lines $outputLines -Pattern '^Identity, account, vault, and transport status: Settings; local only; no secret storage$' -Message "M13 account association verifier failed: apps output did not expose truthful account status."
 
 Write-Host "M13 account association verifier passed for $Architecture $BootMedia ($BuildProfile profile)."
