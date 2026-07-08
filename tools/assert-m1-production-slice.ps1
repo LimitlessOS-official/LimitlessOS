@@ -492,15 +492,20 @@ function Assert-NoAbsoluteLocalPaths
 function Assert-RuntimeShellSurfaceSource
 {
     $shellPath = Join-Path $root "kernel\arch\x86_64\shell.c"
+    $displayPath = Join-Path $root "kernel\arch\x86_64\display.c"
     $runtimeProbePath = Join-Path $root "kernel\arch\x86_64\runtime_image_user.asm"
     if (-not (Test-Path $shellPath)) {
         Fail-M1 "x86_64 runtime shell source is missing."
+    }
+    if (-not (Test-Path $displayPath)) {
+        Fail-M1 "x86_64 display source is missing."
     }
     if (-not (Test-Path $runtimeProbePath)) {
         Fail-M1 "x86_64 runtime probe source is missing."
     }
 
     $source = Get-Content -Path $shellPath -Raw
+    $displaySource = Get-Content -Path $displayPath -Raw
     $runtimeSource = Get-Content -Path $runtimeProbePath -Raw
     foreach ($requiredText in @(
         "Builtins: apps help hwval info linux lock net pkginfo pwd",
@@ -567,6 +572,9 @@ function Assert-RuntimeShellSurfaceSource
 
     if ($source.Contains("help apps info pwd ls cat stat write mkdir copy delete rename move touch append echo")) {
         Fail-M1 "x86_64 runtime shell still contains the stale generic help line with echo."
+    }
+    if (-not $displaySource.Contains("Installation disabled")) {
+        Fail-M1 "Settings Package Trust panel must report installation disabled with concise user-facing wording."
     }
 
     foreach ($forbiddenCommand in @("ask", "echo", "say", "show", "list", "make", "put", "swap", "shift")) {
