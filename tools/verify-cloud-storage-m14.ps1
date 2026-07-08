@@ -99,7 +99,7 @@ Assert-Line -Lines $outputLines -Pattern '^Cloud storage status: Settings and Fi
 Assert-Line -Lines $outputLines -Pattern '^cloud storage broker: foundation active$' -Message "M14 cloud storage verifier failed: pkginfo did not report cloud broker foundation status."
 Assert-Line -Lines $outputLines -Pattern '^cloud provider descriptor: signed local fixture verified$' -Message "M14 cloud storage verifier failed: pkginfo did not report signed cloud-provider descriptor verification."
 Assert-Line -Lines $outputLines -Pattern '^cloud storage mode: policy only; sync unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report cloud storage mode as policy-only."
-Assert-Line -Lines $outputLines -Pattern '^cloud token storage: denied while vault Mode B$' -Message "M14 cloud storage verifier failed: pkginfo did not report token storage denial."
+Assert-Line -Lines $outputLines -Pattern '^cloud token storage: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report token storage denial."
 Assert-Line -Lines $outputLines -Pattern '^cloud encrypted transport: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report encrypted transport unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud sync: unavailable$' -Message "M14 cloud storage verifier failed: pkginfo did not report cloud sync unavailable."
 Assert-Line -Lines $outputLines -Pattern '^cloud upload/download: denied$' -Message "M14 cloud storage verifier failed: pkginfo did not report upload/download denial."
