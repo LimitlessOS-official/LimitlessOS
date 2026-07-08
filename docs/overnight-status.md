@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps internal install wording
+
+- Task: Visual/UX - replace the `apps` unavailable-list `Real internal install/write` slash label with `Real internal installation and write access` while preserving the same disabled internal installation and write authority behavior.
+- Commit: `22e0ce80289e6b08ce871bc218579ec54ee77fdc`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` unavailable list now reports `Real internal installation and write access` instead of `Real internal install/write`, keeping the same installer dry-run boundary, disabled internal write authority, unavailable format/boot-entry authority, and no-real-install behavior. The M1 source gate, UEFI QEMU runtime assertion, and M15 installer UX verifier now require the revised visible line so the old slash-combined label cannot return silently. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Apps package action wording
 
 - Task: Visual/UX - replace the `apps` unavailable-list `Package install/update actions` slash label with `Package installation and update actions` while preserving the same unavailable package installation and update behavior.
