@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Apps cloud storage status wording
+
+- Task: Visual/UX - replace the `apps` output cloud-storage status line's slash-style `Settings/File Manager; unavailable/planned; no sync` wording with clearer policy-only and sync-unavailable wording while preserving the same cloud broker, Settings/File Manager visibility, and denial behavior.
+- Commit: `56080562265752d53b6d4934ee45903aff4fc44a`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The Product `apps` listing now says `Cloud storage status: Settings and File Manager; policy only; sync unavailable` instead of `Cloud storage status: Settings/File Manager; unavailable/planned; no sync`, keeping the same read-only cloud broker status surface, Settings and File Manager visibility, cloud sync denial, and Product app list behavior. The M1 Product source assertion and QEMU runtime assertion were updated so both the build gate and the UEFI hardware/display gate prove the new user-facing text rather than stale copy. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Settings package trust installation wording
 
 - Task: Visual/UX - replace the Settings Package Trust panel's slash-style `Install/apply disabled` line with clearer installation-disabled wording while preserving the same signed-package trust surface and disabled install/apply behavior.
