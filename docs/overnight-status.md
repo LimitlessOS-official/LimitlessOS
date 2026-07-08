@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Pkginfo cloud transfer wording
+
+- Task: Visual/UX - replace the `pkginfo` cloud `upload/download` and `auto-upload/download` slash labels with transfer-focused status wording while preserving the same cloud upload, download, automatic-upload, and automatic-download denial behavior.
+- Commit: `34a5a4c2e9489997dbfa0d2eb40ae232fd717a58`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `cloud transfers: denied` and `cloud automatic transfers: unavailable` instead of the slash-combined `cloud upload/download: denied` and `cloud auto-upload/download: unavailable`, keeping the existing cloud broker foundation, sync-unavailable status, upload/download denial telemetry, automatic upload/download unavailability, and no ambient cloud authority behavior unchanged. The UEFI QEMU Product gate and M14 cloud-storage verifier assertions now expect the revised visible labels, and the M14 verifier's no-ambient-authority assertion was aligned with the current `pkginfo` authority wording so it continues to validate the same cloud/file/network/identity/secret denial surface. This is grounded in Microsoft UI text guidance that users scan interface text and that labels should use clear, concise wording without slash-combined shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Pkginfo authority wording
 
 - Task: Visual/UX - replace the `pkginfo` no-ambient-authority slash-list `install/update/network/cloud/fs/identity/secret/ai` with comma-separated user-facing authority wording while preserving the same no-ambient-authority behavior.
