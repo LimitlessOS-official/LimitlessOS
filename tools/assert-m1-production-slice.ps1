@@ -556,7 +556,7 @@ function Assert-RuntimeShellSurfaceSource
         "Token storage",
         "Enterprise policy",
         "Cloud sync",
-        "Automatic cloud upload/download",
+        "Automatic cloud transfers",
         "AI cloud access",
         "AI assistant",
         "AI autonomous actions",
