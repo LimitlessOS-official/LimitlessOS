@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Package trust pkginfo availability wording
+
+- Task: Visual/UX - replace `pkginfo` package-trust `unavailable/non-product` shorthand with direct unavailable status wording while preserving the same no-public-update-fetch and no-trusted-time-expiry-enforcement behavior.
+- Commit: `d8e73b642dde51507692ab2354c37caf76192c20`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `public update fetch: unavailable` and `trusted-time expiry: unavailable` instead of the previous `unavailable/non-product` wording, keeping the same package trust surface, no live public update fetch, and no trusted-time expiry enforcement. The dedicated M8 package UX verifier and UEFI QEMU pkginfo assertions were updated so the gates prove the revised user-facing copy rather than stale text. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - Account association pkginfo wording
 
 - Task: Visual/UX - replace the `pkginfo` account-association `unavailable/planned` shorthand with direct unavailable status wording while preserving the same Mode B status-only account association behavior and no remote account authority.
