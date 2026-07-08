@@ -287,7 +287,7 @@ function Assert-X64M1RuntimeSurface
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: Terminal, File Manager, Settings, Installer(, Assistant)? through brokered desktop input/display$' -Message "M15/M17 runtime help did not describe Product GUI, installer, and Assistant status."
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service/session status; installer planning writes disabled$' -Message "M15 runtime help did not describe Product service/session and installer-planning status."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product services: Settings shows service and session status; installer planning writes disabled$' -Message "M15 runtime help did not describe Product service/session and installer-planning status."
     }
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product login: first-run setup, authenticated session, lock/unlock through brokered input$' -Message "M10 runtime help did not describe Product login/session lock."

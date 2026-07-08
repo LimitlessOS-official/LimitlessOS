@@ -507,7 +507,7 @@ static u32 shell64_write_gui_status_line(u32 console_capability_handle, u32 owne
 static u32 shell64_write_service_status_line(u32 console_capability_handle, u32 owner_id)
 {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    return shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service/session status; installer planning writes disabled\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product services: Settings shows service and session status; installer planning writes disabled\n");
 #else
     return shell64_write_text(console_capability_handle, owner_id, "Product services: BIOS service/session stubs active; installer UX unavailable\n");
 #endif
