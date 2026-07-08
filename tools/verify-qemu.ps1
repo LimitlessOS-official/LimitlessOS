@@ -306,7 +306,7 @@ function Assert-X64M1RuntimeSurface
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product cloud storage: Settings and File Manager show broker policy; sync unavailable; transfers denied$' -Message "M14 runtime help did not describe Product cloud storage status."
     if ($BootMedia -eq "disk") {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS fallback help did not label installer UX as unavailable."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: unavailable on BIOS checksum fallback; validation tools only$' -Message "M15 BIOS fallback help did not label installer UX as unavailable."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product installer UX: launcher and Settings show dry-run planning; writes, formatting, and boot-entry changes disabled$' -Message "M15 runtime help did not describe Product installer UX status."
@@ -338,7 +338,7 @@ function Assert-X64M1RuntimeSurface
     Assert-OutputContains -Lines $persistentLines -Pattern '^Identity, account, vault, and transport status: Settings; local only; no secret storage$' -Message "M13 apps output did not label identity, account, vault, and transport visibility."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Cloud storage status: Settings and File Manager; policy only; sync unavailable$' -Message "M14 apps output did not label cloud storage status visibility."
     if ($BootMedia -eq "disk") {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only$' -Message "M15 BIOS apps output did not label installer UX as unavailable."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: unavailable on BIOS checksum fallback; validation tools only$' -Message "M15 BIOS apps output did not label installer UX as unavailable."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Installer UX: launcher and Settings show dry-run planning; writes disabled$' -Message "M15 apps output did not label installer UX visibility."

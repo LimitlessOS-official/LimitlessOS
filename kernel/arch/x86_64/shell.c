@@ -518,7 +518,7 @@ static u32 shell64_write_installer_status_line(u32 console_capability_handle, u3
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     return shell64_write_text(console_capability_handle, owner_id, "Product installer UX: launcher and Settings show dry-run planning; writes, formatting, and boot-entry changes disabled\n");
 #else
-    return shell64_write_text(console_capability_handle, owner_id, "Product installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Product installer UX: unavailable on BIOS checksum fallback; validation tools only\n");
 #endif
 }
 
@@ -545,7 +545,7 @@ static u32 shell64_write_apps_installer_line(u32 console_capability_handle, u32 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     return shell64_write_text(console_capability_handle, owner_id, "Installer UX: launcher and Settings show dry-run planning; writes disabled\n");
 #else
-    return shell64_write_text(console_capability_handle, owner_id, "Installer UX: unavailable on BIOS checksum fallback; dry-run safety tooling only\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Installer UX: unavailable on BIOS checksum fallback; validation tools only\n");
 #endif
 }
 
