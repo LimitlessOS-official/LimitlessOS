@@ -6274,7 +6274,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
     }
     else if (g_display_fileman_last_mutation_status == 7u)
     {
-        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Type, Enter", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+        (void)display64_draw_font_text(body_x + 16u, body_y + 312u, "Type path", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_ACCENT, DISPLAY64_FONT_TRANSPARENT);
     }
     else if (g_display_fileman_last_mutation_status == 8u)
     {
