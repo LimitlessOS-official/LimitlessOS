@@ -347,7 +347,7 @@ function Assert-X64M1RuntimeSurface
         Assert-OutputContains -Lines $persistentLines -Pattern '^AI policy: unavailable on BIOS checksum fallback; no actions$' -Message "M16 BIOS apps output did not label AI policy as unavailable."
     }
     else {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^(AI policy: Settings/pkginfo; request-deny-audit only; no actions|AI Assistant: launcher/Settings/pkginfo; (read-only consent flow|consent-scoped action templates); inference unavailable)$' -Message "M16-M18 apps output did not label AI policy/Assistant visibility."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^(AI policy: Settings/pkginfo; request-deny-audit only; no actions|AI Assistant: launcher, Settings, and pkginfo show (read-only consent flow|consent-scoped action templates); inference unavailable)$' -Message "M16-M18 apps output did not label AI policy/Assistant visibility."
     }
     if ($LoginExpected) {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Login/session lock: use lock; first-run user stored on NVMe$' -Message "M10 apps output did not label login/session lock visibility."
