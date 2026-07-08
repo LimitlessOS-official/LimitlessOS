@@ -104,7 +104,7 @@ Assert-Line -Lines $outputLines -Pattern '^Product AI assistant: launcher/Settin
 Assert-Line -Lines $outputLines -Pattern '^AI Assistant: launcher/Settings/pkginfo; (read-only consent flow|consent-scoped action templates); inference unavailable$' -Message "M17 AI Assistant verifier failed: apps output did not expose Assistant truthfully."
 Assert-Line -Lines $outputLines -Pattern '^GUI desktop: Terminal File Manager Settings Installer Assistant$' -Message "M17 AI Assistant verifier failed: Assistant was not listed in Product GUI apps."
 Assert-Line -Lines $outputLines -Pattern '^ai assistant: host active; inference unavailable$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose Assistant host status."
-Assert-Line -Lines $outputLines -Pattern '^ai backend mode: Mode B host and consent foundation only$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose Mode B backend status."
+Assert-Line -Lines $outputLines -Pattern '^ai backend mode: consent host only; inference unavailable$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose consent-host backend status."
 Assert-Line -Lines $outputLines -Pattern '^ai context request: read-only system status scoped$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose context request status."
 Assert-Line -Lines $outputLines -Pattern '^ai context consent: allow once/read-only session/deny$' -Message "M17 AI Assistant verifier failed: pkginfo did not expose consent choices."
 Assert-Line -Lines $outputLines -Pattern '^ai denied request data: 0$' -Message "M17 AI Assistant verifier failed: denied request data count was not visible."

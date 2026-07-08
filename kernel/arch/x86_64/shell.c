@@ -1142,7 +1142,7 @@ static u32 shell64_print_package_status(u32 console_capability_handle, u32 owner
     (void)shell64_write_text(console_capability_handle, owner_id, "ai action request: modeled\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai consent: required no auto-approve\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai assistant: host active; inference unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "ai backend mode: Mode B host and consent foundation only\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ai backend mode: consent host only; inference unavailable\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai context request: read-only system status scoped\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai context consent: allow once/read-only session/deny\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "ai denied request data: 0\n");
