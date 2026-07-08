@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Product services help wording
+
+- Task: Visual/UX - replace the Product help line's `service/session` shorthand with clearer service and session wording while preserving the same Settings service/session status and installer-planning write-disabled behavior.
+- Commit: `126c74fa766a015aa6f3a7f610d98bcfc7a48b81`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product help now says `Product services: Settings shows service and session status; installer planning writes disabled` instead of `Product services: Settings shows service/session status; installer planning writes disabled`, keeping the same Settings visibility, service/session status meaning, installer planning status, and write-disabled behavior. The M1 Product source assertion and UEFI QEMU runtime assertion were updated so both gates prove the revised help output rather than stale copy. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without over-communication; verified in QEMU, while physical MSI rendering remains unverified because this pass changes visible shell help copy only.
+
 ## 2026-07-08 - Apps installer UX status wording
 
 - Task: Visual/UX - replace the `apps` output Installer UX slash-style `launcher/Settings; dry-run planning only; writes disabled` wording with clearer launcher and Settings wording while preserving the same dry-run planning and disabled-write behavior.
