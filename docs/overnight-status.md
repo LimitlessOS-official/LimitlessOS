@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Cloud token storage pkginfo wording
+
+- Task: Visual/UX - replace the `pkginfo` cloud token storage `denied while vault Mode B` implementation shorthand with direct denial wording while preserving the same cloud token-storage denial behavior.
+- Commit: `c737f02abd852a7e48b7e0f26c331c868ee530c5`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `pkginfo` now reports `cloud token storage: denied` instead of `cloud token storage: denied while vault Mode B`, keeping the same signed local cloud-provider descriptor, policy-only cloud storage mode, unavailable encrypted transport, unavailable sync, upload/download denial, auto-transfer unavailability, AI cloud access unavailability, and no ambient cloud authority. The M14 cloud-storage verifier and the required UEFI QEMU pkginfo assertion were updated to prove the revised user-facing line. This is grounded in Microsoft UI text guidance that users scan interface text and that essential state should be concise without internal-mode shorthand; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this pass changes visible shell copy only.
+
 ## 2026-07-08 - AI GUI mode wording
 
 - Task: Visual/UX - replace the Settings AI policy panel and Assistant window `Mode B` implementation shorthand with direct consent-host and consent-scoped-template wording while preserving the same inference-unavailable and consent-required action behavior.
