@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager cloud sync status wording
+
+- Task: Visual/UX - replace the File Manager cloud row's slash-style sync/upload status with clearer availability wording while preserving the existing cloud storage status and read-only policy path.
+- Commit: `8ea5c13e4624778b828b248aea61cd5a165e4e62`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager cloud row now says `Sync unavailable` instead of `No sync/upload`, keeping the same Cloud unavailable state, `cloud_storage64_init()`, read-only cloud status call, File Manager count telemetry, and storage behavior. This is grounded in the existing File Manager cloud surface and UI writing guidance favoring concise, direct status text over slash-style shorthand. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the Product GUI and File Manager storage card but does not open the File Manager cloud row directly, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - Assistant generated-reply status wording
 
 - Task: Visual/UX - replace the Assistant panel's implementation-centered generated-response status with clearer user-facing availability wording while preserving the existing Mode B consent and audit behavior.
