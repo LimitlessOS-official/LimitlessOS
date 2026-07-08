@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Settings hardware terminology polish
+
+- Task: Visual/UX - normalize visible Settings and File Manager hardware terminology so Product panels use standard names such as `NVMe`, `USB`, and `I2C` instead of inconsistent acronym casing.
+- Commit: `14633116ba21014b17aa09dba6929bf0b862505b`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The visible Product GUI storage/input copy now uses `NVMe FAT`, `NVMe FAT32`, `USB reports`, and `I2C` consistently in Settings and File Manager surfaces, with the network detail row changed from the awkward `device(s)` wording to `devices`. The change is grounded in the repo's existing terminology and public standards/trademark naming (`NVMe` from NVM Express and `USB` from USB-IF), and it does not change hardware detection, driver binding, capability grants, storage authority, or MSI-specific behavior. Verified in QEMU through the existing Product GUI/readiness telemetry and full UEFI hardware/display gate; unverified on physical MSI because this is visible text polish rather than a hardware-driver change.
+
 ## 2026-07-08 - Shell unknown-command error state
 
 - Task: Visual/UX - replace the bare shell `unknown command` response with a concise actionable error state that points users back to the existing `help` discovery surface.
