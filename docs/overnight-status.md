@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager preview empty-state wording
+
+- Task: Visual/UX - replace the File Manager file-preview empty-state wording with a clearer preview-unavailable message while preserving preview detection and storage behavior.
+- Commit: `7e6a521424ec2ead6aa11e44e4ed4513ff52637c`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager file preview now says `Preview unavailable` instead of `No readable preview bytes` when a selected file has no preview payload to show, keeping the same preview-byte detection, NVMe FAT reads, storage authority, and mutation policy. This is grounded in the existing File Manager preview surface and UI writing guidance favoring concise, glanceable status text. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the File Manager surface but does not select a file with unavailable preview bytes, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager edit status wording
 
 - Task: Visual/UX - replace the File Manager sidebar edit-mode status `Type, Enter` with a clearer path-entry cue while preserving the existing edit-mode and Enter-apply behavior.
