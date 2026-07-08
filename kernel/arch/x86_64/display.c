@@ -4119,7 +4119,7 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     display64_compositor_fill_rect(panel_x, panel_y, 5u, panel_h, accent);
     display64_compositor_draw_badge(panel_x + 34u, panel_y + 72u, 104u, "Local auth", accent);
     display64_compositor_draw_badge(panel_x + 148u, panel_y + 72u, 112u, "Scoped input", DISPLAY64_RGB_FOCUS_BLUE);
-    display64_compositor_draw_badge(panel_x + 270u, panel_y + 72u, 122u, "No ambient fs", DISPLAY64_RGB_APP_SETTINGS);
+    display64_compositor_draw_badge(panel_x + 270u, panel_y + 72u, 122u, "No file access", DISPLAY64_RGB_APP_SETTINGS);
     (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 104u, title, DISPLAY64_FONT_NORMAL, accent, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 128u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
@@ -6574,7 +6574,7 @@ static void display64_desktop_draw_settings(u32 handle)
     (void)display64_draw_font_text(body_x, body_y + 420u, "AI policy", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 438u, "Assistant Mode B; inference unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 456u, "Action templates require consent", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x, body_y + 474u, "No ambient fs/net/pkg/secret/cloud", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(body_x, body_y + 474u, "No automatic system access", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_ai_settings_panel_count == 0u)
     {
         ++g_display_ai_settings_panel_count;
