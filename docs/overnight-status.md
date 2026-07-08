@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - File Manager delete confirmation wording
+
+- Task: Visual/UX - replace the File Manager's vague destructive-action confirmation hint with explicit delete-confirmation wording while preserving the existing two-step delete behavior.
+- Commit: `2b77b1d59a5a0aeb0e9fb4325a2e2067b3fb6bcf`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: The File Manager delete guard now shows `Confirm delete` instead of `Click again` after the first delete request, making the destructive action explicit without changing the existing confirmation state machine, storage authority, NVMe FAT behavior, or deletion policy. This is grounded in the existing File Manager two-step delete flow and UI guidance that destructive actions should use concise, specific confirmation text. Verified by Product build and the UEFI QEMU hardware/display gate; the default gate reports the File Manager surface and `fileman-storage-card 1`, but it does not trigger the delete-confirm path, and this remains unverified on physical MSI because it is visible text polish only.
+
 ## 2026-07-08 - File Manager status badge wording
 
 - Task: Visual/UX - replace terse File Manager status-card badges with clearer state words while preserving the existing storage-ready and storage-unavailable behavior.
