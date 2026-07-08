@@ -1397,7 +1397,7 @@ function Assert-X64Artifacts
         ) | Select-Object -Unique
         $m14Inventory | Add-Member -Force -NotePropertyName cloudStorageBrokerStatus -NotePropertyValue "Product foundation active"
         $m14Inventory | Add-Member -Force -NotePropertyName cloudStorageMode -NotePropertyValue "unavailable/planned; policy-only foundation"
-        $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderDescriptorStatus -NotePropertyValue "signed local fixture verified"
+        $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderDescriptorStatus -NotePropertyValue "signed local provider verified"
         $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderSignatureStatus -NotePropertyValue "verified"
         $m14Inventory | Add-Member -Force -NotePropertyName cloudProviderAntiRollbackStatus -NotePropertyValue "rollback/older sequence denied"
         $m14Inventory | Add-Member -Force -NotePropertyName cloudAccountStatus -NotePropertyValue "unavailable/planned"

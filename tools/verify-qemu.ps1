@@ -4480,7 +4480,7 @@ if ($Architecture -eq "x86_64") {
         Assert-OutputContains -Lines $outputLines -Pattern '^security key login: unavailable$' -Message "x64 UEFI pkginfo did not report security key login unavailable."
         Assert-OutputContains -Lines $outputLines -Pattern '^remote account authority: none$' -Message "x64 UEFI pkginfo did not report no remote account authority."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud storage broker: foundation active$' -Message "x64 UEFI pkginfo did not report M14 cloud storage broker active."
-        Assert-OutputContains -Lines $outputLines -Pattern '^cloud provider descriptor: signed local fixture verified$' -Message "x64 UEFI pkginfo did not report cloud provider descriptor verification."
+        Assert-OutputContains -Lines $outputLines -Pattern '^cloud provider descriptor: signed local provider verified$' -Message "x64 UEFI pkginfo did not report cloud provider descriptor verification."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud storage mode: policy only; sync unavailable$' -Message "x64 UEFI pkginfo did not report cloud storage mode as policy-only."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud token storage: denied$' -Message "x64 UEFI pkginfo did not report cloud token storage denial."
         Assert-OutputContains -Lines $outputLines -Pattern '^cloud encrypted transport: unavailable$' -Message "x64 UEFI pkginfo did not report cloud encrypted transport unavailable."
