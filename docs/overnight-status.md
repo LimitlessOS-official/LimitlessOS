@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Machine model hwval wording
+
+- Task: Visual/UX - replace the `hwval full` machine-model `unavailable from firmware table` source-implementation wording with direct Product-reporting wording while preserving the same no-machine-model-reporting behavior.
+- Commit: `0ca6107443a65fc9fb73bfc7e9b25b01e1c14663`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: `hwval full` now reports `machine model: not reported by Product` instead of `machine model: unavailable from firmware table`, keeping the same read-only hardware validation mode and the same lack of a Product machine-model reporting signal. The UEFI hardware/display QEMU gate now asserts the revised line next to the existing Product hardware-validation and secure-boot status checks so this visible status wording cannot regress silently. This is grounded in Microsoft UI text guidance that users scan interface text and that status labels should be concise without source-implementation phrasing; verified by Product build and UEFI QEMU hardware/display gate, while physical MSI machine-model reporting remains unverified because this pass changes wording only.
+
 ## 2026-07-08 - Secure boot hwval wording
 
 - Task: Visual/UX - replace the `hwval full` secure-boot `unavailable/not Product-detected` slash shorthand with direct Product-detection wording while preserving the same no-secure-boot-detection behavior.
