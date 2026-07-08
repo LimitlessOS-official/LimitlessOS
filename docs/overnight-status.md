@@ -1,5 +1,12 @@
 # Overnight Status
 
+## 2026-07-08 - Shell package trust help wording
+
+- Task: Visual/UX - replace the Product shell help package-trust line's slash-style install/apply status with clearer installation-disabled wording while preserving the same read-only package trust surface and disabled install/apply behavior.
+- Commit: `65c2723484fc78c828b5a674888d83b0f86155b7`
+- Build/gate: `.\tools\build.ps1 -Architecture x86_64 -BuildProfile Product` passed; `.\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- Summary: Product shell help now says `Product package trust: pkginfo and Settings are read-only; installation disabled` instead of `Product package trust: pkginfo and Settings are read-only; install/apply disabled`, keeping the same package trust, pkginfo, Settings, install/apply-denial behavior, and verifier-enforced runtime help checkpoint. The matching M1 source assertion and QEMU help assertion were updated so the gate proves the new user-facing text, not stale copy. This is grounded in Microsoft UI text guidance to keep status text concise and avoid over-communication; verified by Product build and the UEFI QEMU hardware/display gate, while physical MSI rendering remains unverified because this is shell help text rather than a hardware path.
+
 ## 2026-07-08 - Shell cloud storage help wording
 
 - Task: Visual/UX - replace the Product shell help cloud-storage line's slash-style sync/upload/download status with clearer sync and transfer wording while keeping the same cloud broker policy and denial behavior.
