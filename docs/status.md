@@ -1,6 +1,6 @@
 # LimitlessOS Status
 
-Last updated: 2026-07-06
+Last updated: 2026-07-28
 
 ## Accepted Baseline
 
@@ -15,6 +15,12 @@ M1 cleanup-final is accepted. The accepted M1 artifact was archived at `dist/m1-
 - persistence verifier printing authority, denial, commit, same-image, and non-RAM evidence
 
 ## Current Milestone
+
+M190 is `hwval full filter verifier coverage`. M189 completed the composite filtering path, but the first verifier shape could still be fooled by stale boot/scaffold `drs-usb-hci` and `drs-xhci` rows that appeared before the interactive `hwval full usb-` command actually ran. The QEMU verifier now isolates the transcript after the exact shell command, waits for command-owned filtered output, and rejects unrelated rows such as GUI, display, NVMe, realbin, installer, authority, machine, secure-boot, and I2C diagnostics inside that filtered transcript.
+
+The kernel-side user-facing USB hardware labels now use stable dashed prefixes (`usb-hci-uhci`, `usb-hci-ohci`, `usb-hci-ehci`, `usb-hci-xhci`, and `usb-input-coverage`) so `hwval full usb-` produces useful filtered evidence without adding a new string-heavy telemetry block to the already tight UEFI boot FAT image. This is diagnostics/output behavior only: no xHCI enumeration, USB storage, FAT, input, compositor, Linux ABI, or BIOS driver behavior changed.
+
+Accepted verification: Product x86_64 build completed, the M1 production-slice gate passed, `tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HwvalFilterGate` passed with `usb-hci-xhci: 1`, and `tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed after extending the verifier login wait to match the current slow Product boot envelope. BIOS reserve stayed at `101` sectors, and UEFI reserve is `676992` bytes.
 
 M189 is `hwval full composite filtering completion`. M184 added the first substring filter for `hwval full <filter>`, but it covered only the single-field line helpers. Follow-up review found that field writers used inside composite rows (`shell64_write_decimal_field()` and `shell64_write_hex32_field()`) and raw `[x64] drs-*` summary lines still bypassed the filter, so commands such as `hwval full usb-` could still print unrelated composite diagnostics.
 

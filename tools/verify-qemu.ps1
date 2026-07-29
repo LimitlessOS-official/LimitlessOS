@@ -31,7 +31,8 @@ param(
     [switch]$HardwareRegistryGate,
     [switch]$HardwareDisplayGate,
     [switch]$HardwareStorageGate,
-    [switch]$HardwareStorageStageGate
+    [switch]$HardwareStorageStageGate,
+    [switch]$HwvalFilterGate
 )
 
 Set-StrictMode -Version Latest
@@ -256,6 +257,46 @@ function Get-X64PersistentShellLines
     }
 
     return @($Lines[$startIndex..($Lines.Count - 1)])
+}
+
+function Get-X64CommandTranscriptLines
+{
+    param(
+        [string[]]$Lines,
+        [string]$Command
+    )
+
+    $persistentLines = @(Get-X64PersistentShellLines -Lines $Lines)
+    if ($persistentLines.Count -eq 0) {
+        return @()
+    }
+
+    $commandPattern = "^\[x64\] \$ {0}$" -f [regex]::Escape((Normalize-ConsoleLine -Line $Command).ToLowerInvariant())
+    $startIndex = -1
+    for ($index = 0; $index -lt $persistentLines.Count; $index++) {
+        if ($persistentLines[$index] -match $commandPattern) {
+            $startIndex = $index + 1
+            break
+        }
+    }
+
+    if ($startIndex -lt 0) {
+        return @()
+    }
+
+    $endIndex = $persistentLines.Count - 1
+    for ($index = $startIndex; $index -lt $persistentLines.Count; $index++) {
+        if ($persistentLines[$index] -match '^\[x64\] \$ ') {
+            $endIndex = $index - 1
+            break
+        }
+    }
+
+    if ($endIndex -lt $startIndex) {
+        return @()
+    }
+
+    return @($persistentLines[$startIndex..$endIndex])
 }
 
 function Assert-X64M1RuntimeSurface
@@ -538,6 +579,40 @@ function Wait-ForAnyLogPattern
     throw "QEMU verification failed: timed out waiting for log marker $Pattern."
 }
 
+function Wait-ForLogPatternAfterMarker
+{
+    param(
+        [string]$Path,
+        [string]$MarkerPattern,
+        [string]$Pattern,
+        [int]$TimeoutMilliseconds
+    )
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (Test-Path $Path) {
+            $lines = @(Get-Content -Path $Path -ErrorAction SilentlyContinue)
+            $markerIndex = -1
+            for ($index = 0; $index -lt $lines.Count; $index++) {
+                if ($lines[$index] -match $MarkerPattern) {
+                    $markerIndex = $index
+                }
+            }
+            if (($markerIndex -ge 0) -and (($markerIndex + 1) -lt $lines.Count)) {
+                for ($index = $markerIndex + 1; $index -lt $lines.Count; $index++) {
+                    if ($lines[$index] -match $Pattern) {
+                        return
+                    }
+                }
+            }
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+
+    throw "QEMU verification failed: timed out waiting for log marker $Pattern after $MarkerPattern."
+}
+
 function Send-QemuKeyboardProbe
 {
     param(
@@ -553,6 +628,7 @@ function Send-QemuKeyboardProbe
         [bool]$HardwareRegistryProbeEnabled = $false,
         [bool]$HardwareDisplayProbeEnabled = $false,
         [bool]$HardwareStorageProbeEnabled = $false,
+        [bool]$HwvalFilterProbeEnabled = $false,
         [string[]]$ExtraTextLines = @()
     )
 
@@ -742,7 +818,7 @@ function Send-QemuKeyboardProbe
 
         if ($LoginProbeEnabled) {
             Start-Sleep -Milliseconds 300
-            $authDeadline = [DateTime]::UtcNow.AddSeconds(240)
+            $authDeadline = [DateTime]::UtcNow.AddSeconds(600)
             $setupSent = $false
             $loginSent = $false
             while (([DateTime]::UtcNow -lt $authDeadline) -and (-not $loginSent)) {
@@ -960,10 +1036,20 @@ function Send-QemuKeyboardProbe
             }
         }
         else {
+            if ($DebugLogPath.Length -gt 0) {
+                Wait-ForLogPattern -Path $DebugLogPath -Pattern '(\[x64\] gui interactive input wait|\[x64:shell\] persistent ring3 shell online|\[x64\] persistent ring3 shell default)' -TimeoutMilliseconds 600000
+            }
             & $sendMoveTo 560 420
             Start-Sleep -Milliseconds 300
-            & $sendKey "ret"
-            Start-Sleep -Milliseconds 100
+            $shellAlreadyOnline = $false
+            if (($DebugLogPath.Length -gt 0) -and (Test-Path $DebugLogPath)) {
+                $nonGuiProbeLog = Get-Content -Path $DebugLogPath -Raw -ErrorAction SilentlyContinue
+                $shellAlreadyOnline = (($nonGuiProbeLog -match '\[x64:shell\] persistent ring3 shell online') -or ($nonGuiProbeLog -match '\[x64\] persistent ring3 shell default'))
+            }
+            if (-not $shellAlreadyOnline) {
+                & $sendKey "ret"
+                Start-Sleep -Milliseconds 100
+            }
         }
 
         if ($DebugLogPath.Length -gt 0) {
@@ -1003,6 +1089,25 @@ function Send-QemuKeyboardProbe
             }
             if ($HardwareStorageProbeEnabled) {
                 Wait-ForAnyLogPattern -Paths @($DebugLogPath, $FramebufferLogPath) -Pattern 'drs-nvme-triage' -TimeoutMilliseconds 180000
+            }
+            & $sendTextLine "exit"
+            return
+        }
+        if ($HwvalFilterProbeEnabled) {
+            foreach ($extraTextLine in $ExtraTextLines) {
+                if (-not [string]::IsNullOrWhiteSpace($extraTextLine)) {
+                    & $sendTextLine $extraTextLine
+                }
+            }
+            if ($DebugLogPath.Length -gt 0) {
+                Wait-ForLogPatternAfterMarker `
+                    -Path $DebugLogPath `
+                    -MarkerPattern '^\[x64\] \$ hwval full usb-' `
+                    -Pattern '^usb-hci-xhci: ' `
+                    -TimeoutMilliseconds 300000
+            }
+            else {
+                Start-Sleep -Milliseconds 5000
             }
             & $sendTextLine "exit"
             return
@@ -1262,9 +1367,13 @@ try {
         $keyDelayMilliseconds = if ($BootMedia -eq "disk") { 180 } else { 210 }
         $lineDelayMilliseconds = if ($BootMedia -eq "disk") { 1300 } else { 5500 }
         $extraTextLines = @($ExtraShellLine | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($HwvalFilterGate.IsPresent) {
+            $extraTextLines += "hwval full usb-"
+        }
         $hardwareStorageProbe = ($HardwareStorageGate.IsPresent -or $HardwareStorageStageGate.IsPresent)
-        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:(($BootMedia -ne "disk") -and ($BuildProfile -eq "Product")) -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -ExtraTextLines $extraTextLines
+        $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe) -and (-not $HwvalFilterGate.IsPresent))
+        $loginProbeForRun = (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product") -and (-not $HwvalFilterGate.IsPresent))
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:$loginProbeForRun -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -HwvalFilterProbeEnabled:$($HwvalFilterGate.IsPresent) -ExtraTextLines $extraTextLines
         if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
@@ -1333,6 +1442,36 @@ if ($RealBinaryGate.IsPresent) {
     }
     Write-Host "QEMU real-binary telemetry:"
     foreach ($line in $realBinaryTelemetry) {
+        Write-Host "  $line"
+    }
+    return
+}
+if ($HwvalFilterGate.IsPresent) {
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64:shell\] persistent ring3 shell online' -Message "x64 persistent ring-3 shell banner was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] \$ hwval full usb-' -Message "x64 persistent shell did not accept the filtered hwval command."
+    $filteredLines = @(Get-X64CommandTranscriptLines -Lines $outputLines -Command "hwval full usb-")
+    if ($filteredLines.Count -eq 0) {
+        throw "QEMU verification failed: filtered hwval transcript was not isolated."
+    }
+    Assert-OutputContains -Lines $filteredLines -Pattern '^usb-hci-xhci: [0-9]+' -Message "filtered hwval output did not include USB HCI telemetry."
+    Assert-OutputContains -Lines $filteredLines -Pattern '^usb-input-coverage: ' -Message "filtered hwval output did not include USB input coverage telemetry."
+    foreach ($forbiddenFilteredPattern in @(
+        '\[x64\] drs-gui ',
+        '\[x64\] drs-display-readability ',
+        '\[x64\] drs-hardware-registry ',
+        '\[x64\] drs-nvme-triage ',
+        '\[x64\] drs-realbin ',
+        '^machine model: ',
+        '^secure boot: ',
+        '^installer dry-run: ',
+        '^authority: ',
+        '^nvme ready: ',
+        '^i2c pointer found: '
+    )) {
+        Assert-OutputNotContains -Lines $filteredLines -Pattern $forbiddenFilteredPattern -Message "filtered hwval output leaked an unrelated row."
+    }
+    Write-Host "QEMU hwval filter telemetry:"
+    foreach ($line in $filteredLines) {
         Write-Host "  $line"
     }
     return

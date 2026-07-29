@@ -2311,27 +2311,27 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
     (void)shell64_write_decimal_line(
         console_capability_handle,
         owner_id,
-        "usb hci uhci: ",
+        "usb-hci-uhci: ",
         pci64_usb_uhci_count());
     (void)shell64_write_decimal_line(
         console_capability_handle,
         owner_id,
-        "usb hci ohci: ",
+        "usb-hci-ohci: ",
         pci64_usb_ohci_count());
     (void)shell64_write_decimal_line(
         console_capability_handle,
         owner_id,
-        "usb hci ehci: ",
+        "usb-hci-ehci: ",
         pci64_usb_ehci_count());
     (void)shell64_write_decimal_line(
         console_capability_handle,
         owner_id,
-        "usb hci xhci: ",
+        "usb-hci-xhci: ",
         pci64_usb_xhci_count());
     (void)shell64_write_status_line(
         console_capability_handle,
         owner_id,
-        "usb input coverage: ",
+        "usb-input-coverage: ",
         "xHCI native; UHCI/OHCI/EHCI config-detected with PS/2 or firmware legacy fallback");
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme detected: ", mmio64_nvme_probe_found());
     (void)shell64_write_yes_no_line(console_capability_handle, owner_id, "nvme ready: ", mmio64_nvme_probe_ready());
@@ -2619,12 +2619,12 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "package trust surface: ",
         (package_signing64_signed() != 0u) ? "UEFI Ed25519 verified" : "BIOS checksum-only fallback");
-    (void)shell64_write_text(console_capability_handle, owner_id, "installer dry-run: awaiting hardware evidence; writes disabled\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "internal writes: disabled by default\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "format authority: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "real install: not approved\n");
-    return shell64_write_text(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage, installer, network, update, or install authority\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "installer dry-run: awaiting hardware evidence; writes disabled\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "internal writes: disabled by default\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "format authority: unavailable\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "nvram boot-entry authority: unavailable\n");
+    (void)shell64_write_hwval_text_line(console_capability_handle, owner_id, "real install: not approved\n");
+    return shell64_write_hwval_text_line(console_capability_handle, owner_id, "authority: read-only scoped validation; no ambient storage, installer, network, update, or install authority\n");
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
