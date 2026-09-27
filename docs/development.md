@@ -58,6 +58,10 @@ It boots the built image under QEMU/OVMF, drives the login and shell through QMP
 
 `tools\README.md` lists every script by purpose.
 
+### Continuous integration
+
+`.github/workflows/verify.yml` runs on every pull request and every push to `main`, on a `windows-latest` GitHub runner. It installs the same toolchain, runs the Product build (which includes the M1 production-slice gate and budget enforcement), then runs the UEFI (`-HardwareDisplayGate`) and BIOS disk QEMU gates. Serial logs and the size report are uploaded as the `verify-logs` artifact. The real-binary, persistence, and hardware-handoff gates depend on the ignored `external/` inputs or physical hardware and still run locally.
+
 ## External inputs (`external/`, not in git)
 
 The real-binary gates use binaries built outside this repository, kept under the ignored `external/` directory:
