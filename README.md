@@ -38,6 +38,13 @@ Build and verify the Product image:
 .\tools\verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
 ```
 
+Run the desktop in a window, rebuilding first whenever sources changed:
+
+```powershell
+.\tools\run-desktop.ps1                 # or create a desktop icon once:
+.\tools\install-desktop-shortcut.ps1
+```
+
 The build prints every budget (BIOS sectors, UEFI kernel bytes, low-window reserve, FAT image headroom) and fails if a hard limit is crossed. See [docs/budgets.md](docs/budgets.md).
 
 Outputs land in `dist/`: `limitlessos-x86_64.iso` (UEFI ISO), `limitlessos-x86_64-uefi.img` (USB image), `limitlessos-x86_64.img` (BIOS disk image), and `limitlessos-x86_64-nvme-gpt.img` (test NVMe disk).

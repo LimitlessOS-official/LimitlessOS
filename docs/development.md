@@ -35,6 +35,24 @@ Verified toolchain (2026-09-27): gcc 16.2.0 (MSYS2 Rev4), GNU ld 2.47, nasm 3.02
 
 A Product build ends by running `tools\assert-m1-production-slice.ps1`, which checks artifact inventory, ISO contents, shell surface text, absence of private-key material, and the wording rule below. Every build prints the budget summary described in [budgets.md](budgets.md).
 
+## Running the desktop locally
+
+```powershell
+.\tools\run-desktop.ps1            # build if sources changed, then boot in a QEMU window
+.\tools\run-desktop.ps1 -Fresh     # start over with a new virtual disk (new first-run setup)
+.\tools\install-desktop-shortcut.ps1   # one-time: adds a "LimitlessOS" icon to the desktop
+```
+
+`run-desktop.ps1` rebuilds automatically when any file under `boot/`, `kernel/`, `apps/`, `packages/`, or `tools/` is newer than the last build. It then boots the UEFI USB image with the same virtual hardware as the UEFI gate (q35, OVMF, xHCI keyboard/mouse, NVMe, virtio-net).
+
+- **Persistence:** the virtual NVMe disk lives in `%LOCALAPPDATA%\LimitlessOS\desktop-nvme.img`, outside the repository and OneDrive, so the local account and files persist between runs. The kernel log is written next to it as `desktop-debug.log`.
+- **Mouse:** click inside the window to capture the mouse; Ctrl+Alt+G releases it.
+- **Login:** if nothing is typed during first-run setup, the M108 bounded-login fallback creates the account `limitless` with password `limitless`.
+- **One VM at a time:** the launcher refuses to start a second VM while one is running, because both would write the same disk.
+- **Limits:** QEMU is a development convenience. It does not stand in for physical hardware; touchpad, Intel VMD NVMe, and display-panel behavior on the MSI laptop still need a USB capture.
+
+`run-qemu.ps1` remains for booting the other lanes and media (`-Architecture x86`, `-BootMedia disk` or `iso`) with a throwaway NVMe snapshot.
+
 ## Verifying
 
 The main gate, run after any kernel, loader, or tooling change:

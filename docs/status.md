@@ -4,6 +4,12 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M197: Local desktop launcher
+
+`tools\run-desktop.ps1` runs the Product desktop in a QEMU window without writing a USB stick. It rebuilds when any source is newer than the last build, boots the UEFI image on the same virtual hardware as the UEFI gate, and keeps a persistent virtual NVMe disk in `%LOCALAPPDATA%\LimitlessOS`. `tools\install-desktop-shortcut.ps1` adds a desktop icon for it. `tools\run-qemu.ps1` had a PowerShell parse error (a trailing comma in its argument list) and could not run at all; that is fixed.
+
+Accepted verification (2026-09-27): a cold launch rebuilt the image, created the disk, and reached `persistent ring3 shell online` in the QEMU window (first-run fallback account created on the persistent NVMe, `user-store-persistent 1`). A second launch through the desktop shortcut while that VM was open was refused by the single-instance guard. All three scripts parse cleanly.
+
 ### M196: Continuous integration
 
 `.github/workflows/verify.yml` builds the x86_64 Product image and runs the UEFI and BIOS disk QEMU gates on every pull request and push to `main` (see [development.md](development.md#continuous-integration)). The M195 failures had gone unnoticed because gates only ran by hand; they now run on every change.
