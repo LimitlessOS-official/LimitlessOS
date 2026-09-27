@@ -28,6 +28,19 @@
 #define LIMITLESS_BOOT_MEDIA_PATH_BYTES 64u
 #define LIMITLESS_BOOT_ACPI_SSDT_SLOTS 4u
 
+/*
+ * UEFI low-window contract. The kernel is linked at 0x10000 and executes
+ * through a 16 MiB low alias whose pages map onto the kernel window the
+ * loader allocated. The kernel image (text, rodata, data, and bss up to
+ * __kernel_end) must stay below the boot-media stage area, which occupies
+ * the top of that window and holds the staged Linux app and interpreter.
+ * tools\build.ps1 reads these values and fails the build if the linked
+ * __kernel_end crosses LIMITLESS_BOOT_MEDIA_STAGE_BASE.
+ */
+#define LIMITLESS_BOOT_LOW_WINDOW_BYTES 0x0000000001000000ull
+#define LIMITLESS_BOOT_MEDIA_STAGE_BYTES 0x0000000000040000ull
+#define LIMITLESS_BOOT_MEDIA_STAGE_BASE 0x0000000000FC0000ull
+
 struct boot_info
 {
     u32 magic;
