@@ -7,7 +7,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $buildDir = Join-Path $root "build"
-$stageDir = Join-Path $root ".codex-stage\boot-media-linux-handoff"
+# Outside build/ and dist/, which build.ps1 recreates before it reads the staged files.
+$stageDir = Join-Path ([System.IO.Path]::GetTempPath()) "limitlessos-boot-media-linux-handoff"
 $appPath = Join-Path $stageDir "dynldlimit-invalid-elf.bin"
 $interpPath = Join-Path $stageDir "ldlimit-invalid-elf.bin"
 $verifyQemuPath = Join-Path $root "tools\verify-qemu.ps1"

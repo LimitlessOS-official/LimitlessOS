@@ -37,6 +37,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "toolchain.ps1")
 $script:LegacyMmioAssertionLines = @()
 
 function Get-QemuEdk2CodePath
