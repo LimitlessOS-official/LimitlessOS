@@ -1,0 +1,72 @@
+name: verify
+
+# Builds the x86_64 Product image (which runs the M1 production-slice gate and
+# enforces every budget in docs/budgets.md) and boots it under QEMU through the
+# UEFI and BIOS gates. See docs/development.md for the same commands locally.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  product:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-nasm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python signing dependency
+        run: python -m pip install cryptography
+
+      - name: Install QEMU
+        run: choco install qemu -y --no-progress
+
+      - name: Point the build at the MSYS2 toolchain
+        run: |
+          "LIMITLESS_MINGW_BIN=${{ steps.msys2.outputs.msys2-location }}\mingw64\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build x86_64 Product
+        run: ./tools/build.ps1 -Architecture x86_64 -BuildProfile Product
+
+      - name: Budget summary
+        if: always()
+        run: if (Test-Path dist/limitlessos-x86_64.size.txt) { Get-Content dist/limitlessos-x86_64.size.txt | Select-Object -First 12 }
+
+      - name: UEFI gate
+        run: ./tools/verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
+
+      - name: BIOS disk gate
+        run: ./tools/verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: |
+            build/qemu-*.log
+            dist/limitlessos-x86_64.size.txt
+          if-no-files-found: ignore
