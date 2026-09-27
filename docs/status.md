@@ -4,6 +4,17 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M195: BIOS disk gate restored
+
+`verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product` had been failing since M190. Two stale verifier expectations caused it, not the BIOS kernel:
+
+- **Keyboard telemetry:** the BIOS assertions read the kernel's pre-shell keyboard snapshot and require nonzero scancodes. Before M190 the harness pressed Enter as soon as QEMU started, and QEMU's PS/2 queue held that key until the kernel's `KEYBOARD WAIT` probe read it. M190 made every non-GUI run wait for the shell before typing, which its hwval-filter gate needed, so the BIOS snapshot always read `scancodes 0`. `Send-QemuKeyboardProbe` now takes `-EarlyBootKeyEnabled`, set only for `-BootMedia disk`; UEFI runs keep the M190 behavior.
+- **Help wording:** the July 2026 wording pass updated the `hwval` help and `apps` lines to end in "; hardware evidence pending" but only ran the UEFI gate. The frozen BIOS kernel still prints the shorter lines. The verifier now expects the lane-specific text instead of growing the BIOS kernel.
+
+M193's write-up blamed this failure on QEMU key timing on this host. That was wrong: the "untouched baseline" used for comparison already contained M190.
+
+Accepted verification (2026-09-27): the BIOS disk gate passed; `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed. No kernel source changed, so every budget is unchanged.
+
 ### M194: Repository and documentation reorganization
 
 - README, architecture, roadmap, status, and real-binary-gate docs rewritten to match the code; new [budgets.md](budgets.md), [development.md](development.md), [tools/README.md](../tools/README.md), and [fixtures/README.md](../fixtures/README.md).
@@ -24,7 +35,7 @@ Fixes the defect M191 left open: with `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` sta
   - `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed with and without staging; with staging, files load at `0xFC0000`/`0xFC4000` and boot reaches login.
   - `verify-qemu.ps1 ... -RealBinaryGate -ExtraShellLine "linux /APPS/DYNLDLIMIT"` passed: source 2 (boot media), interpreter read, last syscall `exit_group` result 0, page faults 0.
   - `verify-boot-media-linux-handoff.ps1` passed (stage bases `0xFC0000`/`0xFC1000`); `verify-private-key-artifacts.ps1` passed.
-  - `KERNEL64-BIOS.BIN` is byte-identical to the pre-M193 tree (same SHA-256). The BIOS disk gate fails on this host both before and after M193; see Known issues.
+  - `KERNEL64-BIOS.BIN` is byte-identical to the pre-M193 tree (same SHA-256). The BIOS disk gate failed both before and after M193 because of stale verifier expectations from M190; fixed in M195.
   - Budgets: BIOS 923/1024 sectors (101 reserve); UEFI kernel 1,411,968 / 2,097,152 B; low window ends `0xF3AE40` (545,216 B reserve); FAT image 369/2044 clusters.
 - **Not proven:** physical MSI boot of the staged image. In QEMU `stage-match` stays 0 because the test NVMe image carries no copies of the staged files to compare against.
 
@@ -59,7 +70,6 @@ From user-supplied captures ([hardware/msi-cyborg-15-a13ve.md](hardware/msi-cybo
 ## Known issues and limits
 
 - **BIOS reserve below warning:** 101 sectors against the 128-sector warning line (hard limit respected). Recovery plan in [budgets.md](budgets.md).
-- **BIOS disk gate fails on the current host:** `verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product` stops at "x64 PS/2 keyboard input telemetry proof was not observed". The kernel's 20-tick keyboard probe window records `scancodes 0` because the QMP-injected keys arrive outside it. It reproduces identically on the untouched pre-M193 tree with a byte-identical BIOS kernel, so it is a harness timing issue with the QEMU build installed on 2026-09-27, not a kernel regression. The UEFI gates are unaffected (their keyboard probe is optional).
 - **Static kernel pools:** at most 8 per-process page-table roots, 32 persona contexts, and 16 pipes; there is no general physical-frame allocator on x86_64.
 - **Personas:** Windows PE and macOS Mach-O support is loader and ABI groundwork exercised only by repo-built programs; not Product behavior.
 - **Reproducibility gaps:** the `LDLIMIT` interpreter binary has no source in the repository or `external/`; build command lines for the `fixtures/linux/` programs were not recorded.

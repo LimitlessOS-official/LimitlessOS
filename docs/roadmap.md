@@ -20,7 +20,6 @@ Distinctive, not a clone: Red Hat-style seriousness, Windows-like discoverabilit
 
 Ordered by what unblocks the most. Each follows [development.md](development.md#milestone-workflow) and the evidence rules in [real-binary-gate.md](real-binary-gate.md).
 
-1. **Restore the BIOS disk gate.** Synchronize `Send-QemuKeyboardProbe` in `verify-qemu.ps1` with the BIOS kernel's `KEYBOARD WAIT` stage marker (or lengthen that window) so injected keys land inside it. Every other gate passes; this one fails on the current QEMU build regardless of kernel changes.
 1. **MSI retest of the M193 image.** Rebuild the handoff bundle (`prepare-hardware-storage-evidence.ps1`) with staged `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT`, boot it on the MSI Cyborg 15 A13VE, and capture `hwval` plus `linux /APPS/DYNLDLIMIT`. Expected first physical run of a dynamic Linux ELF from boot media.
 2. **Pointer input on hardware.** Get the ELAN I2C HID touchpad (ACPI `_CRS` path) or the composite USB boot mouse (xHCI) moving the cursor on the laptop; the diagnostics from M149–M190 already localize the stage.
 3. **Internal NVMe behind Intel VMD.** Move from the no-touch VMD driver plan (M158–M160) to a real bind of the nested NVMe controller, read-only first, so `/nvme` works on the laptop without the boot-media fallback.

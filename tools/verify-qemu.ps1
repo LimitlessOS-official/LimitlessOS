@@ -321,7 +321,13 @@ function Assert-X64M1RuntimeSurface
     }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps: append cat copy delete ls mkdir move nethello rename stat touch write$' -Message "M1 runtime help product app list is missing or stale."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product network: net shows DHCP lease; net curl example\.com performs a scoped HTTP GET$' -Message "M3 runtime help did not describe Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; hardware evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
+    if ($BootMedia -eq "disk") {
+        # The BIOS fallback kernel keeps the shorter wording to protect its sector budget.
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only$' -Message "M9 BIOS fallback help did not describe hardware validation status."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Product hardware validation: hwval is read-only; hardware evidence pending$' -Message "M9 runtime help did not describe hardware validation status."
+    }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product package trust: pkginfo and Settings are read-only; installation disabled$' -Message "M8 runtime help did not describe Product package trust status."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product GUI: unavailable on BIOS checksum fallback$' -Message "M15 BIOS fallback help did not label Product GUI as unavailable."
@@ -368,7 +374,12 @@ function Assert-X64M1RuntimeSurface
 
     Assert-OutputContains -Lines $persistentLines -Pattern '^ASK \(not AI\)$' -Message "M1 apps output did not explicitly quarantine ASK as not AI."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Network \(hardware-gated\): use net or net curl example\.com$' -Message "M3 apps output did not label Product network status."
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only; hardware evidence pending$' -Message "M9 apps output did not label hardware validation visibility."
+    if ($BootMedia -eq "disk") {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only$' -Message "M9 BIOS apps output did not label hardware validation visibility."
+    }
+    else {
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Hardware validation: use hwval; read-only; hardware evidence pending$' -Message "M9 apps output did not label hardware validation visibility."
+    }
     Assert-OutputContains -Lines $persistentLines -Pattern '^Package trust: use pkginfo or Settings$' -Message "M8 apps output did not label Package trust visibility."
     if ($BootMedia -eq "disk") {
         Assert-OutputContains -Lines $persistentLines -Pattern '^GUI desktop: unavailable on BIOS checksum fallback$' -Message "M15 BIOS apps output did not label GUI as unavailable."
@@ -630,6 +641,7 @@ function Send-QemuKeyboardProbe
         [bool]$HardwareDisplayProbeEnabled = $false,
         [bool]$HardwareStorageProbeEnabled = $false,
         [bool]$HwvalFilterProbeEnabled = $false,
+        [bool]$EarlyBootKeyEnabled = $false,
         [string[]]$ExtraTextLines = @()
     )
 
@@ -1036,6 +1048,15 @@ function Send-QemuKeyboardProbe
                 Start-Sleep -Milliseconds 350
             }
         }
+        elseif ($EarlyBootKeyEnabled) {
+            # BIOS disk lane: press Enter immediately so QEMU's PS/2 queue holds a real
+            # keystroke for the kernel's pre-shell KEYBOARD WAIT probe, which the disk
+            # assertions read back as nonzero scancode/byte/pending telemetry.
+            & $sendMoveTo 560 420
+            Start-Sleep -Milliseconds 300
+            & $sendKey "ret"
+            Start-Sleep -Milliseconds 100
+        }
         else {
             if ($DebugLogPath.Length -gt 0) {
                 Wait-ForLogPattern -Path $DebugLogPath -Pattern '(\[x64\] gui interactive input wait|\[x64:shell\] persistent ring3 shell online|\[x64\] persistent ring3 shell default)' -TimeoutMilliseconds 600000
@@ -1374,7 +1395,7 @@ try {
         $hardwareStorageProbe = ($HardwareStorageGate.IsPresent -or $HardwareStorageStageGate.IsPresent)
         $guiProbeForRun = (($BootMedia -ne "disk") -and (-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe) -and (-not $HwvalFilterGate.IsPresent))
         $loginProbeForRun = (($BootMedia -ne "disk") -and ($BuildProfile -eq "Product") -and (-not $HwvalFilterGate.IsPresent))
-        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:$loginProbeForRun -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -HwvalFilterProbeEnabled:$($HwvalFilterGate.IsPresent) -ExtraTextLines $extraTextLines
+        Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:$loginProbeForRun -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -HwvalFilterProbeEnabled:$($HwvalFilterGate.IsPresent) -EarlyBootKeyEnabled:($BootMedia -eq "disk") -ExtraTextLines $extraTextLines
         if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
