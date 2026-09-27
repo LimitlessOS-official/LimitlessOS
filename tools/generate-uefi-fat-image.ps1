@@ -217,7 +217,14 @@ function Get-ClusterCount
         return 0
     }
 
-    return [int][Math]::Ceiling($Bytes.Length / [double]$bytesPerSector)
+    return [int][Math]::Ceiling($Bytes.Length / [double]$bytesPerCluster)
+}
+
+function Get-ClusterOffset
+{
+    param([int]$Cluster)
+
+    return ($dataStartSector + (($Cluster - 2) * $sectorsPerCluster)) * $bytesPerSector
 }
 
 function Copy-FileData
@@ -232,7 +239,7 @@ function Copy-FileData
         return
     }
 
-    $offset = ($dataStartSector + ($FirstCluster - 2)) * $bytesPerSector
+    $offset = Get-ClusterOffset -Cluster $FirstCluster
     [Array]::Copy($Bytes, 0, $Image, $offset, $Bytes.Length)
 }
 
@@ -317,16 +324,43 @@ if ($bootLinuxInterp -ne $null) {
 }
 
 $bytesPerSector = 512
-$totalSectors = 2880
+$totalSectors = 16384
 $reservedSectors = 1
 $fatCount = 2
 $rootEntries = 224
-$sectorsPerFat = 9
-$sectorsPerCluster = 1
+$sectorsPerCluster = 8
+$bytesPerCluster = $bytesPerSector * $sectorsPerCluster
 $rootDirSectors = [int](($rootEntries * 32) / $bytesPerSector)
+
+# FAT size and usable cluster count are mutually dependent: a bigger FAT pushes the data
+# area later, which lowers the cluster count, which can shrink the FAT again. Solve to a
+# fixpoint rather than carrying a hardcoded floppy-era sectors-per-FAT value.
+$sectorsPerFat = 1
+for ($solve = 0; $solve -lt 32; $solve++) {
+    $candidateDataStart = $reservedSectors + ($fatCount * $sectorsPerFat) + $rootDirSectors
+    $candidateClusters = [int][Math]::Floor(($totalSectors - $candidateDataStart) / $sectorsPerCluster)
+    if ($candidateClusters -le 0) {
+        throw "UEFI FAT geometry is degenerate: no data clusters remain for totalSectors $totalSectors."
+    }
+    $candidateFatBytes = [int][Math]::Ceiling((($candidateClusters + 2) * 3) / 2)
+    $candidateSectorsPerFat = [int][Math]::Ceiling($candidateFatBytes / [double]$bytesPerSector)
+    if ($candidateSectorsPerFat -eq $sectorsPerFat) {
+        break
+    }
+    $sectorsPerFat = $candidateSectorsPerFat
+}
+
 $rootDirStartSector = $reservedSectors + ($fatCount * $sectorsPerFat)
 $dataStartSector = $rootDirStartSector + $rootDirSectors
 $imageSize = $bytesPerSector * $totalSectors
+$clusterCapacity = [int][Math]::Floor(($totalSectors - $dataStartSector) / $sectorsPerCluster)
+
+if ($totalSectors -gt 65535) {
+    throw "UEFI FAT geometry writes the 16-bit BPB total-sector field; totalSectors $totalSectors exceeds 65535."
+}
+if ($clusterCapacity -ge 4085) {
+    throw "UEFI FAT geometry yields $clusterCapacity clusters, which FAT type determination treats as FAT16; this builder emits FAT12 tables only."
+}
 
 $efiClusterCount = Get-ClusterCount -Bytes $efiBytes
 $readmeClusterCount = Get-ClusterCount -Bytes $readmeBytes
@@ -352,9 +386,35 @@ for ($index = 0; $index -lt $bootLinuxFiles.Count; $index++) {
 }
 $requiredClusters = $nextFreeCluster - 2
 
-$availableClusters = $totalSectors - $dataStartSector
+$stagedAdditionClusters = 0
+if ($includeBootLinuxApps) {
+    $stagedAdditionClusters = 1
+    foreach ($stageFile in $bootLinuxFiles) {
+        $stagedAdditionClusters += $stageFile.ClusterCount
+    }
+}
+$baseClusters = $requiredClusters - $stagedAdditionClusters
+$availableClusters = $clusterCapacity
+$headroomClusters = $availableClusters - $requiredClusters
+$headroomBytes = $headroomClusters * $bytesPerCluster
+$warnHeadroomBytes = 131072
+
+Write-Host "UEFI FAT12 BUDGET"
+Write-Host ("  cluster size:     {0} bytes ({1} sectors/cluster)" -f $bytesPerCluster, $sectorsPerCluster)
+Write-Host ("  capacity:         {0} clusters ({1} bytes)" -f $availableClusters, ($availableClusters * $bytesPerCluster))
+Write-Host ("  base content:     {0} clusters" -f $baseClusters)
+Write-Host ("  staged additions: {0} clusters" -f $stagedAdditionClusters)
+Write-Host ("  projected:        {0} clusters" -f $requiredClusters)
+Write-Host ("  headroom:         {0} clusters ({1} bytes)" -f $headroomClusters, $headroomBytes)
+
 if ($requiredClusters -gt $availableClusters) {
-    throw "UEFI FAT image exceeded the 1.44 MiB FAT12 cluster budget."
+    $deficitClusters = $requiredClusters - $availableClusters
+    Write-Host ("  deficit:          {0} clusters ({1} bytes)" -f $deficitClusters, ($deficitClusters * $bytesPerCluster))
+    throw "UEFI boot image capacity insufficient: projected $requiredClusters clusters exceeds capacity $availableClusters by $deficitClusters clusters."
+}
+
+if ($headroomBytes -lt $warnHeadroomBytes) {
+    Write-Warning ("UEFI FAT headroom is {0} bytes, below the {1}-byte warning threshold. Grow `$totalSectors in tools\generate-uefi-fat-image.ps1 before it becomes a hard build failure." -f $headroomBytes, $warnHeadroomBytes)
 }
 
 [byte[]]$imageBytes = [byte[]]::new($imageSize)
@@ -434,7 +494,7 @@ foreach ($entry in $rootEntriesBytes) {
 }
 
 # EFI directory cluster
-$efiDirOffset = ($dataStartSector + ($efiDirCluster - 2)) * $bytesPerSector
+$efiDirOffset = Get-ClusterOffset -Cluster $efiDirCluster
 $efiEntries = @(
     (New-DirectoryEntry -ShortName "." -ShortExtension "" -Attributes 0x10 -FirstCluster $efiDirCluster -FileSize 0),
     (New-DirectoryEntry -ShortName ".." -ShortExtension "" -Attributes 0x10 -FirstCluster 0 -FileSize 0),
@@ -447,7 +507,7 @@ foreach ($entry in $efiEntries) {
 }
 
 # BOOT directory cluster
-$bootDirOffset = ($dataStartSector + ($bootDirCluster - 2)) * $bytesPerSector
+$bootDirOffset = Get-ClusterOffset -Cluster $bootDirCluster
 $bootEntries = @(
     (New-DirectoryEntry -ShortName "." -ShortExtension "" -Attributes 0x10 -FirstCluster $bootDirCluster -FileSize 0),
     (New-DirectoryEntry -ShortName ".." -ShortExtension "" -Attributes 0x10 -FirstCluster $efiDirCluster -FileSize 0),
@@ -460,7 +520,7 @@ foreach ($entry in $bootEntries) {
 }
 
 if ($includeBootLinuxApps) {
-    $appsDirOffset = ($dataStartSector + ($appsDirCluster - 2)) * $bytesPerSector
+    $appsDirOffset = Get-ClusterOffset -Cluster $appsDirCluster
     $appsEntries = @(
         (New-DirectoryEntry -ShortName "." -ShortExtension "" -Attributes 0x10 -FirstCluster $appsDirCluster -FileSize 0),
         (New-DirectoryEntry -ShortName ".." -ShortExtension "" -Attributes 0x10 -FirstCluster 0 -FileSize 0)
