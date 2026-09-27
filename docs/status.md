@@ -4,16 +4,23 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
-### M195: BIOS disk gate restored
+### M195: Stale QEMU gates restored (BIOS disk, NVMe storage)
 
-`verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product` had been failing since M190. Two stale verifier expectations caused it, not the BIOS kernel:
+Three QEMU gates had been failing on stale verifier expectations, not kernel bugs. The BIOS disk gate (`verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product`) had failed since M190:
 
 - **Keyboard telemetry:** the BIOS assertions read the kernel's pre-shell keyboard snapshot and require nonzero scancodes. Before M190 the harness pressed Enter as soon as QEMU started, and QEMU's PS/2 queue held that key until the kernel's `KEYBOARD WAIT` probe read it. M190 made every non-GUI run wait for the shell before typing, which its hwval-filter gate needed, so the BIOS snapshot always read `scancodes 0`. `Send-QemuKeyboardProbe` now takes `-EarlyBootKeyEnabled`, set only for `-BootMedia disk`; UEFI runs keep the M190 behavior.
 - **Help wording:** the July 2026 wording pass updated the `hwval` help and `apps` lines to end in "; hardware evidence pending" but only ran the UEFI gate. The frozen BIOS kernel still prints the shorter lines. The verifier now expects the lane-specific text instead of growing the BIOS kernel.
 
+- **NVMe storage gates:** the `-HardwareStorageGate` and `-HardwareStorageStageGate` NVMe triage assertions predated the M161 controller register fields (`nvme-probe-error` through `nvme-doorbell-page`) and could no longer match. They went unnoticed because handoff bundles were being built with `-SkipQemuGate`. Both patterns now include those fields, requiring `nvme-probe-error 0`, `nvme-regs 1`, and a nonzero version register.
+
 M193's write-up blamed this failure on QEMU key timing on this host. That was wrong: the "untouched baseline" used for comparison already contained M190.
 
-Accepted verification (2026-09-27): the BIOS disk gate passed; `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed. No kernel source changed, so every budget is unchanged.
+Accepted verification (2026-09-27):
+
+- BIOS disk gate passed.
+- `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate` passed.
+- `prepare-hardware-storage-evidence.ps1` passed without `-SkipQemuGate`, including the staged storage gate (`stage-match 1`, both staged files matching their NVMe copies) and handoff self-verification. It produced `dist\m133-msi-hardware-handoff-20260927-191559` (ISO SHA-256 `67bfae9c98101074d3d3a39ce8aede275b5ff136c81f21f676a9740f5d71ba31`, UEFI image SHA-256 `555217475559db56c501f2a4cc6561d8532a7889020afce04c7198aedef25065`).
+- No kernel source changed, so every budget is unchanged.
 
 ### M194: Repository and documentation reorganization
 
