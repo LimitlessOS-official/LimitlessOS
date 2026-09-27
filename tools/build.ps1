@@ -17,6 +17,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "toolchain.ps1")
+Assert-LimitlessToolchain
+
 $root = Split-Path -Parent $PSScriptRoot
 $buildDir = Join-Path $root "build"
 $distDir = Join-Path $root "dist"
@@ -143,6 +146,38 @@ function Get-Sha256Hex
     finally {
         $sha256.Dispose()
     }
+}
+
+function Get-BootInfoHexDefine
+{
+    param(
+        [Parameter(Mandatory = $true)][string]$HeaderText,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $match = [regex]::Match($HeaderText, "#define\s+$Name\s+0x([0-9A-Fa-f]+)ull")
+    if (-not $match.Success) {
+        throw "boot_info.h does not define $Name as a 0x...ull constant."
+    }
+
+    return [Convert]::ToInt64($match.Groups[1].Value, 16)
+}
+
+function Get-LinkedSymbolAddress
+{
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Symbol
+    )
+
+    foreach ($line in @(nm $Path)) {
+        $parts = $line.Trim() -split '\s+'
+        if (($parts.Count -eq 3) -and ($parts[2] -eq $Symbol)) {
+            return [Convert]::ToInt64($parts[0], 16)
+        }
+    }
+
+    throw "Linked image $Path does not define symbol $Symbol."
 }
 
 function Get-BinutilsSectionSizes
@@ -749,14 +784,6 @@ function Build-X64Scaffold
         $uefiObjectFiles += $objectPath
     }
 
-    $uefiSource = Join-Path $root "kernel\\arch\\x86_64\\uefi_app.c"
-    $uefiSupportObjects = @()
-    Write-Host "Compiling x86_64 UEFI app"
-    & gcc @uefiCFlags -c $uefiSource -o $uefiObject
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to compile x86_64 UEFI app."
-    }
-
     $uefiSupportObjects = @($uefiObjectFiles | Where-Object { $_ -like "*services-x86_64-uefi.o" })
 
     Write-Host "Linking x86_64 scaffold"
@@ -781,6 +808,32 @@ function Build-X64Scaffold
     & objcopy -O binary $uefiKernelPe $uefiKernelBin
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to convert x86_64 UEFI Product kernel."
+    }
+
+    # Low-window budget: the linked kernel image, including .bss, must end below the
+    # boot-media stage area at the top of the 16 MiB low window (see boot_info.h).
+    $bootInfoHeaderText = Get-Content -Raw -Path (Join-Path $includeDir "boot_info.h")
+    $lowWindowBytes = Get-BootInfoHexDefine -HeaderText $bootInfoHeaderText -Name "LIMITLESS_BOOT_LOW_WINDOW_BYTES"
+    $bootMediaStageBase = Get-BootInfoHexDefine -HeaderText $bootInfoHeaderText -Name "LIMITLESS_BOOT_MEDIA_STAGE_BASE"
+    $bootMediaStageBytes = Get-BootInfoHexDefine -HeaderText $bootInfoHeaderText -Name "LIMITLESS_BOOT_MEDIA_STAGE_BYTES"
+    if (($bootMediaStageBase + $bootMediaStageBytes) -ne $lowWindowBytes) {
+        throw "boot_info.h stage area must end exactly at the low-window limit."
+    }
+    $uefiKernelEnd = Get-LinkedSymbolAddress -Path $uefiKernelPe -Symbol "__kernel_end"
+    $lowWindowReserve = $bootMediaStageBase - $uefiKernelEnd
+    $lowWindowReserveWarning = 128 * 1024
+    if ($lowWindowReserve -lt 0) {
+        throw ("x86_64 UEFI kernel image ends at 0x{0:X} and overlaps the boot-media stage area at 0x{1:X} by {2} bytes." -f $uefiKernelEnd, $bootMediaStageBase, (-$lowWindowReserve))
+    }
+    if ($lowWindowReserve -lt $lowWindowReserveWarning) {
+        Write-Warning "x86_64 UEFI low-window reserve $lowWindowReserve bytes is below the warning threshold of $lowWindowReserveWarning bytes."
+    }
+
+    $uefiSource = Join-Path $root "kernel\\arch\\x86_64\\uefi_app.c"
+    Write-Host "Compiling x86_64 UEFI app"
+    & gcc @uefiCFlags ("-DLIMITLESS_UEFI_KERNEL_IMAGE_END=0x{0:X}ull" -f $uefiKernelEnd) -c $uefiSource -o $uefiObject
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to compile x86_64 UEFI app."
     }
 
     Write-Host "Linking x86_64 UEFI app"
@@ -887,6 +940,9 @@ function Build-X64Scaffold
         "uefi-kernel-bytes=$($uefiKernelBytes.Length)",
         "uefi-kernel-byte-limit=$uefiKernelByteLimit",
         "uefi-kernel-byte-reserve=$($uefiKernelByteLimit - $uefiKernelBytes.Length)",
+        ("uefi-low-window-kernel-end=0x{0:X}" -f $uefiKernelEnd),
+        ("uefi-low-window-stage-base=0x{0:X}" -f $bootMediaStageBase),
+        "uefi-low-window-reserve=$lowWindowReserve",
         "section-text=$($kernelSizeMap.Text)",
         "section-rodata=$($kernelSizeMap.Rodata)",
         "section-data=$($kernelSizeMap.Data)",
@@ -1266,6 +1322,7 @@ artifact-size-map: $sizeReportPathReport
     Write-Host "  uefi kernel  : $($uefiKernelBytes.Length) bytes"
     Write-Host "  bios sectors : $sectorCount / $loaderSectorLimit sectors ($loaderSectorReserve reserve)"
     Write-Host "  uefi budget  : $($uefiKernelBytes.Length) / $uefiKernelByteLimit bytes ($($uefiKernelByteLimit - $uefiKernelBytes.Length) reserve)"
+    Write-Host ("  low window   : kernel end 0x{0:X} / stage base 0x{1:X} ({2} reserve)" -f $uefiKernelEnd, $bootMediaStageBase, $lowWindowReserve)
     Write-Host "  section map  : text $($kernelSizeMap.Text), rodata $($kernelSizeMap.Rodata), data $($kernelSizeMap.Data), bss $($kernelSizeMap.Bss)"
     Write-Host "  top object   : $($topSizeObject.Name) ($($topSizeObject.Total) bytes)"
     Write-Host "  uefi section : text $($uefiKernelSizeMap.Text), rodata $($uefiKernelSizeMap.Rodata), data $($uefiKernelSizeMap.Data), bss $($uefiKernelSizeMap.Bss)"

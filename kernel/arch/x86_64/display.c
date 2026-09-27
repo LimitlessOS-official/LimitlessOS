@@ -1,5 +1,9 @@
 #include "display_x64.h"
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "display_font_x64.h"
+#endif
+
 #include "arch_build.h"
 #include "ai_policy_x64.h"
 #include "auth_x64.h"
@@ -31,10 +35,25 @@
 #define DISPLAY64_KERNEL_HIGH_BASE_LOW32 0x80000000u
 #define DISPLAY64_TEXT_START_X 24u
 #define DISPLAY64_TEXT_START_Y 96u
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Product UI font: an original 8x16 cell rendered at 1:1 instead of a 5x7 cell
+ * scaled 2x. Line advance is deliberately identical to the previous metrics
+ * ((16 + 2) * 1 == (7 + 2) * 2 == 18), so vertical layout is unchanged while
+ * glyph quality stops depending on integer pixel doubling. */
+#define DISPLAY64_FONT_WIDTH 8u
+#define DISPLAY64_FONT_HEIGHT 16u
+#define DISPLAY64_FONT_DEFAULT_SCALE 1u
+#define DISPLAY64_FONT_MAX_SCALE 2u
+#define DISPLAY64_LEGACY_FONT_WIDTH 5u
+#define DISPLAY64_LEGACY_FONT_HEIGHT 7u
+#else
 #define DISPLAY64_FONT_WIDTH 5u
 #define DISPLAY64_FONT_HEIGHT 7u
 #define DISPLAY64_FONT_DEFAULT_SCALE 2u
 #define DISPLAY64_FONT_MAX_SCALE 3u
+#define DISPLAY64_LEGACY_FONT_WIDTH 5u
+#define DISPLAY64_LEGACY_FONT_HEIGHT 7u
+#endif
 #define DISPLAY64_FONT_ADVANCE_DEFAULT ((DISPLAY64_FONT_WIDTH + 1u) * DISPLAY64_FONT_DEFAULT_SCALE)
 #define DISPLAY64_LINE_ADVANCE_DEFAULT ((DISPLAY64_FONT_HEIGHT + 2u) * DISPLAY64_FONT_DEFAULT_SCALE)
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
@@ -499,7 +518,7 @@ static void display64_set_boot_info(const struct boot_info *boot_info)
     g_display_boot_info = &g_display_boot_info_storage;
 }
 
-static const u8 g_display_alpha_font[26][DISPLAY64_FONT_HEIGHT] = {
+static const u8 g_display_alpha_font[26][DISPLAY64_LEGACY_FONT_HEIGHT] = {
     { 0x0Eu, 0x11u, 0x11u, 0x1Fu, 0x11u, 0x11u, 0x11u },
     { 0x1Eu, 0x11u, 0x11u, 0x1Eu, 0x11u, 0x11u, 0x1Eu },
     { 0x0Eu, 0x11u, 0x10u, 0x10u, 0x10u, 0x11u, 0x0Eu },
@@ -528,8 +547,21 @@ static const u8 g_display_alpha_font[26][DISPLAY64_FONT_HEIGHT] = {
     { 0x1Fu, 0x01u, 0x02u, 0x04u, 0x08u, 0x10u, 0x1Fu }
 };
 
+static const u8 g_display_digit_font[10][DISPLAY64_LEGACY_FONT_HEIGHT] = {
+    { 0x0Eu, 0x11u, 0x13u, 0x15u, 0x19u, 0x11u, 0x0Eu },
+    { 0x04u, 0x0Cu, 0x04u, 0x04u, 0x04u, 0x04u, 0x0Eu },
+    { 0x0Eu, 0x11u, 0x01u, 0x02u, 0x04u, 0x08u, 0x1Fu },
+    { 0x1Eu, 0x01u, 0x01u, 0x0Eu, 0x01u, 0x01u, 0x1Eu },
+    { 0x02u, 0x06u, 0x0Au, 0x12u, 0x1Fu, 0x02u, 0x02u },
+    { 0x1Fu, 0x10u, 0x10u, 0x1Eu, 0x01u, 0x01u, 0x1Eu },
+    { 0x0Eu, 0x10u, 0x10u, 0x1Eu, 0x11u, 0x11u, 0x0Eu },
+    { 0x1Fu, 0x01u, 0x02u, 0x04u, 0x08u, 0x08u, 0x08u },
+    { 0x0Eu, 0x11u, 0x11u, 0x0Eu, 0x11u, 0x11u, 0x0Eu },
+    { 0x0Eu, 0x11u, 0x11u, 0x0Fu, 0x01u, 0x01u, 0x0Eu }
+};
+
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-static const u8 g_display_lower_font[26][DISPLAY64_FONT_HEIGHT] = {
+static const u8 g_display_lower_font[26][DISPLAY64_LEGACY_FONT_HEIGHT] = {
     { 0x00u, 0x00u, 0x0Eu, 0x01u, 0x0Fu, 0x11u, 0x0Fu },
     { 0x10u, 0x10u, 0x16u, 0x19u, 0x11u, 0x19u, 0x16u },
     { 0x00u, 0x00u, 0x0Eu, 0x10u, 0x10u, 0x10u, 0x0Eu },
@@ -559,18 +591,6 @@ static const u8 g_display_lower_font[26][DISPLAY64_FONT_HEIGHT] = {
 };
 #endif
 
-static const u8 g_display_digit_font[10][DISPLAY64_FONT_HEIGHT] = {
-    { 0x0Eu, 0x11u, 0x13u, 0x15u, 0x19u, 0x11u, 0x0Eu },
-    { 0x04u, 0x0Cu, 0x04u, 0x04u, 0x04u, 0x04u, 0x0Eu },
-    { 0x0Eu, 0x11u, 0x01u, 0x02u, 0x04u, 0x08u, 0x1Fu },
-    { 0x1Eu, 0x01u, 0x01u, 0x0Eu, 0x01u, 0x01u, 0x1Eu },
-    { 0x02u, 0x06u, 0x0Au, 0x12u, 0x1Fu, 0x02u, 0x02u },
-    { 0x1Fu, 0x10u, 0x10u, 0x1Eu, 0x01u, 0x01u, 0x1Eu },
-    { 0x0Eu, 0x10u, 0x10u, 0x1Eu, 0x11u, 0x11u, 0x0Eu },
-    { 0x1Fu, 0x01u, 0x02u, 0x04u, 0x08u, 0x08u, 0x08u },
-    { 0x0Eu, 0x11u, 0x11u, 0x0Eu, 0x11u, 0x11u, 0x0Eu },
-    { 0x0Eu, 0x11u, 0x11u, 0x0Fu, 0x01u, 0x01u, 0x0Eu }
-};
 
 static u32 display64_min_u32(u32 left, u32 right)
 {
@@ -1464,9 +1484,12 @@ static u32 display64_deny(void)
     return DISPLAY64_INVALID_RESULT;
 }
 
-static u8 display64_glyph_row(u8 character, u32 row)
+/* Legacy 5x7 caption face. Still the BIOS lane's only face, and on UEFI it
+ * backs the DISPLAY64_FONT_SMALL tier so caption call sites keep the tight
+ * metrics their layout offsets were written against. */
+static u8 display64_glyph_row_legacy(u8 character, u32 row)
 {
-    if (row >= DISPLAY64_FONT_HEIGHT)
+    if (row >= DISPLAY64_LEGACY_FONT_HEIGHT)
     {
         return 0u;
     }
@@ -1515,7 +1538,7 @@ static u8 display64_glyph_row(u8 character, u32 row)
 
     if (character == (u8)'/')
     {
-        static const u8 slash[DISPLAY64_FONT_HEIGHT] = {
+        static const u8 slash[DISPLAY64_LEGACY_FONT_HEIGHT] = {
             0x01u, 0x01u, 0x02u, 0x04u, 0x08u, 0x10u, 0x10u
         };
         return slash[row];
@@ -1523,7 +1546,7 @@ static u8 display64_glyph_row(u8 character, u32 row)
 
     if (character == (u8)'\\')
     {
-        static const u8 backslash[DISPLAY64_FONT_HEIGHT] = {
+        static const u8 backslash[DISPLAY64_LEGACY_FONT_HEIGHT] = {
             0x10u, 0x10u, 0x08u, 0x04u, 0x02u, 0x01u, 0x01u
         };
         return backslash[row];
@@ -1541,7 +1564,7 @@ static u8 display64_glyph_row(u8 character, u32 row)
 
     if (character == (u8)'$')
     {
-        static const u8 dollar[DISPLAY64_FONT_HEIGHT] = {
+        static const u8 dollar[DISPLAY64_LEGACY_FONT_HEIGHT] = {
             0x04u, 0x0Fu, 0x14u, 0x0Eu, 0x05u, 0x1Eu, 0x04u
         };
         return dollar[row];
@@ -1559,7 +1582,7 @@ static u8 display64_glyph_row(u8 character, u32 row)
 
     if (character == (u8)'<')
     {
-        static const u8 left_angle[DISPLAY64_FONT_HEIGHT] = {
+        static const u8 left_angle[DISPLAY64_LEGACY_FONT_HEIGHT] = {
             0x02u, 0x04u, 0x08u, 0x10u, 0x08u, 0x04u, 0x02u
         };
         return left_angle[row];
@@ -1567,7 +1590,7 @@ static u8 display64_glyph_row(u8 character, u32 row)
 
     if (character == (u8)'>')
     {
-        static const u8 right_angle[DISPLAY64_FONT_HEIGHT] = {
+        static const u8 right_angle[DISPLAY64_LEGACY_FONT_HEIGHT] = {
             0x08u, 0x04u, 0x02u, 0x01u, 0x02u, 0x04u, 0x08u
         };
         return right_angle[row];
@@ -1579,6 +1602,26 @@ static u8 display64_glyph_row(u8 character, u32 row)
     }
 
     return 0u;
+}
+
+static u8 display64_glyph_row(u8 character, u32 row)
+{
+    if (row >= DISPLAY64_FONT_HEIGHT)
+    {
+        return 0u;
+    }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if ((character < (u8)DISPLAY64_UI_FONT_FIRST_CODEPOINT)
+        || (character > (u8)DISPLAY64_UI_FONT_LAST_CODEPOINT))
+    {
+        return 0u;
+    }
+
+    return g_display_ui_font_8x16[character - (u8)DISPLAY64_UI_FONT_FIRST_CODEPOINT][row];
+#else
+    return display64_glyph_row_legacy(character, row);
+#endif  /* defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL */
 }
 
 static int display64_pixel_index(u32 x, u32 y, u64 *pixel_index)
@@ -3560,16 +3603,21 @@ static u32 display64_font_width(u32 font_size)
 #endif
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (font_size == DISPLAY64_FONT_SMALL)
+    {
+        return DISPLAY64_LEGACY_FONT_WIDTH;
+    }
+
+    return 7u;
+#else
     if (font_size == DISPLAY64_FONT_NORMAL)
     {
-#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        return 7u;
-#else
         return 8u;
-#endif
     }
 
     return 5u;
+#endif
 }
 
 static u32 display64_font_height(u32 font_size)
@@ -3577,22 +3625,27 @@ static u32 display64_font_height(u32 font_size)
     if (font_size == DISPLAY64_FONT_LARGE)
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        return 28u;
+        return 32u;
 #else
         return 32u;
 #endif
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (font_size == DISPLAY64_FONT_SMALL)
+    {
+        return DISPLAY64_LEGACY_FONT_HEIGHT;
+    }
+
+    return 16u;
+#else
     if (font_size == DISPLAY64_FONT_NORMAL)
     {
-#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-        return 14u;
-#else
         return 16u;
-#endif
     }
 
     return 7u;
+#endif
 }
 
 static u32 display64_font_bit(u8 character, u32 font_size, u32 column, u32 row)
@@ -3601,6 +3654,29 @@ static u32 display64_font_bit(u8 character, u32 font_size, u32 column, u32 row)
     u32 source_row = row;
     u8 bits;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* The Product face is already an 8x16 cell, so body and title text sample it
+     * 1:1 instead of stretching a 5x7 source vertically. Glyph bodies occupy
+     * source columns 0-5, which keeps the 7-wide chrome cell (and therefore
+     * every existing horizontal metric) unchanged. The caption tier keeps the
+     * legacy 5x7 face so its 50-plus call sites retain their layout offsets. */
+    if (font_size == DISPLAY64_FONT_SMALL)
+    {
+        if ((column >= DISPLAY64_LEGACY_FONT_WIDTH) || (row >= DISPLAY64_LEGACY_FONT_HEIGHT))
+        {
+            return 0u;
+        }
+
+        bits = display64_glyph_row_legacy(character, row);
+        return ((bits & (u8)(1u << (DISPLAY64_LEGACY_FONT_WIDTH - 1u - column))) != 0u) ? 1u : 0u;
+    }
+
+    if (font_size == DISPLAY64_FONT_LARGE)
+    {
+        source_column = column >> 1u;
+        source_row = row >> 1u;
+    }
+#else
     if (font_size == DISPLAY64_FONT_LARGE)
     {
         source_column = column >> 1u;
@@ -3617,6 +3693,7 @@ static u32 display64_font_bit(u8 character, u32 font_size, u32 column, u32 row)
         source_column = column - 1u;
         source_row = row >> 1u;
     }
+#endif
 
     if ((source_column >= DISPLAY64_FONT_WIDTH) || (source_row >= DISPLAY64_FONT_HEIGHT))
     {
@@ -3798,15 +3875,29 @@ static void display64_font_draw_status_bar(void)
         ? (y + ((height - display64_font_height(DISPLAY64_FONT_LARGE)) / 2u))
         : y;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-    display64_compositor_fill_round_rect_4(12u, brand_y + 4u, 6u, 18u, DISPLAY64_RGB_ACCENT);
-    (void)display64_draw_font_text(26u, brand_y, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_draw_badge(152u, brand_y + 5u, 74u, "Product", DISPLAY64_RGB_ACCENT);
-    if (g_display_boot_info->framebuffer_width >= 920u)
+    /* The brand lockup measures itself instead of carrying hardcoded stops, so
+     * the badge and readiness chips stay clear of the wordmark whatever the
+     * active face measures. */
     {
-        display64_font_draw_system_chip(248u, 9u, 78u, "Display", display64_readable(), DISPLAY64_RGB_FOCUS_BLUE);
-        display64_font_draw_system_chip(334u, 9u, 70u, "Input", display64_product_input_ready_internal(), DISPLAY64_RGB_ACCENT);
-        display64_font_draw_system_chip(412u, 9u, 82u, "Storage", mmio64_nvme_fat_located(), DISPLAY64_RGB_APP_FILES);
-        display64_font_draw_system_chip(502u, 9u, 76u, "Network", hardware64_registry_network_device_count(), DISPLAY64_RGB_APP_ASSISTANT);
+        u32 brand_x = 26u;
+        u32 badge_x = brand_x
+            + display64_font_text_advance("LimitlessOS", DISPLAY64_FONT_LARGE)
+            + 12u;
+        u32 chip_x = badge_x + 74u + 16u;
+
+        display64_compositor_fill_round_rect_4(12u, brand_y + 4u, 6u, 18u, DISPLAY64_RGB_ACCENT);
+        (void)display64_draw_font_text(brand_x, brand_y, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+        display64_compositor_draw_badge(badge_x, brand_y + 5u, 74u, "Product", DISPLAY64_RGB_ACCENT);
+        if (g_display_boot_info->framebuffer_width >= (chip_x + 320u))
+        {
+            display64_font_draw_system_chip(chip_x, 9u, 78u, "Display", display64_readable(), DISPLAY64_RGB_FOCUS_BLUE);
+            chip_x += 78u + 8u;
+            display64_font_draw_system_chip(chip_x, 9u, 70u, "Input", display64_product_input_ready_internal(), DISPLAY64_RGB_ACCENT);
+            chip_x += 70u + 8u;
+            display64_font_draw_system_chip(chip_x, 9u, 82u, "Storage", mmio64_nvme_fat_located(), DISPLAY64_RGB_APP_FILES);
+            chip_x += 82u + 8u;
+            display64_font_draw_system_chip(chip_x, 9u, 76u, "Network", hardware64_registry_network_device_count(), DISPLAY64_RGB_APP_ASSISTANT);
+        }
     }
     if (g_display_product_chrome_count == 0u)
     {

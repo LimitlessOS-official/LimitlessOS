@@ -1,8 +1,12 @@
 # LimitlessOS Architecture
 
-## Goals
+This document has two halves: the **design intent** that every change is measured against, and the **as-built** system as of M194. Where they differ, the gap is listed in the roadmap's structural work. The detailed bring-up narrative for the early x86 and x86_64 lanes is archived in [history/architecture-bring-up.md](history/architecture-bring-up.md).
 
-LimitlessOS is designed around five non-negotiables:
+## Design intent
+
+### Goals
+
+Five non-negotiables:
 
 - security first
 - fast and stable on both old and modern hardware
@@ -10,190 +14,123 @@ LimitlessOS is designed around five non-negotiables:
 - native multi-ecosystem software execution as a first-class OS design goal
 - transparent AI boundaries
 
-## Product experience direction
+### Product experience direction
 
-LimitlessOS should have its own recognizable identity, but its experience goals intentionally draw from several mature desktop traditions:
+LimitlessOS should have its own recognizable identity, drawing on four reference qualities:
 
-- Red Hat-style Linux seriousness: professional, grounded, durable, and credible for workstations, admins, developers, and technical users
-- Windows-like simplicity: discoverable defaults, predictable app launching, clear setup paths, and plain-language choices for everyday users
-- macOS-like cleanliness: calm visual hierarchy, polished spacing, restrained animation, consistent typography, and a desktop that feels uncluttered by default
-- Linux/Unix power: transparent system state, strong terminal and scripting paths, composable tools, readable logs, and deep controls for experienced users
+- Red Hat-style Linux seriousness: professional, grounded, and credible for workstations, admins, and developers
+- Windows-like simplicity: discoverable defaults, predictable app launching, clear setup paths, plain-language choices
+- macOS-like cleanliness: calm visual hierarchy, polished spacing, restrained animation, consistent typography
+- Linux/Unix power: transparent system state, strong terminal and scripting paths, composable tools, readable logs
 
-These are reference qualities, not permission to clone another operating system's visual trade dress or interaction model. The LimitlessOS desktop, installer, Settings, Assistant, and app surfaces should feel clean and approachable at first glance, then reveal power through advanced modes, command surfaces, detailed status, and capability-scoped controls. Serious users should immediately see that the OS is production-minded; new users should not feel punished for choosing recommended defaults.
+These are reference qualities, not permission to clone another system's trade dress or interaction model. Polish must stay lightweight: no mandatory GPU, heavy always-on effects, large background services, or showcase panels. Hardware or system information comes from real detected state or explicitly says unavailable.
 
-The experience must stay lightweight. Visual polish cannot require always-on heavy effects, mandatory GPU acceleration, large background services, or fabricated showcase panels. If hardware or system information is shown, it must come from real detected state or explicitly say unavailable.
+### Hybrid kernel model
 
-## Hybrid kernel model
+Neither a pure microkernel nor an everything-in-kernel monolith.
 
-LimitlessOS uses a hybrid kernel, not a pure microkernel and not a traditional everything-in-kernel monolith.
+**In the small trusted core** (these define isolation and correctness): thread scheduling and dispatch, virtual address spaces, physical memory ownership, interrupt routing and traps, capability-based IPC, syscall dispatch, secure service launch and policy enforcement, timekeeping.
 
-### Microkernel responsibilities
+**In kernel only when the fast path justifies the TCB cost:** page and slab allocator fast paths, VFS and pathname caches, block I/O scheduling, the network packet fast path, cryptographic primitives for storage and verified boot, power-management coordination.
 
-These stay inside the smallest trusted kernel core because they define isolation and system correctness:
+**In user space:** most device drivers, filesystems that tolerate user-space latency, the graphics compositor, the package manager, installer UI, settings panels, the AI policy broker, and search/indexing/assistant tools.
 
-- thread scheduling and core task dispatch
-- virtual address space management
-- physical memory ownership tracking
-- interrupt routing and trap handling
-- capability-based IPC
-- syscall dispatch
-- secure service launch and policy enforcement
-- timekeeping primitives
+The rationale is to keep isolation primitives small, keep performance-critical paths narrow and explicit, and move failure-prone logic into restartable services.
 
-### Monolithic in-kernel responsibilities
+### Scalability profile
 
-These remain in kernel space only when the latency or throughput win is worth the trusted-computing-base cost:
+- **Older and low-end hardware:** minimal install image, no mandatory TPM 2.0, software rendering fallback, modular background services, aggressive memory budgeting, optional cloud features instead of always-on local AI.
+- **Higher-end systems:** multicore scheduling classes, GPU acceleration where available, isolated high-performance I/O services, richer local caching, optional secure enclaves and attestation.
 
-- page allocator fast paths
-- slab and object allocators
-- virtual filesystem cache and pathname cache
-- block I/O scheduler
-- network packet fast path
-- cryptographic primitives needed for storage and verified boot
-- power management coordination
+One common service, package, installer, and policy model spans all targets, with architecture-specific loader and kernel back ends: a legacy 32-bit minimal image, a 64-bit standard image, and a 64-bit image with optional 32-bit compatibility libraries.
 
-### User-space services
+### Native multi-ecosystem execution
 
-Everything that does not need ring 0 privileges lives outside the kernel:
+The target is that LimitlessOS recognizes and executes major application and script formats (PE/COFF executables and scripts, ELF binaries and shell scripts, desktop bundle and package formats) as ordinarily as each ecosystem's own OS does, based on real parsed metadata and documented ABI behavior.
 
-- most device drivers
-- filesystems that can tolerate user-space latency
-- graphics compositor
-- package manager
-- installer UI
-- settings panels
-- AI policy broker
-- search, indexing, and assistant-facing research tools
+The mechanism is an **OS persona** layer above the hybrid kernel. A persona is a native LimitlessOS execution environment, not a VM, emulator, container, or Wine-like patchwork. It provides one ecosystem's ABI surface, process conventions, filesystem expectations, permission model, windowing/input expectations, IPC/service mappings, and package metadata interpretation. It still uses the LimitlessOS scheduler, memory manager, capability policy, brokered services, and audit model.
 
-## Why this split exists
+Persona requirements:
 
-Pure microkernels can become slower or more complex when every hot path crosses protection domains. Fully monolithic kernels increase blast radius when one subsystem fails. LimitlessOS takes a middle path:
+- foreign permissions and APIs map to explicit LimitlessOS capabilities
+- no ambient filesystem, network, input, display, package, firmware, installer, identity, secret, or AI authority
+- executable loading validates real headers, signatures, entitlements, manifests, interpreter paths, or package metadata where those exist
+- unsupported APIs fail truthfully and audibly
+- ecosystem services are restartable and isolated unless they need ring 0
+- kernel fast paths only when the ABI cannot be served safely or efficiently from a brokered service
+- personas are modular and demand-loaded; unused ecosystems cost nothing in the base install
 
-- keep the isolation primitives small
-- keep performance-critical paths narrow and explicit
-- move failure-prone logic to restartable services
+### Package management
 
-## Scalability profile
+One native package broker owns system package transactions. Familiar `apt`, `dnf`/`yum`, `apk`, and `choco` workflows are optional compatibility frontends that translate into the broker's capability-checked transaction model, with per-frontend trust settings, never separate privileged package roots. The broker contract is shared across 32-bit and 64-bit targets.
 
-### Low-end and older hardware
+### Boot and trust chain
 
-- minimal install image
-- no mandatory TPM 2.0 class requirement for core operation
-- software rendering fallback
-- modular background services
-- aggressive memory budgeting
-- optional cloud features instead of always-on local AI workloads
+Long-term: UEFI Secure Boot, measured boot, signed kernel and service manifests, and rollback protection for critical components.
 
-### Higher-end systems
+### AI placement
 
-- multicore scheduling classes
-- GPU acceleration where available
-- isolated high-performance I/O services
-- richer local caching for AI and developer workflows
-- optional secure enclaves and attestation-backed services
+The assistant is a sealed platform service, not a user-editable app: a signed UI shell, a policy broker that mediates every privileged action, cloud-backed reasoning for heavier tasks, and an offline fallback that degrades safely instead of pretending to have cloud capability. It gets no blanket authority: it must ask, explain, and log.
 
-## Architecture targets
+## As built (M194)
 
-The current bootstrap code in this repository is a 32-bit x86 BIOS bring-up because it is the shortest path to a real bootable kernel. The product target is wider:
+### Lanes
 
-- 32-bit x86 support for older and lower-spec systems
-- 64-bit x86 support as the default path on modern hardware
-- a shared capability, service, and userspace package model across both targets
-- architecture-specific boot, trap, paging, and context-switch code behind that shared model
+| Lane | Boot | Kernel | Role |
+|---|---|---|---|
+| x86 (32-bit) | `boot/boot.asm` BIOS | `kernel/core/*`, `kernel/arch/x86/*` | The original Phase 0/1 bring-up: IDT/PIC/PIT, paging, frame allocator, IPC endpoints with capability handles and delegation, cooperative and preemptive ring-3 tasks. Still builds; not the product. |
+| x86_64 BIOS fallback | `boot/boot64.asm` loads `KERNEL64-BIOS.BIN` | `kernel/arch/x86_64/*` minus UEFI-only sources | Frozen, checksum-only fallback under a 1024-sector budget. |
+| x86_64 UEFI Product | `BOOTX64.EFI` (`uefi_app.c`) loads `KERNEL64.BIN` | full `kernel/arch/x86_64/*` plus Ed25519 and bcrypt | The product. |
 
-The repo now has the first explicit code split for that direction:
+The two x86_64 kernels come from the same sources; `LIMITLESS_X64_UEFI_KERNEL` and `LIMITLESS_X64_BIOS_KERNEL` select features, and `tools/build.ps1` excludes persona, Linux, networking, signing, identity, cloud, installer, and AI sources from the BIOS link.
 
-- `x86` remains the live BIOS boot image and QEMU verification target
-- `x86` now also has a verified BIOS optical-media path generated through Windows IMAPI2, so the mature bootstrap lane can be packaged as a burnable ISO in addition to the raw disk image
-- `x86_64` now has its own BIOS boot sector with a chunked 127-sector loader, kernel entry path, linker path, generated architecture header, shared boot-info handoff contract, a dedicated kernel-owned GDT/TSS setup with explicit kernel/user selectors and native `syscall` STAR selector proof, a dedicated x64 interrupt path, a minimal timer-IRQ proof path, higher-half kernel execution, controlled breakpoint, invalid-opcode, and page-fault proof telemetry, an interrupt-based scaffold syscall surface, a first native long-mode `syscall` entry, a shared x64 service namespace scaffold with queryable core service classes and capability masks, an active-principal registry with role queries, sealed bootstrap process records bound to principals, endpoints, scheduler classes, capability budgets, verified kernel-service manifests, init-authorized launch request lifecycle records, quiesce preflight, active-capability stop safeguards, and an audited protected-service stop denial path, a first principal-scoped service-capability handle lifecycle with grant, short-lease attenuated delegation, route, revoke with child cascade, unknown-principal denial, wrong-owner denial, expired-handle denial, stale-handle denial, second-hop delegation denial, and over-broad authority denial, a brokered RAMFS syscall bridge with owner-scoped node capabilities, a brokered console syscall bridge, and shared bootstrap package-archive v2 visibility on both the BIOS scaffold and UEFI app paths
-- the current `x86_64` lane is still intentionally a small long-mode scaffold rather than a full clone of the x86 runtime, but it now boots, enables 4-level paging with a 16 MiB identity/high-half alias map, aliases that same early mapping into the higher-half kernel window and then transfers execution into that higher-half kernel entry so live code and data are actually running from `0xFFFFFFFF80010000+`, enables the SSE/FPU state expected by the x64 ABI, validates a shared x86/x64 boot-info handoff inside the 64-bit kernel entry, installs a measured long-mode GDT and TSS, exposes kernel selectors `0x18/0x20`, user selectors `0x33/0x2B`, loaded task register `0x38`, and a native `syscall` STAR selector value through direct, interrupt-syscall, and native-syscall telemetry, loads an x64 IDT with exception stubs plus proof and syscall vectors, remaps the PIC, programs the PIT, proves real `sti`/`hlt` timer wakeups, records controlled breakpoint, invalid-opcode, and page-fault exceptions without crashing so the last-fault path is visible in verification, answers early boot plus timer queries through a simple `int 0x80` ABI, now also proves an MSR-backed native `syscall` entry against that same query and fault-report surface instead of only reading local state directly, now exposes a small shared service namespace with queryable `ai-policy`, `console`, `ramfs`, and `input` endpoints plus capability masks over those x64 syscall paths, now exposes a principal table with active and role queries through both syscall paths, now validates kernel-service-authority manifests from the same generated package archive while ignoring user-app manifests, now exposes service process bindings that map sealed bootstrap PIDs to principals, endpoints, scheduler classes, capability budgets, package IDs, executable IDs, signer IDs, launch tokens, and operation-aware init-authorized request lifecycle records, now proves a quiesce preflight can pass only when the target service has zero live capabilities and is denied while active handles still point at that service, now proves protected sealed services cannot be stopped until a future quiesce/revoke teardown path exists, now proves service-capability handles can be principal-scoped, granted, attenuated into short-lease child handles, routed, revoked with child cascade, and denied after unknown-principal, wrong-owner, expired, stale, second-hop, or over-broad use through both x64 syscall paths, and now surfaces the shared generated bootstrap package-archive v2 summary in both the BIOS scaffold log and the UEFI app log
-- the x86_64 launch broker now owns a first capability-drain and restart transition: privileged lifecycle callers can ask the broker to revoke live handles targeting one service endpoint class, the request records observed and revoked capability counts, unsafe quiesce remains denied while live handles exist, post-drain quiesce succeeds without exposing a general endpoint-revoke syscall to arbitrary userspace, restart is denied until the service is quiesce-ready, successful restart records a generation count, rekeys the service runtime token, recomputes a runtime image token from verified package payload offset/size/checksum metadata plus signer-backed manifest data, derives a sealed runtime image plan with base, entry, mapped bytes, read/execute/sealed/supervisor-validation rights, and a plan token, then installs real four-page mappings for a sealed 16 KiB persistent-shell bootstrap transfer image. It records page count, PML4/PDPT/PD indexes, map token, protection token, install token, source checksum, controlled entry-probe telemetry, and explicit proof that the validation view is not user-accessible or writable. The broker also installs a separate four-page read/execute user executable mapping at `0x41000000`, validates that it resolves to the same measured transfer bytes, maps a one-page user stack at `RSP 0x40020000`, and only then marks the measured ring-3 user-entry frame transfer-ready with denial `0`, `RIP 0x41000010`, selectors `0x33/0x2B`, and interrupt-masked `RFLAGS 0x00000002`. Verification now covers controlled ring-3 entry, IF-enabled PIT preemption capture, scheduler-owned frame switching, second-page RAMFS/display mutation at `0x41001ED0`, and the default post-scaffold persistent ring-3 shell; disk-sourced descriptors and flat binaries now carry utility command execution that used to live in the sealed image. The reusable x64 run-queue proof is bound to manifest-launched process records, and runtime-bound capability handles reject stale tokens after restart.
-- the x86_64 scheduler proof now includes a bounded saved-frame run queue backed by a reusable `scheduler_x64` module: IRQ0 hands the interrupt frame to the scheduler, the scheduler saves PID 2 `ai-policy` task A as a complete interrupt frame, dispatches PID 4 `console` task B at `0x41000140` on `0x4001F800`, records B result `0x52514232`, restores task A from the saved frame, and completes with A result `0x52514131`. Scheduler registration can now accept a launched-process PID, resolve runtime/user-entry tokens plus selectors from `process_x64`, and reject processes whose brokered user-entry frame is not transfer-ready. The process syscall surface now exposes user-entry RIP/RSP/selectors/RFLAGS directly, and the `fs_x64`, `console_x64`, and `input_x64` bridges remain capability-scoped. The current x64 input path preserves byte-stream and line-oriented input syscalls, but those reads now consume only the live brokered keyboard queue; startup no longer replays a seeded command stream. The remaining sealed probes cover filesystem read and second-page RAMFS/display mutation, while the default post-scaffold path enters the persistent ring-3 shell and waits for real keyboard input.
-- the x86_64 input bridge now includes hardware-backed PS/2 keyboard event proofs without turning the shell into an ambient device reader: IRQ1 drains controller bytes into a bounded broker-owned queue, uses translated set-1 scancodes on the BIOS path, can decode set-2 for framebuffer/UEFI handoff, and now auto-falls back to set-1 when QEMU/firmware presents high-bit set-1 release scancodes after a UEFI handoff. It translates basic extended cursor/delete keys into staged input bytes, actively polls during authorized reads, discards stale pending bytes when switching scancode interpretation or dropping overlong fragments so boot-time firmware or QMP noise cannot permanently block later command lines, exposes PS/2 status, IRQ, poll, scancode, translated-byte, pending, drop, last-key, hardware-read, hardware-line, and hardware-line-byte telemetry through the syscall surface, and verification proves brokered keyboard reads require scoped `input` authority.
-- that retired sealed hardware-keyboard path has been replaced by disk-sourced shell descriptors and flat utility binaries. Command execution now stays behind the launch broker and avoids duplicating utility bodies inside the sealed bootstrap image while preserving separate scoped `input`, `console`, and `ramfs` capabilities for every boundary the shell crosses.
-- the sealed x86_64 ring-3 transfer image is now generated from readable NASM source instead of a hand-maintained C byte table. `tools\build.ps1 -Architecture x86_64` assembles `kernel\arch\x86_64\runtime_image_user.asm` into a page-aligned 16 KiB persistent-shell bootstrap image, emits the generated C header consumed by `runtime_image.c`, and feeds the same binary into the package archive generator so launch-broker payload size/checksum telemetry remains tied to the actual sealed image bytes.
-- the current `x86_64` lane now also emits a verified removable-media UEFI FAT image that boots under OVMF in QEMU, locates GOP, reports framebuffer geometry, draws a bounded firmware pixel pattern, reads back a nonzero draw token, records framebuffer metadata in boot-info, maps a 16 MiB identity/high-half alias window, maps that framebuffer through a dedicated low page-directory at `0xB000`, reserves an additional low handoff page at `0xC000` for broker-installed kernel MMIO page tables, opens the boot volume, reads the staged root `README.TXT` with fixed size/checksum/prefix proof, parses `BOOTMAN.TXT`, loads `KERNEL64.BIN` into an aligned 2 MiB handoff buffer until the payload byte count and loader `fnv1a-32` checksum match the manifest, records a standard `kernel-sha256` value for external artifact verification, allocates exact `EfiLoaderData` pages at a 2 MiB-aligned address inside conventional firmware memory, copies and rechecks the kernel bytes there, separately allocates and verifies the linked scaffold payload at physical `0x10000`, captures both pre-placement and post-placement firmware memory-map summaries, builds the low boot-handoff tables plus trampoline, takes one final silent memory-map key, exits firmware boot services, jumps into the x64 kernel, reloads the kernel descriptor state, draws/logs a kernel-owned framebuffer marker, and reaches the compact bootstrap, second-page filesystem/display, real-media storage, and disk-sourced launch proofs
-- the current `x86_64` lane now also packages a verified UEFI optical ISO that boots under OVMF in QEMU with the same GOP framebuffer, boot-media file-read, bounded loader-buffer, firmware-backed kernel-placement, linked-base placement, handoff memory-map, boot-handoff table, kernel-jump, kernel-owned framebuffer draw, and x64 userspace proofs, so both USB-style and DVD-style modern-media paths exist before the full x64 userspace stack lands
-- the x86_64 lane now exposes read-only PCI configuration-space inventory through a query-only `hardware-inventory` service capability: BIOS boots prove legacy IDE storage discovery, while Q35 UEFI boots prove AHCI controller discovery, decode the AHCI MMIO base/span/safety flags/token, promote it into a separate brokered MMIO planner as a bounded candidate, deny wrong-owner map requests, install a kernel-only/read-only/no-deref page-table view for valid Q35 AHCI candidates at `0xFFFFFFFF90000000`, prove the exact `511/510/128/0` table indices plus cache-disabled/NX entry flags `0x8000000000000019`, report `map-installed 1`, and then allow only brokered read-only snapshots of AHCI HBA `CAP`/`GHC`/`PI`/`VS` plus implemented/active port state (`SSTS`, signature, command, task-file, command-issue, and error). A separate read-only classifier now derives device kind, link detect/speed/power state, busy/DRQ state, command-issue idleness, and a future-read eligibility bit without mutating the controller. The next brokered layers now stage a non-executing AHCI read-plan token, command-layout token, one-page command-memory preflight token, and broker-private table-prep token from that policy, binding selected port, LBA, block count, operation kind, policy/read-plan/command-plan/memory-plan tokens, command header/table sizes, CFIS/PRDT geometry, command opcode, ATAPI packet opcode, transfer byte hint, command-list/header/table/PRDT/bounce-buffer offsets, PRDT byte count, held-zero DMA address, and checksum transition while proving read, command, command-memory, and table-prep state remain unarmed, unissued, unprogrammed, and DMA-unmapped. It still avoids AHCI command issue, DMA setup, controller-visible table publication, port programming, filesystem authority minting, and storage writes.
-- the AHCI command-memory preflight now materializes the future command/bounce page as a broker-owned, page-aligned, zeroed kernel page and then prepares a non-issuing AHCI command-table skeleton in that same private page. Verification requires virtual/physical page telemetry, zero-page checksum `0x76EFDDC5`, table checksum `0x3FBFAF45`, header flags `0x00010025`, CFIS command `0xA0`, ATAPI packet opcode `0x28`, PRDT byte count `2047`, `table-written 1`, and continued zero DMA/port/issue evidence; BIOS/no-AHCI media must keep all materialization and table-prep fields zero and unavailable.
-- the x86_64 lane now has a brokered display service proof: UEFI GOP metadata is handed to the kernel through boot-info, the service namespace exposes endpoint class `display`, ring-3 code must present delegated display authority before drawing a bounded marker, clearing a kernel-bounded text panel, and rendering a small 5x7-font text line, and the brokered console service can mirror successful ring-3 console writes into a bounded, line-cleared, scrolling GOP framebuffer viewport without exposing direct framebuffer access to shell processes. UEFI verification requires positive draw/pixel/clear/text/console-mirror/line-clear/scroll telemetry, and raw BIOS verification records the same syscall path as explicitly unavailable instead of bypassing the capability model.
-- the x86_64 lane now has a first brokered block service proof: the service namespace exposes endpoint class `block`, the kernel probes a read-only ATA PIO path, callers must present a principal-scoped block service capability routed through the generic capability table, wrong-owner reads are denied, and raw BIOS verification requires an authorized LBA0 read with 512 bytes, a nonzero token, and the `0x55AA` boot signature. UEFI removable and ISO paths currently report block status as unavailable on q35/firmware media instead of faking USB, AHCI, or optical persistence support.
+### Boot flow (UEFI)
 
-That means LimitlessOS should not fork into two different operating systems. The boundary should be:
+1. `BOOTX64.EFI` finds GOP, reads `BOOTMAN.TXT`, loads `KERNEL64.BIN` into a 2 MiB buffer, and checks its byte count and `fnv1a-32` checksum (the manifest's `kernel-sha256` is for external verification).
+2. It places the kernel: at the linked physical `0x10000` if the whole 16 MiB window is free, otherwise in a 2 MiB-aligned fallback window (the normal case on OVMF and real firmware).
+3. It stages optional boot-media files (`/APPS/DYNLDLIMIT`, `/APPS/LDLIMIT`) into the stage area at the top of that window, discovers ACPI (RSDP/XSDT/MCFG/MADT/FADT/DSDT/SSDTs), and builds low handoff page tables. The first 64 KiB is identity-mapped for tables, boot-info, and trampoline; the rest of the low 16 MiB maps onto the kernel window, with a higher-half alias at `0xFFFFFFFF80000000`.
+4. It takes the final memory map, calls `ExitBootServices`, and jumps to `_start` (`entry.asm`), which clears `.bss` and calls `kernel_main64_scaffold()`.
+5. The kernel initializes GDT/TSS, IDT, APIC (or the PIC fallback), PIT, and syscalls; runs controlled fault and ring-3 probes; brings up xHCI, PCI/ECAM storage, the framebuffer, I2C HID, and input; runs the login gate; starts the desktop, network, and services; and enters the persistent ring-3 shell.
 
-- one common service and package contract
-- one common installer and policy model
-- multiple kernel and loader back ends selected by hardware capability
+### Memory layout
 
-Long term, the installer should be able to recommend:
+| Region | Use |
+|---|---|
+| `0x0`–`0xFFFF` (identity) | Handoff page tables (`0x1000`), boot-info (`0x9000`), trampoline (`0xA000`), framebuffer PD (`0xB000`) |
+| `0x10000`–`__kernel_end` | Kernel `.text`, `.rodata`, `.data`, then `.bss` (starting no lower than `0x100000`; about 14.5 MB of static pools and buffers) |
+| `0xFC0000`–`0x1000000` | Boot-media stage area (contract in `kernel/include/boot_info.h`) |
+| `0x40020000` / `0x41000000` | Ring-3 shell stack top / user image base |
+| `0x52000000` | Link base for Linux persona test binaries |
+| `0xFFFFFFFF80000000+` | Higher-half kernel alias; MMIO windows are mapped above it on demand |
 
-- legacy 32-bit minimal image
-- 64-bit standard image
-- 64-bit image with optional 32-bit compatibility libraries for older apps
+There is no general physical-frame allocator on x86_64 yet. Process page-table roots (8), persona contexts (32), pipes (16), and similar tables are fixed pools in `.bss`. The low-window budget is enforced by the build; see [budgets.md](budgets.md).
 
-## Native multi-ecosystem execution model
+### Kernel organization
 
-LimitlessOS's long-term purpose includes running applications from multiple major operating-system ecosystems directly through LimitlessOS-native architecture. This is not a cosmetic file-association feature and not a compatibility afterthought. It must shape process creation, executable loading, filesystem views, permission prompts, service brokerage, package policy, and ABI boundaries from the start.
+- `scaffold.c` is a unity build that includes the `scaffold_*.c` fragments in a fixed order under `LIMITLESS_SCAFFOLD_*` section macros. It holds the boot sequence, the proof probes, and the `log_*_surface()` telemetry emitters.
+- Subsystems have their own files: `paging.c`, `scheduler.c`, `process.c`, `launch.c`, `capability.c`, `principal.c`, `services.c`, `syscall.c`, `interrupts.c`, `apic.c`, `pci.c`, `xhci.c`, `i2c_hid.c`, `input.c`, `display.c` (compositor, window manager, GUI apps), `shell.c`, `fs.c`, `fd.c`, `vma.c`, `pipe.c`, `mmio.c` (AHCI/NVMe/VMD brokered MMIO), `virtio_net.c`, `e1000e.c`, `network_socket.c`, `auth.c`, `package_signing.c`, and the persona families `linux_*.c`, `elf64.c`, `windows_*.c`, `pe64.c`, `macos_*.c`, `macho64.c`, `persona*.c`.
+- The native syscall ABI (`syscall_x64.h`) has 3,476 numbered calls, reachable through `int 0x80` and the `syscall` instruction; most are read-only telemetry getters consumed by the shell and the verifiers.
 
-The target is that LimitlessOS can eventually recognize and execute major application and script formats in the same ordinary way existing operating systems recognize their own formats. Examples include PE/COFF-style Windows executables and scripts, ELF binaries and shell scripts, and bundle/package/container-file formats used by desktop application ecosystems. Support for any ecosystem must be based on real parsed executable/package metadata and documented ABI behavior, not invented device data, skeletal app lists, or hardcoded success output.
+### Privilege split today
 
-The preferred design direction is an OS-persona layer above the hybrid kernel. A persona is not a virtual machine, emulator, container, or Wine-like patchwork. It is a native LimitlessOS execution environment that provides a specific ecosystem's ABI surface, process conventions, filesystem expectations, permission model, windowing/input expectations, IPC/service mappings, and package/application metadata interpretation while still using the LimitlessOS scheduler, memory manager, object-capability policy, brokered filesystem/storage/network/display/input services, audit model, and security boundaries.
+Everything listed above runs in ring 0, including drivers, the compositor and window manager, shell command execution, and the persona ABIs. Ring 3 holds the persistent shell loop (`runtime_image_user.asm`, which reads keys and submits each line through `SYSCALL_SHELL_EXECUTE_LINE`), the flat utility binaries and native `.APP` programs, and all Linux, Windows, and macOS persona processes.
 
-Personas must remain modular and demand-loaded. The base system must stay small enough for older computers; unused ecosystem support must not turn into always-on background services, mandatory GPU requirements, excessive RAM use, or a bloated default install. The installer may recommend persona bundles based on hardware and user intent, but the minimal install must remain lightweight.
+"Services" are kernel records (principal, endpoint class, scheduler class, capability budget, manifest, and launch token) with capability-checked broker entry points, not separate address spaces. Moving them out of ring 0 is the main gap between the design and the build (see [roadmap.md](roadmap.md)).
 
-Security requirements for personas:
+### Capability model
 
-- every persona must map foreign permissions and APIs into explicit LimitlessOS capabilities
-- no persona may grant ambient filesystem, network, input, display, package, firmware, installer, identity, secret, or AI authority
-- executable loading must validate real headers, signatures, entitlements, manifests, interpreter paths, or package metadata where those concepts exist
-- unsupported APIs must fail truthfully and audibly instead of pretending success
-- ecosystem services must be restartable and isolated when they do not require ring 0 privileges
-- kernel fast paths may be added only when the ABI cannot be implemented safely or efficiently in a brokered service
+`capability.c` implements principal-scoped service handles: grant, delegation with attenuated rights and short leases, second-hop delegation denial, routing with owner checks, revocation with child cascade, endpoint-class drain, runtime-generation tokens that invalidate handles across service restarts, and persona tags. Every broker entry point (console, input, display, RAMFS/FAT/NVMe filesystem, block, network, hardware inventory, installer, AI policy) routes through it, and denials are counted and visible in telemetry.
 
-This capability is not Product behavior yet. Until a persona has real loaders, ABI handling, security mapping, tests, and hardware/runtime evidence, UI and shell surfaces must report it as unavailable or planned rather than presenting it as working.
+### Personas
 
-## Package management model
+| Persona | Code | Status |
+|---|---|---|
+| Linux ELF | `linux_exec.c`, `linux_abi.c` (512-entry dispatch table), `linux_vfs.c`, `linux_dynamic.c`, `linux_libc.c`, `linux_vdso.c`, `elf64.c` | Runs third-party static and dynamic musl binaries with fork/exec/wait, pipes, threads, futex, signals, mmap, and VFS over NVMe FAT and boot media |
+| Windows PE | `pe64.c`, `windows_abi.c` (NT syscall table), `windows_handle.c`, `windows_vfs.c`, `windows_registry.c`, `windows_seh.c`, `windows_shim.c` | Loader plus about 20 NT syscalls; exercised only by repo-built PEs |
+| macOS Mach-O | `macho64.c`, `macos_abi.c`, `macos_mach.c`, `macos_dyld.c`, `macos_cf.c`, `macos_shim.c` | Parsing and ABI groundwork |
 
-LimitlessOS should expose package management through a brokered user-space service, not through ambient root package tools.
+`persona.c` holds per-process persona contexts (dispatch table, VMA root, FD table, TLS, brk, audit context, capability attenuation mask) and `persona_audit.c` records per-persona syscall audit.
 
-The design target is:
+### Verification model
 
-- one native Limitless package broker that owns system package transactions
-- optional compatibility frontends that present familiar workflows such as `apt`, `dnf` or `yum`, `apk`, and `choco`
-- repository and manifest translation layers that map those frontend requests into the broker's capability-checked transaction model
-- per-frontend policy and trust settings, so imported ecosystems do not silently inherit full system authority
-
-In practice, that means `apt`, `yum`, `apk`, or `choco` style support should be treated as selectable compatibility interfaces, not as separate privileged package roots that bypass the OS policy system.
-
-That package-broker contract should stay common across both architecture targets. The installer may select different default frontend bundles on 32-bit versus 64-bit installs, but the brokered security model should not fork by architecture.
-
-## Boot and trust chain
-
-Phase 1 bootstrap in this repository uses a simple BIOS path because it is the fastest way to create a bare-metal foundation. The long-term product should support:
-
-- UEFI secure boot
-- measured boot
-- signed kernel and service manifests
-
-The current install-media split is therefore transitional:
-
-- x86 raw image and BIOS ISO are both now real artifacts
-- x86_64 raw image is the verified BIOS scaffold path today
-- x86_64 removable UEFI image is now also a verified modern-hardware scaffold path with GOP framebuffer geometry, bounded firmware draw/read-back proof, boot-info framebuffer metadata, dedicated `0xB000` framebuffer mapping, kernel-owned framebuffer draw proof, boot-media file read proof, manifest-checked kernel payload loading into an aligned 2 MiB handoff buffer, firmware-backed 2 MiB-aligned kernel placement, pre/post-placement memory-map capture, low boot-handoff tables, firmware exit, kernel jump, descriptor reload, and x64 userspace proofs
-- x86_64 optical UEFI media is now also verified with the same GOP framebuffer, kernel framebuffer handoff/draw proof, brokered display marker/panel/text proof, line-cleared scrolling console-to-framebuffer mirror proof, boot-media file-read, loader-buffer, placement, memory-map, firmware-exit, kernel-jump, and x64 userspace proofs, which makes the remaining x64 hardware milestones about real hardware validation, drivers, persistence, a richer display compositor/user-console path on top of the brokered display service, and installer convergence rather than just boot media or firmware teardown
-- rollback protection for critical system components
-
-## AI system placement
-
-The assistant is not a normal user-editable app. The design target is a sealed platform service with:
-
-- a signed UI shell
-- a policy broker that mediates every privileged action
-- cloud-backed reasoning for heavier tasks
-- offline fallback that degrades safely instead of pretending to have cloud capability
-
-The assistant does not get blanket authority. It must ask, explain, and log.
-
-
-
-
+`tools/verify-qemu.ps1` boots each medium under QEMU/OVMF, injects keyboard and mouse input through QMP, and asserts serial telemetry lines. That is why most kernel features emit structured `drs-*` and `[x64] ...` lines. Physical hardware is validated through the `hwval` command and the capture/analysis tooling in `tools/`.

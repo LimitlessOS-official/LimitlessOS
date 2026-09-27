@@ -287,41 +287,19 @@ struct uefi_framebuffer_handoff
     u64 map_bytes;
 };
 
-static u32 boot_linux_file_contains_low_page(
-    const struct uefi_boot_linux_file *file,
-    u32 page_index)
-{
-    u64 start_page;
-    u64 end_page;
-
-    if ((file == NULL)
-        || (file->copied == 0u)
-        || (file->base == 0ull)
-        || (file->bytes == 0u))
-    {
-        return 0u;
-    }
-
-    start_page = file->base / LIMITLESS_UEFI_PAGE_BYTES;
-    end_page = (file->base + (u64)file->bytes + LIMITLESS_UEFI_PAGE_BYTES - 1ull)
-        / LIMITLESS_UEFI_PAGE_BYTES;
-    return (((u64)page_index >= start_page) && ((u64)page_index < end_page)) ? 1u : 0u;
-}
-
+/*
+ * The first 64 KiB of the low alias stay identity-mapped for the handoff
+ * tables, boot-info page, and trampoline. Every other low page, including
+ * the boot-media stage area, resolves into the kernel window, so staged files
+ * are never mapped over live kernel image pages.
+ */
 static u64 boot_low_alias_physical(
     u32 page_index,
-    u64 kernel_window_base,
-    const struct uefi_boot_linux_stage *boot_linux_stage)
+    u64 kernel_window_base)
 {
     u64 low_virtual_page = (u64)page_index * LIMITLESS_UEFI_PAGE_BYTES;
 
     if (page_index < (u32)LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES)
-    {
-        return low_virtual_page;
-    }
-    if ((boot_linux_stage != NULL)
-        && ((boot_linux_file_contains_low_page(&boot_linux_stage->app, page_index) != 0u)
-            || (boot_linux_file_contains_low_page(&boot_linux_stage->interp, page_index) != 0u)))
     {
         return low_virtual_page;
     }
@@ -1964,15 +1942,12 @@ static void init_loader_payload(struct uefi_loader_payload *payload)
     payload->capacity = 0u;
 }
 
-static u32 uefi_select_conventional_range(
-    struct efi_system_table *system_table,
-    u32 pages,
-    u64 minimum_base,
-    u64 maximum_end,
-    u64 alignment,
-    u64 avoid_base,
-    u32 avoid_pages,
-    u64 *selected_base);
+#if !defined(LIMITLESS_UEFI_KERNEL_IMAGE_END)
+#error "LIMITLESS_UEFI_KERNEL_IMAGE_END must be supplied by tools\\build.ps1 from the linked __kernel_end."
+#endif
+#if LIMITLESS_UEFI_KERNEL_IMAGE_END > LIMITLESS_BOOT_MEDIA_STAGE_BASE
+#error "UEFI kernel image overlaps the boot-media stage area in the low window."
+#endif
 
 static void init_boot_linux_file(struct uefi_boot_linux_file *file)
 {
@@ -2003,17 +1978,26 @@ static void init_boot_linux_stage(struct uefi_boot_linux_stage *stage)
     init_boot_linux_file(&stage->interp);
 }
 
+/*
+ * Stage one boot-media file into the stage area at the top of the kernel's
+ * low window. The window is already owned by the loader (fixed or fallback
+ * placement), so no further firmware allocation is needed. file->base is the
+ * low-window address the kernel reads through its low alias; the bytes are
+ * written to the matching physical page inside the kernel window.
+ */
 static void load_boot_linux_file_to_low_pages(
-    struct efi_system_table *system_table,
     struct efi_file_protocol *root,
     efi_char16_t *path,
-    struct uefi_boot_linux_file *file)
+    struct uefi_boot_linux_file *file,
+    const struct uefi_linked_kernel_placement *linked_placement,
+    u64 *stage_cursor)
 {
     u64 bytes_read = 0ull;
     u32 token = 0u;
-    efi_physical_address_t physical_base = 0ull;
+    u64 stage_bytes;
+    u64 kernel_window_base;
 
-    if (file == NULL)
+    if (file == NULL || stage_cursor == NULL)
     {
         return;
     }
@@ -2031,47 +2015,32 @@ static void load_boot_linux_file_to_low_pages(
     file->checksum = token;
     file->pages = (u32)((bytes_read + 4095u) / 4096u);
     file->loaded = (file->status == EFI_SUCCESS && bytes_read > 0ull) ? 1u : 0u;
-    if (file->loaded == 0u ||
-        file->pages == 0u ||
-        system_table == NULL ||
-        system_table->boot_services == NULL ||
-        system_table->boot_services->allocate_pages == NULL)
+    if (file->loaded == 0u || file->pages == 0u)
     {
         return;
     }
 
-    if (uefi_select_conventional_range(
-            system_table,
-            file->pages,
-            0x0000000000100000ull,
-            LIMITLESS_UEFI_LOW_ALLOCATION_LIMIT,
-            LIMITLESS_UEFI_PAGE_BYTES,
-            0ull,
-            0u,
-            &file->base) == 0u)
+    stage_bytes = ((u64)file->pages) * LIMITLESS_UEFI_PAGE_BYTES;
+    if (linked_placement == NULL ||
+        linked_placement->match == 0u ||
+        linked_placement->physical_base < LIMITLESS_UEFI_KERNEL_LINKED_OFFSET ||
+        *stage_cursor + stage_bytes > LIMITLESS_BOOT_MEDIA_STAGE_BYTES)
     {
         file->status = LIMITLESS_EFI_LOCAL_ERROR;
-        file->base = 0ull;
         return;
     }
 
-    physical_base = file->base;
-    file->status = system_table->boot_services->allocate_pages(
-        EFI_ALLOCATE_ADDRESS,
-        EFI_MEMORY_TYPE_LOADER_DATA,
-        file->pages,
-        &physical_base);
-    file->base = physical_base;
-    if (file->status == EFI_SUCCESS && physical_base != 0ull)
+    kernel_window_base = linked_placement->physical_base - LIMITLESS_UEFI_KERNEL_LINKED_OFFSET;
+    file->base = LIMITLESS_BOOT_MEDIA_STAGE_BASE + *stage_cursor;
+    *stage_cursor += stage_bytes;
     {
-        u64 page_bytes = ((u64)file->pages) * LIMITLESS_UEFI_PAGE_BYTES;
-        u8 *target = (u8 *)(void *)file->base;
+        u8 *target = (u8 *)(void *)(kernel_window_base + file->base);
 
         file->allocated = 1u;
         copy_bytes(target, g_loader_kernel_buffer, bytes_read);
-        if (page_bytes > bytes_read)
+        if (stage_bytes > bytes_read)
         {
-            zero_bytes(target + bytes_read, page_bytes - bytes_read);
+            zero_bytes(target + bytes_read, stage_bytes - bytes_read);
         }
         file->checksum = checksum_bytes(target, bytes_read);
         file->copied = 1u;
@@ -2111,11 +2080,13 @@ static void write_boot_linux_stage_file_line(
 static void write_boot_linux_stage_lines(
     efi_handle_t image_handle,
     struct efi_system_table *system_table,
+    const struct uefi_linked_kernel_placement *linked_placement,
     struct uefi_boot_linux_stage *stage)
 {
     struct efi_file_protocol *root = NULL;
     const char *open_stage = "unknown";
     efi_status_t status;
+    u64 stage_cursor = 0ull;
 
     init_boot_linux_stage(stage);
 
@@ -2135,9 +2106,9 @@ static void write_boot_linux_stage_lines(
         return;
     }
 
-    load_boot_linux_file_to_low_pages(system_table, root, g_boot_linux_app_path, &stage->app);
+    load_boot_linux_file_to_low_pages(root, g_boot_linux_app_path, &stage->app, linked_placement, &stage_cursor);
     write_boot_linux_stage_file_line(system_table, "DYNLDLIMIT", &stage->app);
-    load_boot_linux_file_to_low_pages(system_table, root, g_boot_linux_interp_path, &stage->interp);
+    load_boot_linux_file_to_low_pages(root, g_boot_linux_interp_path, &stage->interp, linked_placement, &stage_cursor);
     write_boot_linux_stage_file_line(system_table, "LDLIMIT", &stage->interp);
     close_file_if_present(root);
 }
@@ -2710,10 +2681,15 @@ static void write_linked_kernel_placement_line(
             payload->pages,
             &placement->conflict_type);
         placement->physical_base = physical_base;
+        /*
+         * Reserve the whole linked window above the low handoff pages, not just
+         * the file payload: the kernel's .bss and the boot-media stage area live
+         * in that window and must not overlap firmware-owned memory.
+         */
         placement->fixed_status = system_table->boot_services->allocate_pages(
             EFI_ALLOCATE_ADDRESS,
             EFI_MEMORY_TYPE_LOADER_DATA,
-            payload->pages,
+            LIMITLESS_UEFI_KERNEL_LINKED_WINDOW_PAGES - LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES,
             &physical_base);
         placement->status = placement->fixed_status;
         placement->physical_base = physical_base;
@@ -2722,7 +2698,8 @@ static void write_linked_kernel_placement_line(
         {
             placement->fixed_available = 1u;
             placement->allocation_base = physical_base;
-            placement->allocation_pages = payload->pages;
+            placement->allocation_pages =
+                (u32)(LIMITLESS_UEFI_KERNEL_LINKED_WINDOW_PAGES - LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES);
         }
         else
         {
@@ -3179,8 +3156,7 @@ static void write_boot_handoff_line(
                         {
                             u64 low_alias_physical = boot_low_alias_physical(
                                 kernel_pt_index,
-                                kernel_window_base,
-                                boot_linux_stage);
+                                kernel_window_base);
                             kernel_pt[kernel_pt_index] = low_alias_physical |
                                 LIMITLESS_UEFI_PAGE_PRESENT |
                                 LIMITLESS_UEFI_PAGE_WRITABLE;
@@ -3337,8 +3313,7 @@ static void write_boot_handoff_line(
                 {
                     u64 expected_low_alias = boot_low_alias_physical(
                         kernel_pt_index,
-                        kernel_window_base,
-                        boot_linux_stage);
+                        kernel_window_base);
                     expected_low_alias |= LIMITLESS_UEFI_PAGE_PRESENT | LIMITLESS_UEFI_PAGE_WRITABLE;
                     if (kernel_pt[kernel_pt_index] != expected_low_alias)
                     {
@@ -3772,7 +3747,7 @@ efi_status_t efi_main(efi_handle_t image_handle, struct efi_system_table *system
     write_memory_map_line(system_table, "[uefi] memory map descriptors ", &memory_map);
     write_kernel_placement_line(system_table, &payload, &memory_map, &placement);
     write_linked_kernel_placement_line(system_table, &payload, &linked_placement);
-    write_boot_linux_stage_lines(image_handle, system_table, &boot_linux_stage);
+    write_boot_linux_stage_lines(image_handle, system_table, &linked_placement, &boot_linux_stage);
     write_boot_handoff_line(
         system_table,
         &payload,

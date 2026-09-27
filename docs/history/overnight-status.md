@@ -1,3 +1,5 @@
+> **Archived.** Historical narrative preserved verbatim during the 2026-09-27 documentation reorganization. It is not maintained; see [docs/status.md](../status.md) for the current state.
+
 # Overnight Status
 
 ## 2026-07-08 - Hardware validation help wording

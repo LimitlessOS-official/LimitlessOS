@@ -7,6 +7,22 @@ static u32 g_boot_media64_last_error = BOOT_MEDIA64_ERROR_UNAVAILABLE;
 static u32 g_boot_media64_last_bytes = 0u;
 static u32 g_boot_media64_last_capacity = 0u;
 
+extern u8 __kernel_end[];
+
+/*
+ * A staged file must sit entirely inside the boot-media stage area and above
+ * the linked kernel image; anything else would alias live kernel pages.
+ */
+static u32 boot_media64_staged_range_valid(u64 base, u32 bytes)
+{
+    return (base >= LIMITLESS_BOOT_MEDIA_STAGE_BASE
+        && base >= (u64)__kernel_end
+        && bytes != 0u
+        && base + (u64)bytes <= LIMITLESS_BOOT_LOW_WINDOW_BYTES)
+        ? 1u
+        : 0u;
+}
+
 static u8 boot_media64_lower(u8 value)
 {
     if (value >= (u8)'A' && value <= (u8)'Z')
@@ -125,10 +141,18 @@ u32 boot_media64_available(void)
     return (g_boot_media64_boot_info != 0
         && g_boot_media64_boot_info->magic == LIMITLESS_BOOT_INFO_MAGIC
         && (g_boot_media64_boot_info->bootstrap_flags & LIMITLESS_BOOT_FLAG_BOOT_MEDIA_APPS) != 0u
-        && g_boot_media64_boot_info->boot_media_app_base != 0ull
-        && g_boot_media64_boot_info->boot_media_app_bytes != 0u)
+        && boot_media64_staged_range_valid(
+            g_boot_media64_boot_info->boot_media_app_base,
+            g_boot_media64_boot_info->boot_media_app_bytes) != 0u)
         ? 1u
         : 0u;
+}
+
+static u32 boot_media64_interp_available(void)
+{
+    return boot_media64_staged_range_valid(
+        g_boot_media64_boot_info->boot_media_interp_base,
+        g_boot_media64_boot_info->boot_media_interp_bytes);
 }
 
 u32 boot_media64_has_file(const u8 *path, u32 path_bytes)
@@ -141,8 +165,7 @@ u32 boot_media64_has_file(const u8 *path, u32 path_bytes)
     {
         return 1u;
     }
-    if (g_boot_media64_boot_info->boot_media_interp_base != 0ull
-        && g_boot_media64_boot_info->boot_media_interp_bytes != 0u
+    if (boot_media64_interp_available() != 0u
         && boot_media64_path_matches_interp(path, path_bytes) != 0u)
     {
         return 1u;
@@ -179,7 +202,8 @@ u32 boot_media64_read_file(const u8 *path, u32 path_bytes, u8 *buffer, u32 capac
         source = (const u8 *)(u64)g_boot_media64_boot_info->boot_media_app_base;
         source_bytes = g_boot_media64_boot_info->boot_media_app_bytes;
     }
-    else if (boot_media64_path_matches_interp(path, path_bytes) != 0u)
+    else if (boot_media64_interp_available() != 0u
+        && boot_media64_path_matches_interp(path, path_bytes) != 0u)
     {
         source = (const u8 *)(u64)g_boot_media64_boot_info->boot_media_interp_base;
         source_bytes = g_boot_media64_boot_info->boot_media_interp_bytes;
