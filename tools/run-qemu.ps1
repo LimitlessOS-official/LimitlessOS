@@ -128,7 +128,7 @@ if (($Architecture -eq "x86_64") -and ($BootMedia -ne "disk")) {
         "-drive", "if=none,id=nvmeprobe,format=raw,snapshot=on,file=$nvmeGptPath",
         "-device", "nvme,drive=nvmeprobe,serial=LIMITLESSOSNVME,bootindex=3",
         "-netdev", "user,id=net0",
-        "-device", $networkDeviceArgument,
+        "-device", $networkDeviceArgument
     )
 
     if ($BootMedia -eq "uefi") {
