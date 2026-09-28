@@ -27,7 +27,6 @@ Ordered by what unblocks the most. Each follows [development.md](development.md#
 5. **Reproducible fixtures.** Recover or rewrite the `LDLIMIT` interpreter source, and add a script that rebuilds every `fixtures/linux/` program into `external/build/` with recorded command lines and SHA-256 values.
 6. **Physical memory allocator.** Replace the static pools (8 process roots, fixed pipe and persona tables) with a frame allocator sized from the firmware memory map, keeping the low-window contract in `boot_info.h`.
 7. **Wired Ethernet on physical hardware**, before Wi-Fi.
-8. **Plain UEFI gate.** `verify-qemu.ps1 -BootMedia uefi` without `-HardwareDisplayGate` fails on `main` because the GUI probe's File Manager clicks produce no actions (`fileman-actions 0`). Fix the probe or the File Manager hit-testing so the gate that exercises `lock` can join CI.
 
 ## Structural work
 
