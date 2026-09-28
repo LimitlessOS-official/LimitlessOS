@@ -162,6 +162,11 @@ function Send-AuthProbe
                 $loginSent = $true
                 break
             }
+            # First-run setup signs in directly, so the first boot never shows a login prompt.
+            if ($logText -match '\[x64\] stage LOGIN OK') {
+                $loginSent = $true
+                break
+            }
             Start-Sleep -Milliseconds 120
         }
         if (-not $loginSent) {

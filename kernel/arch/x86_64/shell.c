@@ -23,7 +23,10 @@
 #include "network_socket_x64.h"
 #include "package_signing_x64.h"
 #include "pci_x64.h"
+#include "pit.h"
+#include "power_x64.h"
 #include "ramfs.h"
+#include "rtc_x64.h"
 #include "runtime_image_x64.h"
 #include "services.h"
 #include "types.h"
@@ -462,10 +465,10 @@ static u32 shell64_write_builtins_line(u32 console_capability_handle, u32 owner_
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     if (shell64_login_available() != 0u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd usbscan\n");
+        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux net open pkginfo port ports pwd usbscan\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
 #else
     if (shell64_login_available() != 0u)
     {
@@ -3881,13 +3884,43 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "usage: help [command]\n");
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(token_start, token_length, "echo"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: echo <text> [> file] - print text, or write it to a file\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "clear"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: clear - clear the terminal\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "date"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: date - show the date and time (UTC)\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "uptime"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: uptime - time since boot\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "whoami"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: whoami - signed-in account\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "reboot"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: reboot - restart the machine\n");
+    }
+    if (shell64_token_equals(token_start, token_length, "shutdown"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "usage: shutdown - power off through ACPI\n");
+    }
+#endif
+
     if (shell64_token_equals(token_start, token_length, "ask"))
     {
         return shell64_write_text(console_capability_handle, owner_id, "unavailable in M1: ASK is not an AI feature\n");
     }
 
-    if (shell64_token_equals(token_start, token_length, "echo")
-        || shell64_token_equals(token_start, token_length, "say")
+    if (shell64_token_equals(token_start, token_length, "say")
         || shell64_token_equals(token_start, token_length, "show")
         || shell64_token_equals(token_start, token_length, "list")
         || shell64_token_equals(token_start, token_length, "make")
@@ -3898,7 +3931,7 @@ static u32 shell64_print_usage(u32 console_capability_handle, u32 owner_id, u32 
         return shell64_write_text(console_capability_handle, owner_id, "unavailable in M1: alias/experimental command\n");
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "unknown: help\n");
+    return shell64_write_text(console_capability_handle, owner_id, "no help for that command; type help for the list\n");
 }
 
 static int shell64_token_is_product_command(u32 token_start, u32 token_length)
@@ -4935,8 +4968,80 @@ static u32 shell64_execute_line_inner(
         return shell64_write_text(
             console_capability_handle,
             owner_id,
-            "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
+            "Unavailable in M21: ask (not AI), aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install\n");
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(command_start, command_length, "echo"))
+    {
+        while ((cursor < line_byte_count) && (g_shell64_line[cursor] == (u8)' '))
+        {
+            ++cursor;
+        }
+        if (cursor < line_byte_count)
+        {
+            (void)shell64_write(console_capability_handle, owner_id, &g_shell64_line[cursor], line_byte_count - cursor);
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "clear")
+        || shell64_token_equals(command_start, command_length, "cls"))
+    {
+        display64_terminal_clear();
+        return 1u;
+    }
+
+    if (shell64_token_equals(command_start, command_length, "date"))
+    {
+        char date_text[32];
+
+        if (rtc64_format_now(date_text, sizeof(date_text)) == 0u)
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "date: real-time clock unavailable\n");
+        }
+        (void)shell64_write_text(console_capability_handle, owner_id, date_text);
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "uptime"))
+    {
+        u32 seconds = pit_get_uptime_seconds();
+
+        shell64_write_decimal_field(console_capability_handle, owner_id, "up ", seconds / 3600u);
+        shell64_write_decimal_field(console_capability_handle, owner_id, "h ", (seconds / 60u) % 60u);
+        shell64_write_decimal_field(console_capability_handle, owner_id, "m ", seconds % 60u);
+        return shell64_write_text(console_capability_handle, owner_id, "s\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "whoami"))
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, auth64_active_user());
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "reboot")
+        || shell64_token_equals(command_start, command_length, "restart"))
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "restarting...\n");
+        power64_reboot();
+        return shell64_write_text(console_capability_handle, owner_id, "reboot: no reset method worked\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "shutdown")
+        || shell64_token_equals(command_start, command_length, "poweroff"))
+    {
+        (void)shell64_write_text(console_capability_handle, owner_id, "powering off...\n");
+        power64_shutdown();
+        return shell64_write_text(console_capability_handle, owner_id, "shutdown: ACPI power-off unavailable; it is safe to turn the machine off\n");
+    }
+
+    if (shell64_token_equals(command_start, command_length, "exit")
+        || shell64_token_equals(command_start, command_length, "logout"))
+    {
+        return shell64_write_text(console_capability_handle, owner_id, "the shell keeps running; use lock to leave the session, or shutdown/reboot\n");
+    }
+#endif
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
     {
@@ -5342,7 +5447,9 @@ static u32 shell64_execute_line_inner(
             1);
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "unknown: help\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "unknown command: ");
+    (void)shell64_write(console_capability_handle, owner_id, &g_shell64_line[command_start], command_length);
+    return shell64_write_text(console_capability_handle, owner_id, " (type help)\n");
 }
 
 u32 shell64_execute_line(

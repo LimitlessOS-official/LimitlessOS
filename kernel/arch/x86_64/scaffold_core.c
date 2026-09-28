@@ -40712,11 +40712,20 @@ static void collect_mouse_probe_input(u32 target_packets, u32 max_wait_ticks)
     }
 }
 
-static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
+/*
+ * The probe window ends when every GUI step has been seen, when no input has
+ * arrived for idle_ticks (first_input_ticks before any input at all), or at
+ * max_wait_ticks. An ordinary boot with no one driving the desktop therefore
+ * reaches the shell after first_input_ticks instead of the full maximum.
+ */
+static void collect_gui_interactive_probe_input(u32 max_wait_ticks, u32 first_input_ticks, u32 idle_ticks)
 {
     u32 target_ticks = pit_get_ticks() + max_wait_ticks;
     u32 last_tick = pit_get_ticks();
     u32 guard = 0u;
+    u32 activity = input64_mouse_packet_count() + input64_keyboard_byte_count();
+    u32 activity_ticks = pit_get_ticks();
+    u32 input_seen = 0u;
 
     interrupts64_enable();
     while (((display64_gui_launcher_opened() == 0u)
@@ -40745,8 +40754,27 @@ static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
          */
         if (pit_get_ticks() != last_tick)
         {
+            u32 now_activity = input64_mouse_packet_count() + input64_keyboard_byte_count();
+
             last_tick = pit_get_ticks();
             guard = 0u;
+            if (now_activity != activity)
+            {
+                if (input_seen == 0u)
+                {
+                    write_string("[x64] gui probe first input after ticks ");
+                    write_dec_u32(last_tick - activity_ticks);
+                    write_line("");
+                }
+                activity = now_activity;
+                activity_ticks = last_tick;
+                input_seen = 1u;
+            }
+            else if ((last_tick - activity_ticks) >= ((input_seen != 0u) ? idle_ticks : first_input_ticks))
+            {
+                write_line((input_seen != 0u) ? "[x64] gui probe window closed: input idle" : "[x64] gui probe window closed: no input");
+                break;
+            }
         }
         else
         {
@@ -41208,7 +41236,7 @@ void kernel_main64_scaffold(const struct boot_info *boot_info)
         if (scaffold_wide_panel_hardware_path(boot_info) == 0u)
         {
             write_line("[x64] gui interactive input wait");
-            collect_gui_interactive_probe_input(6000u);
+            collect_gui_interactive_probe_input(30000u, 3000u, 2000u);
             log_mouse_surface();
         }
         else

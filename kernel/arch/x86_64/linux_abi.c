@@ -1,5 +1,6 @@
 #include "linux_abi_x64.h"
 #include "entropy_x64.h"
+#include "rtc_x64.h"
 
 #include "elf64_x64.h"
 #include "fd_x64.h"
@@ -7134,6 +7135,13 @@ u64 linux_abi64_sys_clock_gettime(u32 pid, u64 clock_id, u64 user_timespec, u64 
     remainder = ticks % frequency;
     timespec.tv_sec = (u64)(ticks / frequency);
     timespec.tv_nsec = ((u64)remainder * 1000000000ull) / (u64)frequency;
+    /* Wall-clock clocks report Unix time from the CMOS RTC; the rest count from boot. */
+    if (((clock_id == (u64)LINUX_ABI64_CLOCK_REALTIME) || (clock_id == (u64)LINUX_ABI64_CLOCK_REALTIME_COARSE))
+        && (rtc64_available() != 0u))
+    {
+        timespec.tv_sec = rtc64_now_epoch_seconds();
+        timespec.tv_nsec = (u64)rtc64_now_subsecond_nanoseconds();
+    }
     linux_abi64_copy_to_user(
         user_timespec,
         (const u8 *)&timespec,
