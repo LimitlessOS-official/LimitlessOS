@@ -20,6 +20,11 @@ char *__crypt_blowfish(const char *key, const char *setting, char *output);
 #define AUTH64_PASSWORD_BYTES 64u
 #define AUTH64_RECORD_BYTES 384u
 #define AUTH64_BCRYPT_HASH_BYTES 60u
+/* "$2b$NN$" followed by a 22-character salt. */
+#define AUTH64_BCRYPT_SETTING_BYTES 29u
+#define AUTH64_BCRYPT_SALT_OFFSET 7u
+#define AUTH64_BCRYPT_SALT_RAW_BYTES 16u
+#define AUTH64_BCRYPT_COST "10"
 /* Read timeouts in PIT ticks (100 Hz). AUTH64_WAIT_FOREVER blocks until a line arrives. */
 #define AUTH64_WAIT_FOREVER 0u
 /* First run with no keyboard input at all picks the default account so a machine whose
@@ -39,7 +44,10 @@ static const char g_auth64_default_user[] = "limitless";
 static const char g_auth64_default_password[] = "limitless";
 static const char g_auth64_default_home[] = "/HOME/LIMITLESS";
 static const char g_auth64_default_profile[] = "local-console";
-static const char g_auth64_bcrypt_setting[] = "$2b$04$LimitlessOSM10salt0000";
+/* Records written before M200 all used this cost-4 setting; they are rehashed on the next successful sign-in. */
+static const char g_auth64_legacy_bcrypt_salt[] = "LimitlessOSM10salt000";
+static const char g_auth64_bcrypt_prefix[] = "$2b$" AUTH64_BCRYPT_COST "$";
+static const char g_auth64_bcrypt_alphabet[] = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 static u32 g_auth64_login_screen = 0u;
 static u32 g_auth64_first_run_setup = 0u;
@@ -68,6 +76,9 @@ static u8 g_auth64_profile[32];
 static u8 g_auth64_record[AUTH64_RECORD_BYTES];
 static u8 g_auth64_password_hash[AUTH64_BCRYPT_HASH_BYTES + 1u];
 static u8 g_auth64_line[AUTH64_PASSWORD_BYTES];
+static u8 g_auth64_echo[AUTH64_PASSWORD_BYTES];
+static u8 g_auth64_echo_shown[AUTH64_PASSWORD_BYTES];
+static u64 g_auth64_entropy = 0x6A09E667F3BCC909ull;
 
 static u32 auth64_cstr_length(const char *text, u32 capacity);
 
@@ -179,16 +190,111 @@ static u32 auth64_bytes_equal(const u8 *left, u32 left_count, const u8 *right, u
     return 1u;
 }
 
-#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
-static void auth64_hash_password(const u8 *username, u32 username_bytes, const u8 *password, u32 password_bytes, u8 *hash_out)
+static u64 auth64_rdtsc(void)
+{
+    u32 low;
+    u32 high;
+
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return ((u64)high << 32) | (u64)low;
+}
+
+static u32 auth64_rdrand64(u64 *value)
+{
+    u32 eax = 1u;
+    u32 ebx;
+    u32 ecx = 0u;
+    u32 edx;
+    u32 attempt;
+    u8 ok;
+
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+    if ((ecx & (1u << 30)) == 0u)
+    {
+        return 0u;
+    }
+    for (attempt = 0u; attempt < 10u; ++attempt)
+    {
+        __asm__ volatile("rdrand %0; setc %1" : "=r"(*value), "=qm"(ok) : : "cc");
+        if (ok != 0u)
+        {
+            return 1u;
+        }
+    }
+    return 0u;
+}
+
+static u64 auth64_mix64(u64 value)
+{
+    value += 0x9E3779B97F4A7C15ull;
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
+    return value ^ (value >> 31);
+}
+
+/*
+ * Salts must be unique, not secret. The pool mixes the TSC at every keystroke
+ * of the login reader with RDRAND when the CPU has it, so two installs (or two
+ * accounts) do not share a salt even on CPUs without a hardware generator.
+ */
+static void auth64_stir_entropy(u64 sample)
+{
+    g_auth64_entropy = auth64_mix64(g_auth64_entropy ^ sample ^ auth64_rdtsc());
+}
+
+static void auth64_make_bcrypt_setting(char *setting)
+{
+    u8 salt[AUTH64_BCRYPT_SALT_RAW_BYTES];
+    u64 hardware;
+    u64 word = 0u;
+    u32 index;
+    u32 in = 0u;
+    u32 out = AUTH64_BCRYPT_SALT_OFFSET;
+    u32 bits;
+
+    for (index = 0u; index < AUTH64_BCRYPT_SALT_RAW_BYTES; ++index)
+    {
+        if ((index & 7u) == 0u)
+        {
+            hardware = 0u;
+            (void)auth64_rdrand64(&hardware);
+            auth64_stir_entropy(hardware ^ (u64)pit_get_ticks());
+            word = auth64_mix64(g_auth64_entropy + index);
+        }
+        salt[index] = (u8)(word >> ((index & 7u) * 8u));
+    }
+
+    auth64_copy(setting, g_auth64_bcrypt_prefix, AUTH64_BCRYPT_SALT_OFFSET);
+    /* bcrypt's base64 variant: 16 bytes become 22 characters. */
+    while (in < AUTH64_BCRYPT_SALT_RAW_BYTES)
+    {
+        bits = salt[in++];
+        setting[out++] = g_auth64_bcrypt_alphabet[bits >> 2];
+        bits = (bits & 0x03u) << 4;
+        if (in >= AUTH64_BCRYPT_SALT_RAW_BYTES)
+        {
+            setting[out++] = g_auth64_bcrypt_alphabet[bits];
+            break;
+        }
+        bits |= (u32)salt[in] >> 4;
+        setting[out++] = g_auth64_bcrypt_alphabet[bits];
+        bits = ((u32)salt[in++] & 0x0Fu) << 2;
+        bits |= (u32)salt[in] >> 6;
+        setting[out++] = g_auth64_bcrypt_alphabet[bits];
+        setting[out++] = g_auth64_bcrypt_alphabet[salt[in++] & 0x3Fu];
+    }
+    setting[out] = '\0';
+    auth64_zero(salt, sizeof(salt));
+}
+
+/* Hashes password with a bcrypt setting ("$2b$NN$" + salt); a stored hash works as its own setting. */
+static void auth64_hash_password(const u8 *password, u32 password_bytes, const char *setting, u8 *hash_out)
 {
     char password_text[AUTH64_PASSWORD_BYTES + 1u];
     char hash_text[AUTH64_BCRYPT_HASH_BYTES + 4u];
     u32 index;
     char *result;
 
-    (void)username;
-    (void)username_bytes;
     auth64_zero(password_text, sizeof(password_text));
     auth64_zero(hash_text, sizeof(hash_text));
     if (password_bytes > AUTH64_PASSWORD_BYTES)
@@ -196,13 +302,11 @@ static void auth64_hash_password(const u8 *username, u32 username_bytes, const u
         password_bytes = AUTH64_PASSWORD_BYTES;
     }
     auth64_copy(password_text, password, password_bytes);
-    result = __crypt_blowfish(password_text, g_auth64_bcrypt_setting, hash_text);
+    result = __crypt_blowfish(password_text, setting, hash_text);
+    auth64_zero(password_text, sizeof(password_text));
     if ((result == (char *)0) || (result[0] != '$'))
     {
-        if (hash_out != (u8 *)0)
-        {
-            hash_out[0] = 0u;
-        }
+        hash_out[0] = 0u;
         g_auth64_bcrypt_hash = 0u;
         return;
     }
@@ -214,19 +318,6 @@ static void auth64_hash_password(const u8 *username, u32 username_bytes, const u
     hash_out[AUTH64_BCRYPT_HASH_BYTES] = 0u;
     g_auth64_bcrypt_hash = 1u;
 }
-#else
-static void auth64_hash_password(const u8 *username, u32 username_bytes, const u8 *password, u32 password_bytes, u8 *hash_out)
-{
-    (void)username;
-    (void)username_bytes;
-    (void)password;
-    (void)password_bytes;
-    if (hash_out != (u8 *)0)
-    {
-        hash_out[0] = 0u;
-    }
-}
-#endif
 
 static u32 auth64_append_text(u8 *record, u32 capacity, u32 cursor, const char *text)
 {
@@ -253,9 +344,11 @@ static u32 auth64_append_bytes(u8 *record, u32 capacity, u32 cursor, const u8 *t
 static u32 auth64_make_record(const u8 *username, u32 username_bytes, const u8 *password, u32 password_bytes)
 {
     u32 cursor = 0u;
+    char setting[AUTH64_BCRYPT_SETTING_BYTES + 1u];
 
     auth64_zero(g_auth64_record, sizeof(g_auth64_record));
-    auth64_hash_password(username, username_bytes, password, password_bytes, g_auth64_password_hash);
+    auth64_make_bcrypt_setting(setting);
+    auth64_hash_password(password, password_bytes, setting, g_auth64_password_hash);
     if (g_auth64_bcrypt_hash == 0u)
     {
         return 0u;
@@ -380,24 +473,26 @@ static u32 auth64_save_user_record(const u8 *username, u32 username_bytes, const
  * AUTH64_READ_DENIED (input authority refused). An empty line is detected
  * through the broker's completed-line counter because it carries no bytes.
  */
-static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome);
+static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field);
 
-static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome)
+static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field)
 {
     u32 bytes;
 
     /* While credentials are being typed, keystrokes must not be routed to desktop windows. */
     g_auth64_keyboard_capture = 1u;
-    bytes = auth64_read_login_line_captured(input_capability, buffer, capacity, timeout_ticks, outcome);
+    bytes = auth64_read_login_line_captured(input_capability, buffer, capacity, timeout_ticks, outcome, echo_field);
     g_auth64_keyboard_capture = 0u;
     return bytes;
 }
 
-static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome)
+static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field)
 {
     u32 bytes = 0u;
     u32 start_ticks = pit_get_ticks();
     u32 start_lines = input64_keyboard_line_count();
+    u32 echoed_bytes = 0xFFFFFFFFu;
+    u32 pending_bytes;
 
     ++g_auth64_input_wait_count;
     auth64_zero(buffer, capacity);
@@ -432,6 +527,31 @@ static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32
             *outcome = AUTH64_READ_EMPTY;
             return 0u;
         }
+        /* Echo the pending line so typing is visible: usernames in clear, passwords masked. */
+        pending_bytes = input64_keyboard_peek_line(g_auth64_echo, sizeof(g_auth64_echo));
+        if (pending_bytes != echoed_bytes)
+        {
+            auth64_stir_entropy(pending_bytes);
+        }
+        if ((pending_bytes != echoed_bytes)
+            || ((echo_field == DISPLAY64_LOGIN_FIELD_USERNAME) && !auth64_bytes_equal(g_auth64_echo, pending_bytes, g_auth64_echo_shown, pending_bytes)))
+        {
+            echoed_bytes = pending_bytes;
+            auth64_zero(g_auth64_echo_shown, sizeof(g_auth64_echo_shown));
+            if (echo_field == DISPLAY64_LOGIN_FIELD_USERNAME)
+            {
+                for (u32 index = 0u; index < pending_bytes; ++index)
+                {
+                    g_auth64_echo_shown[index] = g_auth64_echo[index];
+                }
+                display64_login_field_draw(echo_field, (const char *)g_auth64_echo, 0u);
+            }
+            else
+            {
+                display64_login_field_draw(echo_field, 0, pending_bytes);
+            }
+        }
+        auth64_zero(g_auth64_echo, sizeof(g_auth64_echo));
         if ((timeout_ticks != AUTH64_WAIT_FOREVER)
             && ((pit_get_ticks() - start_ticks) >= timeout_ticks))
         {
@@ -446,13 +566,26 @@ static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32
     }
 }
 
-static u32 auth64_password_matches(const u8 *username, u32 username_bytes, const u8 *password, u32 password_bytes)
+static u32 auth64_password_matches(const u8 *password, u32 password_bytes)
 {
     u8 candidate[AUTH64_BCRYPT_HASH_BYTES + 1u];
 
     auth64_zero(candidate, sizeof(candidate));
-    auth64_hash_password(username, username_bytes, password, password_bytes, candidate);
+    auth64_hash_password(password, password_bytes, (const char *)g_auth64_password_hash, candidate);
     return auth64_bytes_equal(candidate, AUTH64_BCRYPT_HASH_BYTES, g_auth64_password_hash, AUTH64_BCRYPT_HASH_BYTES);
+}
+
+/* True when the stored hash predates M200: the shared fixed salt or a cost other than AUTH64_BCRYPT_COST. */
+static u32 auth64_record_needs_upgrade(void)
+{
+    return ((auth64_bytes_equal(g_auth64_password_hash, AUTH64_BCRYPT_SALT_OFFSET, (const u8 *)g_auth64_bcrypt_prefix, AUTH64_BCRYPT_SALT_OFFSET) == 0u)
+        || (auth64_bytes_equal(
+                &g_auth64_password_hash[AUTH64_BCRYPT_SALT_OFFSET],
+                sizeof(g_auth64_legacy_bcrypt_salt) - 1u,
+                (const u8 *)g_auth64_legacy_bcrypt_salt,
+                sizeof(g_auth64_legacy_bcrypt_salt) - 1u) != 0u))
+        ? 1u
+        : 0u;
 }
 
 static u32 auth64_accept_session(const char *message)
@@ -474,8 +607,6 @@ static u32 auth64_is_default_account(void)
 
     return ((auth64_bytes_equal(g_auth64_username, username_bytes, (const u8 *)g_auth64_default_user, default_bytes) != 0u)
         && (auth64_password_matches(
-                g_auth64_username,
-                username_bytes,
                 (const u8 *)g_auth64_default_password,
                 auth64_cstr_length(g_auth64_default_password, AUTH64_PASSWORD_BYTES)) != 0u))
         ? 1u
@@ -523,27 +654,38 @@ void auth64_init(void)
     auth64_copy(g_auth64_profile, g_auth64_default_profile, auth64_cstr_length(g_auth64_default_profile, sizeof(g_auth64_profile)));
 }
 
+/* Proves a wrong password is denied and three failures rate-limit, without the lockout delay. */
 static void auth64_run_negative_probe(void)
 {
     static const u8 bad_password[] = "wrong-password";
-    u32 username_bytes = auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username));
 
-    if (username_bytes == 0u)
-    {
-        username_bytes = auth64_cstr_length(g_auth64_default_user, sizeof(g_auth64_username));
-        auth64_copy(g_auth64_username, g_auth64_default_user, username_bytes);
-    }
-    if (auth64_password_matches(g_auth64_username, username_bytes, bad_password, sizeof(bad_password) - 1u) == 0u)
+    if (auth64_password_matches(bad_password, sizeof(bad_password) - 1u) == 0u)
     {
         auth64_record_failure(0u);
-    }
-    if (auth64_password_matches(g_auth64_username, username_bytes, bad_password, sizeof(bad_password) - 1u) == 0u)
-    {
+        auth64_record_failure(0u);
         auth64_record_failure(0u);
     }
-    if (auth64_password_matches(g_auth64_username, username_bytes, bad_password, sizeof(bad_password) - 1u) == 0u)
+}
+
+/* Rewrites a pre-M200 record with a fresh salt and the current cost once the password is known. */
+static void auth64_upgrade_record(const u8 *password, u32 password_bytes)
+{
+    if ((g_auth64_user_store_persistent == 0u) || (auth64_record_needs_upgrade() == 0u))
     {
-        auth64_record_failure(0u);
+        return;
+    }
+    if (auth64_save_user_record(
+            g_auth64_username,
+            auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username)),
+            password,
+            password_bytes) != 0u)
+    {
+        auth64_debug_line("[x64] user record rehashed with a per-account salt");
+    }
+    else
+    {
+        /* The in-memory hash was replaced; reload the stored one so it still matches the file. */
+        (void)auth64_load_user_record();
     }
 }
 
@@ -552,10 +694,6 @@ u32 auth64_run_login_gate(void)
     u32 input_capability;
     u32 username_bytes;
     u32 password_bytes;
-
-#if !(defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL)
-    return 1u;
-#else
     u32 outcome = AUTH64_READ_DENIED;
     u32 default_account;
 
@@ -581,6 +719,7 @@ u32 auth64_run_login_gate(void)
          * no keyboard input arrives at all is the default chosen automatically.
          */
         g_auth64_first_run_setup = 1u;
+        auth64_zero(g_auth64_username, sizeof(g_auth64_username));
         display64_login_setup_screen();
         auth64_debug_line("[x64] first-run setup input wait");
         username_bytes = auth64_read_login_line(
@@ -588,7 +727,7 @@ u32 auth64_run_login_gate(void)
             g_auth64_username,
             sizeof(g_auth64_username),
             AUTH64_FIRST_RUN_DEFAULT_TICKS,
-            &outcome);
+            &outcome, DISPLAY64_LOGIN_FIELD_USERNAME);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;
@@ -604,9 +743,9 @@ u32 auth64_run_login_gate(void)
             {
                 auth64_debug_line("[x64] first-run default account chosen");
             }
-            display64_login_screen_draw("First-run setup", "Using the default account", 0u, 0u);
             username_bytes = auth64_copy_cstr_to_line(g_auth64_username, sizeof(g_auth64_username), g_auth64_default_user);
             password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+            display64_login_screen_draw("First-run setup", "Using the default account", 0u, 0u);
         }
         else
         {
@@ -620,7 +759,7 @@ u32 auth64_run_login_gate(void)
                     g_auth64_line,
                     sizeof(g_auth64_line),
                     AUTH64_WAIT_FOREVER,
-                    &outcome);
+                    &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
                 if (outcome == AUTH64_READ_DENIED)
                 {
                     return 0u;
@@ -670,7 +809,7 @@ u32 auth64_run_login_gate(void)
             g_auth64_line,
             sizeof(g_auth64_line),
             (default_account != 0u) ? AUTH64_DEFAULT_ACCOUNT_SIGNIN_TICKS : AUTH64_WAIT_FOREVER,
-            &outcome);
+            &outcome, DISPLAY64_LOGIN_FIELD_USERNAME);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;
@@ -680,31 +819,32 @@ u32 auth64_run_login_gate(void)
             if (default_account != 0u)
             {
                 auth64_debug_line("[x64] default account sign-in");
+                auth64_upgrade_record((const u8 *)g_auth64_default_password, auth64_cstr_length(g_auth64_default_password, AUTH64_PASSWORD_BYTES));
                 return auth64_accept_session("Default account");
             }
             continue;
         }
         if (auth64_bytes_equal(g_auth64_line, username_bytes, g_auth64_username, auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username))) == 0u)
         {
-            (void)auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+            (void)auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
             auth64_record_failure(1u);
             display64_login_screen_draw("Login denied", "Unknown user", g_auth64_failure_count, g_auth64_lockout_seconds);
             continue;
         }
 
-        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
         if ((outcome != AUTH64_READ_LINE)
-            || (auth64_password_matches(g_auth64_username, username_bytes, g_auth64_line, password_bytes) == 0u))
+            || (auth64_password_matches(g_auth64_line, password_bytes) == 0u))
         {
             auth64_record_failure(1u);
             display64_login_screen_draw("Login denied", "Wrong password", g_auth64_failure_count, g_auth64_lockout_seconds);
             continue;
         }
 
+        auth64_upgrade_record(g_auth64_line, password_bytes);
         auth64_zero(g_auth64_line, sizeof(g_auth64_line));
         return auth64_accept_session("Starting desktop session");
     }
-#endif
 }
 
 void auth64_controlled_lock_probe(void)
@@ -721,12 +861,8 @@ u32 auth64_lock_session(void)
 {
     u32 input_capability;
     u32 password_bytes;
-    u32 username_bytes;
     u32 outcome = AUTH64_READ_DENIED;
 
-#if !(defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL)
-    return 0u;
-#else
     if ((g_auth64_auth_success == 0u) || (g_auth64_user_store_persistent == 0u))
     {
         ++g_auth64_lock_unavailable_count;
@@ -744,19 +880,18 @@ u32 auth64_lock_session(void)
     }
 
     g_auth64_session_lock = 1u;
-    username_bytes = auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username));
     display64_login_screen_draw("Session locked", "Enter password to unlock", 0u, 0u);
     /* The session stays locked until the account password is entered. */
     for (;;)
     {
         auth64_debug_line("[x64] session lock input wait");
-        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;
         }
         if ((outcome == AUTH64_READ_LINE)
-            && (auth64_password_matches(g_auth64_username, username_bytes, g_auth64_line, password_bytes) != 0u))
+            && (auth64_password_matches(g_auth64_line, password_bytes) != 0u))
         {
             break;
         }
@@ -770,7 +905,6 @@ u32 auth64_lock_session(void)
     g_auth64_lockout_seconds = 0u;
     display64_login_screen_draw("Session unlocked", "Resuming desktop session", 0u, 0u);
     return 1u;
-#endif
 }
 
 u32 auth64_login_screen(void) { return g_auth64_login_screen; }

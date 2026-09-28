@@ -1199,7 +1199,7 @@ function Assert-X64Artifacts
         $m10Inventory | Add-Member -Force -NotePropertyName loginScreenVerified -NotePropertyValue $true
         $m10Inventory | Add-Member -Force -NotePropertyName firstRunSetupStatus -NotePropertyValue "creates one local user record in the brokered NVMe FAT namespace when missing"
         $m10Inventory | Add-Member -Force -NotePropertyName localUserStore -NotePropertyValue "persistent NVMe namespace /USERDB.TXT"
-        $m10Inventory | Add-Member -Force -NotePropertyName passwordHashAlgorithm -NotePropertyValue 'bcrypt $2b$ cost 04 via crypt_blowfish'
+        $m10Inventory | Add-Member -Force -NotePropertyName passwordHashAlgorithm -NotePropertyValue 'bcrypt $2b$ cost 10 with a per-account random salt via crypt_blowfish'
         $m10Inventory | Add-Member -Force -NotePropertyName loginAuthSuccessVerified -NotePropertyValue $true
         $m10Inventory | Add-Member -Force -NotePropertyName wrongPasswordDeniedVerified -NotePropertyValue $true
         $m10Inventory | Add-Member -Force -NotePropertyName rateLimitVerified -NotePropertyValue $true

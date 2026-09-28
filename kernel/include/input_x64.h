@@ -65,6 +65,9 @@ u32 input64_keyboard_last_byte(void);
 u32 input64_keyboard_read_count(void);
 u32 input64_keyboard_read_byte_count(void);
 u32 input64_keyboard_line_count(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 input64_keyboard_peek_line(u8 *output, u32 capacity);
+#endif
 u32 input64_keyboard_line_byte_count(void);
 u32 input64_keyboard_line_edit_count(void);
 u32 input64_ps2_status_snapshot(void);

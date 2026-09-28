@@ -314,7 +314,7 @@ function Assert-X64M1RuntimeSurface
     }
 
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps devices help hwval info linux lock net pkginfo ports pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd usbscan$' -Message "M10 runtime help did not label authenticated shell builtins."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
@@ -883,10 +883,15 @@ function Send-QemuKeyboardProbe
             $dragEndY = 150
             $newTerminalX = 66 + ($dragEndX - $dragStartX)
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
-            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            # Mirrors the UEFI shell terminal created in display64_wm_probe: wide screens leave
+            # 416 px on the right for side windows.
+            $originalTerminalWidth = if ($frameWidth -gt 1200) { [Math]::Min(1480, $frameWidth - 416 - 32) } else { [Math]::Max(160, $frameWidth - 64) }
+            # Title buttons are 14x14 boxes at window y + 7 (the shell terminal is at y 56); aim at their centres.
             $originalCloseX = 32 + $originalTerminalWidth - 15
-            $originalMinimizeX = 32 + $originalTerminalWidth - 44
-            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $originalMinimizeX = 32 + $originalTerminalWidth - 37
+            # The UEFI desktop uses the Product layout, which reserves no diagnostics column,
+            # so side windows (File Manager, Settings) sit against the right edge.
+            $sideReserved = 0
             $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
             $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
             $fileBodyX = $fileWindowX + 16
@@ -940,10 +945,15 @@ function Send-QemuKeyboardProbe
             $newTerminalWidth = [Math]::Min(760, [Math]::Max(160, $frameWidth - 96))
             $newTerminalX = 66 + ($dragEndX - $dragStartX)
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
-            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            # Mirrors the UEFI shell terminal created in display64_wm_probe: wide screens leave
+            # 416 px on the right for side windows.
+            $originalTerminalWidth = if ($frameWidth -gt 1200) { [Math]::Min(1480, $frameWidth - 416 - 32) } else { [Math]::Max(160, $frameWidth - 64) }
+            # Title buttons are 14x14 boxes at window y + 7 (the shell terminal is at y 56); aim at their centres.
             $originalCloseX = 32 + $originalTerminalWidth - 15
-            $originalMinimizeX = 32 + $originalTerminalWidth - 44
-            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $originalMinimizeX = 32 + $originalTerminalWidth - 37
+            # The UEFI desktop uses the Product layout, which reserves no diagnostics column,
+            # so side windows (File Manager, Settings) sit against the right edge.
+            $sideReserved = 0
             $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
             $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
             $fileBodyX = $fileWindowX + 16
@@ -984,13 +994,13 @@ function Send-QemuKeyboardProbe
                     $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
                     & $drainQmp
                     Start-Sleep -Milliseconds 220
-                    & $sendMoveTo $originalMinimizeX 63
+                    & $sendMoveTo $originalMinimizeX 70
                     & $sendClick
                     & $sendMoveTo 90 $launcherY
                     & $sendClick
                 }
                 if ($guiAttempt -eq 0) {
-                    $settingsX = [Math]::Max(40, $frameWidth - 368 - 344 + 40)
+                    $settingsX = $fileWindowX + 40
                     & $sendMoveTo 22 $launcherY
                     & $sendClick
                     & $sendMoveTo 170 $settingsIconY
@@ -1002,6 +1012,12 @@ function Send-QemuKeyboardProbe
                     & $sendClick
                     & $sendMoveTo $settingsX 664
                     & $sendClick
+                    # Five rows fit; scroll two rows so the diagnostics export row (index 6) takes the last slot.
+                    foreach ($wheelNotch in 1..2) {
+                        $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}')
+                        & $drainQmp
+                        Start-Sleep -Milliseconds 160
+                    }
                     & $sendMoveTo $settingsX 708
                     & $sendClick
                 }
@@ -1041,7 +1057,7 @@ function Send-QemuKeyboardProbe
                 & $sendMoveTo 90 $launcherY
                 & $sendClick
                 & $sendKey "a"
-                & $sendMoveTo $originalCloseX 63
+                & $sendMoveTo $originalCloseX 70
                 & $sendClick
                 & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + [int]($newTerminalWidth / 2))) ($newTerminalY + 120)
                 & $sendClick
