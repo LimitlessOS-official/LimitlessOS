@@ -6,6 +6,7 @@
 #include "i2c_hid_x64.h"
 #include "launch_x64.h"
 #include "pci_x64.h"
+#include "pit.h"
 #include "serial.h"
 #include "services.h"
 #include "services_x64.h"
@@ -132,7 +133,19 @@ static u8 g_keyboard_break_prefix = 0u;
 static u8 g_keyboard_left_shift = 0u;
 static u8 g_keyboard_right_shift = 0u;
 static u8 g_keyboard_caps_lock = 0u;
+static u8 g_keyboard_ctrl = 0u;
 static u8 g_usb_hid_last_modifier = 0u;
+/*
+ * USB boot keyboards report only changes, so held keys repeat in software:
+ * the last pressed key's bytes replay after INPUT64_REPEAT_DELAY_TICKS, then
+ * every INPUT64_REPEAT_RATE_TICKS, while Settings has key repeat on.
+ */
+#define INPUT64_REPEAT_DELAY_TICKS 50u
+#define INPUT64_REPEAT_RATE_TICKS 3u
+static u8 g_usb_repeat_keycode = 0u;
+static u8 g_usb_repeat_bytes[4];
+static u32 g_usb_repeat_length = 0u;
+static u32 g_usb_repeat_next_tick = 0u;
 #endif
 static u32 g_keyboard_scancode_set = INPUT64_KEYBOARD_SCANCODE_SET1;
 static u8 g_usb_hid_last_keys[6];
@@ -916,6 +929,10 @@ static u8 input64_keyboard_apply_modifiers(u8 value)
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     u8 shifted = input64_keyboard_shift_active();
 
+    if ((g_keyboard_ctrl != 0u) && (((value >= (u8)'a') && (value <= (u8)'z')) || ((value >= (u8)'A') && (value <= (u8)'Z'))))
+    {
+        return (u8)(value & 0x1Fu);
+    }
     if ((value >= (u8)'a') && (value <= (u8)'z'))
     {
         return ((shifted ^ g_keyboard_caps_lock) != 0u) ? (u8)(value - 32u) : value;
@@ -1105,6 +1122,10 @@ static void input64_keyboard_accept_set2_scancode(u8 scancode)
         {
             g_keyboard_right_shift = 0u;
         }
+        else if (scancode == 0x14u)
+        {
+            g_keyboard_ctrl = 0u;
+        }
 #endif
         return;
     }
@@ -1148,6 +1169,11 @@ static void input64_keyboard_accept_set2_scancode(u8 scancode)
     }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (scancode == 0x14u)
+    {
+        g_keyboard_ctrl = 1u;
+        return;
+    }
     if (scancode == 0x12u)
     {
         g_keyboard_left_shift = 1u;
@@ -1232,6 +1258,11 @@ static void input64_keyboard_accept_set1_scancode(u8 scancode)
     released = (scancode & 0x80u) != 0u ? 1u : 0u;
     scancode &= 0x7Fu;
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (scancode == 0x1Du)
+    {
+        g_keyboard_ctrl = (released == 0u) ? 1u : 0u;
+        return;
+    }
     if (scancode == 0x2Au)
     {
         g_keyboard_left_shift = (released == 0u) ? 1u : 0u;
@@ -1923,6 +1954,63 @@ void input64_handle_mouse_interrupt(void)
     input64_mouse_publish_diagnostics();
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Bytes a USB keycode produces: navigation keys become ANSI sequences like PS/2. */
+static u32 input64_usb_hid_key_action(u8 keycode, u8 *out)
+{
+    static const u8 keypad[16] = {
+        (u8)'/', (u8)'*', (u8)'-', (u8)'+', (u8)'\n', (u8)'1', (u8)'2', (u8)'3',
+        (u8)'4', (u8)'5', (u8)'6', (u8)'7', (u8)'8', (u8)'9', (u8)'0', (u8)'.'
+    };
+    u8 value;
+
+    switch (keycode)
+    {
+        case 0x4Fu: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'C'; return 3u;
+        case 0x50u: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'D'; return 3u;
+        case 0x51u: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'B'; return 3u;
+        case 0x52u: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'A'; return 3u;
+        case 0x4Au: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'H'; return 3u;
+        case 0x4Du: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'F'; return 3u;
+        case 0x4Cu: out[0] = 27u; out[1] = (u8)'['; out[2] = (u8)'3'; out[3] = (u8)'~'; return 4u;
+        case 0x29u: out[0] = 27u; return 1u;
+        default: break;
+    }
+    if ((keycode >= 0x54u) && (keycode <= 0x63u))
+    {
+        out[0] = keypad[keycode - 0x54u];
+        return 1u;
+    }
+    value = input64_usb_hid_translate_key(keycode);
+    if (value == 0u)
+    {
+        return 0u;
+    }
+    if ((g_keyboard_ctrl != 0u)
+        && (((value >= (u8)'a') && (value <= (u8)'z')) || ((value >= (u8)'A') && (value <= (u8)'Z'))))
+    {
+        value = (u8)(value & 0x1Fu);
+    }
+    out[0] = value;
+    return 1u;
+}
+
+void input64_keyboard_repeat_tick(void)
+{
+    u32 now = pit_get_ticks();
+
+    if ((g_usb_repeat_keycode == 0u)
+        || (g_usb_repeat_length == 0u)
+        || (display64_gui_settings_key_repeat() == 0u)
+        || ((s32)(now - g_usb_repeat_next_tick) < 0))
+    {
+        return;
+    }
+    input64_keyboard_enqueue_sequence(g_usb_repeat_bytes, g_usb_repeat_length);
+    g_usb_repeat_next_tick = now + INPUT64_REPEAT_RATE_TICKS;
+}
+#endif
+
 void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
 {
     u32 index;
@@ -1936,6 +2024,12 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
     g_usb_hid_last_modifier = report[0];
     g_keyboard_left_shift = ((report[0] & 0x02u) != 0u) ? 1u : 0u;
     g_keyboard_right_shift = ((report[0] & 0x20u) != 0u) ? 1u : 0u;
+    g_keyboard_ctrl = ((report[0] & 0x11u) != 0u) ? 1u : 0u;
+    if ((g_usb_repeat_keycode != 0u)
+        && (input64_usb_hid_key_was_down(&report[2], g_usb_repeat_keycode) == 0u))
+    {
+        g_usb_repeat_keycode = 0u;
+    }
 #endif
 
     for (index = 0u; index < 6u; ++index)
@@ -1958,11 +2052,33 @@ void input64_accept_usb_hid_boot_report(const u8 *report, u32 byte_count)
             continue;
         }
 #endif
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        {
+            u8 action[4];
+            u32 action_length = input64_usb_hid_key_action(keycode, action);
+
+            (void)translated;
+            if (action_length != 0u)
+            {
+                u32 copy;
+
+                input64_keyboard_enqueue_sequence(action, action_length);
+                for (copy = 0u; copy < action_length; ++copy)
+                {
+                    g_usb_repeat_bytes[copy] = action[copy];
+                }
+                g_usb_repeat_length = action_length;
+                g_usb_repeat_keycode = keycode;
+                g_usb_repeat_next_tick = pit_get_ticks() + INPUT64_REPEAT_DELAY_TICKS;
+            }
+        }
+#else
         translated = input64_usb_hid_translate_key(keycode);
         if (translated != 0u)
         {
             input64_keyboard_enqueue_byte(translated);
         }
+#endif
     }
 
     for (index = 0u; index < 6u; ++index)
