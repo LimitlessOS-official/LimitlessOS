@@ -87,7 +87,7 @@ The two x86_64 kernels come from the same sources; `LIMITLESS_X64_UEFI_KERNEL` a
 ### Boot flow (UEFI)
 
 1. `BOOTX64.EFI` finds GOP, reads `BOOTMAN.TXT`, loads `KERNEL64.BIN` into a 2 MiB buffer, and checks its byte count and `fnv1a-32` checksum (the manifest's `kernel-sha256` is for external verification).
-2. It places the kernel: at the linked physical `0x10000` if the whole 16 MiB window is free, otherwise in a 2 MiB-aligned fallback window (the normal case on OVMF and real firmware).
+2. It places the kernel: at the linked physical `0x10000` if the whole 32 MiB kernel window is free, otherwise in a 2 MiB-aligned fallback window (the normal case on OVMF and real firmware).
 3. It stages optional boot-media files (`/APPS/DYNLDLIMIT`, `/APPS/LDLIMIT`) into the stage area at the top of that window, discovers ACPI (RSDP/XSDT/MCFG/MADT/FADT/DSDT/SSDTs), and builds low handoff page tables. The first 64 KiB is identity-mapped for tables, boot-info, and trampoline; the rest of the low 16 MiB maps onto the kernel window, with a higher-half alias at `0xFFFFFFFF80000000`.
 4. It takes the final memory map, calls `ExitBootServices`, and jumps to `_start` (`entry.asm`), which clears `.bss` and calls `kernel_main64_scaffold()`.
 5. The kernel initializes GDT/TSS, IDT, APIC (or the PIC fallback), PIT, and syscalls; runs controlled fault and ring-3 probes; brings up xHCI, PCI/ECAM storage, the framebuffer, I2C HID, and input; runs the login gate; starts the desktop, network, and services; and enters the persistent ring-3 shell.
@@ -99,6 +99,7 @@ The two x86_64 kernels come from the same sources; `LIMITLESS_X64_UEFI_KERNEL` a
 | `0x0`–`0xFFFF` (identity) | Handoff page tables (`0x1000`), boot-info (`0x9000`), trampoline (`0xA000`), framebuffer PD (`0xB000`) |
 | `0x10000`–`__kernel_end` | Kernel `.text`, `.rodata`, `.data`, then `.bss` (starting no lower than `0x100000`; about 14.5 MB of static pools and buffers) |
 | `0xFC0000`–`0x1000000` | Boot-media stage area (contract in `kernel/include/boot_info.h`) |
+| `0xFFFFFFFF81000000`–`0xFFFFFFFF82000000` | Kernel window extension, higher half only: compositor back buffer (M199) |
 | `0x40020000` / `0x41000000` | Ring-3 shell stack top / user image base |
 | `0x52000000` | Link base for Linux persona test binaries |
 | `0xFFFFFFFF80000000+` | Higher-half kernel alias; MMIO windows are mapped above it on demand |
