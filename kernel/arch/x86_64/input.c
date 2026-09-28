@@ -1995,6 +1995,14 @@ static u32 input64_usb_hid_key_action(u8 keycode, u8 *out)
     return 1u;
 }
 
+void input64_keyboard_inject_text(const u8 *text, u32 byte_count)
+{
+    if (text != 0)
+    {
+        input64_keyboard_enqueue_sequence(text, byte_count);
+    }
+}
+
 void input64_keyboard_repeat_tick(void)
 {
     u32 now = pit_get_ticks();

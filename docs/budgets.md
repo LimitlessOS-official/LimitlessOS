@@ -21,7 +21,7 @@ Exact byte counts shift slightly with compiler version; the gcc 15-era builds re
 - **Hard limit:** 1024 sectors, set by the low-memory stack window the BIOS loader must not overrun. The build throws above 1024 and below a 96-sector reserve.
 - **Warning:** reserve below 128 sectors.
 - **Policy:** the BIOS kernel is a frozen, checksum-only fallback. New features go into the UEFI kernel only (the build excludes persona, Linux, networking, signing, identity, and installer sources from the BIOS link). The reserve has held at 101 sectors since M107 (June 2026).
-- **Where the bytes go:** `mmio.c` contributes about 186 KB of BIOS `.text` (the AHCI planning and denial chain), the scaffold unity build about 107 KB, `syscall.c` about 42 KB. Recovering the 128-sector warning line means splitting the AHCI planner so the BIOS lane compiles only what a BIOS/IDE boot can reach, while keeping the BIOS verifier's `mmio planner` assertions intact. That is tracked as a roadmap item, not a blocker.
+- **Where the bytes go:** `mmio.c` contributes about 186 KB of BIOS `.text` (the AHCI planning and denial chain), the scaffold unity build about 107 KB, `syscall.c` about 42 KB. Recovering the 128-sector warning line means splitting the AHCI planner so the BIOS lane compiles only what a BIOS/IDE boot can reach, while keeping the BIOS verifier's `mmio planner` assertions intact. That is tracked as a roadmap item, not a blocker. Link-time garbage collection does not help on this toolchain: `-ffunction-sections` with `ld --gc-sections` (with or without `-fdata-sections`, `-falign-functions=1`, or `SUBALIGN(1)`) produced a 500 KB BIOS kernel against 472 KB without it (M202).
 
 ## UEFI kernel file
 

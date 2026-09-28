@@ -460,6 +460,13 @@ static u32 g_display_terminal_selection_x = 0u;
 static u32 g_display_terminal_selection_y = 0u;
 static u32 g_display_terminal_selection_count = 0u;
 static u32 g_display_terminal_copy_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* PIT tick of the last copy; the "Copied" label shows for DISPLAY64_TERMINAL_COPIED_TICKS. */
+static u32 g_display_terminal_copy_tick = 0u;
+#define DISPLAY64_TERMINAL_COPIED_TICKS 300u
+/* A press and release closer than this (in pixels) is a click, not a selection. */
+#define DISPLAY64_TERMINAL_DRAG_MIN 4u
+#endif
 static u32 g_display_terminal_selection_bytes = 0u;
 static u32 g_display_terminal_copied_bytes = 0u;
 static u32 g_display_terminal_cursor_draw_count = 0u;
@@ -2378,22 +2385,138 @@ static u32 display64_terminal_selection_span_bytes(void)
     return bytes;
 }
 
+static struct display64_window *display64_wm_find_window(u32 handle);
+static void display64_wm_configure_console(struct display64_window *window);
+
+/*
+ * Copies the text under the selection. The terminal shows the tail of the
+ * replay history (minus the scrollback offset), wrapped at the viewport
+ * width, so screen rows map back to history bytes with the same wrap rule.
+ * Before M202 this copied the last N bytes of history regardless of where
+ * the selection was.
+ */
 static void display64_terminal_copy_selection(void)
 {
-    u32 bytes = display64_terminal_selection_span_bytes();
-    u32 start = (g_display_console_replay_count > bytes)
-        ? (g_display_console_replay_count - bytes)
+    struct display64_window *window = display64_wm_find_window(g_display_wm_shell_handle);
+    u32 advance = display64_font_advance();
+    u32 line = display64_line_advance();
+    u32 columns;
+    u32 visible_rows;
+    u32 render_count;
+    u32 total_rows = 0u;
+    u32 first_row;
+    u32 row;
+    u32 col;
+    u32 index;
+    u32 out = 0u;
+    u32 start_row;
+    u32 start_col;
+    u32 end_row;
+    u32 end_col;
+    u32 ax;
+    u32 ay;
+    u32 bx;
+    u32 by;
+
+    if ((window == 0) || (advance == 0u) || (line == 0u))
+    {
+        return;
+    }
+    display64_wm_configure_console(window);
+    columns = display64_console_viewport_width() / advance;
+    visible_rows = display64_console_viewport_height() / line;
+    if ((columns == 0u) || (visible_rows == 0u))
+    {
+        return;
+    }
+    render_count = (g_display_terminal_scroll_offset < g_display_console_replay_count)
+        ? (g_display_console_replay_count - g_display_terminal_scroll_offset)
         : 0u;
+
+    col = 0u;
+    for (index = 0u; index < render_count; ++index)
+    {
+        u8 value = display64_console_replay_byte_at(index);
+        if (value == (u8)'\n')
+        {
+            ++total_rows;
+            col = 0u;
+        }
+        else
+        {
+            if (col == columns)
+            {
+                ++total_rows;
+                col = 0u;
+            }
+            ++col;
+        }
+    }
+    ++total_rows;
+    first_row = (total_rows > visible_rows) ? (total_rows - visible_rows) : 0u;
+
+    ax = (g_display_terminal_selection_anchor_x > g_display_console_x) ? ((g_display_terminal_selection_anchor_x - g_display_console_x) / advance) : 0u;
+    ay = first_row + ((g_display_terminal_selection_anchor_y > g_display_console_y) ? ((g_display_terminal_selection_anchor_y - g_display_console_y) / line) : 0u);
+    bx = (g_display_terminal_selection_x > g_display_console_x) ? ((g_display_terminal_selection_x - g_display_console_x) / advance) : 0u;
+    by = first_row + ((g_display_terminal_selection_y > g_display_console_y) ? ((g_display_terminal_selection_y - g_display_console_y) / line) : 0u);
+    if ((ay < by) || ((ay == by) && (ax <= bx)))
+    {
+        start_row = ay; start_col = ax; end_row = by; end_col = bx;
+    }
+    else
+    {
+        start_row = by; start_col = bx; end_row = ay; end_col = ax;
+    }
+
+    row = 0u;
+    col = 0u;
+    for (index = 0u; (index < render_count) && (out < DISPLAY64_TERMINAL_SELECTION_BYTES); ++index)
+    {
+        u8 value = display64_console_replay_byte_at(index);
+        u32 inside;
+
+        if (value == (u8)'\n')
+        {
+            if ((row >= start_row) && (row < end_row))
+            {
+                g_display_terminal_selection_buffer[out++] = (u8)'\n';
+            }
+            ++row;
+            col = 0u;
+            continue;
+        }
+        if (col == columns)
+        {
+            ++row;
+            col = 0u;
+        }
+        inside = (((row > start_row) || ((row == start_row) && (col >= start_col)))
+            && ((row < end_row) || ((row == end_row) && (col <= end_col)))) ? 1u : 0u;
+        if ((inside != 0u) && (value >= 0x20u) && (value < 0x7Fu))
+        {
+            g_display_terminal_selection_buffer[out++] = value;
+        }
+        ++col;
+    }
+
+    g_display_terminal_selection_bytes = out;
+    g_display_terminal_copied_bytes = out;
+    g_display_terminal_copy_tick = pit_get_ticks();
+    ++g_display_terminal_copy_count;
+}
+
+/* Ctrl+V in the terminal types the copied text; newlines become spaces so a paste never runs a command. */
+static void display64_terminal_paste(void)
+{
+    u8 text[DISPLAY64_TERMINAL_SELECTION_BYTES];
     u32 index;
 
-    for (index = 0u; index < bytes; ++index)
+    for (index = 0u; index < g_display_terminal_copied_bytes; ++index)
     {
-        g_display_terminal_selection_buffer[index] =
-            display64_console_replay_byte_at(start + index);
+        u8 value = g_display_terminal_selection_buffer[index];
+        text[index] = ((value == (u8)'\n') || (value == (u8)'\r')) ? (u8)' ' : value;
     }
-    g_display_terminal_selection_bytes = bytes;
-    g_display_terminal_copied_bytes = bytes;
-    ++g_display_terminal_copy_count;
+    input64_keyboard_inject_text(text, g_display_terminal_copied_bytes);
 }
 
 static u32 display64_terminal_point_in_content(const struct display64_window *window, u32 x, u32 y)
@@ -2447,7 +2570,18 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
             DISPLAY64_FONT_TRANSPARENT);
     }
 
-    if ((g_display_terminal_selection_active != 0u) || (g_display_terminal_copied_bytes != 0u))
+    if ((g_display_terminal_copied_bytes != 0u)
+        && ((pit_get_ticks() - g_display_terminal_copy_tick) < DISPLAY64_TERMINAL_COPIED_TICKS))
+    {
+        (void)display64_draw_font_text(
+            (badge_x > (window->x + 64u)) ? (badge_x - 56u) : badge_x,
+            badge_y + 5u,
+            "Copied",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_APP_TERMINAL,
+            DISPLAY64_FONT_TRANSPARENT);
+    }
+    if (g_display_terminal_selection_active != 0u)
     {
         selection_x = display64_min_u32(g_display_terminal_selection_anchor_x, g_display_terminal_selection_x);
         selection_y = display64_min_u32(g_display_terminal_selection_anchor_y, g_display_terminal_selection_y);
@@ -2463,13 +2597,6 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
         display64_compositor_fill_rect(selection_x, selection_y + selection_h - 1u, selection_w, 1u, DISPLAY64_RGB_HIGHLIGHT);
         display64_compositor_fill_rect(selection_x, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
         display64_compositor_fill_rect(selection_x + selection_w - 1u, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
-        (void)display64_draw_font_text(
-            (badge_x > (window->x + 64u)) ? (badge_x - 56u) : badge_x,
-            badge_y + 5u,
-            "Copied",
-            DISPLAY64_FONT_SMALL,
-            DISPLAY64_RGB_APP_TERMINAL,
-            DISPLAY64_FONT_TRANSPARENT);
     }
 
     display64_compositor_fill_rect(
@@ -8228,7 +8355,15 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         }
         if (released != 0u)
         {
-            display64_terminal_copy_selection();
+            u32 drag_x = (x > g_display_terminal_selection_anchor_x) ? (x - g_display_terminal_selection_anchor_x) : (g_display_terminal_selection_anchor_x - x);
+            u32 drag_y = (y > g_display_terminal_selection_anchor_y) ? (y - g_display_terminal_selection_anchor_y) : (g_display_terminal_selection_anchor_y - y);
+
+            g_display_terminal_selection_x = x;
+            g_display_terminal_selection_y = y;
+            if ((drag_x + drag_y) >= DISPLAY64_TERMINAL_DRAG_MIN)
+            {
+                display64_terminal_copy_selection();
+            }
             g_display_terminal_selection_active = 0u;
             ++g_display_terminal_action_count;
             display64_desktop_redraw();
@@ -9008,6 +9143,11 @@ u32 display64_wm_process_keyboard_event(u8 value)
     {
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
         g_display_key_escape_state = 0u;
+        if ((value == 0x16u) && (g_display_terminal_copied_bytes != 0u))
+        {
+            display64_terminal_paste();
+            return 0u;
+        }
 #endif
         display64_gui_record_unfocused_keyboard_denial(focused_handle);
         return 1u;
