@@ -66,6 +66,12 @@ static u8 g_shell64_pair[SHELL64_MAX_PATH_BYTES * 2u];
 static u8 g_shell64_io[SHELL64_IO_BYTES];
 static u8 g_shell64_stat[64u];
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Working directory for relative paths: uppercase, no leading or trailing '/', empty at the root. */
+static u8 g_shell64_cwd[SHELL64_MAX_PATH_BYTES];
+static u32 g_shell64_cwd_length = 0u;
+static u8 g_shell64_resolve[SHELL64_MAX_PATH_BYTES];
+#endif
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 static u32 g_shell64_redirect_active = 0u;
 static u32 g_shell64_redirect_capability = FS64_INVALID_HANDLE;
 static u32 g_shell64_redirect_offset = 0u;
@@ -465,10 +471,10 @@ static u32 shell64_write_builtins_line(u32 console_capability_handle, u32 owner_
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
     if (shell64_login_available() != 0u)
     {
-        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
+        return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps cd clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
     }
 
-    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
+    return shell64_write_text(console_capability_handle, owner_id, "Builtins: apps cd clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami\n");
 #else
     if (shell64_login_available() != 0u)
     {
@@ -3173,10 +3179,97 @@ static u32 shell64_open_product_app(
 }
 #endif
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Joins the working directory with a relative path, applying "." and "..".
+ * Writes an uppercase path without a leading '/', or "/" for the root.
+ */
+static u32 shell64_resolve_relative(const u8 *base, u32 base_length, const u8 *path, u32 path_length, u8 *destination)
+{
+    u32 out = 0u;
+    u32 index = 0u;
+
+    if (base_length >= SHELL64_MAX_PATH_BYTES)
+    {
+        return 0u;
+    }
+    for (out = 0u; out < base_length; ++out)
+    {
+        destination[out] = base[out];
+    }
+    while (index < path_length)
+    {
+        u32 start;
+        u32 length;
+
+        while ((index < path_length) && (path[index] == (u8)'/'))
+        {
+            ++index;
+        }
+        start = index;
+        while ((index < path_length) && (path[index] != (u8)'/'))
+        {
+            ++index;
+        }
+        length = index - start;
+        if ((length == 0u) || ((length == 1u) && (path[start] == (u8)'.')))
+        {
+            continue;
+        }
+        if ((length == 2u) && (path[start] == (u8)'.') && (path[start + 1u] == (u8)'.'))
+        {
+            while ((out > 0u) && (destination[out - 1u] != (u8)'/'))
+            {
+                --out;
+            }
+            if (out > 0u)
+            {
+                --out;
+            }
+            continue;
+        }
+        if ((out + (out != 0u ? 1u : 0u) + length) >= SHELL64_MAX_PATH_BYTES)
+        {
+            return 0u;
+        }
+        if (out != 0u)
+        {
+            destination[out++] = (u8)'/';
+        }
+        while (length > 0u)
+        {
+            destination[out++] = shell64_upper(path[start]);
+            ++start;
+            --length;
+        }
+    }
+    if (out == 0u)
+    {
+        destination[0] = (u8)'/';
+        return 1u;
+    }
+    return out;
+}
+#endif
+
 static u32 shell64_normalize_path(u32 token_start, u32 token_length, u8 *destination)
 {
     u32 source_index = token_start;
     u32 copy_index;
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if ((token_length != 0u)
+        && (g_shell64_line[token_start] != (u8)'/')
+        && ((g_shell64_cwd_length != 0u) || (g_shell64_line[token_start] == (u8)'.')))
+    {
+        return shell64_resolve_relative(
+            g_shell64_cwd,
+            g_shell64_cwd_length,
+            &g_shell64_line[token_start],
+            token_length,
+            destination);
+    }
+#endif
 
     while ((token_length > 1u) && (g_shell64_line[source_index] == (u8)'/'))
     {
@@ -4309,6 +4402,8 @@ static u32 shell64_read_file(
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 shell64_list_fat_directory(u32 console_capability_handle, u32 path_length, u32 owner_id, u32 entry_type);
+
 static u32 shell64_list_fat_path(
     u32 console_capability_handle,
     u32 token_start,
@@ -4316,12 +4411,8 @@ static u32 shell64_list_fat_path(
     u32 owner_id,
     u32 *handled)
 {
-    mmio64_nvme_fat_dirent_t entry;
     mmio64_nvme_fat_stat_t stat;
     u32 path_length;
-    u32 cursor = 0u;
-    u32 result;
-    u32 entries = 0u;
 
     if (handled == 0)
     {
@@ -4359,7 +4450,18 @@ static u32 shell64_list_fat_path(
         (void)shell64_write_text(console_capability_handle, owner_id, "\n");
         return 1u;
     }
-    if (stat.entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
+    return shell64_list_fat_directory(console_capability_handle, path_length, owner_id, stat.entry_type);
+}
+
+/* Lists the directory already resolved into g_shell64_path_b. */
+static u32 shell64_list_fat_directory(u32 console_capability_handle, u32 path_length, u32 owner_id, u32 entry_type)
+{
+    mmio64_nvme_fat_dirent_t entry;
+    u32 cursor = 0u;
+    u32 result;
+    u32 entries = 0u;
+
+    if (entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY)
     {
         return shell64_write_text(console_capability_handle, owner_id, "list failed\n");
     }
@@ -4507,7 +4609,7 @@ static u32 shell64_list_apps(
     }
     (void)shell64_write_text(console_capability_handle, owner_id, "Installer dry-run: validation tools only; writes disabled\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Unavailable in M21:\n");
-    (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nECHO\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
+    (void)shell64_write_text(console_capability_handle, owner_id, "ASK (not AI)\nAliases: SAY SHOW LIST MAKE PUT SWAP SHIFT\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Personal login\nEnterprise login\nAccount linking\nReal cloud storage\nEncrypted secret storage\nEncrypted identity transport\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Security key login\nCredential transport\nToken storage\nEnterprise policy\n");
     (void)shell64_write_text(console_capability_handle, owner_id, "Cloud sync\nAutomatic cloud transfers\nGeneral sockets\nServer sockets\nRaw packet APIs\nArbitrary network transfers\nAI cloud access\nAI inference backend\nAI autonomous actions\nAI automation\nCloud AI\nAI-assisted setup\n");
@@ -5032,8 +5134,14 @@ static u32 shell64_execute_line_inner(
         || shell64_token_equals(command_start, command_length, "poweroff"))
     {
         (void)shell64_write_text(console_capability_handle, owner_id, "powering off...\n");
-        power64_shutdown();
-        return shell64_write_text(console_capability_handle, owner_id, "shutdown: ACPI power-off unavailable; it is safe to turn the machine off\n");
+        u32 reason = power64_shutdown();
+
+        shell64_write_decimal_field(
+            console_capability_handle,
+            owner_id,
+            "shutdown: ACPI power-off failed (reason ",
+            reason);
+        return shell64_write_text(console_capability_handle, owner_id, "); it is safe to turn the machine off\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "exit")
@@ -5045,8 +5153,57 @@ static u32 shell64_execute_line_inner(
 
     if (shell64_token_equals(command_start, command_length, "pwd"))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        (void)shell64_write_text(console_capability_handle, owner_id, "/");
+        if (g_shell64_cwd_length != 0u)
+        {
+            (void)shell64_write(console_capability_handle, owner_id, g_shell64_cwd, g_shell64_cwd_length);
+        }
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
+#else
         return shell64_write_text(console_capability_handle, owner_id, "/\n");
+#endif
     }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (shell64_token_equals(command_start, command_length, "cd"))
+    {
+        mmio64_nvme_fat_stat_t stat;
+        u32 resolved_length;
+        u32 index;
+
+        first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+        if ((first_length == 0u) || ((first_length == 1u) && (g_shell64_line[first_start] == (u8)'/')))
+        {
+            g_shell64_cwd_length = 0u;
+            return 1u;
+        }
+        /* Absolute paths resolve from the root, relative ones from the working directory. */
+        resolved_length = shell64_resolve_relative(
+            g_shell64_cwd,
+            (g_shell64_line[first_start] == (u8)'/') ? 0u : g_shell64_cwd_length,
+            &g_shell64_line[first_start],
+            first_length,
+            g_shell64_resolve);
+        if ((resolved_length == 1u) && (g_shell64_resolve[0] == (u8)'/'))
+        {
+            g_shell64_cwd_length = 0u;
+            return 1u;
+        }
+        if ((resolved_length == 0u)
+            || (mmio64_nvme_fat_shell_stat_path(g_shell64_resolve, resolved_length, owner_id, &stat) == 0u)
+            || (stat.entry_type != MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
+        {
+            return shell64_write_text(console_capability_handle, owner_id, "cd: no such directory\n");
+        }
+        for (index = 0u; index < resolved_length; ++index)
+        {
+            g_shell64_cwd[index] = g_shell64_resolve[index];
+        }
+        g_shell64_cwd_length = resolved_length;
+        return 1u;
+    }
+#endif
 
     if (shell64_token_equals(command_start, command_length, "apps"))
     {
@@ -5191,6 +5348,22 @@ static u32 shell64_execute_line_inner(
     if (shell64_token_equals(command_start, command_length, "ls"))
     {
         first_length = shell64_next_token(&cursor, line_byte_count, &first_start);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        if ((first_length == 0u) && (g_shell64_cwd_length != 0u))
+        {
+            u32 index;
+
+            for (index = 0u; index < g_shell64_cwd_length; ++index)
+            {
+                g_shell64_path_b[index] = g_shell64_cwd[index];
+            }
+            return shell64_list_fat_directory(
+                console_capability_handle,
+                g_shell64_cwd_length,
+                owner_id,
+                MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY);
+        }
+#endif
         if ((first_length != 0u) && shell64_token_is_apps_path(first_start, first_length))
         {
             return shell64_list_apps(console_capability_handle, root_capability_handle, owner_id);

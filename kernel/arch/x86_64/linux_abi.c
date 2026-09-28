@@ -2020,6 +2020,13 @@ static void linux_abi64_sync_persona_brk(u32 pid, u64 brk_value)
     context->brk_current = brk_value;
 }
 
+static u64 linux_abi64_uname_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+static u64 linux_abi64_getuid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+static u64 linux_abi64_getgid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+static u64 linux_abi64_getegid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+static u64 linux_abi64_gettimeofday_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+static u64 linux_abi64_time_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip);
+
 void linux_abi64_init(void)
 {
     u32 index;
@@ -2070,6 +2077,12 @@ void linux_abi64_init(void)
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETPID] = linux_abi64_getpid_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETEUID] = linux_abi64_geteuid_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETPPID] = linux_abi64_getppid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_UNAME] = linux_abi64_uname_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETUID] = linux_abi64_getuid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETGID] = linux_abi64_getgid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETEGID] = linux_abi64_getegid_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_GETTIMEOFDAY] = linux_abi64_gettimeofday_dispatch;
+    g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_TIME] = linux_abi64_time_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_CLONE] = linux_abi64_clone_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_FORK] = linux_abi64_fork_dispatch;
     g_linux_abi64_dispatch_table[LINUX_ABI64_SYSCALL_EXECVE] = linux_abi64_execve_dispatch;
@@ -7071,6 +7084,170 @@ static u32 linux_abi64_clock_supported(u64 clock_id)
         || (clock_id == (u64)LINUX_ABI64_CLOCK_BOOTTIME))
         ? 1u
         : 0u;
+}
+
+/*
+ * Identity and time syscalls that common Linux programs call at startup:
+ * uname, getuid/getgid/getegid (the fixed persona identity), gettimeofday,
+ * and time. Wall-clock values come from the CMOS RTC when it is readable.
+ */
+static u32 linux_abi64_simple_persona_ready(u32 pid)
+{
+    return ((pid != PROCESS64_INVALID_PID)
+        && (process64_principal(pid) != 0u)
+        && (persona64_type(pid) == PERSONA64_TYPE_LINUX_ELF))
+        ? 1u
+        : 0u;
+}
+
+static u64 linux_abi64_simple_result(u32 pid, u32 syscall_number, u64 result, u64 rip)
+{
+    (void)persona_audit64_record(
+        pid,
+        PERSONA_AUDIT64_EVENT_SYSCALL_TRANSLATED,
+        (u16)syscall_number,
+        ((result & 0x8000000000000000ull) != 0ull) ? (u32)(0ull - result) : PERSONA_AUDIT64_RESULT_OK,
+        rip);
+    return result;
+}
+
+static void linux_abi64_wall_clock(u64 *seconds, u64 *nanoseconds)
+{
+    u32 frequency = linux_abi64_effective_tick_frequency();
+    u32 ticks = pit_get_ticks();
+
+    if (rtc64_available() != 0u)
+    {
+        *seconds = rtc64_now_epoch_seconds();
+        *nanoseconds = (u64)rtc64_now_subsecond_nanoseconds();
+        return;
+    }
+    *seconds = (u64)(ticks / frequency);
+    *nanoseconds = ((u64)(ticks % frequency) * 1000000000ull) / (u64)frequency;
+}
+
+static void linux_abi64_uts_field(u8 *uts, u32 field, const char *text)
+{
+    u32 index;
+
+    for (index = 0u; (text[index] != '\0') && (index < (LINUX_ABI64_UTSNAME_FIELD_BYTES - 1u)); ++index)
+    {
+        uts[(field * LINUX_ABI64_UTSNAME_FIELD_BYTES) + index] = (u8)text[index];
+    }
+}
+
+static u64 linux_abi64_uname_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    u8 uts[LINUX_ABI64_UTSNAME_BYTES];
+    u32 index;
+
+    (void)rsi;
+    (void)rdx;
+    (void)r10;
+    (void)r8;
+    (void)r9;
+    if (linux_abi64_simple_persona_ready(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+    if (linux_abi64_user_buffer_writable(pid, rdi, LINUX_ABI64_UTSNAME_BYTES) == 0u)
+    {
+        return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_UNAME, LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT), rip);
+    }
+    for (index = 0u; index < LINUX_ABI64_UTSNAME_BYTES; ++index)
+    {
+        uts[index] = 0u;
+    }
+    /* sysname stays "Linux" because programs branch on it; the rest names LimitlessOS. */
+    linux_abi64_uts_field(uts, 0u, "Linux");
+    linux_abi64_uts_field(uts, 1u, "limitless");
+    linux_abi64_uts_field(uts, 2u, "6.1.0-limitlessos");
+    linux_abi64_uts_field(uts, 3u, "#1 LimitlessOS Linux persona");
+    linux_abi64_uts_field(uts, 4u, "x86_64");
+    linux_abi64_uts_field(uts, 5u, "(none)");
+    linux_abi64_copy_to_user(rdi, uts, LINUX_ABI64_UTSNAME_BYTES);
+    return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_UNAME, 0ull, rip);
+}
+
+static u64 linux_abi64_fixed_id(u32 pid, u32 syscall_number, u32 value, u64 rip)
+{
+    if (linux_abi64_simple_persona_ready(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+    return linux_abi64_simple_result(pid, syscall_number, (u64)value, rip);
+}
+
+static u64 linux_abi64_getuid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    (void)rdi; (void)rsi; (void)rdx; (void)r10; (void)r8; (void)r9;
+    return linux_abi64_fixed_id(pid, LINUX_ABI64_SYSCALL_GETUID, LINUX_ABI64_FIXED_UID, rip);
+}
+
+static u64 linux_abi64_getgid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    (void)rdi; (void)rsi; (void)rdx; (void)r10; (void)r8; (void)r9;
+    return linux_abi64_fixed_id(pid, LINUX_ABI64_SYSCALL_GETGID, LINUX_ABI64_FIXED_GID, rip);
+}
+
+static u64 linux_abi64_getegid_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    (void)rdi; (void)rsi; (void)rdx; (void)r10; (void)r8; (void)r9;
+    return linux_abi64_fixed_id(pid, LINUX_ABI64_SYSCALL_GETEGID, LINUX_ABI64_FIXED_GID, rip);
+}
+
+static u64 linux_abi64_gettimeofday_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    u64 timeval[2];
+    u64 zero_tz = 0ull;
+    u64 seconds;
+    u64 nanoseconds;
+
+    (void)rdx; (void)r10; (void)r8; (void)r9;
+    if (linux_abi64_simple_persona_ready(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+    if (((rdi != 0ull) && (linux_abi64_user_buffer_writable(pid, rdi, LINUX_ABI64_TIMEVAL_BYTES) == 0u))
+        || ((rsi != 0ull) && (linux_abi64_user_buffer_writable(pid, rsi, 8u) == 0u)))
+    {
+        return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_GETTIMEOFDAY, LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT), rip);
+    }
+    linux_abi64_wall_clock(&seconds, &nanoseconds);
+    timeval[0] = seconds;
+    timeval[1] = nanoseconds / 1000ull;
+    if (rdi != 0ull)
+    {
+        linux_abi64_copy_to_user(rdi, (const u8 *)timeval, LINUX_ABI64_TIMEVAL_BYTES);
+    }
+    if (rsi != 0ull)
+    {
+        /* struct timezone: UTC, no DST. */
+        linux_abi64_copy_to_user(rsi, (const u8 *)&zero_tz, 8u);
+    }
+    return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_GETTIMEOFDAY, 0ull, rip);
+}
+
+static u64 linux_abi64_time_dispatch(u32 pid, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9, u64 rip)
+{
+    u64 seconds;
+    u64 nanoseconds;
+
+    (void)rsi; (void)rdx; (void)r10; (void)r8; (void)r9;
+    if (linux_abi64_simple_persona_ready(pid) == 0u)
+    {
+        return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_ESRCH);
+    }
+    if ((rdi != 0ull) && (linux_abi64_user_buffer_writable(pid, rdi, 8u) == 0u))
+    {
+        return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_TIME, LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT), rip);
+    }
+    linux_abi64_wall_clock(&seconds, &nanoseconds);
+    if (rdi != 0ull)
+    {
+        linux_abi64_copy_to_user(rdi, (const u8 *)&seconds, 8u);
+    }
+    return linux_abi64_simple_result(pid, LINUX_ABI64_SYSCALL_TIME, seconds, rip);
 }
 
 u64 linux_abi64_sys_clock_gettime(u32 pid, u64 clock_id, u64 user_timespec, u64 rip)

@@ -121,7 +121,7 @@ static u32 power64_find_s5(u32 *slp_typ_a, u32 *slp_typ_b)
     return 0u;
 }
 
-void power64_shutdown(void)
+u32 power64_shutdown(void)
 {
     const volatile u8 *fadt;
     u32 fadt_bytes = pci64_acpi_fadt_bytes();
@@ -130,23 +130,31 @@ void power64_shutdown(void)
     u32 slp_typ_a = 0u;
     u32 slp_typ_b = 0u;
 
-    cpu_cli();
-    fadt = power64_map(pci64_acpi_fadt(), fadt_bytes);
-    if ((fadt == 0) || (fadt_bytes < (POWER64_FADT_PM1B_CNT + 4u)))
+    if ((pci64_acpi_fadt() == 0ull) || (fadt_bytes < (POWER64_FADT_PM1B_CNT + 4u)))
     {
-        return;
+        return 1u;
+    }
+    fadt = power64_map(pci64_acpi_fadt(), fadt_bytes);
+    if (fadt == 0)
+    {
+        return 5u;
     }
     pm1a = power64_load_u32(fadt, POWER64_FADT_PM1A_CNT);
     pm1b = power64_load_u32(fadt, POWER64_FADT_PM1B_CNT);
-    if ((pm1a == 0u) || (pm1a > 0xFFFFu) || (power64_find_s5(&slp_typ_a, &slp_typ_b) == 0u))
+    if ((pm1a == 0u) || (pm1a > 0xFFFFu))
     {
-        return;
+        return 2u;
+    }
+    if (power64_find_s5(&slp_typ_a, &slp_typ_b) == 0u)
+    {
+        return 3u;
     }
     power64_outw((u16)pm1a, (u16)(((slp_typ_a & 7u) << 10) | POWER64_SLP_EN));
     if ((pm1b != 0u) && (pm1b <= 0xFFFFu))
     {
         power64_outw((u16)pm1b, (u16)(((slp_typ_b & 7u) << 10) | POWER64_SLP_EN));
     }
+    return 4u;
 }
 
 void power64_reboot(void)
@@ -155,7 +163,6 @@ void power64_reboot(void)
     u32 fadt_bytes = pci64_acpi_fadt_bytes();
     u32 spin;
 
-    cpu_cli();
     fadt = power64_map(pci64_acpi_fadt(), fadt_bytes);
     if ((fadt != 0) && (fadt_bytes > POWER64_FADT_RESET_VALUE)
         && ((power64_load_u32(fadt, POWER64_FADT_FLAGS) & POWER64_FADT_FLAG_RESET_REG_SUP) != 0u)

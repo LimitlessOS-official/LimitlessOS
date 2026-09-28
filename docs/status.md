@@ -1,8 +1,21 @@
 # LimitlessOS Status
 
-Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [history/status-log.md](history/status-log.md).
+Last updated: 2026-09-28. Milestone narratives for M1–M192 are archived in [history/status-log.md](history/status-log.md).
 
 ## Current milestone
+
+### M201: Full verifier sweep, real clock, shell basics, power control
+
+Every `tools/verify-*.ps1` script plus the ISO, x86, and e1000e QEMU lanes was run. The failures and the gaps found along the way were fixed:
+
+- **Wall clock.** New CMOS RTC driver (`rtc.c`). The status bar shows the date and time and the taskbar shows `HH:MM` (UTC, as the firmware keeps it), refreshed each minute from the shell's input wait. Linux `CLOCK_REALTIME`, `gettimeofday`, and `time` return Unix time; before, "real time" was seconds since boot.
+- **Shell.** New builtins: `cd` (with `.` and `..`; `pwd` and bare `ls` follow it), `echo` (also `echo text > file`), `clear`, `date`, `uptime`, `whoami`, `reboot`, and `shutdown`. Unknown commands are named (`unknown command: foo (type help)`) instead of the fixed `unknown: help`, and `exit` explains how to leave the session.
+- **Power.** New `power.c`: `shutdown` enters ACPI S5 through PM1a/PM1b_CNT with the `_S5_` sleep type read from the DSDT; `reboot` tries the FADT reset register, then port `0xCF9`, then the keyboard controller.
+- **Randomness.** Linux `getrandom` was seeded from a constant and the tick count, and replaced every zero byte (biased output). It now draws from a shared kernel entropy pool (`entropy.c`: RDRAND when present, the TSC, and login keystroke timing), which also produces the login salts.
+- **Linux persona.** Added `uname`, `getuid`, `getgid`, `getegid`, `gettimeofday`, and `time`, which common programs call at startup.
+- **PCI config reads after an ACPI table mapping.** All kernel MMIO windows share one page table, so mapping the ACPI tables (the I2C HID touchpad search does this) replaced the page entries PCI ECAM had cached for its bus; later config reads could return ACPI table bytes. Small QEMU tables hid this; large laptop DSDTs would not. Paging now counts mappings and PCI remaps ECAM when the count changed. A separate page table per window is still the proper fix.
+- **Boot-time GUI probe.** Every UEFI boot waited up to 60 s of PIT time in a desktop input probe before starting the shell. It now ends when every probe step is seen, 20 s after the last input, or 30 s after boot with no input at all.
+- **Tooling fixes.** The installer (`installer-common.ps1`) hashed with `Get-FileHash`, which does not load in Windows PowerShell started from PowerShell 7, so M5 and the M9 dry-run parser failed; it now hashes through .NET. `verify-boot-media-linux-handoff` left its deliberately invalid payloads staged in `dist/`, which broke every later UEFI run until a rebuild; it now restores the normal image. `verify-nvme-persistence` waited for a login prompt that first-run setup never shows. M8, M9, M16, and M17 patterns had drifted from the current help and `pkginfo` wording. The Settings export click scrolls to the top first so a lost wheel notch cannot shift the row.
 
 ### M200: Login echo, per-account password salts, desktop cleanup, and the plain UEFI gate
 
@@ -119,7 +132,8 @@ Verified under QEMU/OVMF by `verify-qemu.ps1` unless marked otherwise.
 - **Boot:** UEFI USB image and ISO; `BOOTX64.EFI` verifies `KERNEL64.BIN` against `BOOTMAN.TXT`, exits boot services, and enters the higher-half kernel. BIOS disk boot of the fallback kernel.
 - **Session:** first-run setup, bcrypt login (`/USERDB.TXT` on NVMe), 3-strike lockout, lock/unlock.
 - **Desktop:** compositor, window manager (focus, drag, resize, close), Terminal, File Manager, Settings, Installer (dry-run), Assistant (consent-scoped status and action templates; no model backend).
-- **Shell builtins (UEFI):** `apps devices dev hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd usbscan`. BIOS fallback: `apps help hwval info linux net pkginfo pwd`, with `linux` and `lock` reporting unavailable.
+- **Desktop clock:** date and time from the CMOS RTC (UTC) in the status bar and taskbar.
+- **Shell builtins (UEFI):** `apps cd clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami`. BIOS fallback: `apps help hwval info linux net pkginfo pwd`, with `linux` and `lock` reporting unavailable.
 - **Native apps:** `append cat copy delete ls mkdir move nethello rename stat touch write` (signed `.APP` descriptors plus flat binaries in `/APPS`).
 - **Linux persona:** static and dynamic musl binaries; see [real-binary-gate.md](real-binary-gate.md).
 - **Storage:** NVMe FAT32 read/write with scoped write and commit authority, proven across two boots by `verify-nvme-persistence.ps1`.

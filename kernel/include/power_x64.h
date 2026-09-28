@@ -10,6 +10,10 @@
  * type from the DSDT. Both return only when every method failed.
  */
 void power64_reboot(void);
-void power64_shutdown(void);
+/*
+ * Returns only on failure: 1 firmware passed no FADT, 2 no PM1a_CNT, 3 no _S5_
+ * in the DSDT, 4 the write did not power off, 5 the FADT could not be mapped.
+ */
+u32 power64_shutdown(void);
 
 #endif

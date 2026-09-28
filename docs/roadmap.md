@@ -27,6 +27,8 @@ Ordered by what unblocks the most. Each follows [development.md](development.md#
 5. **Reproducible fixtures.** Recover or rewrite the `LDLIMIT` interpreter source, and add a script that rebuilds every `fixtures/linux/` program into `external/build/` with recorded command lines and SHA-256 values.
 6. **Physical memory allocator.** Replace the static pools (8 process roots, fixed pipe and persona tables) with a frame allocator sized from the firmware memory map, keeping the low-window contract in `boot_info.h`.
 7. **Wired Ethernet on physical hardware**, before Wi-Fi.
+8. **One page table per kernel MMIO window.** Every PD slot in the `0xFFFFFFFF90000000` range points at the same page table, so windows alias by page index (the ACPI table window at `0x90220000` shares entries with PCI ECAM, and a DSDT larger than about 900 KB would reach the NVMe window). M201 makes PCI ECAM remap after any other mapping; the structural fix gives each 2 MiB region its own table in the per-process root block.
+9. **Time zones.** The clock shows UTC as the firmware keeps it; add a zone setting in Settings.
 
 ## Structural work
 

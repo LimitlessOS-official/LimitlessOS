@@ -314,7 +314,7 @@ function Assert-X64M1RuntimeSurface
     }
 
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami$' -Message "M10 runtime help did not label authenticated shell builtins."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps cd clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami$' -Message "M10 runtime help did not label authenticated shell builtins."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
@@ -1194,7 +1194,12 @@ function Send-QemuKeyboardProbe
             "date",
             "uptime",
             "echo echo round trip ok",
-            "frobnicate"
+            "frobnicate",
+            "mkdir cdtest",
+            "cd cdtest",
+            "pwd",
+            "cd ..",
+            "cd nowhere"
         )
         if ($LoginProbeEnabled) {
             $shellTextLines += @(
@@ -1204,7 +1209,13 @@ function Send-QemuKeyboardProbe
         }
         $shellTextLines += @(
             "write w.txt ok",
-            "cat w.txt"
+            "cat w.txt",
+            "copy w.txt w2.txt",
+            "cat w2.txt",
+            "rename w2.txt w3.txt",
+            "cat w3.txt",
+            "delete w3.txt",
+            "cat w3.txt"
         )
         foreach ($shellTextLine in $shellTextLines) {
             if (-not [string]::IsNullOrWhiteSpace($shellTextLine)) {
@@ -3350,6 +3361,9 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '^up [0-9]+h [0-9]+m [0-9]+s$' -Message "x64 Product uptime command output was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '^echo round trip ok$' -Message "x64 Product echo command output was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '^unknown command: frobnicate \(type help\)$' -Message "x64 Product shell did not name an unknown command."
+        Assert-OutputContains -Lines $outputLines -Pattern '^/CDTEST$' -Message "x64 Product cd/pwd did not track the working directory."
+        Assert-OutputContains -Lines $outputLines -Pattern '^cd: no such directory$' -Message "x64 Product cd did not reject a missing directory."
+        Assert-OutputContains -Lines $outputLines -Pattern '^not found$' -Message "x64 Product copy/rename/delete round trip did not end with the file removed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }
