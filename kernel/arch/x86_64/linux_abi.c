@@ -1,4 +1,5 @@
 #include "linux_abi_x64.h"
+#include "entropy_x64.h"
 
 #include "elf64_x64.h"
 #include "fd_x64.h"
@@ -10874,23 +10875,6 @@ static u64 linux_abi64_entropy_mix64(u64 state, u64 value)
     return state;
 }
 
-static u64 linux_abi64_entropy_next64(u64 *state)
-{
-    u64 value;
-
-    if ((state == 0) || (*state == 0ull))
-    {
-        return 0xA5A5A5A55A5A5A5Aull;
-    }
-
-    value = *state;
-    value ^= value >> 12;
-    value ^= value << 25;
-    value ^= value >> 27;
-    *state = value;
-    return value * 0x2545F4914F6CDD1Dull;
-}
-
 static u64 linux_abi64_getrandom_seed(u32 pid, u64 user_buffer, u32 byte_count, u32 flags, u64 rip)
 {
     u64 seed = g_linux_abi64_getrandom_state;
@@ -10995,20 +10979,18 @@ u64 linux_abi64_sys_getrandom(u32 pid, u64 user_buffer, u64 byte_count, u64 flag
         return LINUX_ABI64_ERROR_RETURN(LINUX_ABI64_EFAULT);
     }
 
+    /* Per-call context is stirred into the kernel pool, which also mixes RDRAND and the TSC. */
     state = linux_abi64_getrandom_seed(pid, user_buffer, actual_count, flags32, rip);
+    entropy64_stir(state);
     for (index = 0u; index < actual_count; ++index)
     {
         u8 byte;
 
         if ((index & 7u) == 0u)
         {
-            word = linux_abi64_entropy_next64(&state);
+            word = entropy64_next_u64();
         }
         byte = (u8)(word >> ((index & 7u) * 8u));
-        if (byte == 0u)
-        {
-            byte = (u8)(0xA5u ^ (u8)index);
-        }
         target[index] = byte;
         checksum ^= (u32)byte;
         checksum *= 16777619u;
