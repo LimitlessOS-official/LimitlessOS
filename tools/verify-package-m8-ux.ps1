@@ -68,6 +68,6 @@ Assert-Line -Lines $lines -Pattern '^public update fetch: unavailable$' -Message
 Assert-Line -Lines $lines -Pattern '^trusted-time expiry: unavailable$' -Message "M8 package UX verifier failed: trusted-time status was not visible."
 Assert-Line -Lines $lines -Pattern '^install authority: (disabled in M(8|9|10|11|12|13|14|15|16)|disabled); scoped capability required$' -Message "M8 package UX verifier failed: install authority status was not visible."
 Assert-Line -Lines $lines -Pattern '^update-apply authority: (disabled in M(8|9|10|11|12|13|14|15|16)|disabled); scoped install required$' -Message "M8 package UX verifier failed: update-apply authority status was not visible."
-Assert-Line -Lines $lines -Pattern '^no ambient install/update/network(/cloud/fs/identity/secret(/ai)?)?$' -Message "M8 package UX verifier failed: no ambient authority status was not visible."
+Assert-Line -Lines $lines -Pattern '^(no ambient install/update/network(/cloud/fs/identity/secret(/ai)?)?|authority: no ambient install, update, network, cloud, file, identity, secret, or AI access)$' -Message "M8 package UX verifier failed: no ambient authority status was not visible."
 
 Write-Host "M8 package UX verifier passed for $BootMedia."

@@ -141,7 +141,8 @@ function Send-AuthProbe
             & $sendKey "ret"
         }
 
-        $deadline = [DateTime]::UtcNow.AddSeconds(80)
+        # Boot to the first-run or login prompt can take over a minute under QEMU TCG; match verify-qemu.ps1.
+        $deadline = [DateTime]::UtcNow.AddSeconds(600)
         $setupSent = $false
         $loginSent = $false
         while (([DateTime]::UtcNow -lt $deadline) -and (-not $loginSent)) {
@@ -159,6 +160,11 @@ function Send-AuthProbe
             if ($logText -match '\[x64\] login input wait') {
                 & $sendTextLine "limitless"
                 & $sendTextLine "limitless"
+                $loginSent = $true
+                break
+            }
+            # First-run setup signs in directly, so the first boot never shows a login prompt.
+            if ($logText -match '\[x64\] stage LOGIN OK') {
                 $loginSent = $true
                 break
             }

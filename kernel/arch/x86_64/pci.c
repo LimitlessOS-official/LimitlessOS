@@ -290,6 +290,7 @@ static u64 g_acpi_ssdt0 = 0ull;
 static u32 g_acpi_ssdt0_bytes = 0u;
 #endif
 static u32 g_ecam_mapped_bus = PCI_ECAM_INVALID_BUS;
+static u32 g_ecam_mapped_generation = 0u;
 static u32 g_ecam_map_success_count = 0u;
 static u32 g_ecam_map_failed = 0u;
 
@@ -323,7 +324,13 @@ static u32 pci64_map_ecam_bus(u32 bus)
         return 0u;
     }
 
-    if (g_ecam_mapped_bus == bus)
+    /*
+     * The kernel MMIO windows share one page table, so another driver's mapping
+     * (the ACPI table window in particular) can replace the ECAM entries. Reuse
+     * the cached bus only while no other mapping has been installed since.
+     */
+    if ((g_ecam_mapped_bus == bus)
+        && (g_ecam_mapped_generation == paging64_kernel_mmio_mapping_generation()))
     {
         return 1u;
     }
@@ -353,6 +360,7 @@ static u32 pci64_map_ecam_bus(u32 bus)
     }
 
     g_ecam_mapped_bus = bus;
+    g_ecam_mapped_generation = paging64_kernel_mmio_mapping_generation();
     ++g_ecam_map_success_count;
     return 1u;
 }

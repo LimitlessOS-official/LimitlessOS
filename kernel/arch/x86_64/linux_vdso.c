@@ -1,4 +1,5 @@
 #include "linux_vdso_x64.h"
+#include "rtc_x64.h"
 
 #include "arch_build.h"
 #include "paging_x64.h"
@@ -521,6 +522,13 @@ u64 linux_vdso64_clock_gettime_fast(u32 pid, u64 clock_id, u64 user_timespec)
     remainder = ticks % frequency;
     timespec.tv_sec = (u64)(ticks / frequency);
     timespec.tv_nsec = ((u64)remainder * 1000000000ull) / (u64)frequency;
+    /* Wall-clock clocks report Unix time from the CMOS RTC; the rest count from boot. */
+    if (((clock_id == (u64)LINUX_ABI64_CLOCK_REALTIME) || (clock_id == (u64)LINUX_ABI64_CLOCK_REALTIME_COARSE))
+        && (rtc64_available() != 0u))
+    {
+        timespec.tv_sec = rtc64_now_epoch_seconds();
+        timespec.tv_nsec = (u64)rtc64_now_subsecond_nanoseconds();
+    }
     linux_vdso64_copy_to_user(
         user_timespec,
         (const u8 *)&timespec,

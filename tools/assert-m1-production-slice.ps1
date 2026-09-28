@@ -524,7 +524,7 @@ function Assert-RuntimeShellSurfaceSource
         "Product installer UX: unavailable on BIOS checksum fallback; validation tools only",
         "Product AI assistant: launcher, Settings, and pkginfo show consent-scoped action templates; inference unavailable",
         "Product AI policy: unavailable on BIOS checksum fallback; AI actions unavailable",
-        "Unavailable in M21: ask (not AI), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
+        "Unavailable in M21: ask (not AI), aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install",
         "ASK (not AI)",
         "Network (hardware-gated): use net or net curl example.com",
         "Brokered socket API: capability-scoped TCP-client foundation in net",
@@ -590,7 +590,8 @@ function Assert-RuntimeShellSurfaceSource
         }
     }
 
-    foreach ($forbiddenCommand in @("ask", "echo", "say", "show", "list", "make", "put", "swap", "shift")) {
+    # echo is a real builtin since M201 (text output and "echo text > file").
+    foreach ($forbiddenCommand in @("ask", "say", "show", "list", "make", "put", "swap", "shift")) {
         $pattern = 'shell64_token_equals\(command_start,\s*command_length,\s*"{0}"\)' -f [regex]::Escape($forbiddenCommand)
         if ($source -match $pattern) {
             Fail-M1 "x86_64 runtime shell still executes non-M1 command '$forbiddenCommand'."
