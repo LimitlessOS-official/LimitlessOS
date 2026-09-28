@@ -39,11 +39,12 @@ if (-not $loginLine) {
     throw "M10 login verifier failed: no x64 drs-login telemetry line was observed."
 }
 
-foreach ($label in @(
+# The wrong-password and rate-limit probe runs when signing in to an existing
+# account; a first-run boot creates the account and (per M131) reports neither.
+$firstRun = $loginLine -match ' first-run-setup 1 '
+$labels = @(
     "drs-login-screen",
     "drs-login-auth-success",
-    "drs-login-wrong-password-denied",
-    "drs-login-rate-limited",
     "drs-session-lock",
     "drs-session-unlock",
     "drs-session-authority-scoped",
@@ -53,7 +54,11 @@ foreach ($label in @(
     "login-display-only",
     "login-input-only",
     "desktop-blocked-pre-auth"
-)) {
+)
+if (-not $firstRun) {
+    $labels += @("drs-login-wrong-password-denied", "drs-login-rate-limited")
+}
+foreach ($label in $labels) {
     Assert-M10Label -Line $loginLine -Label $label
 }
 

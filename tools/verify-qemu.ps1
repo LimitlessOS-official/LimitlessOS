@@ -1435,6 +1435,15 @@ try {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
         }
     }
+    elseif ($Architecture -eq "x86") {
+        # The x86 kernel runs its shell script by itself; wait for its last telemetry
+        # instead of a fixed boot time, which a loaded host can exceed.
+        try {
+            Wait-ForLogPattern -Path $logPath -Pattern 'user-fs-writes' -TimeoutMilliseconds 60000
+        }
+        catch {
+        }
+    }
     Start-Sleep -Seconds $bootWaitSeconds
 }
 finally {
