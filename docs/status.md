@@ -4,6 +4,15 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M200: Login typing feedback and desktop cleanup
+
+- **Login echo.** The login, first-run, and lock screens now show what is being typed: username characters in clear, and one `*` per password character, with backspace applied. The reader peeks at the pending keyboard line (`input64_keyboard_peek_line`) without consuming it and redraws only the active field (`display64_login_field_draw`). The fixed `********` mask is gone, and the username chosen at first run stays in its field while the password is typed.
+- **Boot remnants on the desktop.** Boot-stage lines (the `SHELL` marker) were drawn straight onto the framebuffer after the desktop was up, and early ring 3 output landed outside the terminal window; both stayed on screen until something forced a full repaint. Stage lines now stop once the desktop owns the screen, and the desktop repaints once as the persistent shell starts.
+- **Minimized side panels lingered** after the desktop probe; the probe now finishes with a full redraw.
+- **Terminal overlay.** The `Scrollback` badge only appears while the view is scrolled back. The `Copied` label read the badge coordinates even when the badge was not drawn (uninitialized values); it now has its own position.
+
+Accepted verification (2026-09-27): QMP captures show `alice` in the username field after typing `alicex` and Backspace, `****` after four password keys, and the name kept in its field on the password step; the desktop's first frame after login has no stage strip or stray text. Build had no warnings; BIOS 923/1024 sectors unchanged. `verify-qemu.ps1 -BootMedia uefi -HardwareDisplayGate`, `verify-qemu.ps1 -BootMedia disk`, and both first-run tests (Enter alone, no input) passed.
+
 ### M199: Desktop back buffer, smooth drag, and terminal scrollback
 
 Reported from the local desktop: dragging windows was glitchy, and scrolling or clicking left cursor remnants and a broken scroll. Reproduced headless with QMP input and `screendump` captures.

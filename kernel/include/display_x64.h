@@ -94,6 +94,13 @@ u32 display64_font_glyph_count(void);
 u32 display64_font_render_count(void);
 void display64_login_setup_screen(void);
 void display64_login_screen_draw(const char *title, const char *message, u32 failures, u32 lockout_seconds);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#define DISPLAY64_LOGIN_FIELD_USERNAME 0u
+#define DISPLAY64_LOGIN_FIELD_PASSWORD 1u
+void display64_login_field_draw(u32 field, const char *text, u32 masked_length);
+/* Repaints the whole desktop, clearing anything boot-time writers drew over it. */
+void display64_desktop_refresh(void);
+#endif
 void display64_wm_probe(void);
 u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL

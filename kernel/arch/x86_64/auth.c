@@ -68,6 +68,8 @@ static u8 g_auth64_profile[32];
 static u8 g_auth64_record[AUTH64_RECORD_BYTES];
 static u8 g_auth64_password_hash[AUTH64_BCRYPT_HASH_BYTES + 1u];
 static u8 g_auth64_line[AUTH64_PASSWORD_BYTES];
+static u8 g_auth64_echo[AUTH64_PASSWORD_BYTES];
+static u8 g_auth64_echo_shown[AUTH64_PASSWORD_BYTES];
 
 static u32 auth64_cstr_length(const char *text, u32 capacity);
 
@@ -380,24 +382,26 @@ static u32 auth64_save_user_record(const u8 *username, u32 username_bytes, const
  * AUTH64_READ_DENIED (input authority refused). An empty line is detected
  * through the broker's completed-line counter because it carries no bytes.
  */
-static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome);
+static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field);
 
-static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome)
+static u32 auth64_read_login_line(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field)
 {
     u32 bytes;
 
     /* While credentials are being typed, keystrokes must not be routed to desktop windows. */
     g_auth64_keyboard_capture = 1u;
-    bytes = auth64_read_login_line_captured(input_capability, buffer, capacity, timeout_ticks, outcome);
+    bytes = auth64_read_login_line_captured(input_capability, buffer, capacity, timeout_ticks, outcome, echo_field);
     g_auth64_keyboard_capture = 0u;
     return bytes;
 }
 
-static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome)
+static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32 capacity, u32 timeout_ticks, u32 *outcome, u32 echo_field)
 {
     u32 bytes = 0u;
     u32 start_ticks = pit_get_ticks();
     u32 start_lines = input64_keyboard_line_count();
+    u32 echoed_bytes = 0xFFFFFFFFu;
+    u32 pending_bytes;
 
     ++g_auth64_input_wait_count;
     auth64_zero(buffer, capacity);
@@ -432,6 +436,27 @@ static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32
             *outcome = AUTH64_READ_EMPTY;
             return 0u;
         }
+        /* Echo the pending line so typing is visible: usernames in clear, passwords masked. */
+        pending_bytes = input64_keyboard_peek_line(g_auth64_echo, sizeof(g_auth64_echo));
+        if ((pending_bytes != echoed_bytes)
+            || ((echo_field == DISPLAY64_LOGIN_FIELD_USERNAME) && !auth64_bytes_equal(g_auth64_echo, pending_bytes, g_auth64_echo_shown, pending_bytes)))
+        {
+            echoed_bytes = pending_bytes;
+            auth64_zero(g_auth64_echo_shown, sizeof(g_auth64_echo_shown));
+            if (echo_field == DISPLAY64_LOGIN_FIELD_USERNAME)
+            {
+                for (u32 index = 0u; index < pending_bytes; ++index)
+                {
+                    g_auth64_echo_shown[index] = g_auth64_echo[index];
+                }
+                display64_login_field_draw(echo_field, (const char *)g_auth64_echo, 0u);
+            }
+            else
+            {
+                display64_login_field_draw(echo_field, 0, pending_bytes);
+            }
+        }
+        auth64_zero(g_auth64_echo, sizeof(g_auth64_echo));
         if ((timeout_ticks != AUTH64_WAIT_FOREVER)
             && ((pit_get_ticks() - start_ticks) >= timeout_ticks))
         {
@@ -581,6 +606,7 @@ u32 auth64_run_login_gate(void)
          * no keyboard input arrives at all is the default chosen automatically.
          */
         g_auth64_first_run_setup = 1u;
+        auth64_zero(g_auth64_username, sizeof(g_auth64_username));
         display64_login_setup_screen();
         auth64_debug_line("[x64] first-run setup input wait");
         username_bytes = auth64_read_login_line(
@@ -588,7 +614,7 @@ u32 auth64_run_login_gate(void)
             g_auth64_username,
             sizeof(g_auth64_username),
             AUTH64_FIRST_RUN_DEFAULT_TICKS,
-            &outcome);
+            &outcome, DISPLAY64_LOGIN_FIELD_USERNAME);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;
@@ -604,9 +630,9 @@ u32 auth64_run_login_gate(void)
             {
                 auth64_debug_line("[x64] first-run default account chosen");
             }
-            display64_login_screen_draw("First-run setup", "Using the default account", 0u, 0u);
             username_bytes = auth64_copy_cstr_to_line(g_auth64_username, sizeof(g_auth64_username), g_auth64_default_user);
             password_bytes = auth64_copy_cstr_to_line(g_auth64_line, sizeof(g_auth64_line), g_auth64_default_password);
+            display64_login_screen_draw("First-run setup", "Using the default account", 0u, 0u);
         }
         else
         {
@@ -620,7 +646,7 @@ u32 auth64_run_login_gate(void)
                     g_auth64_line,
                     sizeof(g_auth64_line),
                     AUTH64_WAIT_FOREVER,
-                    &outcome);
+                    &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
                 if (outcome == AUTH64_READ_DENIED)
                 {
                     return 0u;
@@ -670,7 +696,7 @@ u32 auth64_run_login_gate(void)
             g_auth64_line,
             sizeof(g_auth64_line),
             (default_account != 0u) ? AUTH64_DEFAULT_ACCOUNT_SIGNIN_TICKS : AUTH64_WAIT_FOREVER,
-            &outcome);
+            &outcome, DISPLAY64_LOGIN_FIELD_USERNAME);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;
@@ -686,13 +712,13 @@ u32 auth64_run_login_gate(void)
         }
         if (auth64_bytes_equal(g_auth64_line, username_bytes, g_auth64_username, auth64_cstr_length((const char *)g_auth64_username, sizeof(g_auth64_username))) == 0u)
         {
-            (void)auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+            (void)auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
             auth64_record_failure(1u);
             display64_login_screen_draw("Login denied", "Unknown user", g_auth64_failure_count, g_auth64_lockout_seconds);
             continue;
         }
 
-        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
         if ((outcome != AUTH64_READ_LINE)
             || (auth64_password_matches(g_auth64_username, username_bytes, g_auth64_line, password_bytes) == 0u))
         {
@@ -750,7 +776,7 @@ u32 auth64_lock_session(void)
     for (;;)
     {
         auth64_debug_line("[x64] session lock input wait");
-        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome);
+        password_bytes = auth64_read_login_line(input_capability, g_auth64_line, sizeof(g_auth64_line), AUTH64_WAIT_FOREVER, &outcome, DISPLAY64_LOGIN_FIELD_PASSWORD);
         if (outcome == AUTH64_READ_DENIED)
         {
             return 0u;

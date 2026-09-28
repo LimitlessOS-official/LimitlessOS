@@ -2482,6 +2482,51 @@ u32 input64_read_mouse(u32 input_capability_handle, u64 output_address, u32 byte
     return actual_count;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Copies the line currently being typed (queued bytes before the first
+ * newline, with backspaces applied) without consuming it, so kernel-owned
+ * prompts such as the login screen can echo input as it is typed.
+ */
+u32 input64_keyboard_peek_line(u8 *output, u32 capacity)
+{
+    u32 scan_head = g_keyboard_head;
+    u32 scan_pending = g_keyboard_pending;
+    u32 count = 0u;
+
+    if ((output == 0) || (capacity == 0u))
+    {
+        return 0u;
+    }
+    while (scan_pending > 0u)
+    {
+        u8 value = g_keyboard_queue[scan_head];
+
+        scan_head = (scan_head + 1u) % INPUT64_KEYBOARD_QUEUE_CAPACITY;
+        --scan_pending;
+        if (value == (u8)'\n')
+        {
+            break;
+        }
+        if ((value == (u8)'\b') || (value == 0x7Fu))
+        {
+            if (count > 0u)
+            {
+                --count;
+            }
+            continue;
+        }
+        if (count < (capacity - 1u))
+        {
+            output[count] = value;
+            ++count;
+        }
+    }
+    output[count] = 0u;
+    return count;
+}
+#endif
+
 u32 input64_read_keyboard_line(u32 input_capability_handle, u64 output_address, u32 byte_capacity, u32 owner_id)
 {
     u32 endpoint;
