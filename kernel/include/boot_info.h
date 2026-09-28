@@ -41,6 +41,15 @@
 #define LIMITLESS_BOOT_MEDIA_STAGE_BYTES 0x0000000000040000ull
 #define LIMITLESS_BOOT_MEDIA_STAGE_BASE 0x0000000000FC0000ull
 
+/*
+ * The loader-owned kernel window is larger than the low alias. The extra
+ * space above LIMITLESS_BOOT_LOW_WINDOW_BYTES is mapped only through the
+ * higher-half alias (0xFFFFFFFF80000000 + offset) and holds large kernel
+ * buffers such as the compositor back buffer (a 2560x1600 32-bit frame fits).
+ */
+#define LIMITLESS_BOOT_KERNEL_WINDOW_BYTES 0x0000000002000000ull
+#define LIMITLESS_BOOT_KERNEL_EXTENSION_BASE LIMITLESS_BOOT_LOW_WINDOW_BYTES
+
 struct boot_info
 {
     u32 magic;
