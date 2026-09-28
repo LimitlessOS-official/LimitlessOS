@@ -20,6 +20,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+# readelf and friends come from the MSYS2 toolchain, like the build's gcc and ld.
+. (Join-Path $PSScriptRoot "toolchain.ps1")
 
 $root = Split-Path -Parent $PSScriptRoot
 $resolvedBusyBox = (Resolve-Path $BusyBoxPath).Path
@@ -287,7 +289,7 @@ if (-not $SkipNegativeTests) {
     }
     $negativeRealbinLines = @(Get-Content $negativeLogPath | Where-Object { $_ -match "drs-realbin" })
     $missingFileFailure = $negativeRealbinLines |
-        Where-Object { $_ -match "drs-realbin-fail path /APPS/BUSYBOX stage read " } |
+        Where-Object { $_ -match "drs-realbin-fail path /APPS/BUSYBOX (source [0-9]+ )?stage read " } |
         Select-Object -First 1
     if (-not $missingFileFailure) {
         Write-Host "Real-binary missing-file negative telemetry:"
@@ -324,7 +326,7 @@ if (-not $SkipNegativeTests) {
     }
     $negativeRealbinLines = @(Get-Content $negativeLogPath | Where-Object { $_ -match "drs-realbin" })
     $dynamicElfFailure = $negativeRealbinLines |
-        Where-Object { $_ -match "drs-realbin-fail path /APPS/BUSYBOX stage static code 8 " } |
+        Where-Object { $_ -match "drs-realbin-fail path /APPS/BUSYBOX (source [0-9]+ )?stage static code 8 " } |
         Select-Object -First 1
     if (-not $dynamicElfFailure) {
         Write-Host "Real-binary dynamic-ELF negative telemetry:"
@@ -386,7 +388,7 @@ if (-not $SkipNegativeTests) {
         $negativeRealbinLines = @(Get-Content $negativeLogPath | Where-Object { $_ -match "drs-realbin" })
         $lowAddressFailure = $negativeRealbinLines |
             Where-Object {
-                $_ -match "drs-realbin-fail path /APPS/BUSYBOX stage static code 20 " `
+                $_ -match "drs-realbin-fail path /APPS/BUSYBOX (source [0-9]+ )?stage static code 20 " `
                     -and $_ -match "load-first 0x0000000000400000" `
                     -and $_ -match "low-kernel-limit 0x0000000001000000"
             } |
