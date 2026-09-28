@@ -21,13 +21,13 @@ Distinctive, not a clone: Red Hat-style seriousness, Windows-like discoverabilit
 Ordered by what unblocks the most. Each follows [development.md](development.md#milestone-workflow) and the evidence rules in [real-binary-gate.md](real-binary-gate.md).
 
 1. **MSI retest of the M193 image.** Rebuild the handoff bundle (`prepare-hardware-storage-evidence.ps1`) with staged `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT`, boot it on the MSI Cyborg 15 A13VE, and capture `hwval` plus `linux /APPS/DYNLDLIMIT`. Expected first physical run of a dynamic Linux ELF from boot media.
-2. **Pointer input on hardware.** Get the ELAN I2C HID touchpad (ACPI `_CRS` path) or the composite USB boot mouse (xHCI) moving the cursor on the laptop; the diagnostics from M149–M190 already localize the stage.
+2. **Pointer input on hardware.** Get the ELAN I2C HID touchpad (ACPI `_CRS` path) or the composite USB boot mouse (xHCI) moving the cursor on the laptop; the diagnostics from M149–M190 already localize the stage. Retest first: before M201 the ACPI table windows the touchpad search reads could never be mapped once the APIC was up.
 3. **Internal NVMe behind Intel VMD.** Move from the no-touch VMD driver plan (M158–M160) to a real bind of the nested NVMe controller, read-only first, so `/nvme` works on the laptop without the boot-media fallback.
 4. **BIOS reserve recovery.** Split the AHCI planning chain in `mmio.c` so the BIOS lane compiles only what a BIOS/IDE boot reaches, bringing the reserve back above 128 sectors without changing the BIOS verifier's observable telemetry. See [budgets.md](budgets.md).
 5. **Reproducible fixtures.** Recover or rewrite the `LDLIMIT` interpreter source, and add a script that rebuilds every `fixtures/linux/` program into `external/build/` with recorded command lines and SHA-256 values.
 6. **Physical memory allocator.** Replace the static pools (8 process roots, fixed pipe and persona tables) with a frame allocator sized from the firmware memory map, keeping the low-window contract in `boot_info.h`.
 7. **Wired Ethernet on physical hardware**, before Wi-Fi.
-8. **One page table per kernel MMIO window.** Every PD slot in the `0xFFFFFFFF90000000` range points at the same page table, so windows alias by page index (the ACPI table window at `0x90220000` shares entries with PCI ECAM, and a DSDT larger than about 900 KB would reach the NVMe window). M201 makes PCI ECAM remap after any other mapping; the structural fix gives each 2 MiB region its own table in the per-process root block.
+8. **One page table per kernel MMIO window.** The windows in the `0xFFFFFFFF90000000` region (PCI ECAM, AHCI, NVMe, xHCI, virtio-net, e1000e, I2C HID, VMD) share one page table and alias by page index; ECAM and AHCI even share a base. M201 makes PCI ECAM remap after any other mapping; the structural fix gives each window its own entries (or table) in the per-process root block.
 9. **Time zones.** The clock shows UTC as the firmware keeps it; add a zone setting in Settings.
 
 ## Structural work
