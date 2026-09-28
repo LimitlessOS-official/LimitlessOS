@@ -67,6 +67,10 @@ u32 input64_keyboard_read_byte_count(void);
 u32 input64_keyboard_line_count(void);
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 u32 input64_keyboard_peek_line(u8 *output, u32 capacity);
+/* Replays a held USB key (typematic repeat); call from input waits. */
+void input64_keyboard_repeat_tick(void);
+/* Queues text as if typed (terminal paste). */
+void input64_keyboard_inject_text(const u8 *text, u32 byte_count);
 #endif
 u32 input64_keyboard_line_byte_count(void);
 u32 input64_keyboard_line_edit_count(void);

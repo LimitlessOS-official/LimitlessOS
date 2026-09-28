@@ -442,6 +442,7 @@ static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32
          */
         input64_poll_keyboard();
         xhci64_poll_keyboard();
+        input64_keyboard_repeat_tick();
         bytes = input64_read_keyboard_line(
             input_capability,
             auth64_kernel_high_alias(buffer),
