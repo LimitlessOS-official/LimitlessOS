@@ -49,6 +49,8 @@ A Product build ends by running `tools\assert-m1-production-slice.ps1`, which ch
 - **Mouse:** click inside the window to capture the mouse; Ctrl+Alt+G releases it.
 - **First run:** type a username and press Enter, then a password, to create your account; or press Enter on the empty username to use the default account (`limitless` / `limitless`). If there is no keyboard input at all for 60 seconds, the default account is chosen. `-Fresh` brings the first-run screen back.
 - **Login and lock:** a created account always requires its password. The default account signs in by itself after 5 idle seconds at the login screen. `lock` (or the lock button in Settings) stays locked until the account password is entered.
+- **Keyboard:** Up/Down recall shell history; Ctrl+C cancels the line being typed; held keys repeat when Settings > Keyboard has repeat on. Drag across terminal text to copy it and press Ctrl+V to paste it at the prompt (newlines become spaces). In the File Manager and Settings, Up/Down move the selection; Enter opens a folder or toggles the selected setting.
+- **Shell:** `help` lists the commands; `cd`, `pwd`, `ls`, `cat`, `echo text > file`, `date`, `uptime`, `clear`, `lock`, `shutdown`, and `reboot` cover everyday use.
 - **One VM at a time:** the launcher refuses to start a second VM while one is running, because both would write the same disk.
 - **Limits:** QEMU is a development convenience. It does not stand in for physical hardware; touchpad, Intel VMD NVMe, and display-panel behavior on the MSI laptop still need a USB capture.
 

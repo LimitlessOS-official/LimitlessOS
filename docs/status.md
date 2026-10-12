@@ -4,6 +4,21 @@ Last updated: 2026-09-28. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M202: Keyboard completeness, terminal copy and paste, desktop polish
+
+Hands-on testing through QMP-driven sessions and screenshots (a scratch harness that types, clicks, drags, holds keys, and captures the screen) turned up:
+
+- **Arrow keys could delete files.** Non-terminal windows received escape sequences byte by byte, so in the File Manager Left (`ESC [ D`) acted as the `D` delete shortcut and Up (`ESC [ A`) as `A` (go to `/APPS`). Those windows now parse escape sequences; arrows move the File Manager and Settings selections, and Enter toggles the selected setting.
+- **USB keyboards** (QEMU, and most laptops) had no arrow keys, Home/End/Delete, keypad, Escape, or Ctrl combinations, and never repeated a held key (the Settings key-repeat option was stored but unused). All are handled now, with software repeat (500 ms, then about 30 per second). PS/2 keyboards gained Ctrl.
+- **Shell:** Ctrl+C cancels the line; Up/Down history now works on USB keyboards. The shell's keyboard poll sleeps until the next interrupt when nothing is waiting instead of spinning a CPU core.
+- **Terminal copy** copied the last bytes of history regardless of the selection, a plain click counted as a copy, and the `Copied` label and outline never cleared. It now copies the text under the selection (mapped through the same wrapping the terminal draws), ignores clicks, shows `Copied` for a few seconds, and Ctrl+V pastes (newlines become spaces).
+- **Layout:** window content is clipped to its window, so Settings no longer draws over the taskbar at 1280x800. File Manager names and texts are cut with `...` instead of running into the size column or past the panel; the status line reads `N items`. Installer rows show sentences instead of status tokens, its badge fits, and Dry run reports its result. The caption font gained `( ) ; ! ? ' " + % # & @ | ~ { } ^` (they drew blank), and UTF-8 names draw one `?` per character instead of gaps.
+- **Rendering cost:** text marked one dirty rectangle per glyph pixel; it now marks one per glyph.
+
+Accepted verification (2026-09-28): in QMP-driven sessions, Up recalled the previous command, Ctrl+C cancelled a half-typed line, keypad `1` `2` Enter typed and ran `echo 12`, a held key repeated, dragging across `hello world` then `echo ` + Ctrl+V ran `echo hello world`, Down/Enter in Settings toggled the Pointer row, and Down/Left/Up in the File Manager changed only the selection (the folder and its entries were unchanged). Screenshots confirmed the clipped Settings window, the truncated File Manager names (`Caf?.txt` for `Café.txt`), the Installer text, and the Dry run message. `verify-qemu.ps1` UEFI (plain), UEFI `-HardwareDisplayGate`, and BIOS disk passed; the plain gate's `terminal-copied-bytes` may now be 0 because its drag lands in an empty terminal. Build had no warnings; BIOS 923/1024 sectors unchanged.
+
+Checked, and left: the BIOS reserve. Link-time garbage collection (`-ffunction-sections` with `--gc-sections`, with and without data sections and `SUBALIGN(1)`) produces a larger BIOS kernel on this toolchain (about 500 KB against 472 KB), so recovering the 128-sector line still needs the structural `mmio.c` split. The Settings "Theme" option swaps an accent color, as its label says; a full light theme is not implemented.
+
 ### M201: Full verifier sweep, real clock, shell basics, power control
 
 Every `tools/verify-*.ps1` script plus the ISO, x86, and e1000e QEMU lanes was run. The failures and the gaps found along the way were fixed:
