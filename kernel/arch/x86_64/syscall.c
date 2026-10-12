@@ -7976,6 +7976,9 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
             }
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD_LINE:
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            display64_desktop_clock_tick();
+#endif
             i2c_hid64_poll_keyboard();
             i2c_hid64_poll_pointer();
             xhci64_poll_keyboard();

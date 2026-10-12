@@ -12,6 +12,100 @@ enum
     PS2_STATUS_OUTPUT_READY = 0x01u
 };
 
+/* Scripted session the legacy x86 lane runs at boot (the QEMU gate asserts its output). */
+static const u8 input_startup_script[] =
+    "help\n"
+    "help pwd\n"
+    "help history\n"
+    "help ask\n"
+    "help shift\n"
+    "help apps\n"
+    "help info\n"
+    "help touch\n"
+    "help copy\n"
+    "info ls\n"
+    "info ask\n"
+    "info copy\n"
+    "history\n"
+    "apps\n"
+    "apps filesystem\n"
+    "apps aliases\n"
+    "say generic app descriptor online\n"
+    "ask delegated input path ready> \n"
+    "typed through delegated input\n"
+    "list APPS\n"
+    "make GENERIC\n"
+    "put GENERIC/ALIAS.TXT generic descriptor write path\n"
+    "show GENERIC/ALIAS.TXT\n"
+    "swap GENERIC/ALIAS.TXT GENERIC/RENAMED.TXT\n"
+    "show GENERIC/RENAMED.TXT\n"
+    "shift GENERIC/RENAMED.TXT ALIASED.TXT\n"
+    "show ALIASED.TXTT\x1b[D\x1b[3~\n"
+    "echo userspace console utility online\n"
+    "userspace cursor home-end edit\x1b[Hecho \n"
+    "pd\x1b[H\x1b[Cw\n"
+    "echo history draft restore works\x1b[A\x1b[B\n"
+    "\x1b[A\n"
+    "echo history slot alpha\n"
+    "echo history slot beta\n"
+    "echo history slot gamma\n"
+    "\x1b[A\x1b[A\x1b[A\n"
+    "echo history slot delta\n"
+    "echo history slot epsilon\n"
+    "echo history slot zeta\n"
+    "\x1b[A\x1b[A\n"
+    "pwe\bd\n"
+    "ls\t/\n"
+    "stat /\n"
+    "cat\t/README.TXT\n"
+    "write\t/NOTES.TXT capability-safe shell output\n"
+    "cat /NOTES.TXT\n"
+    "stat /NOTES.TXT\n"
+    "mkdir\t/WORK\n"
+    "cd /WORK\n"
+    "pwd\n"
+    "cat /README.TXT\n"
+    "write NOTE.TXT nested capability path\n"
+    "stat NOTE.TXT\n"
+    "move /NOTES.TXT ROOTNOTE.TXT\n"
+    "stat ROOTNOTE.TXT\n"
+    "cat ROOTNOTE.TXT\n"
+    "rename NOTE.TXT RENAMED.TXT\n"
+    "stat RENAMED.TXT\n"
+    "append RENAMED.TXT + appended through utility\n"
+    "stat RENAMED.TXT\n"
+    "cat RENAMED.TXT\n"
+    "copy RENAMED.TXT COPY.TXT\n"
+    "stat COPY.TXT\n"
+    "cat COPY.TXT\n"
+    "move ROOTNOTE.TXT /NOTES.TXT\n"
+    "stat /NOTES.TXT\n"
+    "mkdir EMPTY\n"
+    "mkdir TREE/ONE/TWO\n"
+    "cd TREE/ONE/TWO\n"
+    "pwd\n"
+    "cd /WORK\n"
+    "touch ZERO.TXT\n"
+    "stat ZERO.TXT\n"
+    "ls\n"
+    "delete EMPTY\n"
+    "delete TREE/ONE/TWO\n"
+    "delete TREE/ONE\n"
+    "delete TREE\n"
+    "delete ZERO.TXT\n"
+    "delete COPY.TXT\n"
+    "delete RENAMED.TXT\n"
+    "ls\n"
+    "cd /\n"
+    "ls\n"
+    "cd APPS\n"
+    "pwd\n"
+    "ls\n"
+    "stat HELLO.TXT\n"
+    "cat HELLO.TXT\n"
+    "cd /\n"
+    "cat /SERVICES.TXT\n";
+
 static u8 input_queue[INPUT_QUEUE_CAPACITY];
 static u32 input_queue_head = 0u;
 static u32 input_queue_tail = 0u;
@@ -130,6 +224,11 @@ static u8 input_translate_scancode(u8 scancode)
 void input_init(void)
 {
     input_reset_queue();
+    /*
+     * Restored after 5cecd749 dropped it with the ramfs STARTUP.LSH node: without
+     * it the x86 shell waits for keys the lane never sends.
+     */
+    input_enqueue_sequence(input_startup_script, sizeof(input_startup_script) - 1u);
 
     klog_write_string("[input] bootstrap queue ");
     klog_write_dec_u32(input_queue_count);

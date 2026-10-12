@@ -112,6 +112,7 @@ u32 paging64_user_stack_mapping_installed(void);
 u32 paging64_user_stack_mapping_protection_flags(void);
 u32 paging64_user_stack_mapping_protection_token(void);
 u32 paging64_kernel_mmio_mapping_installed(void);
+u32 paging64_kernel_mmio_mapping_generation(void);
 u32 paging64_kernel_mmio_mapping_install_token(void);
 u32 paging64_kernel_mmio_mapping_pml4_index(void);
 u32 paging64_kernel_mmio_mapping_pdpt_index(void);

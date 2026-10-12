@@ -1,4 +1,5 @@
 #include "display_x64.h"
+#include "rtc_x64.h"
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #include "display_font_x64.h"
@@ -442,6 +443,9 @@ static u32 g_display_settings_selected_index = 0u;
 static u32 g_display_installer_step_index = 0u;
 static u32 g_display_terminal_action_count = 0u;
 static u32 g_display_terminal_scroll_offset = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u64 g_display_clock_minute = 0ull;
+#endif
 static u32 g_display_terminal_scroll_count = 0u;
 static u32 g_display_terminal_selection_active = 0u;
 static u32 g_display_terminal_selection_anchor_x = 0u;
@@ -3877,6 +3881,20 @@ static void display64_font_draw_status_bar(void)
     u32 time_y;
     u32 time_x;
     const char *time_text = "time --:--";
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    char date_text[32];
+
+    if (rtc64_format_now(date_text, sizeof(date_text)) != 0u)
+    {
+        /* "YYYY-MM-DD HH:MM:SS UTC" -> "YYYY-MM-DD HH:MM UTC": the bar refreshes once a minute. */
+        date_text[16] = ' ';
+        date_text[17] = 'U';
+        date_text[18] = 'T';
+        date_text[19] = 'C';
+        date_text[20] = '\0';
+        time_text = date_text;
+    }
+#endif
 
     if (!display64_has_framebuffer())
     {
@@ -5166,6 +5184,7 @@ static void display64_desktop_draw_taskbar(void)
     u32 clock_text_y;
     u32 clock_text_w;
     char uptime_text[12];
+    const char *clock_prefix;
 
     if (!display64_has_framebuffer())
     {
@@ -5198,15 +5217,23 @@ static void display64_desktop_draw_taskbar(void)
     }
     uptime = pit_get_uptime_seconds();
     display64_u32_to_dec_text(uptime, uptime_text, (u32)sizeof(uptime_text));
-    clock_text_w = display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL)
+    clock_prefix = "T+";
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (rtc64_format_now_hhmm(uptime_text, (u32)sizeof(uptime_text)) != 0u)
+    {
+        clock_prefix = "";
+    }
+    g_display_clock_minute = rtc64_now_epoch_seconds() / 60ull;
+#endif
+    clock_text_w = display64_font_text_advance(clock_prefix, DISPLAY64_FONT_NORMAL)
         + display64_font_text_advance(uptime_text, DISPLAY64_FONT_NORMAL);
     clock_text_x = (g_display_boot_info->framebuffer_width > (clock_text_w + 12u))
         ? (g_display_boot_info->framebuffer_width - clock_text_w - 12u)
         : clock_x;
     clock_text_y = y + ((DISPLAY64_DESKTOP_TASKBAR_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u);
-    (void)display64_draw_font_text(clock_text_x, clock_text_y, "T+", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(clock_text_x, clock_text_y, clock_prefix, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(
-        clock_text_x + display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL),
+        clock_text_x + display64_font_text_advance(clock_prefix, DISPLAY64_FONT_NORMAL),
         clock_text_y,
         uptime_text,
         DISPLAY64_FONT_NORMAL,
@@ -7344,6 +7371,27 @@ static void display64_desktop_redraw(void)
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 void display64_desktop_refresh(void)
 {
+    display64_desktop_redraw();
+}
+
+void display64_terminal_clear(void)
+{
+    g_display_console_replay_head = 0u;
+    g_display_console_replay_count = 0u;
+    g_display_terminal_scroll_offset = 0u;
+    display64_desktop_redraw();
+}
+
+/* Called from the shell's input wait; repaints the desktop when the wall-clock minute changes. */
+void display64_desktop_clock_tick(void)
+{
+    if ((g_display_desktop_active == 0u)
+        || (auth64_keyboard_capture_active() != 0u)
+        || (rtc64_available() == 0u)
+        || ((rtc64_now_epoch_seconds() / 60ull) == g_display_clock_minute))
+    {
+        return;
+    }
     display64_desktop_redraw();
 }
 

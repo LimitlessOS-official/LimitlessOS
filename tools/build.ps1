@@ -738,6 +738,7 @@ function Build-X64Scaffold
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "windows_vfs.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "windows_shim.c" })
     $biosSources = @($biosSources | Where-Object { $_.Name -ne "pe64.c" })
+    $biosSources = @($biosSources | Where-Object { ($_.Name -ne "entropy.c") -and ($_.Name -ne "rtc.c") -and ($_.Name -ne "power.c") })
     $biosSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\network_disabled.c")
     $uefiSources = @($commonSources)
     $uefiSources += Get-Item (Join-Path $root "kernel\\arch\\x86_64\\identity.c")

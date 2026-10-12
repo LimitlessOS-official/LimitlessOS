@@ -3,6 +3,7 @@
 #include "arch_build.h"
 #include "capability_x64.h"
 #include "display_x64.h"
+#include "entropy_x64.h"
 #include "input_x64.h"
 #include "interrupts_x64.h"
 #include "mmio_x64.h"
@@ -78,7 +79,6 @@ static u8 g_auth64_password_hash[AUTH64_BCRYPT_HASH_BYTES + 1u];
 static u8 g_auth64_line[AUTH64_PASSWORD_BYTES];
 static u8 g_auth64_echo[AUTH64_PASSWORD_BYTES];
 static u8 g_auth64_echo_shown[AUTH64_PASSWORD_BYTES];
-static u64 g_auth64_entropy = 0x6A09E667F3BCC909ull;
 
 static u32 auth64_cstr_length(const char *text, u32 capacity);
 
@@ -190,79 +190,15 @@ static u32 auth64_bytes_equal(const u8 *left, u32 left_count, const u8 *right, u
     return 1u;
 }
 
-static u64 auth64_rdtsc(void)
-{
-    u32 low;
-    u32 high;
-
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return ((u64)high << 32) | (u64)low;
-}
-
-static u32 auth64_rdrand64(u64 *value)
-{
-    u32 eax = 1u;
-    u32 ebx;
-    u32 ecx = 0u;
-    u32 edx;
-    u32 attempt;
-    u8 ok;
-
-    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
-    if ((ecx & (1u << 30)) == 0u)
-    {
-        return 0u;
-    }
-    for (attempt = 0u; attempt < 10u; ++attempt)
-    {
-        __asm__ volatile("rdrand %0; setc %1" : "=r"(*value), "=qm"(ok) : : "cc");
-        if (ok != 0u)
-        {
-            return 1u;
-        }
-    }
-    return 0u;
-}
-
-static u64 auth64_mix64(u64 value)
-{
-    value += 0x9E3779B97F4A7C15ull;
-    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
-    value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
-    return value ^ (value >> 31);
-}
-
-/*
- * Salts must be unique, not secret. The pool mixes the TSC at every keystroke
- * of the login reader with RDRAND when the CPU has it, so two installs (or two
- * accounts) do not share a salt even on CPUs without a hardware generator.
- */
-static void auth64_stir_entropy(u64 sample)
-{
-    g_auth64_entropy = auth64_mix64(g_auth64_entropy ^ sample ^ auth64_rdtsc());
-}
-
 static void auth64_make_bcrypt_setting(char *setting)
 {
     u8 salt[AUTH64_BCRYPT_SALT_RAW_BYTES];
-    u64 hardware;
-    u64 word = 0u;
-    u32 index;
     u32 in = 0u;
     u32 out = AUTH64_BCRYPT_SALT_OFFSET;
     u32 bits;
 
-    for (index = 0u; index < AUTH64_BCRYPT_SALT_RAW_BYTES; ++index)
-    {
-        if ((index & 7u) == 0u)
-        {
-            hardware = 0u;
-            (void)auth64_rdrand64(&hardware);
-            auth64_stir_entropy(hardware ^ (u64)pit_get_ticks());
-            word = auth64_mix64(g_auth64_entropy + index);
-        }
-        salt[index] = (u8)(word >> ((index & 7u) * 8u));
-    }
+    /* Salts must be unique, not secret; the kernel pool also mixes login keystroke timing. */
+    entropy64_fill(salt, sizeof(salt));
 
     auth64_copy(setting, g_auth64_bcrypt_prefix, AUTH64_BCRYPT_SALT_OFFSET);
     /* bcrypt's base64 variant: 16 bytes become 22 characters. */
@@ -531,7 +467,7 @@ static u32 auth64_read_login_line_captured(u32 input_capability, u8 *buffer, u32
         pending_bytes = input64_keyboard_peek_line(g_auth64_echo, sizeof(g_auth64_echo));
         if (pending_bytes != echoed_bytes)
         {
-            auth64_stir_entropy(pending_bytes);
+            entropy64_stir(pending_bytes);
         }
         if ((pending_bytes != echoed_bytes)
             || ((echo_field == DISPLAY64_LOGIN_FIELD_USERNAME) && !auth64_bytes_equal(g_auth64_echo, pending_bytes, g_auth64_echo_shown, pending_bytes)))

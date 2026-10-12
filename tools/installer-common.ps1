@@ -422,5 +422,19 @@ function Get-M5ImageHash
 {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+    # .NET directly: Windows PowerShell started from PowerShell 7 inherits a module path
+    # that cannot autoload Get-FileHash.
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "")
+        }
+        finally {
+            $sha.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
 }
