@@ -66,6 +66,7 @@ It boots the built image under QEMU/OVMF, drives the login and shell through QMP
 
 | Command | Proves |
 |---|---|
+| `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product` | Desktop GUI probe (windows, File Manager, Settings), first-run login, and `lock`/unlock |
 | `verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product` | BIOS fallback lane |
 | `verify-qemu.ps1 -Architecture x86_64 -BootMedia iso -BuildProfile Product` | UEFI optical media |
 | `verify-qemu.ps1 ... -BootMedia uefi -RealBinaryGate -ExtraShellLine "linux /APPS/DYNLDLIMIT"` | A staged dynamic Linux ELF runs from boot media |
@@ -79,7 +80,7 @@ It boots the built image under QEMU/OVMF, drives the login and shell through QMP
 
 ### Continuous integration
 
-`.github/workflows/verify.yml` runs on every pull request and every push to `main`, on a `windows-latest` GitHub runner. It installs the same toolchain, runs the Product build (which includes the M1 production-slice gate and budget enforcement), then runs the UEFI (`-HardwareDisplayGate`) and BIOS disk QEMU gates. Serial logs and the size report are uploaded as the `verify-logs` artifact. The real-binary, persistence, and hardware-handoff gates depend on the ignored `external/` inputs or physical hardware and still run locally.
+`.github/workflows/verify.yml` runs on every pull request and every push to `main`, on a `windows-latest` GitHub runner. It installs the same toolchain, runs the Product build (which includes the M1 production-slice gate and budget enforcement), then runs three QEMU gates: UEFI desktop/login/lock (no switches), UEFI `-HardwareDisplayGate`, and BIOS disk. Serial logs and the size report are uploaded as the `verify-logs` artifact. The real-binary, persistence, and hardware-handoff gates depend on the ignored `external/` inputs or physical hardware and still run locally.
 
 ## External inputs (`external/`, not in git)
 

@@ -1730,6 +1730,12 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
     u32 drawn = 0u;
     u32 token = 2166136261u;
 
+    /* Stage lines draw straight to the framebuffer; once the desktop owns the screen they would leave remnants. */
+    if (g_display_desktop_active != 0u)
+    {
+        return 0u;
+    }
+
     display64_set_boot_info(boot_info);
     g_display_compositor_active = 0u;
     if (!display64_has_framebuffer())
@@ -2347,16 +2353,21 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
         return;
     }
 
-    badge_x = window->x + 12u;
+    badge_x = window->x + ((window->width > 140u) ? (window->width - 124u) : 8u);
     badge_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 10u;
-    display64_compositor_fill_round_rect_4(badge_x, badge_y, 108u, 18u, DISPLAY64_RGB_SURFACE_HIGH);
-    (void)display64_draw_font_text(
-        badge_x + 8u,
-        badge_y + 5u,
-        "Scrollback",
-        DISPLAY64_FONT_SMALL,
-        DISPLAY64_RGB_TEXT_SECONDARY,
-        DISPLAY64_FONT_TRANSPARENT);
+
+    /* Only flag scrollback while the view is actually scrolled back, in the top-right corner. */
+    if ((g_display_terminal_scroll_offset != 0u) && (window->width > 140u))
+    {
+        display64_compositor_fill_round_rect_4(badge_x, badge_y, 108u, 18u, DISPLAY64_RGB_SURFACE_HIGH);
+        (void)display64_draw_font_text(
+            badge_x + 8u,
+            badge_y + 5u,
+            "Scrollback",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_TEXT_SECONDARY,
+            DISPLAY64_FONT_TRANSPARENT);
+    }
 
     if ((g_display_terminal_selection_active != 0u) || (g_display_terminal_copied_bytes != 0u))
     {
@@ -2375,7 +2386,7 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
         display64_compositor_fill_rect(selection_x, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
         display64_compositor_fill_rect(selection_x + selection_w - 1u, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
         (void)display64_draw_font_text(
-            badge_x + 116u,
+            (badge_x > (window->x + 64u)) ? (badge_x - 56u) : badge_x,
             badge_y + 5u,
             "Copied",
             DISPLAY64_FONT_SMALL,
@@ -4242,7 +4253,7 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
 
     (void)display64_draw_font_text(field_x, panel_y + 218u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, username_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_SURFACE_BORDER, 0u);
-    if (state == DISPLAY64_LOGIN_STATE_SETUP)
+    if ((state == DISPLAY64_LOGIN_STATE_SETUP) && (auth64_active_user()[0] == 0))
     {
         (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "type a username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
     }
@@ -4254,7 +4265,6 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     (void)display64_draw_font_text(field_x, panel_y + 278u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, accent, 0u);
     display64_compositor_fill_rect(field_x + 1u, password_y + 1u, field_w - 2u, 2u, accent);
-    (void)display64_draw_font_text(field_x + 12u, password_y + 7u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
     display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 34u, accent);
     (void)display64_draw_font_text(field_x, panel_y + 398u, "Pre-auth desktop, filesystem, and network actions stay blocked.", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
@@ -4337,6 +4347,60 @@ void display64_login_setup_screen(void)
 {
     display64_login_screen_draw("First-run setup", "Create an account or use the default", 0u, 0u);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Redraws one login field with the text being typed: the username as typed,
+ * the password as one mask character per typed character. Geometry matches
+ * display64_login_screen_draw().
+ */
+void display64_login_field_draw(u32 field, const char *text, u32 masked_length)
+{
+    char mask[41];
+    u32 panel_w;
+    u32 panel_h = 430u;
+    u32 panel_x;
+    u32 panel_y;
+    u32 field_x;
+    u32 field_w;
+    u32 field_y;
+    u32 index;
+
+    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    panel_w = display64_min_u32(560u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
+    panel_x = (g_display_boot_info->framebuffer_width > panel_w) ? ((g_display_boot_info->framebuffer_width - panel_w) / 2u) : 0u;
+    panel_y = (g_display_boot_info->framebuffer_height > panel_h) ? ((g_display_boot_info->framebuffer_height - panel_h) / 2u) : 0u;
+    field_x = panel_x + 34u;
+    field_w = (panel_w > 68u) ? (panel_w - 68u) : panel_w;
+
+    if (field == DISPLAY64_LOGIN_FIELD_PASSWORD)
+    {
+        field_y = panel_y + 298u;
+        display64_compositor_draw_surface(field_x, field_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_ACCENT, 0u);
+        display64_compositor_fill_rect(field_x + 1u, field_y + 1u, field_w - 2u, 2u, DISPLAY64_RGB_ACCENT);
+        for (index = 0u; (index < masked_length) && (index < (sizeof(mask) - 1u)); ++index)
+        {
+            mask[index] = '*';
+        }
+        mask[index] = '\0';
+        (void)display64_draw_font_text(field_x + 12u, field_y + 7u, mask, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else
+    {
+        field_y = panel_y + 238u;
+        display64_compositor_draw_surface(field_x, field_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_FOCUS_BLUE, 0u);
+        if ((text != 0) && (text[0] != '\0'))
+        {
+            (void)display64_draw_font_text(field_x + 12u, field_y + 7u, text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+        }
+    }
+    (void)display64_compositor_present();
+}
+#endif
 
 static struct display64_window *display64_wm_find_window(u32 handle)
 {
@@ -7278,6 +7342,11 @@ static void display64_desktop_redraw(void)
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+void display64_desktop_refresh(void)
+{
+    display64_desktop_redraw();
+}
+
 static void display64_desktop_redraw_existing_dirty(void)
 {
     u32 dirty;
@@ -7789,6 +7858,17 @@ void display64_desktop_probe(void)
         g_display_gui_no_ambient_display = 1u;
         g_display_gui_no_ambient_fs = 1u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_desktop_active != 0u)
+    {
+        /*
+         * The side panels were drawn and then minimized above; repaint the whole
+         * desktop so their pixels do not linger until the first user redraw.
+         */
+        display64_desktop_redraw();
+        return;
+    }
+#endif
     (void)display64_compositor_present();
 }
 

@@ -2810,6 +2810,9 @@ static int run_persistent_ring3_shell(void)
         + (u64)runtime64_transfer_user_hardware_shell_probe_offset();
     shell_rflags = launch64_manifest_runtime_user_entry_rflags(policy_manifest) | 0x00000200u;
     write_line("[x64] persistent ring3 shell default");
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    display64_desktop_refresh();
+#endif
     interrupts64_enable();
     (void)interrupts64_trigger_user_entry_probe(
         shell_rip,

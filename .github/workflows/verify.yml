@@ -55,7 +55,10 @@ jobs:
         if: always()
         run: if (Test-Path dist/limitlessos-x86_64.size.txt) { Get-Content dist/limitlessos-x86_64.size.txt | Select-Object -First 12 }
 
-      - name: UEFI gate
+      - name: UEFI desktop, login, and lock gate
+        run: ./tools/verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product
+
+      - name: UEFI hardware display gate
         run: ./tools/verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product -HardwareDisplayGate
 
       - name: BIOS disk gate
