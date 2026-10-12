@@ -3,6 +3,9 @@
 #include "paging_x64.h"
 #include "pic.h"
 #include "serial.h"
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "timesource_x64.h"
+#endif
 #include "x64.h"
 
 enum
@@ -21,7 +24,13 @@ enum
     APIC64_LAPIC_ID = 0x020u,
     APIC64_LAPIC_EOI = 0x0B0u,
     APIC64_LAPIC_SPURIOUS_VECTOR = 0x0F0u,
+    APIC64_LAPIC_LVT_TIMER = 0x320u,
     APIC64_LAPIC_LVT_LINT0 = 0x350u,
+    APIC64_LAPIC_TIMER_INITIAL = 0x380u,
+    APIC64_LAPIC_TIMER_CURRENT = 0x390u,
+    APIC64_LAPIC_TIMER_DIVIDE = 0x3E0u,
+    APIC64_LAPIC_TIMER_DIVIDE_BY_16 = 0x3u,
+    APIC64_LAPIC_TIMER_PERIODIC = 0x00020000u,
     APIC64_LAPIC_LVT_LINT1 = 0x360u,
     APIC64_LAPIC_SOFTWARE_ENABLE = 0x00000100u,
     APIC64_LAPIC_LVT_MASKED = 0x00010000u,
@@ -412,6 +421,61 @@ void apic64_send_eoi(u8 irq)
         apic64_lapic_write(APIC64_LAPIC_EOI, 0u);
     }
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 g_lapic_timer_initial_count = 0u;
+
+u32 apic64_start_periodic_timer(u8 vector, u32 hz, u64 tsc_hz)
+{
+    u32 index;
+    u64 begin;
+    u64 window;
+    u32 elapsed;
+    u64 count;
+
+    if ((g_enabled == 0u) || (hz == 0u) || (tsc_hz < 1000ull))
+    {
+        return 0u;
+    }
+
+    /* Measure the LAPIC timer against the TSC over 10 ms, masked, one-shot. */
+    apic64_lapic_write(APIC64_LAPIC_TIMER_DIVIDE, APIC64_LAPIC_TIMER_DIVIDE_BY_16);
+    apic64_lapic_write(APIC64_LAPIC_LVT_TIMER, APIC64_LAPIC_LVT_MASKED | (u32)vector);
+    window = tsc_hz / 100ull;
+    apic64_lapic_write(APIC64_LAPIC_TIMER_INITIAL, 0xFFFFFFFFu);
+    begin = timesource64_rdtsc();
+    while ((timesource64_rdtsc() - begin) < window)
+    {
+        __asm__ volatile("pause");
+    }
+    elapsed = 0xFFFFFFFFu - apic64_lapic_read(APIC64_LAPIC_TIMER_CURRENT);
+    apic64_lapic_write(APIC64_LAPIC_TIMER_INITIAL, 0u);
+    count = ((u64)elapsed * 100ull) / (u64)hz;
+    if ((elapsed == 0u) || (count == 0ull) || (count > 0xFFFFFFFFull))
+    {
+        return 0u;
+    }
+
+    /* The silent PIT must not share the vector should it ever wake up. */
+    index = apic64_ioapic_redirection_index(g_timer_gsi);
+    if (index != APIC64_IOAPIC_INVALID_REDIRECTION)
+    {
+        u8 low_register = (u8)(APIC64_IOAPIC_REDIRECTION_BASE + (index * 2u));
+
+        apic64_ioapic_write(low_register, apic64_ioapic_read(low_register) | APIC64_IOAPIC_REDIRECTION_MASKED);
+    }
+
+    g_lapic_timer_initial_count = (u32)count;
+    apic64_lapic_write(APIC64_LAPIC_LVT_TIMER, APIC64_LAPIC_TIMER_PERIODIC | (u32)vector);
+    apic64_lapic_write(APIC64_LAPIC_TIMER_INITIAL, (u32)count);
+    return 1u;
+}
+
+u32 apic64_timer_initial_count(void)
+{
+    return g_lapic_timer_initial_count;
+}
+#endif
 
 u32 apic64_madt_found(void)
 {

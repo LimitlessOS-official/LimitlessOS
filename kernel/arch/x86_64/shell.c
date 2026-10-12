@@ -29,6 +29,7 @@
 #include "rtc_x64.h"
 #include "runtime_image_x64.h"
 #include "services.h"
+#include "timesource_x64.h"
 #include "types.h"
 #include "virtio_net_x64.h"
 #include "xhci_x64.h"
@@ -5113,7 +5114,11 @@ static u32 shell64_execute_line_inner(
         shell64_write_decimal_field(console_capability_handle, owner_id, "up ", seconds / 3600u);
         shell64_write_decimal_field(console_capability_handle, owner_id, "h ", (seconds / 60u) % 60u);
         shell64_write_decimal_field(console_capability_handle, owner_id, "m ", seconds % 60u);
-        return shell64_write_text(console_capability_handle, owner_id, "s\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "s\n");
+        (void)shell64_write_text(console_capability_handle, owner_id, "timer: ");
+        (void)shell64_write_text(console_capability_handle, owner_id, timesource64_mode_name());
+        shell64_write_decimal_field(console_capability_handle, owner_id, " tsc-mhz ", (u32)(timesource64_tsc_hz() / 1000000ull));
+        return shell64_write_text(console_capability_handle, owner_id, "\n");
     }
 
     if (shell64_token_equals(command_start, command_length, "whoami"))
