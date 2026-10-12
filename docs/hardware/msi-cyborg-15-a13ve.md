@@ -6,6 +6,16 @@ This checklist is for a real UEFI USB boot of the current handoff ISO at `dist\m
 
 Post-M21 hardware progress must be based on real device output. Synthetic process tests and QEMU-only driver evidence do not count as MSI laptop network, storage, or daily-driver validation.
 
+## October 2026 capture (M202 image, fixed in M203)
+
+Photos of `uptime`, `date`, `devices`, `ports`, `usbscan`, `hwval`, and `hwval full i2c-acpi` from the M202 Product image (2026-10-12):
+
+- **Works:** desktop at 1920x1080, PS/2 keyboard, `date` (RTC read correctly), `devices` (6 inventoried, 5 bound, the discrete GPU deferred).
+- **The PIT never ticks.** `uptime` printed `up 0h 0m 0s` minutes after boot. The firmware clock-gates the legacy 8254 or never delivers IRQ0, so every tick-based clock stalled: `uptime`, the taskbar clock and `date` (both re-read the RTC only when ticks advance), key repeat, and tick timeouts. M203 detects the silent PIT (frozen counter, or no IRQ0 within 60 ms with interrupts on, after a 500 ms grace) and moves the 100 Hz tick to the LAPIC timer, calibrated against the TSC (CPUID leaf 0x15/0x16, or one RTC second). `uptime` now prints a second line, `timer: <pit|lapic|tsc> tsc-mhz <n>`.
+- **USB enumeration fails at the first command that takes real time.** Root ports 5 and 6 (high speed), 10 (full speed), and 15 (SuperSpeed, the USB stick) are connected. Port 15 failed Address Device with no completion (`address failures 1`, `address completion 0`, `xhci error 22`), the slot cleanup also timed out (`slot disable failures 1`), and port 10 then failed Enable Slot (`last skip code 21`). Command waits were spin counts (1,000,000 loads of the event ring, about a millisecond on this CPU), and the event-ring load was not volatile. M203 makes command and control waits last at least 1 s of TSC time (100 ms for Disable Slot) and reloads the ring every pass. With no USB storage, `export` has nowhere to write.
+- **Touchpad:** ACPI finds the ELAN device (`i2c-acpi found 1 addr 21 speed 400000 gpio-found 1`), but its controller 00:15.0 has an unassigned 64-bit BAR (`bar0 0x00000004`, base 0), so there is no MMIO to drive it (`i2c pointer error 1`). Next step: assign the BAR from the host bridge window.
+- **Internal NVMe:** still behind VMD (`vmd-nested-scan-buses 1`, `scan-truncated 1`, `nested-nvme 0`).
+
 ## June 2026 Hardware Snapshot
 
 User-provided laptop photos from a real boot show the kernel reaches the persistent `[x64] $` shell and accepts keyboard input. The observed `linux /APPS/DYNLDLIMIT` result is:

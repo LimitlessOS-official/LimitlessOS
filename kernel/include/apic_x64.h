@@ -7,6 +7,11 @@
 void apic64_init(const struct boot_info *boot_info);
 u32 apic64_enabled(void);
 void apic64_send_eoi(u8 irq);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Replaces a silent PIT: masks IRQ0 at the IO-APIC and runs the LAPIC timer at hz on vector. */
+u32 apic64_start_periodic_timer(u8 vector, u32 hz, u64 tsc_hz);
+u32 apic64_timer_initial_count(void);
+#endif
 u32 apic64_madt_found(void);
 u64 apic64_lapic_base(void);
 u64 apic64_ioapic_base(void);

@@ -1,8 +1,17 @@
 # LimitlessOS Status
 
-Last updated: 2026-09-28. Milestone narratives for M1–M192 are archived in [history/status-log.md](history/status-log.md).
+Last updated: 2026-10-12. Milestone narratives for M1–M192 are archived in [history/status-log.md](history/status-log.md).
 
 ## Current milestone
+
+### M203: Laptop timer fallback and real xHCI command timeouts
+
+Photos from the MSI laptop running the M202 image ([hardware notes](hardware/msi-cyborg-15-a13ve.md#october-2026-capture-m202-image-fixed-in-m203)) showed two timing faults behind most of what failed there:
+
+- **No timer interrupt.** `uptime` stayed at 0 s: the 8254 PIT never raised IRQ0, so the taskbar clock, `date`, key repeat, and tick-based timeouts all stood still. The kernel now notices a silent PIT (frozen counter, or no IRQ0 within 60 ms once interrupts are on, after a 500 ms grace) and runs the same 100 Hz tick from the LAPIC timer, calibrated against the TSC (CPUID leaf 0x15/0x16 or one RTC second); without a LAPIC, ticks come straight from the TSC. Uptime is seeded from the TSC so it still counts from boot. `uptime` adds a `timer:` line naming the source. New file `kernel/arch/x86_64/timesource.c` (UEFI only).
+- **xHCI commands gave up after about a millisecond.** Command and control-transfer waits were spin counts that real controllers outlast, so the USB stick on the SuperSpeed port failed Address Device and every later port failed Enable Slot. These waits now also run until a wall-clock floor (1 s; 100 ms for Disable Slot), the event ring is reloaded every pass, and `xhci64_delay_ms` uses the TSC when its rate is known.
+
+Accepted verification (2026-10-12): `verify-qemu.ps1` UEFI (plain), UEFI `-HardwareDisplayGate`, and BIOS disk passed. The plain gate also passed with QEMU's PIT removed (`-machine q35,pit=off`): the log showed `timer: pit silent (counter frozen), ticks from lapic` and `uptime` reported `timer: lapic tsc-mhz 2918` with correct elapsed time. With the PIT present the source stays `pit`. Build had no warnings; BIOS 923/1024 sectors unchanged. Not yet retested on the laptop.
 
 ### M202: Keyboard completeness, terminal copy and paste, desktop polish
 
@@ -165,8 +174,9 @@ Verified under QEMU/OVMF by `verify-qemu.ps1` unless marked otherwise.
 From user-supplied captures ([hardware/msi-cyborg-15-a13ve.md](hardware/msi-cyborg-15-a13ve.md)):
 
 - Boots the UEFI Product image to the desktop and shell; keyboard works.
-- **Open:** touchpad (I2C HID over ACPI) and USB mouse do not yet move the cursor; the internal NVMe sits behind Intel VMD/RST and is not yet readable; the display layout needs a retest with the M192 font.
-- The M193 staging fix and the current handoff bundle have not been retested on the laptop.
+- Display layout correct at 1920x1080 (October 2026 photos).
+- **Fixed in M203, awaiting retest:** the PIT never ticked (uptime 0, clocks frozen); xHCI commands timed out, so the USB stick and USB receiver never enumerated.
+- **Open:** touchpad controller (I2C, 00:15.0) has an unassigned BAR, so the touchpad cannot be driven yet; the internal NVMe sits behind Intel VMD/RST and is not yet readable.
 
 ## Known issues and limits
 

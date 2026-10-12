@@ -3,6 +3,9 @@
 #include "input_x64.h"
 #include "paging_x64.h"
 #include "serial.h"
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+#include "timesource_x64.h"
+#endif
 
 #define XHCI64_MAP_VIRTUAL_BASE 0xFFFFFFFF90180000ull
 #define XHCI64_MAP_PAGES 16u
@@ -141,6 +144,9 @@
 #define XHCI64_PORT_RESET_POLL_LIMIT 250000u
 #define XHCI64_LEGACY_HANDOFF_POLL_LIMIT 1000000u
 #define XHCI64_DELAY_1MS_POLLS 25000u
+/* xHCI 1.2 4.6.1: commands normally finish in milliseconds; Linux allows 5 s. */
+#define XHCI64_COMMAND_TIMEOUT_MS 1000u
+#define XHCI64_SHORT_TIMEOUT_MS 100u
 #define XHCI64_CONNECTION_RETRIES 10u
 #define XHCI64_ADDRESS_RECOVERY_RETRIES 2u
 #define XHCI64_PORT_RESET_WAIT_MS 100u
@@ -778,6 +784,13 @@ static void xhci64_delay_ms(u32 milliseconds)
 {
     u32 ms;
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (timesource64_delay_us(milliseconds * 1000u) != 0u)
+    {
+        return;
+    }
+#endif
+
     for (ms = 0u; ms < milliseconds; ++ms)
     {
         u32 poll;
@@ -877,11 +890,38 @@ static u32 xhci64_poll_event_bounded(
     struct xhci64_event *out_event)
 {
     u32 poll;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /*
+     * A spin count alone is about a millisecond on a fast CPU, far less than a
+     * real controller needs for Address Device. Bounded waits (not the live
+     * input polls) also run until a wall-clock floor has passed.
+     */
+    u32 floor_ms = (poll_limit >= XHCI64_CONTROL_POLL_LIMIT)
+        ? XHCI64_COMMAND_TIMEOUT_MS
+        : ((poll_limit >= XHCI64_DISABLE_SLOT_POLL_LIMIT) ? XHCI64_SHORT_TIMEOUT_MS : 0u);
+    u64 start_tsc = timesource64_rdtsc();
+#endif
 
-    for (poll = 0u; poll < poll_limit; ++poll)
+    for (poll = 0u; ; ++poll)
     {
-        struct xhci64_trb *trb = &g_xhci_event_ring[g_xhci_event_dequeue];
-        u32 control = trb->dword[3];
+        struct xhci64_trb *trb;
+        u32 control;
+
+        if (poll >= poll_limit)
+        {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            if ((floor_ms == 0u) || (timesource64_elapsed_ms(start_tsc, floor_ms) != 0u))
+            {
+                break;
+            }
+            __asm__ __volatile__("pause");
+#else
+            break;
+#endif
+        }
+        trb = &g_xhci_event_ring[g_xhci_event_dequeue];
+        /* The controller writes the ring by DMA; force a fresh load every pass. */
+        control = *(volatile u32 *)&trb->dword[3];
         u32 type;
         u32 slot;
         u32 endpoint;
@@ -892,6 +932,7 @@ static u32 xhci64_poll_event_bounded(
             continue;
         }
 
+        __asm__ __volatile__("" ::: "memory");
         event.parameter = ((u64)trb->dword[1] << 32) | (u64)trb->dword[0];
         event.status = trb->dword[2];
         event.control = control;
