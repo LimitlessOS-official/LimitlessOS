@@ -21,7 +21,9 @@ All scripts are PowerShell and resolve the repository root from their own locati
 | Script | Purpose |
 |---|---|
 | `verify-qemu.ps1` | Main boot/runtime gate for every lane and boot medium (`-BootMedia disk/iso/uefi`) with optional real-binary and hardware-diagnostic modes. |
-| `run-qemu.ps1` | Boots a built image interactively. |
+| `run-desktop.ps1` | Day-to-day launcher: rebuilds when sources changed, then boots the UEFI desktop in a QEMU window with a persistent virtual disk. |
+| `install-desktop-shortcut.ps1` | Adds a "LimitlessOS" desktop icon that runs `run-desktop.ps1`. |
+| `run-qemu.ps1` | Boots any built lane/medium interactively with a throwaway NVMe snapshot. |
 | `verify-real-binary-gate.ps1` | Real third-party Linux binary gate with provenance recording. |
 | `verify-boot-media-linux-handoff.ps1` | Loader staging of `/APPS/DYNLDLIMIT` and `/APPS/LDLIMIT` plus the kernel boot-media fallback. |
 | `verify-nvme-persistence.ps1` | Two-boot NVMe persistence and write/commit authority. |
