@@ -4,6 +4,32 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M198: First-run account choice and real login/lock
+
+The first-run screen now offers an explicit choice: type a username (Enter) and then a password to create an account, or press Enter on the empty username to use the default account `limitless` / `limitless`. The default is picked automatically only after 60 seconds with no keyboard input at all, which keeps the M108 protection for machines whose keyboard driver is not working yet.
+
+Fixed along the way (all found by exercising the real typed paths for the first time):
+
+- **Login bypass:** every login and first-run read timed out after 10 ticks (100 ms) and fell back to a "hardware recovery session", so in practice nobody could type credentials and any machine signed in on its own. A created account now always waits for its password; only the default account (public password) signs in after 5 idle seconds.
+- **Account swap:** after first-run creation, the session was restarted as the default account, so the user's own password did not unlock. The session now keeps the created account.
+- **Lock did not lock:** `lock` timed out, printed "lock unavailable on this boot path", and returned to the shell. It now stays locked until the correct password is entered, with the existing failure delay and lockout.
+- **Keystrokes swallowed by desktop windows:** with the desktop active, keys typed at the login or lock screen were consumed as shortcuts by the focused File Manager or Settings window. `display64_wm_process_keyboard_event` now leaves the keyboard alone while the auth screen is reading (`auth64_keyboard_capture_active`).
+- **Keystrokes dropped by the PS/2 mouse IRQ:** the IRQ12 drain in `input.c` consumed every pending controller byte and discarded it when a native (USB/I2C) pointer was active, so keyboard scancodes queued at that moment were lost mid-word. Bytes without the AUX tag now go to the keyboard in that case; the controller quirk handling is unchanged when the PS/2 mouse is the pointer. This likely affects the MSI laptop (PS/2 keyboard with an I2C touchpad).
+- **GUI probe window length:** `collect_gui_interactive_probe_input` ended on a raw spin count, so its duration depended on loop speed; with the login no longer leaving typed bytes in the queue it closed before any GUI input arrived. The guard now counts only spins without timer progress.
+- **Stale verifier patterns:** two more assertions predated later telemetry fields (M161 NVMe registers in the UEFI NVMe identify line; `input-diag-suppressed`/`mouse-diag-suppressed` in the GUI line).
+
+The login screen shows the two first-run options and the real account name on the login/lock screens.
+
+Accepted verification (2026-09-27):
+
+- Product build: no warnings; BIOS 923/1024 sectors (unchanged).
+- CI gates passed: `verify-qemu.ps1 -BootMedia uefi -HardwareDisplayGate` and `verify-qemu.ps1 -BootMedia disk`. The UEFI gate now creates the account through the typed path (`first-run account creation`, `hardware-fallbacks 0`).
+- Enter-alone first run: `first-run default account chosen`, account stored on NVMe (`user-store-persistent 1`).
+- No-input first run: `first-run no keyboard input; default account selected` after the kernel measured 6000 ticks (60 s at 100 Hz; QEMU's emulated clock ran faster than wall time).
+- Lock: the plain UEFI gate typed `lock` then the password; the transcript shows `session unlocked` on the first attempt and the next commands running normally.
+
+Not proven: the plain UEFI gate (without `-HardwareDisplayGate`) still fails at its GUI assertion because the verifier's File Manager clicks produce no actions (`fileman-actions 0`). The same failure occurs on `main` before this change; see the roadmap. Physical MSI behavior is untested.
+
 ### M197: Local desktop launcher
 
 `tools\run-desktop.ps1` runs the Product desktop in a QEMU window without writing a USB stick. It rebuilds when any source is newer than the last build, boots the UEFI image on the same virtual hardware as the UEFI gate, and keeps a persistent virtual NVMe disk in `%LOCALAPPDATA%\LimitlessOS`. `tools\install-desktop-shortcut.ps1` adds a desktop icon for it. `tools\run-qemu.ps1` had a PowerShell parse error (a trailing comma in its argument list) and could not run at all; that is fixed.

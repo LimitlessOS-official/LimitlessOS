@@ -40712,6 +40712,7 @@ static void collect_mouse_probe_input(u32 target_packets, u32 max_wait_ticks)
 static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
 {
     u32 target_ticks = pit_get_ticks() + max_wait_ticks;
+    u32 last_tick = pit_get_ticks();
     u32 guard = 0u;
 
     interrupts64_enable();
@@ -40734,7 +40735,20 @@ static void collect_gui_interactive_probe_input(u32 max_wait_ticks)
         input64_poll_mouse();
         xhci64_poll_mouse();
         scaffold_cpu_pause();
-        ++guard;
+        /*
+         * The guard only catches a timer that never advances. Counting every
+         * spin made the window's length depend on loop speed, so an idle
+         * input queue could end the window before any GUI input arrived.
+         */
+        if (pit_get_ticks() != last_tick)
+        {
+            last_tick = pit_get_ticks();
+            guard = 0u;
+        }
+        else
+        {
+            ++guard;
+        }
     }
     interrupts64_disable();
     input64_poll_keyboard();

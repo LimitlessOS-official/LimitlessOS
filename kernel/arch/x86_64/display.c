@@ -4214,12 +4214,27 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 104u, title, DISPLAY64_FONT_NORMAL, accent, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 128u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Status", "visible blocking state", accent);
-    display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Fallback", "hardware input recovery is bounded", DISPLAY64_RGB_FOCUS_BLUE);
+    if (state == DISPLAY64_LOGIN_STATE_SETUP)
+    {
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Create account", "type a username, Enter, then a password", accent);
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Use default", "press Enter alone: limitless / limitless", DISPLAY64_RGB_FOCUS_BLUE);
+    }
+    else
+    {
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Status", "visible blocking state", accent);
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Security", "created accounts always need their password", DISPLAY64_RGB_FOCUS_BLUE);
+    }
 
     (void)display64_draw_font_text(field_x, panel_y + 218u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, username_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_SURFACE_BORDER, 0u);
-    (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "limitless", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    if (state == DISPLAY64_LOGIN_STATE_SETUP)
+    {
+        (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "type a username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else
+    {
+        (void)display64_draw_font_text(field_x + 12u, username_y + 7u, auth64_active_user(), DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    }
 
     (void)display64_draw_font_text(field_x, panel_y + 278u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, accent, 0u);
@@ -4305,7 +4320,7 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
 
 void display64_login_setup_screen(void)
 {
-    display64_login_screen_draw("First-run setup", "Create the initial local user", 0u, 0u);
+    display64_login_screen_draw("First-run setup", "Create an account or use the default", 0u, 0u);
 }
 
 static struct display64_window *display64_wm_find_window(u32 handle)
@@ -8537,6 +8552,13 @@ u32 display64_wm_process_keyboard_event(u8 value)
     {
         return 1u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Login and lock screens own the keyboard; window shortcuts must not consume credentials. */
+    if (auth64_keyboard_capture_active() != 0u)
+    {
+        return 1u;
+    }
+#endif
 
     focused = display64_wm_focused_window();
     focused_handle = (focused != 0) ? focused->handle : 0u;

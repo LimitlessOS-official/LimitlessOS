@@ -31,6 +31,9 @@ u32 auth64_hardware_recovery_count(void);
 u32 auth64_lock_unavailable_count(void);
 #endif
 const char *auth64_active_user(void);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+u32 auth64_keyboard_capture_active(void);
+#endif
 const char *auth64_home_namespace(void);
 const char *auth64_session_profile(void);
 

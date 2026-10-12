@@ -47,7 +47,8 @@ A Product build ends by running `tools\assert-m1-production-slice.ps1`, which ch
 
 - **Persistence:** the virtual NVMe disk lives in `%LOCALAPPDATA%\LimitlessOS\desktop-nvme.img`, outside the repository and OneDrive, so the local account and files persist between runs. The kernel log is written next to it as `desktop-debug.log`.
 - **Mouse:** click inside the window to capture the mouse; Ctrl+Alt+G releases it.
-- **Login:** if nothing is typed during first-run setup, the M108 bounded-login fallback creates the account `limitless` with password `limitless`.
+- **First run:** type a username and press Enter, then a password, to create your account; or press Enter on the empty username to use the default account (`limitless` / `limitless`). If there is no keyboard input at all for 60 seconds, the default account is chosen. `-Fresh` brings the first-run screen back.
+- **Login and lock:** a created account always requires its password. The default account signs in by itself after 5 idle seconds at the login screen. `lock` (or the lock button in Settings) stays locked until the account password is entered.
 - **One VM at a time:** the launcher refuses to start a second VM while one is running, because both would write the same disk.
 - **Limits:** QEMU is a development convenience. It does not stand in for physical hardware; touchpad, Intel VMD NVMe, and display-panel behavior on the MSI laptop still need a USB capture.
 

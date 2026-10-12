@@ -1347,11 +1347,18 @@ static void input64_mouse_drain_aux_controller(void)
         /*
          * This path is entered only from IRQ12. Some real 8042-compatible
          * controllers deliver the interrupt while leaving the AUX status bit
-         * clear, so IRQ provenance is stronger than the status tag here.
+         * clear, so IRQ provenance is stronger than the status tag here when
+         * the PS/2 mouse is the active pointer. When a native (USB or I2C)
+         * pointer owns the cursor, PS/2 mouse bytes are unused, so a byte
+         * without the AUX tag belongs to the keyboard and must not be dropped.
          */
         if (accept_mouse_bytes != 0u)
         {
             input64_mouse_accept_ps2_byte(value);
+        }
+        else if ((status & INPUT64_PS2_STATUS_AUX_DATA) == 0u)
+        {
+            input64_keyboard_accept_scancode(value);
         }
         ++drained;
     }
