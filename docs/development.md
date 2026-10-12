@@ -47,7 +47,10 @@ A Product build ends by running `tools\assert-m1-production-slice.ps1`, which ch
 
 - **Persistence:** the virtual NVMe disk lives in `%LOCALAPPDATA%\LimitlessOS\desktop-nvme.img`, outside the repository and OneDrive, so the local account and files persist between runs. The kernel log is written next to it as `desktop-debug.log`.
 - **Mouse:** click inside the window to capture the mouse; Ctrl+Alt+G releases it.
-- **Login:** if nothing is typed during first-run setup, the M108 bounded-login fallback creates the account `limitless` with password `limitless`.
+- **First run:** type a username and press Enter, then a password, to create your account; or press Enter on the empty username to use the default account (`limitless` / `limitless`). If there is no keyboard input at all for 60 seconds, the default account is chosen. `-Fresh` brings the first-run screen back.
+- **Login and lock:** a created account always requires its password. The default account signs in by itself after 5 idle seconds at the login screen. `lock` (or the lock button in Settings) stays locked until the account password is entered.
+- **Keyboard:** Up/Down recall shell history; Ctrl+C cancels the line being typed; held keys repeat when Settings > Keyboard has repeat on. Drag across terminal text to copy it and press Ctrl+V to paste it at the prompt (newlines become spaces). In the File Manager and Settings, Up/Down move the selection; Enter opens a folder or toggles the selected setting.
+- **Shell:** `help` lists the commands; `cd`, `pwd`, `ls`, `cat`, `echo text > file`, `date`, `uptime`, `clear`, `lock`, `shutdown`, and `reboot` cover everyday use.
 - **One VM at a time:** the launcher refuses to start a second VM while one is running, because both would write the same disk.
 - **Limits:** QEMU is a development convenience. It does not stand in for physical hardware; touchpad, Intel VMD NVMe, and display-panel behavior on the MSI laptop still need a USB capture.
 
@@ -65,6 +68,7 @@ It boots the built image under QEMU/OVMF, drives the login and shell through QMP
 
 | Command | Proves |
 |---|---|
+| `verify-qemu.ps1 -Architecture x86_64 -BootMedia uefi -BuildProfile Product` | Desktop GUI probe (windows, File Manager, Settings), first-run login, and `lock`/unlock |
 | `verify-qemu.ps1 -Architecture x86_64 -BootMedia disk -BuildProfile Product` | BIOS fallback lane |
 | `verify-qemu.ps1 -Architecture x86_64 -BootMedia iso -BuildProfile Product` | UEFI optical media |
 | `verify-qemu.ps1 ... -BootMedia uefi -RealBinaryGate -ExtraShellLine "linux /APPS/DYNLDLIMIT"` | A staged dynamic Linux ELF runs from boot media |
@@ -78,7 +82,7 @@ It boots the built image under QEMU/OVMF, drives the login and shell through QMP
 
 ### Continuous integration
 
-`.github/workflows/verify.yml` runs on every pull request and every push to `main`, on a `windows-latest` GitHub runner. It installs the same toolchain, runs the Product build (which includes the M1 production-slice gate and budget enforcement), then runs the UEFI (`-HardwareDisplayGate`) and BIOS disk QEMU gates. Serial logs and the size report are uploaded as the `verify-logs` artifact. The real-binary, persistence, and hardware-handoff gates depend on the ignored `external/` inputs or physical hardware and still run locally.
+`.github/workflows/verify.yml` runs on every pull request and every push to `main`, on a `windows-latest` GitHub runner. It installs the same toolchain, runs the Product build (which includes the M1 production-slice gate and budget enforcement), then runs three QEMU gates: UEFI desktop/login/lock (no switches), UEFI `-HardwareDisplayGate`, and BIOS disk. Serial logs and the size report are uploaded as the `verify-logs` artifact. The real-binary, persistence, and hardware-handoff gates depend on the ignored `external/` inputs or physical hardware and still run locally.
 
 ## External inputs (`external/`, not in git)
 

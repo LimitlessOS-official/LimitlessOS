@@ -314,7 +314,7 @@ function Assert-X64M1RuntimeSurface
     }
 
     if ($LoginExpected) {
-        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps devices help hwval info linux lock net pkginfo ports pwd$' -Message "M10 runtime help did not label authenticated shell builtins."
+        Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps cd clear date devices dev echo hwdevices lsdev export exporthw help hwfull hwval hwexport info linux lock net open pkginfo port ports pwd reboot shutdown uptime usbscan whoami$' -Message "M10 runtime help did not label authenticated shell builtins."
     }
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Builtins: apps help hwval info linux net pkginfo pwd$' -Message "M10 BIOS fallback help did not omit unavailable lock builtin."
@@ -365,7 +365,7 @@ function Assert-X64M1RuntimeSurface
     else {
         Assert-OutputContains -Lines $persistentLines -Pattern '^Product AI (policy: Settings/pkginfo show request-deny-audit only; AI actions unavailable|assistant: launcher, Settings, and pkginfo show (read-only consent flow|consent-scoped action templates); inference unavailable)$' -Message "M16-M18 runtime help did not describe Product AI policy/Assistant status."
     }
-    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M21: ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install$|^Unavailable in M(20|1[6789]): ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, (general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, )?encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-(assistant|inference), ai-(actions|autonomy), ai-automation, cloud-ai, ai-assisted-setup, real-install$' -Message "M16-M21 runtime help did not label unavailable account/cloud/network/installer/AI surfaces."
+    Assert-OutputContains -Lines $persistentLines -Pattern '^Unavailable in M21: ask \(not AI\), (echo, )?aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-inference, ai-autonomy, ai-automation, cloud-ai, ai-assisted-setup, real-install$|^Unavailable in M(20|1[6789]): ask \(not AI\), echo, aliases, personal-login, enterprise-login, account-linking, real-cloud-storage, cloud-sync, auto-upload-download, (general-sockets, server-sockets, raw-packets, arbitrary-network-send-receive, )?encrypted-secrets, encrypted-identity-transport, credential-transport, token-storage, ai-(assistant|inference), ai-(actions|autonomy), ai-automation, cloud-ai, ai-assisted-setup, real-install$' -Message "M16-M21 runtime help did not label unavailable account/cloud/network/installer/AI surfaces."
     Assert-OutputContains -Lines $persistentLines -Pattern '^Product apps:$' -Message "M1 apps output did not show a product-app section."
 
     foreach ($productApp in @('APPEND', 'CAT', 'COPY', 'DELETE', 'LS', 'MKDIR', 'MOVE', 'NETHELLO', 'RENAME', 'STAT', 'TOUCH', 'WRITE')) {
@@ -883,10 +883,15 @@ function Send-QemuKeyboardProbe
             $dragEndY = 150
             $newTerminalX = 66 + ($dragEndX - $dragStartX)
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
-            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            # Mirrors the UEFI shell terminal created in display64_wm_probe: wide screens leave
+            # 416 px on the right for side windows.
+            $originalTerminalWidth = if ($frameWidth -gt 1200) { [Math]::Min(1480, $frameWidth - 416 - 32) } else { [Math]::Max(160, $frameWidth - 64) }
+            # Title buttons are 14x14 boxes at window y + 7 (the shell terminal is at y 56); aim at their centres.
             $originalCloseX = 32 + $originalTerminalWidth - 15
-            $originalMinimizeX = 32 + $originalTerminalWidth - 44
-            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $originalMinimizeX = 32 + $originalTerminalWidth - 37
+            # The UEFI desktop uses the Product layout, which reserves no diagnostics column,
+            # so side windows (File Manager, Settings) sit against the right edge.
+            $sideReserved = 0
             $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
             $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
             $fileBodyX = $fileWindowX + 16
@@ -940,10 +945,15 @@ function Send-QemuKeyboardProbe
             $newTerminalWidth = [Math]::Min(760, [Math]::Max(160, $frameWidth - 96))
             $newTerminalX = 66 + ($dragEndX - $dragStartX)
             $newTerminalY = 98 + ($dragEndY - $dragStartY)
-            $originalTerminalWidth = [Math]::Min(920, [Math]::Max(160, $frameWidth - 64))
+            # Mirrors the UEFI shell terminal created in display64_wm_probe: wide screens leave
+            # 416 px on the right for side windows.
+            $originalTerminalWidth = if ($frameWidth -gt 1200) { [Math]::Min(1480, $frameWidth - 416 - 32) } else { [Math]::Max(160, $frameWidth - 64) }
+            # Title buttons are 14x14 boxes at window y + 7 (the shell terminal is at y 56); aim at their centres.
             $originalCloseX = 32 + $originalTerminalWidth - 15
-            $originalMinimizeX = 32 + $originalTerminalWidth - 44
-            $sideReserved = if ($frameWidth -gt 960) { 336 + (16 * 2) } else { 0 }
+            $originalMinimizeX = 32 + $originalTerminalWidth - 37
+            # The UEFI desktop uses the Product layout, which reserves no diagnostics column,
+            # so side windows (File Manager, Settings) sit against the right edge.
+            $sideReserved = 0
             $sideRightEdge = if (($frameWidth -gt $sideReserved) -and (($frameWidth - $sideReserved) -gt 384)) { $frameWidth - $sideReserved } else { $frameWidth }
             $fileWindowX = if ($sideRightEdge -gt 368) { $sideRightEdge - 344 } else { 24 }
             $fileBodyX = $fileWindowX + 16
@@ -984,13 +994,13 @@ function Send-QemuKeyboardProbe
                     $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}')
                     & $drainQmp
                     Start-Sleep -Milliseconds 220
-                    & $sendMoveTo $originalMinimizeX 63
+                    & $sendMoveTo $originalMinimizeX 70
                     & $sendClick
                     & $sendMoveTo 90 $launcherY
                     & $sendClick
                 }
                 if ($guiAttempt -eq 0) {
-                    $settingsX = [Math]::Max(40, $frameWidth - 368 - 344 + 40)
+                    $settingsX = $fileWindowX + 40
                     & $sendMoveTo 22 $launcherY
                     & $sendClick
                     & $sendMoveTo 170 $settingsIconY
@@ -1002,6 +1012,16 @@ function Send-QemuKeyboardProbe
                     & $sendClick
                     & $sendMoveTo $settingsX 664
                     & $sendClick
+                    # Five rows fit; scroll two rows so the diagnostics export row (index 6) takes the last slot.
+                    # Scroll to the top first (it clamps), so an earlier or dropped notch cannot shift the target row.
+                    foreach ($wheelNotch in 1..6) {
+                        & $sendWheelUp
+                    }
+                    foreach ($wheelNotch in 1..2) {
+                        $writer.WriteLine('{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}')
+                        & $drainQmp
+                        Start-Sleep -Milliseconds 160
+                    }
                     & $sendMoveTo $settingsX 708
                     & $sendClick
                 }
@@ -1041,7 +1061,7 @@ function Send-QemuKeyboardProbe
                 & $sendMoveTo 90 $launcherY
                 & $sendClick
                 & $sendKey "a"
-                & $sendMoveTo $originalCloseX 63
+                & $sendMoveTo $originalCloseX 70
                 & $sendClick
                 & $sendMoveTo ([Math]::Min($frameWidth - 40, $newTerminalX + [int]($newTerminalWidth / 2))) ($newTerminalY + 120)
                 & $sendClick
@@ -1170,7 +1190,16 @@ function Send-QemuKeyboardProbe
             "net",
             "net curl example.com",
             "pkginfo",
-            "hwval full"
+            "hwval full",
+            "date",
+            "uptime",
+            "echo echo round trip ok",
+            "frobnicate",
+            "mkdir cdtest",
+            "cd cdtest",
+            "pwd",
+            "cd ..",
+            "cd nowhere"
         )
         if ($LoginProbeEnabled) {
             $shellTextLines += @(
@@ -1180,7 +1209,13 @@ function Send-QemuKeyboardProbe
         }
         $shellTextLines += @(
             "write w.txt ok",
-            "cat w.txt"
+            "cat w.txt",
+            "copy w.txt w2.txt",
+            "cat w2.txt",
+            "rename w2.txt w3.txt",
+            "cat w3.txt",
+            "delete w3.txt",
+            "cat w3.txt"
         )
         foreach ($shellTextLine in $shellTextLines) {
             if (-not [string]::IsNullOrWhiteSpace($shellTextLine)) {
@@ -1398,6 +1433,15 @@ try {
         Send-QemuKeyboardProbe -Port $qmpPort -DurationMilliseconds $probeMilliseconds -KeyDelayMilliseconds $keyDelayMilliseconds -LineDelayMilliseconds $lineDelayMilliseconds -DebugLogPath $logPath -FramebufferLogPath $serialLogPath -GuiProbeEnabled:$guiProbeForRun -LoginProbeEnabled:$loginProbeForRun -RealBinaryProbeEnabled:$($RealBinaryGate.IsPresent) -HardwareRegistryProbeEnabled:$($HardwareRegistryGate.IsPresent) -HardwareDisplayProbeEnabled:$($HardwareDisplayGate.IsPresent) -HardwareStorageProbeEnabled:$hardwareStorageProbe -HwvalFilterProbeEnabled:$($HwvalFilterGate.IsPresent) -EarlyBootKeyEnabled:($BootMedia -eq "disk") -ExtraTextLines $extraTextLines
         if ((-not $RealBinaryGate.IsPresent) -and (-not $HardwareRegistryGate.IsPresent) -and (-not $HardwareDisplayGate.IsPresent) -and (-not $hardwareStorageProbe)) {
             Wait-ForLogPattern -Path $logPath -Pattern '\[x64\] persistent ring3 shell default' -TimeoutMilliseconds 600000
+        }
+    }
+    elseif ($Architecture -eq "x86") {
+        # The x86 kernel runs its shell script by itself; wait for its last telemetry
+        # instead of a fixed boot time, which a loaded host can exceed.
+        try {
+            Wait-ForLogPattern -Path $logPath -Pattern 'user-fs-writes' -TimeoutMilliseconds 60000
+        }
+        catch {
         }
     }
     Start-Sleep -Seconds $bootWaitSeconds
@@ -3275,12 +3319,12 @@ else {
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] kernel entry guard linked-base 0x[0-9A-F]+ linked-match 1 entry 0xFFFFFFFF80010000 boot-info 0x[0-9A-F]+ page-root 0x[0-9A-F]+ identity 16777216 tables-ready 1 jump-ready 1 reason handoff-ready' -Message "x64 UEFI dynamic kernel-entry guard proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[uefi\] firmware services offline; jumping to x64 kernel entry' -Message "x64 UEFI post-ExitBootServices kernel jump marker was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '^LimitlessOS x86_64 scaffold$' -Message "x64 UEFI handoff did not reach the linked kernel scaffold."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[boot\] arch 64 flags 0x0000003F' -Message "x64 UEFI framebuffer boot flag was not preserved into the kernel."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[boot\] arch 64 flags 0x000000[37]F' -Message "x64 UEFI framebuffer boot flag was not preserved into the kernel."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] framebuffer handoff base 0x[0-9A-F]+ bytes 0x[0-9A-F]+ [1-9][0-9]*x[1-9][0-9]* ppsl [1-9][0-9]* format [0-1] firmware-token 0x[0-9A-F]+ kernel-draw-pixels [1-9][0-9]* kernel-token 0x[0-9A-F]+ status 1' -Message "x64 kernel-owned framebuffer handoff draw proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] descriptors state 0x0000007F .* cs 0x00000018 .* star-ready 1' -Message "x64 UEFI kernel descriptor reload proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] pci broker service 9 cap 0x[0-9A-F]+ denied-devices 0xFFFFFFFF denied-mmio-base 0xFFFFFFFF devices [1-9][0-9]* multi [0-9]+ storage [1-9][0-9]* ide [0-9]+ ahci [1-9][0-9]* nvme [1-9][0-9]* raid [0-9]+ other-storage [0-9]+ intel-system [0-9]+ vmd [0-9]+ usb [0-9]+ display [0-9]+ ahci-addr 0x(?!FFFFFFFF)[0-9A-F]{8} ahci-vendor-device 0x(?!00000000)[0-9A-F]{8} ahci-class 0x0106[0-9A-F]{4} ahci-bar5 0x(?!00000000)[0-9A-F]{8} nvme-addr 0x(?!FFFFFFFF)[0-9A-F]{8} nvme-vendor-device 0x(?!00000000)[0-9A-F]{8} nvme-class 0x0108[0-9A-F]{4} nvme-bar0 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} nvme-bar1 0x(?!FFFFFFFF)[0-9A-F]{8} nvme-mmio-low 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} nvme-mmio-high 0x(?!FFFFFFFF)[0-9A-F]{8} nvme-mmio-span [1-9][0-9]* nvme-mmio-flags 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} nvme-mmio-token 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} nvme-candidate-source 1 nvme-candidate-deferred 0 nvme-candidate-bdf 0xFFFFFFFF nvme-candidate-token 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} other-storage-addr 0x[0-9A-F]{8} other-storage-vendor-device 0x[0-9A-F]{8} other-storage-class 0x[0-9A-F]{8} other-storage-bar0 0x[0-9A-F]{8} other-storage-bar1 0x[0-9A-F]{8} intel-system-addr 0x[0-9A-F]{8} intel-system-vendor-device 0x[0-9A-F]{8} intel-system-class 0x[0-9A-F]{8} intel-system-bar0 0x[0-9A-F]{8} intel-system-bar1 0x[0-9A-F]{8} vmd-addr 0x[0-9A-F]{8} vmd-vendor-device 0x[0-9A-F]{8} vmd-class 0x[0-9A-F]{8} vmd-bar0 0x[0-9A-F]{8} vmd-bar1 0x[0-9A-F]{8} vmd-mmio-low 0x[0-9A-F]{8} vmd-mmio-high 0x[0-9A-F]{8} vmd-mmio-span [0-9]+ vmd-mmio-flags 0x[0-9A-F]{8} vmd-mmio-token 0x[0-9A-F]{8} vmd-nested-plan [0-9]+ vmd-nested-enum [0-9]+ vmd-nested-nvme [0-9]+ vmd-nested-status [0-9]+ vmd-nested-token 0x[0-9A-F]{8} vmd-nested-pci 0x[0-9A-F]{8} vmd-nested-vendor-device 0x[0-9A-F]{8} vmd-nested-class 0x[0-9A-F]{8} vmd-nested-bar0 0x[0-9A-F]{8} vmd-nested-bar1 0x[0-9A-F]{8} vmd-nested-scan-buses [0-9]+ vmd-nested-scan-devices [0-9]+ vmd-nested-scan-functions [0-9]+ vmd-nested-scan-windows [0-9]+ vmd-nested-scan-truncated [01] vmd-nested-mmio-low 0x[0-9A-F]{8} vmd-nested-mmio-high 0x[0-9A-F]{8} vmd-nested-mmio-span [0-9]+ vmd-nested-mmio-flags 0x[0-9A-F]{8} vmd-nested-mmio-token 0x[0-9A-F]{8} vmd-nested-bind-ready [0-9]+ vmd-nested-bind-status [0-9]+ vmd-nested-bind-token 0x[0-9A-F]{8} vmd-nested-register-candidate [0-9]+ vmd-nested-register-status [0-9]+ vmd-nested-register-token 0x[0-9A-F]{8} vmd-nested-driver-plan-result 0x[0-9A-F]{8} vmd-nested-driver-plan-state [0-9]+ vmd-nested-driver-plan-flags 0x[0-9A-F]{8} vmd-nested-driver-plan-token 0x[0-9A-F]{8} vmd-nested-driver-plan-stage-count [0-9]+ vmd-nested-driver-plan-denials [0-9]+ vmd-nested-driver-plan-unavailable [0-9]+ token 0x(?!00000000)[0-9A-F]{8} mmio-base 0x(?!00000000)[0-9A-F]{8} mmio-span 8192 mmio-flags 0x0000007F mmio-token 0x(?!00000000)[0-9A-F]{8} queries [0-9]+ denials 2' -Message "x64 UEFI brokered PCI/AHCI/NVMe inventory and MMIO candidate proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-pci-ecam drs-pci-ecam-rsdp 1 drs-pci-ecam-mcfg 1 drs-pci-ecam-base 0x(?!0000000000000000)[0-9A-F]{16} drs-pci-ecam-segment 0 drs-pci-ecam-bus-start 0 drs-pci-ecam-bus-end [0-9]+ drs-pci-ecam-active 1 drs-pci-ecam-fallback-io 0 drs-pci-ecam-ahci-found 1' -Message "x64 UEFI PCI ECAM AHCI discovery proof was not observed."
-    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-probe denied-drs-nvme-probe 0xFFFFFFFF drs-nvme-probe 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-probe-found 1 drs-nvme-probe-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-nvme-candidate-source 1 drs-nvme-candidate-deferred 0 drs-nvme-candidate-bdf 0xFFFFFFFF drs-nvme-candidate-token 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-probe-ready 1 drs-nvme-probe-identify 1 drs-nvme-probe-model (?!none)[A-Za-z0-9_.-]+ drs-nvme-probe-firmware (?!none)[A-Za-z0-9_.-]+ drs-nvme-probe-io-queue 0 drs-nvme-probe-read-authority 0 drs-nvme-probe-fs-authority 0 drs-nvme-probe-unavailable 0' -Message "x64 UEFI NVMe admin identify proof was not observed."
+    Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-probe denied-drs-nvme-probe 0xFFFFFFFF drs-nvme-probe 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-probe-found 1 drs-nvme-probe-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-nvme-candidate-source 1 drs-nvme-candidate-deferred 0 drs-nvme-candidate-bdf 0xFFFFFFFF drs-nvme-candidate-token 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-regs 1 drs-nvme-cap-low 0x[0-9A-F]{8} drs-nvme-cap-high 0x[0-9A-F]{8} drs-nvme-vs 0x(?!00000000)[0-9A-F]{8} drs-nvme-cc 0x[0-9A-F]{8} drs-nvme-csts 0x[0-9A-F]{8} drs-nvme-dstrd-bytes [1-9][0-9]* drs-nvme-doorbell-page [0-9]+ drs-nvme-probe-ready 1 drs-nvme-probe-identify 1 drs-nvme-probe-model (?!none)[A-Za-z0-9_.-]+ drs-nvme-probe-firmware (?!none)[A-Za-z0-9_.-]+ drs-nvme-probe-io-queue 0 drs-nvme-probe-read-authority 0 drs-nvme-probe-fs-authority 0 drs-nvme-probe-unavailable 0' -Message "x64 UEFI NVMe admin identify proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-read denied-drs-nvme-read 0xFFFFFFFF drs-nvme-read 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-read-ioq-created 1 drs-nvme-read-issued 1 drs-nvme-read-completed 1 drs-nvme-read-status 0 drs-nvme-read-bytes 4096 drs-nvme-read-checksum 0x(?!00000000)[0-9A-F]{8} fs-authority 0 block-endpoint 0 write-authority 0 unavailable 0 error 0' -Message "x64 UEFI NVMe IO read proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-gpt denied-drs-nvme-gpt 0xFFFFFFFF drs-nvme-gpt 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-gpt-signature 1 drs-nvme-gpt-partitions 6 drs-nvme-gpt-fat32-start 2048 drs-nvme-gpt-fat32-sectors [1-9][0-9]* drs-nvme-gpt-vbr 1 fs-authority 0 write-authority 0 m5-safe-targets 2 m5-forbidden-targets 4 m5-unknown-targets 0 m5-boot-partition 5 m5-root-partition 6 m5-boot-start 16384 m5-root-start 20480 m5-forbidden-denied 1 m5-no-write-authority 1 unavailable 0 error 0' -Message "x64 UEFI NVMe GPT partition/classification proof was not observed."
     Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-nvme-fat denied-drs-nvme-fat 0xFFFFFFFF drs-nvme-fat 0x(?!00000000|FFFFFFFF)[0-9A-F]{8} drs-nvme-fat-bpb 1 drs-nvme-fat-located 1 drs-nvme-fat-read-bytes 30 drs-nvme-fat-checksum 0xD4F8C331 drs-nvme-fat-content-match 1 drs-nvme-fat-bytes-per-sector 512 drs-nvme-fat-sectors-per-cluster 2 drs-nvme-fat-lfn 1 drs-nvme-fat-unicode-lfn 1 drs-nvme-fat-subdir 1 drs-nvme-fat-multicluster 1 drs-nvme-fat-multi-bytes 2500 drs-nvme-fat-write-gate 1 drs-nvme-fat-create-cluster 12 drs-nvme-fat-create-readback 1 drs-nvme-fat-create-bytes 47 drs-nvme-fat-create-checksum 0x8B4D45D8 drs-nvme-fat-update-cluster 13 drs-nvme-fat-update-readback 1 drs-nvme-fat-update-bytes 1800 drs-nvme-fat-update-checksum 0x4E5F0AAE drs-nvme-fat-delete-freed 1 drs-nvme-fat-delete-tombstone 1 drs-nvme-fat-flushes [1-9][0-9]* fs-delegation 0 block-endpoint 0 write-authority 0 commit-authority 0 unavailable 0 error 0' -Message "x64 UEFI NVMe FAT file-read/write proof was not observed."
@@ -3299,7 +3343,8 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 UEFI font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 UEFI window manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 UEFI desktop environment proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-context-action [0-9]+ wm-resize [0-9]+ wm-minimize [0-9]+ wm-restore [0-9]+ wm-zorder [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [1-9][0-9]* terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
+        # The probe drags inside an empty terminal; copy takes the text under the selection (M202), so 0 bytes is correct there.
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] input-diag-suppressed [0-9]+ mouse-diag-suppressed [0-9]+ drs-gui-right-click [0-9]+ drs-gui-context-action [0-9]+ wm-resize [0-9]+ wm-minimize [0-9]+ wm-restore [0-9]+ wm-zorder [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [0-9]+ terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 UEFI GUI input-routed interactive proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui .* drs-gui-close-completed 1 drs-gui-taskbar-focus 1 .* drs-gui-right-click [1-9][0-9]* drs-gui-context-action [1-9][0-9]* wm-resize [1-9][0-9]* wm-minimize [1-9][0-9]* wm-restore [1-9][0-9]* wm-zorder [1-9][0-9]*' -Message "x64 UEFI M132 window-manager/context/taskbar proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 UEFI Settings persisted workflow proof was not observed."
         if ($NetworkDevice -eq "virtio") {
@@ -3319,9 +3364,17 @@ else {
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-font drs-font-init 1 drs-font-glyphs 256 drs-font-render 1 drs-font-renders [1-9][0-9]*' -Message "x64 Product font renderer proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-wm drs-wm-init 1 drs-wm-window-created 1 drs-wm-focus 1 drs-wm-present 1 drs-wm-windows [1-9][0-9]* drs-wm-focuses [1-9][0-9]* drs-wm-presents [1-9][0-9]*' -Message "x64 Product window-manager proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-desktop drs-desktop-init 1 drs-desktop-taskbar 1 drs-desktop-launcher 1 drs-desktop-terminal 1 drs-desktop-fileman 1 drs-desktop-settings 1' -Message "x64 Product desktop proof was not observed."
-        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] drs-gui-right-click [0-9]+ drs-gui-context-action [0-9]+ wm-resize [0-9]+ wm-minimize [0-9]+ wm-restore [0-9]+ wm-zorder [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [1-9][0-9]* terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
+        # The probe drags inside an empty terminal; copy takes the text under the selection (M202), so 0 bytes is correct there.
+        Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui drs-gui-interactive 1 drs-gui-click-hittest 1 drs-gui-launcher-opened 1 drs-gui-terminal-opened 1 drs-gui-drag-completed [01] drs-gui-keyboard-routed 1 drs-gui-close-completed [01] drs-gui-taskbar-focus [01] drs-gui-fileman-opened 1 drs-gui-settings-opened [01] drs-gui-installer-opened [01] input-diag-suppressed [0-9]+ mouse-diag-suppressed [0-9]+ drs-gui-right-click [0-9]+ drs-gui-context-action [0-9]+ wm-resize [0-9]+ wm-minimize [0-9]+ wm-restore [0-9]+ wm-zorder [0-9]+ drs-gui-scroll [1-9][0-9]* terminal-actions [1-9][0-9]* terminal-scroll [1-9][0-9]* terminal-scroll-offset [0-9]+ terminal-selection [1-9][0-9]* terminal-copy [1-9][0-9]* terminal-copied-bytes [0-9]+ terminal-cursor [1-9][0-9]* fileman-actions [1-9][0-9]* fileman-refresh [1-9][0-9]* .* fileman-write [1-9][0-9]* .* fileman-mkdir [1-9][0-9]* .* fileman-edit [1-9][0-9]* fileman-edit-commit [1-9][0-9]* .* drs-gui-unfocused-key-denied [0-9]+ drs-gui-no-ambient-input 1 drs-gui-no-ambient-display 1 drs-gui-no-ambient-fs 1 .* target-window [0-9]+ .* key-target-window [0-9]+ unfocused-key-denials [0-9]+ input-token 0x494E5054 display-token 0x44495350 fs-token 0x46535041' -Message "x64 Product GUI input-routed interactive proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-gui .* drs-gui-close-completed 1 drs-gui-taskbar-focus 1 .* drs-gui-right-click [1-9][0-9]* drs-gui-context-action [1-9][0-9]* wm-resize [1-9][0-9]* wm-minimize [1-9][0-9]* wm-restore [1-9][0-9]* wm-zorder [1-9][0-9]*' -Message "x64 Product M132 window-manager/context/taskbar proof was not observed."
         Assert-OutputContains -Lines $outputLines -Pattern 'settings-actions [1-9][0-9]* settings-load [0-9]+ settings-save [1-9][0-9]* settings-save-denial 0 settings-export [1-9][0-9]* settings-export-denial 0 settings-theme [01] settings-pointer [123] settings-keyrepeat [01]' -Message "x64 Product Settings persisted workflow proof was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '^20[0-9]{2}-[01][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9] UTC$' -Message "x64 Product date command did not print the real-time clock."
+        Assert-OutputContains -Lines $outputLines -Pattern '^up [0-9]+h [0-9]+m [0-9]+s$' -Message "x64 Product uptime command output was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '^echo round trip ok$' -Message "x64 Product echo command output was not observed."
+        Assert-OutputContains -Lines $outputLines -Pattern '^unknown command: frobnicate \(type help\)$' -Message "x64 Product shell did not name an unknown command."
+        Assert-OutputContains -Lines $outputLines -Pattern '^/CDTEST$' -Message "x64 Product cd/pwd did not track the working directory."
+        Assert-OutputContains -Lines $outputLines -Pattern '^cd: no such directory$' -Message "x64 Product cd did not reject a missing directory."
+        Assert-OutputContains -Lines $outputLines -Pattern '^not found$' -Message "x64 Product copy/rename/delete round trip did not end with the file removed."
         if ($NetworkDevice -eq "virtio") {
             Assert-OutputContains -Lines $outputLines -Pattern '\[x64\] drs-net drs-net-found 1 drs-net-bar0 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mapped 1 drs-net-common 1 drs-net-notify 1 drs-net-device-config 1 drs-net-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-mac-nonzero 1 drs-net-status-ack 1 drs-net-status-driver 1 drs-net-features-ok 1 drs-net-driver-ok 1 drs-net-rx-queue 1 drs-net-tx-queue 1 drs-net-rx-buffers [1-9][0-9]* drs-net-tx 1 drs-net-rx 1 drs-net-arp-reply 1 drs-net-arp-mac 0x(?!0000000000000000)[0-9A-F]{16} drs-net-arp-ip 0x0A000202 fs-authority 0 storage-authority 0 ambient-authority 0 unavailable 0 error 0' -Message "x64 Product virtio-net brokered ARP proof was not observed."
         }

@@ -1,4 +1,5 @@
 #include "display_x64.h"
+#include "rtc_x64.h"
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 #include "display_font_x64.h"
@@ -224,7 +225,7 @@
 #define DISPLAY64_SETTINGS_POINTER_SLOW 1u
 #define DISPLAY64_SETTINGS_POINTER_NORMAL 2u
 #define DISPLAY64_SETTINGS_POINTER_FAST 3u
-#define DISPLAY64_TERMINAL_SCROLL_STEP_BYTES 512u
+#define DISPLAY64_TERMINAL_SCROLL_STEP_LINES 3u
 #define DISPLAY64_TERMINAL_SELECTION_BYTES 128u
 #define DISPLAY64_WM_MIN_WINDOW_WIDTH 180u
 #define DISPLAY64_WM_MIN_WINDOW_HEIGHT 120u
@@ -405,6 +406,10 @@ static u32 g_display_gui_key_target_window = 0u;
 static u32 g_display_gui_right_click_count = 0u;
 static u32 g_display_gui_scroll_count = 0u;
 static u32 g_display_settings_scroll_index = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* ESC [ ... sequences (arrow keys) sent to non-terminal windows: 0 idle, 1 after ESC, 2 inside CSI. */
+static u32 g_display_key_escape_state = 0u;
+#endif
 static u32 g_display_context_menu_open = 0u;
 static u32 g_display_context_menu_x = 0u;
 static u32 g_display_context_menu_y = 0u;
@@ -440,8 +445,13 @@ static u32 g_display_fileman_selected_index = 0u;
 static u32 g_display_fileman_window_cursor = 0u;
 static u32 g_display_settings_selected_index = 0u;
 static u32 g_display_installer_step_index = 0u;
+/* Set when Dry run was pressed, so the window can show its result. */
+static u32 g_display_installer_dryrun_shown = 0u;
 static u32 g_display_terminal_action_count = 0u;
 static u32 g_display_terminal_scroll_offset = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u64 g_display_clock_minute = 0ull;
+#endif
 static u32 g_display_terminal_scroll_count = 0u;
 static u32 g_display_terminal_selection_active = 0u;
 static u32 g_display_terminal_selection_anchor_x = 0u;
@@ -450,6 +460,13 @@ static u32 g_display_terminal_selection_x = 0u;
 static u32 g_display_terminal_selection_y = 0u;
 static u32 g_display_terminal_selection_count = 0u;
 static u32 g_display_terminal_copy_count = 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* PIT tick of the last copy; the "Copied" label shows for DISPLAY64_TERMINAL_COPIED_TICKS. */
+static u32 g_display_terminal_copy_tick = 0u;
+#define DISPLAY64_TERMINAL_COPIED_TICKS 300u
+/* A press and release closer than this (in pixels) is a click, not a selection. */
+#define DISPLAY64_TERMINAL_DRAG_MIN 4u
+#endif
 static u32 g_display_terminal_selection_bytes = 0u;
 static u32 g_display_terminal_copied_bytes = 0u;
 static u32 g_display_terminal_cursor_draw_count = 0u;
@@ -862,6 +879,11 @@ static int display64_address_readable(u64 address, u32 byte_count)
 }
 
 static int display64_pixel_index(u32 x, u32 y, u64 *pixel_index);
+/* Drawing clip (exclusive right/bottom). Window content is clipped to its window; otherwise the whole screen. */
+static u32 g_display_clip_x0 = 0u;
+static u32 g_display_clip_y0 = 0u;
+static u32 g_display_clip_x1 = 0xFFFFFFFFu;
+static u32 g_display_clip_y1 = 0xFFFFFFFFu;
 
 static u32 display64_make_pixel(u32 rgb)
 {
@@ -963,6 +985,15 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /*
+     * The UEFI loader maps a kernel window larger than the 16 MiB low alias;
+     * the extension above it (higher-half only) is reserved for large buffers.
+     * The low window is full of kernel image and holds the boot-media stage
+     * area, so the back buffer must never be carved from it.
+     */
+    g_display_back_buffer_next = DISPLAY64_KERNEL_HIGH_BASE + LIMITLESS_BOOT_KERNEL_EXTENSION_BASE;
+#else
     if (g_display_back_buffer_next == 0ull)
     {
         g_display_back_buffer_next = ((u64)__bss_end + (DISPLAY64_PAGE_BYTES - 1ull))
@@ -972,6 +1003,7 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
             g_display_back_buffer_next += DISPLAY64_KERNEL_HIGH_BASE;
         }
     }
+#endif
 
     start = g_display_back_buffer_next;
     end = (start + bytes + (DISPLAY64_PAGE_BYTES - 1ull)) & ~(DISPLAY64_PAGE_BYTES - 1ull);
@@ -980,12 +1012,16 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    limit = DISPLAY64_KERNEL_HIGH_BASE + LIMITLESS_BOOT_KERNEL_WINDOW_BYTES;
+#else
     limit = DISPLAY64_KERNEL_HIGH_BASE + (u64)g_display_boot_info->identity_map_bytes;
     if ((limit <= DISPLAY64_KERNEL_HIGH_BASE)
         || (limit > (DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES)))
     {
         limit = DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES;
     }
+#endif
     if (end > limit)
     {
         return 0u;
@@ -1601,6 +1637,45 @@ static u8 display64_glyph_row_legacy(u8 character, u32 row)
         return (row == 1u) ? 0x15u : ((row == 2u) ? 0x0Eu : ((row == 3u) ? 0x15u : 0u));
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Remaining printable punctuation for the 5x7 caption face; these drew blank before M202. */
+    {
+        static const struct
+        {
+            u8 character;
+            u8 rows[DISPLAY64_LEGACY_FONT_HEIGHT];
+        } punctuation[] = {
+            { (u8)'(', { 0x02u, 0x04u, 0x08u, 0x08u, 0x08u, 0x04u, 0x02u } },
+            { (u8)')', { 0x08u, 0x04u, 0x02u, 0x02u, 0x02u, 0x04u, 0x08u } },
+            { (u8)';', { 0x00u, 0x00u, 0x04u, 0x00u, 0x04u, 0x04u, 0x08u } },
+            { (u8)'!', { 0x04u, 0x04u, 0x04u, 0x04u, 0x04u, 0x00u, 0x04u } },
+            { (u8)'?', { 0x0Eu, 0x11u, 0x01u, 0x02u, 0x04u, 0x00u, 0x04u } },
+            { (u8)'\'', { 0x04u, 0x04u, 0x08u, 0x00u, 0x00u, 0x00u, 0x00u } },
+            { (u8)'"', { 0x0Au, 0x0Au, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u } },
+            { (u8)'+', { 0x00u, 0x04u, 0x04u, 0x1Fu, 0x04u, 0x04u, 0x00u } },
+            { (u8)'%', { 0x18u, 0x19u, 0x02u, 0x04u, 0x08u, 0x13u, 0x03u } },
+            { (u8)'#', { 0x0Au, 0x1Fu, 0x0Au, 0x0Au, 0x1Fu, 0x0Au, 0x00u } },
+            { (u8)'&', { 0x0Cu, 0x12u, 0x14u, 0x08u, 0x15u, 0x12u, 0x0Du } },
+            { (u8)'@', { 0x0Eu, 0x11u, 0x17u, 0x15u, 0x17u, 0x10u, 0x0Eu } },
+            { (u8)'|', { 0x04u, 0x04u, 0x04u, 0x04u, 0x04u, 0x04u, 0x04u } },
+            { (u8)'~', { 0x00u, 0x00u, 0x08u, 0x15u, 0x02u, 0x00u, 0x00u } },
+            { (u8)'{', { 0x06u, 0x04u, 0x04u, 0x08u, 0x04u, 0x04u, 0x06u } },
+            { (u8)'}', { 0x0Cu, 0x04u, 0x04u, 0x02u, 0x04u, 0x04u, 0x0Cu } },
+            { (u8)'^', { 0x04u, 0x0Au, 0x11u, 0x00u, 0x00u, 0x00u, 0x00u } },
+            { (u8)'`', { 0x08u, 0x04u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u } },
+        };
+        u32 index;
+
+        for (index = 0u; index < (sizeof(punctuation) / sizeof(punctuation[0])); ++index)
+        {
+            if (punctuation[index].character == character)
+            {
+                return punctuation[index].rows[row];
+            }
+        }
+    }
+#endif
+
     return 0u;
 }
 
@@ -1632,7 +1707,11 @@ static int display64_pixel_index(u32 x, u32 y, u64 *pixel_index)
     if (!display64_has_framebuffer()
         || (pixel_index == 0)
         || (x >= g_display_boot_info->framebuffer_width)
-        || (y >= g_display_boot_info->framebuffer_height))
+        || (y >= g_display_boot_info->framebuffer_height)
+        || (x < g_display_clip_x0)
+        || (y < g_display_clip_y0)
+        || (x >= g_display_clip_x1)
+        || (y >= g_display_clip_y1))
     {
         return 0;
     }
@@ -1715,6 +1794,12 @@ u32 display64_write_early_kernel_line(const struct boot_info *boot_info, const c
     u32 cursor_x;
     u32 drawn = 0u;
     u32 token = 2166136261u;
+
+    /* Stage lines draw straight to the framebuffer; once the desktop owns the screen they would leave remnants. */
+    if (g_display_desktop_active != 0u)
+    {
+        return 0u;
+    }
 
     display64_set_boot_info(boot_info);
     g_display_compositor_active = 0u;
@@ -1835,6 +1920,8 @@ static u32 display64_scroll_console_viewport(u32 *token)
 
     framebuffer = display64_draw_buffer();
     scroll_height = viewport_height - display64_line_advance();
+    /* One dirty mark for the whole shifted region, not one per pixel. */
+    display64_compositor_mark_dirty(g_display_console_x, g_display_console_y, viewport_width, scroll_height);
 
     for (row = 0u; row < scroll_height; ++row)
     {
@@ -1853,7 +1940,6 @@ static u32 display64_scroll_console_viewport(u32 *token)
         {
             u32 pixel = framebuffer[source_index + column];
             framebuffer[target_index + column] = pixel;
-            display64_compositor_mark_dirty(g_display_console_x + column, target_y, 1u, 1u);
             if (token != 0)
             {
                 *token = display64_mix_token(*token, pixel ^ (u32)(target_index + column));
@@ -1945,6 +2031,26 @@ static u32 display64_clear_rect(u32 x, u32 y, u32 width, u32 height, u32 rgb, u3
     if ((draw_width == 0u) || (draw_height == 0u))
     {
         return 0u;
+    }
+    /* Intersect with the drawing clip. */
+    {
+        u32 x1 = display64_min_u32(x + draw_width, g_display_clip_x1);
+        u32 y1 = display64_min_u32(y + draw_height, g_display_clip_y1);
+
+        if (x < g_display_clip_x0)
+        {
+            x = g_display_clip_x0;
+        }
+        if (y < g_display_clip_y0)
+        {
+            y = g_display_clip_y0;
+        }
+        if ((x >= x1) || (y >= y1))
+        {
+            return 0u;
+        }
+        draw_width = x1 - x;
+        draw_height = y1 - y;
     }
 
     pixel = display64_make_pixel(rgb);
@@ -2279,22 +2385,138 @@ static u32 display64_terminal_selection_span_bytes(void)
     return bytes;
 }
 
+static struct display64_window *display64_wm_find_window(u32 handle);
+static void display64_wm_configure_console(struct display64_window *window);
+
+/*
+ * Copies the text under the selection. The terminal shows the tail of the
+ * replay history (minus the scrollback offset), wrapped at the viewport
+ * width, so screen rows map back to history bytes with the same wrap rule.
+ * Before M202 this copied the last N bytes of history regardless of where
+ * the selection was.
+ */
 static void display64_terminal_copy_selection(void)
 {
-    u32 bytes = display64_terminal_selection_span_bytes();
-    u32 start = (g_display_console_replay_count > bytes)
-        ? (g_display_console_replay_count - bytes)
+    struct display64_window *window = display64_wm_find_window(g_display_wm_shell_handle);
+    u32 advance = display64_font_advance();
+    u32 line = display64_line_advance();
+    u32 columns;
+    u32 visible_rows;
+    u32 render_count;
+    u32 total_rows = 0u;
+    u32 first_row;
+    u32 row;
+    u32 col;
+    u32 index;
+    u32 out = 0u;
+    u32 start_row;
+    u32 start_col;
+    u32 end_row;
+    u32 end_col;
+    u32 ax;
+    u32 ay;
+    u32 bx;
+    u32 by;
+
+    if ((window == 0) || (advance == 0u) || (line == 0u))
+    {
+        return;
+    }
+    display64_wm_configure_console(window);
+    columns = display64_console_viewport_width() / advance;
+    visible_rows = display64_console_viewport_height() / line;
+    if ((columns == 0u) || (visible_rows == 0u))
+    {
+        return;
+    }
+    render_count = (g_display_terminal_scroll_offset < g_display_console_replay_count)
+        ? (g_display_console_replay_count - g_display_terminal_scroll_offset)
         : 0u;
+
+    col = 0u;
+    for (index = 0u; index < render_count; ++index)
+    {
+        u8 value = display64_console_replay_byte_at(index);
+        if (value == (u8)'\n')
+        {
+            ++total_rows;
+            col = 0u;
+        }
+        else
+        {
+            if (col == columns)
+            {
+                ++total_rows;
+                col = 0u;
+            }
+            ++col;
+        }
+    }
+    ++total_rows;
+    first_row = (total_rows > visible_rows) ? (total_rows - visible_rows) : 0u;
+
+    ax = (g_display_terminal_selection_anchor_x > g_display_console_x) ? ((g_display_terminal_selection_anchor_x - g_display_console_x) / advance) : 0u;
+    ay = first_row + ((g_display_terminal_selection_anchor_y > g_display_console_y) ? ((g_display_terminal_selection_anchor_y - g_display_console_y) / line) : 0u);
+    bx = (g_display_terminal_selection_x > g_display_console_x) ? ((g_display_terminal_selection_x - g_display_console_x) / advance) : 0u;
+    by = first_row + ((g_display_terminal_selection_y > g_display_console_y) ? ((g_display_terminal_selection_y - g_display_console_y) / line) : 0u);
+    if ((ay < by) || ((ay == by) && (ax <= bx)))
+    {
+        start_row = ay; start_col = ax; end_row = by; end_col = bx;
+    }
+    else
+    {
+        start_row = by; start_col = bx; end_row = ay; end_col = ax;
+    }
+
+    row = 0u;
+    col = 0u;
+    for (index = 0u; (index < render_count) && (out < DISPLAY64_TERMINAL_SELECTION_BYTES); ++index)
+    {
+        u8 value = display64_console_replay_byte_at(index);
+        u32 inside;
+
+        if (value == (u8)'\n')
+        {
+            if ((row >= start_row) && (row < end_row))
+            {
+                g_display_terminal_selection_buffer[out++] = (u8)'\n';
+            }
+            ++row;
+            col = 0u;
+            continue;
+        }
+        if (col == columns)
+        {
+            ++row;
+            col = 0u;
+        }
+        inside = (((row > start_row) || ((row == start_row) && (col >= start_col)))
+            && ((row < end_row) || ((row == end_row) && (col <= end_col)))) ? 1u : 0u;
+        if ((inside != 0u) && (value >= 0x20u) && (value < 0x7Fu))
+        {
+            g_display_terminal_selection_buffer[out++] = value;
+        }
+        ++col;
+    }
+
+    g_display_terminal_selection_bytes = out;
+    g_display_terminal_copied_bytes = out;
+    g_display_terminal_copy_tick = pit_get_ticks();
+    ++g_display_terminal_copy_count;
+}
+
+/* Ctrl+V in the terminal types the copied text; newlines become spaces so a paste never runs a command. */
+static void display64_terminal_paste(void)
+{
+    u8 text[DISPLAY64_TERMINAL_SELECTION_BYTES];
     u32 index;
 
-    for (index = 0u; index < bytes; ++index)
+    for (index = 0u; index < g_display_terminal_copied_bytes; ++index)
     {
-        g_display_terminal_selection_buffer[index] =
-            display64_console_replay_byte_at(start + index);
+        u8 value = g_display_terminal_selection_buffer[index];
+        text[index] = ((value == (u8)'\n') || (value == (u8)'\r')) ? (u8)' ' : value;
     }
-    g_display_terminal_selection_bytes = bytes;
-    g_display_terminal_copied_bytes = bytes;
-    ++g_display_terminal_copy_count;
+    input64_keyboard_inject_text(text, g_display_terminal_copied_bytes);
 }
 
 static u32 display64_terminal_point_in_content(const struct display64_window *window, u32 x, u32 y)
@@ -2332,18 +2554,34 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
         return;
     }
 
-    badge_x = window->x + 12u;
+    badge_x = window->x + ((window->width > 140u) ? (window->width - 124u) : 8u);
     badge_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 10u;
-    display64_compositor_fill_round_rect_4(badge_x, badge_y, 108u, 18u, DISPLAY64_RGB_SURFACE_HIGH);
-    (void)display64_draw_font_text(
-        badge_x + 8u,
-        badge_y + 5u,
-        "Scrollback",
-        DISPLAY64_FONT_SMALL,
-        DISPLAY64_RGB_TEXT_SECONDARY,
-        DISPLAY64_FONT_TRANSPARENT);
 
-    if ((g_display_terminal_selection_active != 0u) || (g_display_terminal_copied_bytes != 0u))
+    /* Only flag scrollback while the view is actually scrolled back, in the top-right corner. */
+    if ((g_display_terminal_scroll_offset != 0u) && (window->width > 140u))
+    {
+        display64_compositor_fill_round_rect_4(badge_x, badge_y, 108u, 18u, DISPLAY64_RGB_SURFACE_HIGH);
+        (void)display64_draw_font_text(
+            badge_x + 8u,
+            badge_y + 5u,
+            "Scrollback",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_TEXT_SECONDARY,
+            DISPLAY64_FONT_TRANSPARENT);
+    }
+
+    if ((g_display_terminal_copied_bytes != 0u)
+        && ((pit_get_ticks() - g_display_terminal_copy_tick) < DISPLAY64_TERMINAL_COPIED_TICKS))
+    {
+        (void)display64_draw_font_text(
+            (badge_x > (window->x + 64u)) ? (badge_x - 56u) : badge_x,
+            badge_y + 5u,
+            "Copied",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_APP_TERMINAL,
+            DISPLAY64_FONT_TRANSPARENT);
+    }
+    if (g_display_terminal_selection_active != 0u)
     {
         selection_x = display64_min_u32(g_display_terminal_selection_anchor_x, g_display_terminal_selection_x);
         selection_y = display64_min_u32(g_display_terminal_selection_anchor_y, g_display_terminal_selection_y);
@@ -2359,13 +2597,6 @@ static void display64_terminal_draw_overlay(const struct display64_window *windo
         display64_compositor_fill_rect(selection_x, selection_y + selection_h - 1u, selection_w, 1u, DISPLAY64_RGB_HIGHLIGHT);
         display64_compositor_fill_rect(selection_x, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
         display64_compositor_fill_rect(selection_x + selection_w - 1u, selection_y, 1u, selection_h, DISPLAY64_RGB_HIGHLIGHT);
-        (void)display64_draw_font_text(
-            badge_x + 116u,
-            badge_y + 5u,
-            "Copied",
-            DISPLAY64_FONT_SMALL,
-            DISPLAY64_RGB_APP_TERMINAL,
-            DISPLAY64_FONT_TRANSPARENT);
     }
 
     display64_compositor_fill_rect(
@@ -2995,6 +3226,10 @@ static void display64_desktop_draw_info_row_selected(
     }
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static void display64_draw_font_text_fit(u32 x, u32 y, const char *text, u32 font_size, u32 rgb, u32 max_width);
+#endif
+
 static void display64_desktop_draw_fileman_row(
     u32 x,
     u32 y,
@@ -3011,7 +3246,12 @@ static void display64_desktop_draw_fileman_row(
 
     display64_compositor_draw_surface(x, y, width, DISPLAY64_FILEMAN_ROW_HEIGHT, DISPLAY64_RGB_SURFACE_HIGH, DISPLAY64_RGB_SURFACE_BORDER, 0u);
     display64_compositor_fill_rect(x + 5u, y + 7u, 3u, 18u, accent_rgb);
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Leave room for the size drawn 68 px from the right edge. */
+    display64_draw_font_text_fit(x + 14u, y + 3u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, (width > 90u) ? (width - 90u) : (width - 14u));
+#else
     (void)display64_draw_font_text(x + 14u, y + 3u, title, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+#endif
     (void)display64_draw_font_text(x + 14u, y + 18u, detail, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     if ((selected != 0u) && (width > 4u))
     {
@@ -3748,6 +3988,15 @@ static u32 display64_draw_font_text(
             cursor_y += height + 2u;
             continue;
         }
+        /* The fonts are ASCII: a UTF-8 sequence draws as one '?' instead of blank cells. */
+        if ((character >= 0x80u) && (character < 0xC0u))
+        {
+            continue;
+        }
+        if (character >= 0xC0u)
+        {
+            character = (u8)'?';
+        }
 
         if ((cursor_x + width) >= g_display_boot_info->framebuffer_width)
         {
@@ -3775,10 +4024,10 @@ static u32 display64_draw_font_text(
                 }
 
                 buffer[pixel_index] = (bit != 0u) ? color_pixel : bg_pixel;
-                display64_compositor_mark_dirty(cursor_x + column, cursor_y + row, 1u, 1u);
                 ++drawn;
             }
         }
+        display64_compositor_mark_dirty(cursor_x, cursor_y, width, height);
 
         cursor_x += advance;
     }
@@ -3817,6 +4066,41 @@ static void display64_draw_label_value(
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Draws text cut to max_width with a trailing "..." when it does not fit (the fonts are monospace). */
+static void display64_draw_font_text_fit(u32 x, u32 y, const char *text, u32 font_size, u32 rgb, u32 max_width)
+{
+    char clipped[96];
+    u32 advance = display64_font_width(font_size) + 1u;
+    u32 fit = max_width / advance;
+    u32 length = display64_string_length(text);
+    u32 index;
+
+    if (length <= fit)
+    {
+        (void)display64_draw_font_text(x, y, text, font_size, rgb, DISPLAY64_FONT_TRANSPARENT);
+        return;
+    }
+    if (fit < 4u)
+    {
+        return;
+    }
+    if (fit > (sizeof(clipped) - 1u))
+    {
+        fit = sizeof(clipped) - 1u;
+    }
+    for (index = 0u; index < (fit - 3u); ++index)
+    {
+        clipped[index] = text[index];
+    }
+    clipped[fit - 3u] = '.';
+    clipped[fit - 2u] = '.';
+    clipped[fit - 1u] = '.';
+    clipped[fit] = '\0';
+    (void)display64_draw_font_text(x, y, clipped, font_size, rgb, DISPLAY64_FONT_TRANSPARENT);
+}
+#endif
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
 static u32 display64_product_input_ready_internal(void)
 {
     return ((input64_mouse_packet_count() != 0u)
@@ -3851,6 +4135,20 @@ static void display64_font_draw_status_bar(void)
     u32 time_y;
     u32 time_x;
     const char *time_text = "time --:--";
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    char date_text[32];
+
+    if (rtc64_format_now(date_text, sizeof(date_text)) != 0u)
+    {
+        /* "YYYY-MM-DD HH:MM:SS UTC" -> "YYYY-MM-DD HH:MM UTC": the bar refreshes once a minute. */
+        date_text[16] = ' ';
+        date_text[17] = 'U';
+        date_text[18] = 'T';
+        date_text[19] = 'C';
+        date_text[20] = '\0';
+        time_text = date_text;
+    }
+#endif
 
     if (!display64_has_framebuffer())
     {
@@ -4214,17 +4512,31 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
     (void)display64_draw_font_text(panel_x + 32u, panel_y + 28u, "LimitlessOS", DISPLAY64_FONT_LARGE, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 104u, title, DISPLAY64_FONT_NORMAL, accent, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(panel_x + 34u, panel_y + 128u, message, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Status", "visible blocking state", accent);
-    display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Fallback", "hardware input recovery is bounded", DISPLAY64_RGB_FOCUS_BLUE);
+    if (state == DISPLAY64_LOGIN_STATE_SETUP)
+    {
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Create account", "type a username, Enter, then a password", accent);
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Use default", "press Enter alone: limitless / limitless", DISPLAY64_RGB_FOCUS_BLUE);
+    }
+    else
+    {
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 154u, "Status", "visible blocking state", accent);
+        display64_login_draw_state_row(panel_x + 34u, panel_y + 184u, "Security", "created accounts always need their password", DISPLAY64_RGB_FOCUS_BLUE);
+    }
 
     (void)display64_draw_font_text(field_x, panel_y + 218u, "Username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, username_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_SURFACE_BORDER, 0u);
-    (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "limitless", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    if ((state == DISPLAY64_LOGIN_STATE_SETUP) && (auth64_active_user()[0] == 0))
+    {
+        (void)display64_draw_font_text(field_x + 12u, username_y + 7u, "type a username", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else
+    {
+        (void)display64_draw_font_text(field_x + 12u, username_y + 7u, auth64_active_user(), DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    }
 
     (void)display64_draw_font_text(field_x, panel_y + 278u, "Password", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_draw_surface(field_x, password_y, field_w, 30u, DISPLAY64_RGB_FIELD, accent, 0u);
     display64_compositor_fill_rect(field_x + 1u, password_y + 1u, field_w - 2u, 2u, accent);
-    (void)display64_draw_font_text(field_x + 12u, password_y + 7u, "********", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
 
     display64_compositor_fill_round_rect_4(field_x, button_y, field_w, 34u, accent);
     (void)display64_draw_font_text(field_x, panel_y + 398u, "Pre-auth desktop, filesystem, and network actions stay blocked.", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
@@ -4305,8 +4617,62 @@ void display64_login_screen_draw(const char *title, const char *message, u32 fai
 
 void display64_login_setup_screen(void)
 {
-    display64_login_screen_draw("First-run setup", "Create the initial local user", 0u, 0u);
+    display64_login_screen_draw("First-run setup", "Create an account or use the default", 0u, 0u);
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Redraws one login field with the text being typed: the username as typed,
+ * the password as one mask character per typed character. Geometry matches
+ * display64_login_screen_draw().
+ */
+void display64_login_field_draw(u32 field, const char *text, u32 masked_length)
+{
+    char mask[41];
+    u32 panel_w;
+    u32 panel_h = 430u;
+    u32 panel_x;
+    u32 panel_y;
+    u32 field_x;
+    u32 field_w;
+    u32 field_y;
+    u32 index;
+
+    if ((g_display_compositor_active == 0u) || !display64_has_framebuffer())
+    {
+        return;
+    }
+
+    panel_w = display64_min_u32(560u, (g_display_boot_info->framebuffer_width > 48u) ? (g_display_boot_info->framebuffer_width - 48u) : g_display_boot_info->framebuffer_width);
+    panel_x = (g_display_boot_info->framebuffer_width > panel_w) ? ((g_display_boot_info->framebuffer_width - panel_w) / 2u) : 0u;
+    panel_y = (g_display_boot_info->framebuffer_height > panel_h) ? ((g_display_boot_info->framebuffer_height - panel_h) / 2u) : 0u;
+    field_x = panel_x + 34u;
+    field_w = (panel_w > 68u) ? (panel_w - 68u) : panel_w;
+
+    if (field == DISPLAY64_LOGIN_FIELD_PASSWORD)
+    {
+        field_y = panel_y + 298u;
+        display64_compositor_draw_surface(field_x, field_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_ACCENT, 0u);
+        display64_compositor_fill_rect(field_x + 1u, field_y + 1u, field_w - 2u, 2u, DISPLAY64_RGB_ACCENT);
+        for (index = 0u; (index < masked_length) && (index < (sizeof(mask) - 1u)); ++index)
+        {
+            mask[index] = '*';
+        }
+        mask[index] = '\0';
+        (void)display64_draw_font_text(field_x + 12u, field_y + 7u, mask, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+    }
+    else
+    {
+        field_y = panel_y + 238u;
+        display64_compositor_draw_surface(field_x, field_y, field_w, 30u, DISPLAY64_RGB_FIELD, DISPLAY64_RGB_FOCUS_BLUE, 0u);
+        if ((text != 0) && (text[0] != '\0'))
+        {
+            (void)display64_draw_font_text(field_x + 12u, field_y + 7u, text, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+        }
+    }
+    (void)display64_compositor_present();
+}
+#endif
 
 static struct display64_window *display64_wm_find_window(u32 handle)
 {
@@ -4586,6 +4952,10 @@ static void display64_wm_focus_window(u32 handle)
     ++g_display_wm_focus_count;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_desktop_taskbar_y(void);
+#endif
+
 static void display64_wm_move_window(u32 handle, u32 x, u32 y)
 {
     struct display64_window *window = display64_wm_find_window(handle);
@@ -4601,9 +4971,16 @@ static void display64_wm_move_window(u32 handle, u32 x, u32 y)
     max_x = (window->width < g_display_boot_info->framebuffer_width)
         ? (g_display_boot_info->framebuffer_width - window->width)
         : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Keep windows above the taskbar so they never slide under the desktop chrome. */
+    max_y = (window->height < display64_desktop_taskbar_y())
+        ? (display64_desktop_taskbar_y() - window->height)
+        : 0u;
+#else
     max_y = (window->height < g_display_boot_info->framebuffer_height)
         ? (g_display_boot_info->framebuffer_height - window->height)
         : 0u;
+#endif
     window->x = display64_min_u32(x, max_x);
     window->y = display64_min_u32(y, max_y);
     display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
@@ -5061,6 +5438,7 @@ static void display64_desktop_draw_taskbar(void)
     u32 clock_text_y;
     u32 clock_text_w;
     char uptime_text[12];
+    const char *clock_prefix;
 
     if (!display64_has_framebuffer())
     {
@@ -5093,15 +5471,23 @@ static void display64_desktop_draw_taskbar(void)
     }
     uptime = pit_get_uptime_seconds();
     display64_u32_to_dec_text(uptime, uptime_text, (u32)sizeof(uptime_text));
-    clock_text_w = display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL)
+    clock_prefix = "T+";
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (rtc64_format_now_hhmm(uptime_text, (u32)sizeof(uptime_text)) != 0u)
+    {
+        clock_prefix = "";
+    }
+    g_display_clock_minute = rtc64_now_epoch_seconds() / 60ull;
+#endif
+    clock_text_w = display64_font_text_advance(clock_prefix, DISPLAY64_FONT_NORMAL)
         + display64_font_text_advance(uptime_text, DISPLAY64_FONT_NORMAL);
     clock_text_x = (g_display_boot_info->framebuffer_width > (clock_text_w + 12u))
         ? (g_display_boot_info->framebuffer_width - clock_text_w - 12u)
         : clock_x;
     clock_text_y = y + ((DISPLAY64_DESKTOP_TASKBAR_HEIGHT - display64_font_height(DISPLAY64_FONT_NORMAL)) / 2u);
-    (void)display64_draw_font_text(clock_text_x, clock_text_y, "T+", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+    (void)display64_draw_font_text(clock_text_x, clock_text_y, clock_prefix, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(
-        clock_text_x + display64_font_text_advance("T+", DISPLAY64_FONT_NORMAL),
+        clock_text_x + display64_font_text_advance(clock_prefix, DISPLAY64_FONT_NORMAL),
         clock_text_y,
         uptime_text,
         DISPLAY64_FONT_NORMAL,
@@ -6227,27 +6613,15 @@ static const char *display64_fileman_status_detail(void)
         g_display_fileman_status_detail,
         cursor,
         sizeof(g_display_fileman_status_detail),
-        " entries, sel ");
-    cursor = display64_diag_append_u32(
-        g_display_fileman_status_detail,
-        cursor,
-        sizeof(g_display_fileman_status_detail),
-        (g_display_fileman_entry_count != 0u) ? (g_display_fileman_selected_index + 1u) : 0u);
-    cursor = display64_diag_append_text(
-        g_display_fileman_status_detail,
-        cursor,
-        sizeof(g_display_fileman_status_detail),
-        ", ");
-    cursor = display64_diag_append_text(
-        g_display_fileman_status_detail,
-        cursor,
-        sizeof(g_display_fileman_status_detail),
-        (mmio64_nvme_rw_delegated() != 0u) ? "scoped write authority" : "read-only authority");
-    cursor = display64_diag_append_text(
-        g_display_fileman_status_detail,
-        cursor,
-        sizeof(g_display_fileman_status_detail),
-        (mmio64_usb_fat_located() != 0u) ? ", USB export ready" : ", USB export unavailable");
+        (g_display_fileman_entry_count == 1u) ? " item" : " items");
+    if (mmio64_nvme_rw_delegated() == 0u)
+    {
+        cursor = display64_diag_append_text(
+            g_display_fileman_status_detail,
+            cursor,
+            sizeof(g_display_fileman_status_detail),
+            ", read-only");
+    }
     g_display_fileman_status_detail[cursor] = '\0';
     return g_display_fileman_status_detail;
 }
@@ -6318,7 +6692,8 @@ static void display64_desktop_draw_file_manager(u32 handle)
     (void)display64_draw_font_text(body_x + 30u, body_y + 232u, "Copy", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(body_x + 14u, body_y + 252u, 78u, 20u, DISPLAY64_RGB_CLOSE);
     (void)display64_draw_font_text(body_x + 25u, body_y + 256u, "Delete", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    (void)display64_draw_font_text(body_x + 16u, body_y + 276u, cloud_storage64_mode(), DISPLAY64_FONT_SMALL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
+    /* Cloud sync is policy-only (cloud_storage64_mode); say so plainly. */
+    (void)display64_draw_font_text(body_x + 16u, body_y + 276u, "Cloud sync off", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_DISABLED_TEXT, DISPLAY64_FONT_TRANSPARENT);
     if (g_display_fileman_last_write_status == 1u)
     {
         (void)display64_draw_font_text(body_x + 16u, body_y + 288u, "Wrote note", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_APP_FILES, DISPLAY64_FONT_TRANSPARENT);
@@ -6428,7 +6803,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
         }
         if (content_w > 160u)
         {
-            (void)display64_draw_font_text(body_x + 138u, body_y + 28u, display64_fileman_status_detail(), DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+            display64_draw_font_text_fit(body_x + 138u, body_y + 28u, display64_fileman_status_detail(), DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, content_w - 24u);
         }
     }
     if (content_w > 24u)
@@ -6469,7 +6844,7 @@ static void display64_desktop_draw_file_manager(u32 handle)
         else if ((selected_entry != (mmio64_nvme_fat_dirent_t *)0)
             && (selected_entry->entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_FILE))
         {
-            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            display64_draw_font_text_fit(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, content_w - 24u);
             display64_draw_label_value(body_x + 138u, preview_y + 24u, "Size ", selected_entry->byte_count, DISPLAY64_RGB_TEXT_SECONDARY);
             display64_draw_label_value(body_x + 224u, preview_y + 24u, "Cluster ", selected_entry->cluster, DISPLAY64_RGB_TEXT_SECONDARY);
             if (g_display_fileman_preview_bytes != 0u)
@@ -6491,27 +6866,27 @@ static void display64_desktop_draw_file_manager(u32 handle)
         else if ((selected_entry != (mmio64_nvme_fat_dirent_t *)0)
             && (selected_entry->entry_type == MMIO64_NVME_FAT_DIRENT_TYPE_DIRECTORY))
         {
-            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-            display64_draw_label_value(body_x + 138u, preview_y + 24u, "Directory cluster ", selected_entry->cluster, DISPLAY64_RGB_TEXT_SECONDARY);
+            display64_draw_font_text_fit(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, content_w - 24u);
+            display64_draw_label_value(body_x + 138u, preview_y + 24u, "Cluster ", selected_entry->cluster, DISPLAY64_RGB_TEXT_SECONDARY);
             detail_path_bytes = display64_fileman_build_child_path(detail_path, sizeof(detail_path), selected_entry);
             if ((detail_path_bytes != 0u) && (preview_h >= 58u))
             {
-                (void)display64_draw_font_text(body_x + 138u, preview_y + 42u, (const char *)detail_path, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+                display64_draw_font_text_fit(body_x + 138u, preview_y + 42u, (const char *)detail_path, DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, content_w - 24u);
             }
             if (preview_h >= 72u)
             {
-                (void)display64_draw_font_text(body_x + 138u, preview_y + 58u, "Open with click or context menu", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, DISPLAY64_FONT_TRANSPARENT);
+                display64_draw_font_text_fit(body_x + 138u, preview_y + 58u, "Click or Enter opens", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_MUTED, content_w - 24u);
             }
         }
         else if (selected_entry != (mmio64_nvme_fat_dirent_t *)0)
         {
-            (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
+            display64_draw_font_text_fit(body_x + 138u, preview_y + 8u, (const char *)selected_entry->name, DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, content_w - 24u);
             display64_draw_label_value(body_x + 138u, preview_y + 24u, "Unknown entry cluster ", selected_entry->cluster, DISPLAY64_RGB_TEXT_SECONDARY);
         }
         else
         {
             (void)display64_draw_font_text(body_x + 138u, preview_y + 8u, "NVMe FAT actions", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-            (void)display64_draw_font_text(body_x + 138u, preview_y + 26u, "Select an item for properties", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
+            display64_draw_font_text_fit(body_x + 138u, preview_y + 26u, "Select an item for properties", DISPLAY64_FONT_SMALL, DISPLAY64_RGB_TEXT_SECONDARY, content_w - 24u);
         }
         }
     }
@@ -6706,6 +7081,10 @@ static void display64_desktop_draw_settings(u32 handle)
     }
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static const char *display64_installer_text(const char *token);
+#endif
+
 static void display64_desktop_draw_installer(u32 handle)
 {
     struct display64_window *window = display64_wm_find_window(handle);
@@ -6725,7 +7104,7 @@ static void display64_desktop_draw_installer(u32 handle)
     body_y = window->y + DISPLAY64_WM_TITLE_HEIGHT + 14u;
     installer_ux64_init();
     (void)display64_draw_font_text(body_x, body_y, "LimitlessOS Installer", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
-    display64_compositor_draw_badge(body_x + 164u, body_y - 4u, 92u, installer_ux64_dryrun_status(), DISPLAY64_RGB_APP_INSTALLER);
+    display64_compositor_draw_badge(body_x + 176u, body_y - 4u, 104u, display64_installer_text(installer_ux64_dryrun_status()), DISPLAY64_RGB_APP_INSTALLER);
     if (g_display_installer_welcome_count == 0u)
     {
         ++g_display_installer_welcome_count;
@@ -6783,23 +7162,73 @@ static void display64_desktop_draw_installer(u32 handle)
     (void)installer_ux64_plan_generated();
     (void)installer_ux64_dryrun_no_writes();
 
-    display64_desktop_draw_info_row_selected(body_x, body_y + 34u, window->width - 32u, "Profile", installer_ux64_selected_profile(), DISPLAY64_RGB_APP_INSTALLER, (g_display_installer_step_index == 0u) ? 1u : 0u);
-    display64_desktop_draw_info_row_selected(body_x, body_y + 80u, window->width - 32u, "Hardware", installer_ux64_recommendation_text(), DISPLAY64_RGB_FOCUS_BLUE, (g_display_installer_step_index == 1u) ? 1u : 0u);
-    display64_desktop_draw_info_row_selected(body_x, body_y + 126u, window->width - 32u, "Components", installer_ux64_component_status(), DISPLAY64_RGB_TEXT_SECONDARY, (g_display_installer_step_index == 2u) ? 1u : 0u);
-    display64_desktop_draw_info_row_selected(body_x, body_y + 172u, window->width - 32u, "Account", installer_ux64_account_status(), DISPLAY64_RGB_APP_SETTINGS, (g_display_installer_step_index == 3u) ? 1u : 0u);
-    display64_desktop_draw_info_row_selected(body_x, body_y + 218u, window->width - 32u, "Cloud and AI", installer_ux64_cloud_status(), DISPLAY64_RGB_DISABLED_TEXT, (g_display_installer_step_index == 4u) ? 1u : 0u);
-    display64_desktop_draw_info_row_selected(body_x, body_y + 264u, window->width - 32u, "Plan", installer_ux64_plan_status(), DISPLAY64_RGB_WARNING, (g_display_installer_step_index == 5u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 34u, window->width - 32u, "Profile", display64_installer_text(installer_ux64_selected_profile()), DISPLAY64_RGB_APP_INSTALLER, (g_display_installer_step_index == 0u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 80u, window->width - 32u, "Hardware", display64_installer_text(installer_ux64_recommendation_text()), DISPLAY64_RGB_FOCUS_BLUE, (g_display_installer_step_index == 1u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 126u, window->width - 32u, "Components", display64_installer_text(installer_ux64_component_status()), DISPLAY64_RGB_TEXT_SECONDARY, (g_display_installer_step_index == 2u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 172u, window->width - 32u, "Account", display64_installer_text(installer_ux64_account_status()), DISPLAY64_RGB_APP_SETTINGS, (g_display_installer_step_index == 3u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 218u, window->width - 32u, "Cloud and AI", display64_installer_text(installer_ux64_cloud_status()), DISPLAY64_RGB_DISABLED_TEXT, (g_display_installer_step_index == 4u) ? 1u : 0u);
+    display64_desktop_draw_info_row_selected(body_x, body_y + 264u, window->width - 32u, "Plan", display64_installer_text(installer_ux64_plan_status()), DISPLAY64_RGB_WARNING, (g_display_installer_step_index == 5u) ? 1u : 0u);
     display64_compositor_fill_round_rect_4(body_x, body_y + 312u, 78u, 26u, DISPLAY64_RGB_SURFACE_HIGH);
     (void)display64_draw_font_text(body_x + 20u, body_y + 318u, "Back", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(body_x + 88u, body_y + 312u, 78u, 26u, DISPLAY64_RGB_ACCENT);
     (void)display64_draw_font_text(body_x + 112u, body_y + 318u, "Next", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
     display64_compositor_fill_round_rect_4(body_x + 176u, body_y + 312u, 92u, 26u, DISPLAY64_RGB_WARNING);
     (void)display64_draw_font_text(body_x + 190u, body_y + 318u, "Dry run", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_ON_ACCENT, DISPLAY64_FONT_TRANSPARENT);
+    if (g_display_installer_dryrun_shown != 0u)
+    {
+        display64_draw_font_text_fit(
+            body_x,
+            body_y + 348u,
+            "Dry run complete: plan validated, nothing written to disk.",
+            DISPLAY64_FONT_SMALL,
+            DISPLAY64_RGB_APP_FILES,
+            window->width - 32u);
+    }
 #else
     (void)display64_draw_font_text(body_x, body_y, "Installer UX unavailable", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_PRIMARY, DISPLAY64_FONT_TRANSPARENT);
     (void)display64_draw_font_text(body_x, body_y + 18u, "BIOS fallback keeps dry-run/write disabled", DISPLAY64_FONT_NORMAL, DISPLAY64_RGB_TEXT_SECONDARY, DISPLAY64_FONT_TRANSPARENT);
 #endif
 }
+
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * On-screen wording for installer status tokens. The tokens stay as they are
+ * in telemetry and verifiers; the window shows sentences.
+ */
+static const char *display64_installer_text(const char *token)
+{
+    static const char *const map[][2] = {
+        { "general-use", "General use" },
+        { "general-use-safe-profile", "Safe profile for this machine" },
+        { "product-components-selected-unavailable-labeled", "Core set; unavailable parts marked" },
+        { "local-only-personal-enterprise-unavailable", "Local account (online accounts off)" },
+        { "cloud-sync-unavailable", "Cloud sync and AI off" },
+        { "generated-zero-write-plan", "Plan ready; dry run writes nothing" },
+        { "validated-no-writes", "Dry run only" },
+    };
+    u32 index;
+
+    if (token == 0)
+    {
+        return "";
+    }
+    for (index = 0u; index < (sizeof(map) / sizeof(map[0])); ++index)
+    {
+        const char *a = map[index][0];
+        u32 i = 0u;
+
+        while ((a[i] != '\0') && (a[i] == token[i]))
+        {
+            ++i;
+        }
+        if ((a[i] == '\0') && (token[i] == '\0'))
+        {
+            return map[index][1];
+        }
+    }
+    return token;
+}
+#endif
 
 static void display64_desktop_draw_assistant(u32 handle)
 {
@@ -7024,7 +7453,28 @@ static void display64_desktop_draw_background(void)
     display64_font_draw_status_bar();
 }
 
+static void display64_desktop_present_window_content_clipped(u32 handle);
+
+/* Draws a window's content clipped to the window (plus its 8 px shadow). */
 static void display64_desktop_present_window_content(u32 handle)
+{
+    struct display64_window *window = display64_wm_find_window(handle);
+
+    if (window != 0)
+    {
+        g_display_clip_x0 = (window->x > 8u) ? (window->x - 8u) : 0u;
+        g_display_clip_y0 = (window->y > 8u) ? (window->y - 8u) : 0u;
+        g_display_clip_x1 = window->x + window->width + 8u;
+        g_display_clip_y1 = window->y + window->height + 8u;
+    }
+    display64_desktop_present_window_content_clipped(handle);
+    g_display_clip_x0 = 0u;
+    g_display_clip_y0 = 0u;
+    g_display_clip_x1 = 0xFFFFFFFFu;
+    g_display_clip_y1 = 0xFFFFFFFFu;
+}
+
+static void display64_desktop_present_window_content_clipped(u32 handle)
 {
     struct display64_window *window;
     u32 token = 2166136261u;
@@ -7237,6 +7687,32 @@ static void display64_desktop_redraw(void)
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+void display64_desktop_refresh(void)
+{
+    display64_desktop_redraw();
+}
+
+void display64_terminal_clear(void)
+{
+    g_display_console_replay_head = 0u;
+    g_display_console_replay_count = 0u;
+    g_display_terminal_scroll_offset = 0u;
+    display64_desktop_redraw();
+}
+
+/* Called from the shell's input wait; repaints the desktop when the wall-clock minute changes. */
+void display64_desktop_clock_tick(void)
+{
+    if ((g_display_desktop_active == 0u)
+        || (auth64_keyboard_capture_active() != 0u)
+        || (rtc64_available() == 0u)
+        || ((rtc64_now_epoch_seconds() / 60ull) == g_display_clock_minute))
+    {
+        return;
+    }
+    display64_desktop_redraw();
+}
+
 static void display64_desktop_redraw_existing_dirty(void)
 {
     u32 dirty;
@@ -7748,6 +8224,17 @@ void display64_desktop_probe(void)
         g_display_gui_no_ambient_display = 1u;
         g_display_gui_no_ambient_fs = 1u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    if (g_display_desktop_active != 0u)
+    {
+        /*
+         * The side panels were drawn and then minimized above; repaint the whole
+         * desktop so their pixels do not linger until the first user redraw.
+         */
+        display64_desktop_redraw();
+        return;
+    }
+#endif
     (void)display64_compositor_present();
 }
 
@@ -7868,7 +8355,15 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
         }
         if (released != 0u)
         {
-            display64_terminal_copy_selection();
+            u32 drag_x = (x > g_display_terminal_selection_anchor_x) ? (x - g_display_terminal_selection_anchor_x) : (g_display_terminal_selection_anchor_x - x);
+            u32 drag_y = (y > g_display_terminal_selection_anchor_y) ? (y - g_display_terminal_selection_anchor_y) : (g_display_terminal_selection_anchor_y - y);
+
+            g_display_terminal_selection_x = x;
+            g_display_terminal_selection_y = y;
+            if ((drag_x + drag_y) >= DISPLAY64_TERMINAL_DRAG_MIN)
+            {
+                display64_terminal_copy_selection();
+            }
             g_display_terminal_selection_active = 0u;
             ++g_display_terminal_action_count;
             display64_desktop_redraw();
@@ -8299,6 +8794,7 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
                         {
                             (void)installer_ux64_commit_probe();
                             (void)installer_ux64_commit_unavailable();
+                            g_display_installer_dryrun_shown = 1u;
                         }
                         ++g_display_installer_action_count;
                         display64_wm_focus_and_route_console(window->handle);
@@ -8524,6 +9020,92 @@ u32 display64_wm_process_mouse_event(u32 x, u32 y, u32 buttons, s32 dx, s32 dy)
     return 0u;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Moves the Settings selection and keeps it inside the visible rows. */
+static void display64_settings_move_selection(u32 down)
+{
+    if (down != 0u)
+    {
+        if ((g_display_settings_selected_index + 1u) < DISPLAY64_SETTINGS_ROW_COUNT)
+        {
+            ++g_display_settings_selected_index;
+        }
+    }
+    else if (g_display_settings_selected_index > 0u)
+    {
+        --g_display_settings_selected_index;
+    }
+    if (g_display_settings_selected_index < g_display_settings_scroll_index)
+    {
+        g_display_settings_scroll_index = g_display_settings_selected_index;
+    }
+    else if (g_display_settings_selected_index >= (g_display_settings_scroll_index + DISPLAY64_SETTINGS_VISIBLE_ROWS))
+    {
+        g_display_settings_scroll_index = g_display_settings_selected_index + 1u - DISPLAY64_SETTINGS_VISIBLE_ROWS;
+    }
+}
+
+/*
+ * Keys for non-terminal windows. Arrow keys arrive as ESC [ A..D; before this
+ * they fell through byte by byte, so in the File Manager Left (ESC [ D) acted
+ * as the D (delete) shortcut and Up (ESC [ A) as A (go to /APPS).
+ * Returns 1 when the key was consumed here.
+ */
+static u32 display64_wm_window_key(const struct display64_window *focused, u8 value)
+{
+    u32 is_fileman = (focused->handle == g_display_desktop_fileman_handle) ? 1u : 0u;
+    u32 is_settings = (focused->handle == g_display_desktop_settings_handle) ? 1u : 0u;
+
+    if (g_display_key_escape_state == 1u)
+    {
+        g_display_key_escape_state = (value == (u8)'[') ? 2u : 0u;
+        return 1u;
+    }
+    if (g_display_key_escape_state == 2u)
+    {
+        if (((value >= (u8)'0') && (value <= (u8)'9')) || (value == (u8)';'))
+        {
+            return 1u;
+        }
+        g_display_key_escape_state = 0u;
+        if ((value == (u8)'A') || (value == (u8)'B'))
+        {
+            if (is_fileman != 0u)
+            {
+                if (value == (u8)'A')
+                {
+                    display64_fileman_select_previous();
+                }
+                else
+                {
+                    display64_fileman_select_next();
+                }
+                display64_desktop_redraw();
+            }
+            else if (is_settings != 0u)
+            {
+                display64_settings_move_selection((value == (u8)'B') ? 1u : 0u);
+                display64_desktop_redraw();
+            }
+        }
+        return 1u;
+    }
+    if (value == 27u)
+    {
+        g_display_key_escape_state = 1u;
+        return 1u;
+    }
+    if ((is_settings != 0u) && ((value == (u8)'\n') || (value == (u8)'\r')))
+    {
+        ++g_display_settings_action_count;
+        display64_settings_activate_row(g_display_settings_selected_index);
+        display64_desktop_redraw();
+        return 1u;
+    }
+    return 0u;
+}
+#endif
+
 u32 display64_wm_process_keyboard_event(u8 value)
 {
     struct display64_window *focused;
@@ -8537,6 +9119,13 @@ u32 display64_wm_process_keyboard_event(u8 value)
     {
         return 1u;
     }
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Login and lock screens own the keyboard; window shortcuts must not consume credentials. */
+    if (auth64_keyboard_capture_active() != 0u)
+    {
+        return 1u;
+    }
+#endif
 
     focused = display64_wm_focused_window();
     focused_handle = (focused != 0) ? focused->handle : 0u;
@@ -8552,11 +9141,24 @@ u32 display64_wm_process_keyboard_event(u8 value)
     g_display_gui_keyboard_routed = 1u;
     if (display64_wm_window_is_terminal(focused))
     {
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+        g_display_key_escape_state = 0u;
+        if ((value == 0x16u) && (g_display_terminal_copied_bytes != 0u))
+        {
+            display64_terminal_paste();
+            return 0u;
+        }
+#endif
         display64_gui_record_unfocused_keyboard_denial(focused_handle);
         return 1u;
     }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Escape sequences and Settings keys never reach the shell's queue. */
+    if (display64_wm_window_key(focused, value) != 0u)
+    {
+        return 0u;
+    }
     if (focused->handle == g_display_desktop_fileman_handle)
     {
         if (display64_fileman_process_keyboard_edit(value) != 0u)
@@ -8576,6 +9178,114 @@ u32 display64_wm_process_keyboard_event(u8 value)
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Terminal scrollback renders the replay history minus a byte offset trimmed
+ * from its end. These helpers convert between that offset and whole lines so
+ * the wheel scrolls by lines and never past the start of the history.
+ */
+static u8 display64_terminal_replay_byte(u32 logical_index)
+{
+    return g_display_console_replay[(g_display_console_replay_head + logical_index) % DISPLAY64_CONSOLE_REPLAY_BYTES];
+}
+
+static u32 display64_terminal_rows_for_length(u32 length, u32 columns)
+{
+    return (length == 0u) ? 1u : ((length + columns - 1u) / columns);
+}
+
+/*
+ * Largest number of trailing lines that can be hidden before the first line
+ * of the history reaches the top of the viewport. Wrapped lines count as the
+ * number of rows they occupy.
+ */
+static u32 display64_terminal_max_scroll_lines(u32 columns, u32 visible_rows)
+{
+    u32 index;
+    u32 length = 0u;
+    u32 total_rows = 0u;
+    u32 lines = 0u;
+
+    if ((columns == 0u) || (visible_rows == 0u) || (g_display_console_replay_count == 0u))
+    {
+        return 0u;
+    }
+    for (index = 0u; index < g_display_console_replay_count; ++index)
+    {
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            total_rows += display64_terminal_rows_for_length(length, columns);
+            length = 0u;
+        }
+        else
+        {
+            ++length;
+        }
+    }
+    total_rows += display64_terminal_rows_for_length(length, columns);
+
+    length = 0u;
+    index = g_display_console_replay_count;
+    while ((total_rows > visible_rows) && (index != 0u))
+    {
+        --index;
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            total_rows -= display64_terminal_rows_for_length(length, columns);
+            ++lines;
+            length = 0u;
+        }
+        else
+        {
+            ++length;
+        }
+    }
+    return lines;
+}
+
+/* Byte offset that hides the last `lines` lines (ends the render before that newline). */
+static u32 display64_terminal_offset_for_lines(u32 lines)
+{
+    u32 index = g_display_console_replay_count;
+    u32 seen = 0u;
+
+    if (lines == 0u)
+    {
+        return 0u;
+    }
+    while (index != 0u)
+    {
+        --index;
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            ++seen;
+            if (seen == lines)
+            {
+                return g_display_console_replay_count - index;
+            }
+        }
+    }
+    return 0u;
+}
+
+static u32 display64_terminal_lines_for_offset(u32 offset)
+{
+    u32 index;
+    u32 lines = 0u;
+
+    if (offset > g_display_console_replay_count)
+    {
+        offset = g_display_console_replay_count;
+    }
+    for (index = g_display_console_replay_count - offset; index < g_display_console_replay_count; ++index)
+    {
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            ++lines;
+        }
+    }
+    return lines;
+}
+
 u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
 {
     struct display64_window *window;
@@ -8613,32 +9323,37 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
     }
     if ((window != 0) && display64_wm_window_is_terminal(window))
     {
+        u32 columns;
+        u32 visible_rows;
+        u32 max_lines;
+        u32 lines;
+
+        /* Configure the console geometry for this window before measuring rows. */
+        display64_wm_focus_and_route_console(window->handle);
+        columns = (display64_font_advance() != 0u)
+            ? (display64_console_viewport_width() / display64_font_advance())
+            : 0u;
+        visible_rows = (display64_line_advance() != 0u)
+            ? (display64_console_viewport_height() / display64_line_advance())
+            : 0u;
+        max_lines = display64_terminal_max_scroll_lines(columns, visible_rows);
+        lines = display64_terminal_lines_for_offset(g_display_terminal_scroll_offset);
         if (wheel_delta > 0)
         {
-            u32 max_offset = (g_display_console_replay_count > 1u)
-                ? (g_display_console_replay_count - 1u)
-                : 0u;
-            if (g_display_terminal_scroll_offset < max_offset)
+            lines += DISPLAY64_TERMINAL_SCROLL_STEP_LINES;
+            if (lines > max_lines)
             {
-                g_display_terminal_scroll_offset += DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
-                if (g_display_terminal_scroll_offset > max_offset)
-                {
-                    g_display_terminal_scroll_offset = max_offset;
-                }
+                lines = max_lines;
             }
-        }
-        else if (g_display_terminal_scroll_offset > DISPLAY64_TERMINAL_SCROLL_STEP_BYTES)
-        {
-            g_display_terminal_scroll_offset -= DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
         }
         else
         {
-            g_display_terminal_scroll_offset = 0u;
+            lines = (lines > DISPLAY64_TERMINAL_SCROLL_STEP_LINES) ? (lines - DISPLAY64_TERMINAL_SCROLL_STEP_LINES) : 0u;
         }
+        g_display_terminal_scroll_offset = display64_terminal_offset_for_lines(lines);
         ++g_display_terminal_scroll_count;
         ++g_display_terminal_action_count;
         ++g_display_gui_scroll_count;
-        display64_wm_focus_and_route_console(window->handle);
         display64_desktop_redraw_window_dirty(window);
         return 1u;
     }
@@ -8871,6 +9586,7 @@ void display64_init(const struct boot_info *boot_info)
     g_display_fileman_window_cursor = 0u;
     g_display_settings_selected_index = 0u;
     g_display_installer_step_index = 0u;
+    g_display_installer_dryrun_shown = 0u;
     g_display_terminal_action_count = 0u;
     g_display_terminal_scroll_offset = 0u;
     g_display_terminal_scroll_count = 0u;

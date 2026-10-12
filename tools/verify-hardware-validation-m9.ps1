@@ -32,7 +32,7 @@ function Assert-Line
     }
 }
 
-Assert-Line -Pattern '^\[x64\] \$ hwval$' -Message "hwval command was not observed."
+Assert-Line -Pattern '^\[x64\] \$ hwval( full)?$' -Message "hwval command was not observed."
 Assert-Line -Pattern '^hardware validation: read-only Product mode$' -Message "hwval did not report read-only Product mode."
 Assert-Line -Pattern '^authority: read-only scoped validation; no ambient storage, installer, network, update, or install authority$' -Message "hwval did not report scoped read-only authority."
 Assert-Line -Pattern '^internal writes: disabled by default$' -Message "internal writes were not reported disabled."

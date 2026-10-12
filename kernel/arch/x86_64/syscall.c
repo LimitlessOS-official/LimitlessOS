@@ -7965,6 +7965,9 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
             i2c_hid64_poll_pointer();
             xhci64_poll_keyboard();
             xhci64_poll_mouse();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            input64_keyboard_repeat_tick();
+#endif
             {
                 u64 result = (u64)input64_read_keyboard(
                     (u32)arg0,
@@ -7972,14 +7975,32 @@ u64 syscall64_dispatch(u64 number, u64 arg0, u64 arg1, u64 arg2)
                     syscall64_pack_low32(arg2),
                     syscall64_pack_high32(arg2));
                 syscall64_refresh_input_diagnostics_if_changed();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+                /*
+                 * The shell polls this call in a loop; with nothing to read, sleep until
+                 * the next interrupt (at most one PIT tick) instead of spinning a core.
+                 */
+                if (result == 0ull)
+                {
+                    interrupts64_enable();
+                    cpu_halt();
+                    interrupts64_disable();
+                }
+#endif
                 return result;
             }
 
         case X64_SYSCALL_INPUT_READ_KEYBOARD_LINE:
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            display64_desktop_clock_tick();
+#endif
             i2c_hid64_poll_keyboard();
             i2c_hid64_poll_pointer();
             xhci64_poll_keyboard();
             xhci64_poll_mouse();
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+            input64_keyboard_repeat_tick();
+#endif
             {
                 u64 result = (u64)input64_read_keyboard_line(
                     (u32)arg0,

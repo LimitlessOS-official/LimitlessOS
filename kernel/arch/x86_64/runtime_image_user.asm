@@ -405,6 +405,8 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
     je .interactive_shell_backspace
     cmp al, 0x7F
     je .interactive_shell_backspace
+    cmp al, 3
+    je .interactive_shell_cancel
     cmp al, 0x20
     jb .interactive_shell_read
     cmp al, 0x7E
@@ -419,6 +421,12 @@ pad_to USER_HARDWARE_SHELL_PROBE_OFFSET
     mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
     console_write_stack_at INTERACTIVE_SHELL_BYTE_OFF, 1
     jmp .interactive_shell_read
+
+; Ctrl+C drops the line being typed and starts a new prompt.
+.interactive_shell_cancel:
+    mov ebx, [rsp + INTERACTIVE_SHELL_CONSOLE_CAP_OFF]
+    console_write_address USER_BASE + interactive_shell_cancel_text, interactive_shell_cancel_text_len
+    jmp .interactive_shell_new_line
 
 .interactive_shell_escape_start:
     mov dword [rsp + INTERACTIVE_SHELL_ESCAPE_STATE_OFF], 1
@@ -663,6 +671,10 @@ interactive_shell_banner_len equ $ - interactive_shell_banner
 interactive_shell_prompt:
 db "[x64] $ "
 interactive_shell_prompt_len equ $ - interactive_shell_prompt
+
+interactive_shell_cancel_text:
+db "^C", 10
+interactive_shell_cancel_text_len equ $ - interactive_shell_cancel_text
 
 interactive_shell_backspace:
 db 8, " ", 8

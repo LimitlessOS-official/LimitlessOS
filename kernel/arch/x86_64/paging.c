@@ -81,6 +81,17 @@ static u32 g_kernel_mmio_mapping_pt_index = 0u;
 static u64 g_kernel_mmio_mapping_entry_flags = 0ull;
 static u32 g_kernel_mmio_mapping_nx_enabled = 0u;
 static u32 g_kernel_mmio_pt_initialized = 0u;
+/*
+ * The 2 MiB region at 0xFFFFFFFF90200000 has its own table (the APIC table):
+ * entries 0 and 1 hold the LAPIC and IOAPIC, and kernel MMIO windows placed in
+ * that region (the ACPI table windows) use the rest. Before M201 those windows
+ * were refused outright once the APIC was mapped.
+ */
+#define PAGING64_APIC_REGION_VIRTUAL 0xFFFFFFFF90200000ull
+#define PAGING64_APIC_RESERVED_ENTRIES 2u
+static u32 g_apic_mmio_pt_initialized = 0u;
+/* Bumped by every kernel MMIO mapping; all PD slots share one PT, so windows can overwrite each other. */
+static u32 g_kernel_mmio_mapping_generation = 0u;
 static u64 g_paging64_kernel_physical_base = 0ull;
 
 #ifdef LIMITLESS_X64_UEFI_KERNEL
@@ -1864,6 +1875,8 @@ u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u3
     volatile u64 *high_pdpt = (volatile u64 *)(u64)PAGING64_HIGH_PDPT_PHYSICAL;
     volatile u64 *kernel_pd = (volatile u64 *)(u64)PAGING64_KERNEL_PD_PHYSICAL;
     volatile u64 *mmio_pt = (volatile u64 *)(u64)PAGING64_KERNEL_MMIO_PT_PHYSICAL;
+    volatile u64 *target_pt;
+    u64 target_pt_physical;
     u32 pml4_index;
     u32 pdpt_index;
     u32 pd_index;
@@ -1952,9 +1965,25 @@ u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u3
 #endif
     }
 
+    target_pt = mmio_pt;
+    target_pt_physical = PAGING64_KERNEL_MMIO_PT_PHYSICAL;
+    if (pd_index == paging64_index64(PAGING64_APIC_REGION_VIRTUAL, 21u))
+    {
+        if (pt_index < PAGING64_APIC_RESERVED_ENTRIES)
+        {
+#ifdef LIMITLESS_X64_UEFI_KERNEL
+            goto paging64_install_kernel_mmio_mapping_done;
+#else
+            return 0u;
+#endif
+        }
+        target_pt = (volatile u64 *)(u64)PAGING64_APIC_MMIO_PT_PHYSICAL;
+        target_pt_physical = PAGING64_APIC_MMIO_PT_PHYSICAL;
+    }
+
     if (((kernel_pd[pd_index] & PAGING64_PAGE_PRESENT) != 0ull)
         && ((kernel_pd[pd_index] & PAGING64_PHYSICAL_ADDRESS_MASK) !=
-            (PAGING64_KERNEL_MMIO_PT_PHYSICAL & PAGING64_PHYSICAL_ADDRESS_MASK)))
+            (target_pt_physical & PAGING64_PHYSICAL_ADDRESS_MASK)))
     {
 #ifdef LIMITLESS_X64_UEFI_KERNEL
         goto paging64_install_kernel_mmio_mapping_done;
@@ -1972,18 +2001,23 @@ u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u3
         | PAGING64_PAGE_CACHE_DISABLED
         | PAGING64_PAGE_NO_EXECUTE;
 
-    if (g_kernel_mmio_pt_initialized == 0u)
+    if ((target_pt == mmio_pt) && (g_kernel_mmio_pt_initialized == 0u))
     {
         paging64_zero_table(mmio_pt);
         g_kernel_mmio_pt_initialized = 1u;
     }
+    if ((target_pt != mmio_pt) && (g_apic_mmio_pt_initialized == 0u))
+    {
+        paging64_zero_table(target_pt);
+        g_apic_mmio_pt_initialized = 1u;
+    }
 
-    kernel_pd[pd_index] = (PAGING64_KERNEL_MMIO_PT_PHYSICAL & PAGING64_PAGE_MASK)
+    kernel_pd[pd_index] = (target_pt_physical & PAGING64_PAGE_MASK)
         | pde_flags;
 
     for (page_index = 0u; page_index < page_count; ++page_index)
     {
-        mmio_pt[pt_index + page_index] =
+        target_pt[pt_index + page_index] =
             (((u64)physical_base + ((u64)page_index * (u64)PAGING64_PAGE_BYTES))
                 & PAGING64_PAGE_MASK)
             | pte_flags;
@@ -2006,6 +2040,7 @@ u32 paging64_install_kernel_mmio_mapping(u64 virtual_base, u64 physical_base, u3
     token = (token != 0u) ? token : 1u;
 
     g_kernel_mmio_mapping_installed = 1u;
+    ++g_kernel_mmio_mapping_generation;
     g_kernel_mmio_mapping_install_token = token;
     g_kernel_mmio_mapping_pml4_index = pml4_index;
     g_kernel_mmio_mapping_pdpt_index = pdpt_index;
@@ -2100,9 +2135,13 @@ u32 paging64_install_apic_mmio_mapping(u64 lapic_virtual, u32 lapic_physical, u6
     }
 
     wrmsr64(PAGING64_EFER_MSR, rdmsr64(PAGING64_EFER_MSR) | PAGING64_EFER_NXE);
-    for (index = 0u; index < PAGING64_ENTRY_COUNT; ++index)
+    if (g_apic_mmio_pt_initialized == 0u)
     {
-        apic_pt[index] = 0ull;
+        for (index = 0u; index < PAGING64_ENTRY_COUNT; ++index)
+        {
+            apic_pt[index] = 0ull;
+        }
+        g_apic_mmio_pt_initialized = 1u;
     }
 
     pde_flags = PAGING64_PAGE_PRESENT
@@ -2215,6 +2254,11 @@ u32 paging64_user_stack_mapping_protection_flags(void)
 u32 paging64_user_stack_mapping_protection_token(void)
 {
     return g_user_stack_mapping_protection_token;
+}
+
+u32 paging64_kernel_mmio_mapping_generation(void)
+{
+    return g_kernel_mmio_mapping_generation;
 }
 
 u32 paging64_kernel_mmio_mapping_installed(void)

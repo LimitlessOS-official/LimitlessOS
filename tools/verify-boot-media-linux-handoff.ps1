@@ -86,6 +86,7 @@ New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 [System.IO.File]::WriteAllBytes($appPath, [byte[]](0x7F, 0x45, 0x4C, 0x46, 0x44, 0x59, 0x4E))
 [System.IO.File]::WriteAllBytes($interpPath, [byte[]](0x7F, 0x45, 0x4C, 0x46, 0x49, 0x4E, 0x54))
 
+try {
 if (-not $SkipBuild) {
     & $buildPath `
         -Architecture x86_64 `
@@ -145,6 +146,14 @@ $telemetry = @(
     (Get-Content -Path $logPath) |
         Where-Object { ($_ -match 'boot linux stage') -or ($_ -match 'linux: using UEFI boot-media staged file') -or ($_ -match 'drs-realbin') }
 )
+
+}
+finally {
+    # The probe payloads are deliberately invalid ELFs; never leave them staged in dist/.
+    if (-not $SkipBuild) {
+        & $buildPath -Architecture x86_64 -BuildProfile Product | Out-Null
+    }
+}
 
 Write-Host "Boot-media Linux handoff verifier passed."
 Write-Host "BIOS reserve sectors: $biosReserve"
