@@ -5,6 +5,7 @@
 #include "pci_x64.h"
 #include "pit.h"
 #include "serial.h"
+#include "x64.h"
 
 #if defined(LIMITLESS_X64_BIOS_KERNEL) && LIMITLESS_X64_BIOS_KERNEL
 
@@ -103,6 +104,10 @@ u32 i2c_hid64_pointer_error(void)
 #define I2C_DW_ENABLE_ACTIVE 0x00000001u
 #define I2C_DW_INTR_TX_ABRT 0x00000040u
 #define I2C_DW_COMP_TYPE_VALUE 0x44570140u
+#define I2C_HID64_FS_SCL_HCNT 260u
+#define I2C_HID64_FS_SCL_LCNT 400u
+#define I2C_HID64_LPSS_PRIV_RESETS 0x204u
+#define I2C_HID64_LPSS_PRIV_RESETS_RELEASE 0x7u
 
 #define I2C_HID64_PRIMARY_ADDRESS_COUNT 8u
 #define I2C_HID64_POINTER_ADDRESS_COUNT 16u
@@ -470,7 +475,14 @@ static u32 i2c_hid64_enable_controller(u32 start_ticks)
 static u32 i2c_hid64_program_controller(void)
 {
     u32 start_ticks = pit_get_ticks();
-    u32 comp_type = i2c_hid64_read32(I2C_DW_IC_COMP_TYPE);
+    u32 comp_type;
+
+    /* LPSS controllers come out of firmware held in reset; release the function and its DMA. */
+    if (i2c_hid64_read32(I2C_HID64_LPSS_PRIV_RESETS) != I2C_HID64_LPSS_PRIV_RESETS_RELEASE)
+    {
+        (void)i2c_hid64_write32(I2C_HID64_LPSS_PRIV_RESETS, I2C_HID64_LPSS_PRIV_RESETS_RELEASE);
+    }
+    comp_type = i2c_hid64_read32(I2C_DW_IC_COMP_TYPE);
 
     if ((comp_type != I2C_DW_COMP_TYPE_VALUE) && (comp_type == 0xFFFFFFFFu || comp_type == 0u))
     {
@@ -498,8 +510,12 @@ static u32 i2c_hid64_program_controller(void)
     (void)i2c_hid64_read32(I2C_DW_IC_CLR_INTR);
     (void)i2c_hid64_write32(I2C_DW_IC_RX_TL, 0u);
     (void)i2c_hid64_write32(I2C_DW_IC_TX_TL, 0u);
-    (void)i2c_hid64_write32(I2C_DW_IC_FS_SCL_HCNT, 0x0040u);
-    (void)i2c_hid64_write32(I2C_DW_IC_FS_SCL_LCNT, 0x0080u);
+    /*
+     * 660 input clocks per SCL period: 150 kHz at a 100 MHz LPSS clock, 200 kHz
+     * at 133 MHz, 330 kHz at 216 MHz. Never above fast mode's 400 kHz.
+     */
+    (void)i2c_hid64_write32(I2C_DW_IC_FS_SCL_HCNT, I2C_HID64_FS_SCL_HCNT);
+    (void)i2c_hid64_write32(I2C_DW_IC_FS_SCL_LCNT, I2C_HID64_FS_SCL_LCNT);
     (void)i2c_hid64_write32(I2C_DW_IC_SDA_HOLD, 0x00300030u);
     (void)i2c_hid64_write32(I2C_DW_IC_SDA_SETUP, 0x00000064u);
 
@@ -1816,6 +1832,462 @@ static u32 i2c_hid64_try_pointer_address(u32 address, u64 physical_base, u32 all
     return 0u;
 }
 
+/*
+ * BAR assignment for LPSS I2C controllers the firmware left at base 0. The
+ * window comes from the firmware's own PCI root resource fields (M64B/M64L,
+ * else M32B/M32L, read from the ACPI NVS region the DSDT declares). Each
+ * placement is checked by releasing the LPSS reset and reading the
+ * DesignWare component type; a placement that does not decode is undone.
+ */
+#define I2C_HID64_ACPI_NAME_M64B 0x4234364Du
+#define I2C_HID64_ACPI_NAME_M64L 0x4C34364Du
+#define I2C_HID64_ACPI_NAME_M32B 0x4232334Du
+#define I2C_HID64_ACPI_NAME_M32L 0x4C32334Du
+#define I2C_HID64_AML_QWORD_PREFIX 0x0Eu
+#define I2C_HID64_AML_ROOT_PREFIX 0x5Cu
+#define I2C_HID64_BAR_STATUS_NOT_NEEDED 0u
+#define I2C_HID64_BAR_STATUS_ASSIGNED 1u
+#define I2C_HID64_BAR_STATUS_FAILED 2u
+#define I2C_HID64_BAR_WINDOW_NONE 0u
+#define I2C_HID64_BAR_WINDOW_ACPI_64 1u
+#define I2C_HID64_BAR_WINDOW_ACPI_32 2u
+#define I2C_HID64_BAR_REASON_NO_DECODE 20u
+#define I2C_HID64_BAR_REASON_MAP_FAILED 21u
+
+static u32 g_i2c_hid64_bar_status = I2C_HID64_BAR_STATUS_NOT_NEEDED;
+static u32 g_i2c_hid64_bar_window_source = I2C_HID64_BAR_WINDOW_NONE;
+static u64 g_i2c_hid64_bar_window_base = 0ull;
+static u64 g_i2c_hid64_bar_window_end = 0ull;
+static u64 g_i2c_hid64_bar_assigned_base = 0ull;
+static u32 g_i2c_hid64_bar_reason = 0u;
+static u32 g_i2c_hid64_bar_strategy = 0u;
+static u32 g_i2c_hid64_power_state = 0xFFu;
+static u32 g_i2c_hid64_comp_type = 0u;
+
+static u32 i2c_hid64_aml_lead_name_char(u8 value)
+{
+    return (((value >= 'A') && (value <= 'Z')) || (value == '_')) ? 1u : 0u;
+}
+
+static u32 i2c_hid64_aml_integer64(const u8 *aml, u32 aml_bytes, u32 offset, u64 *value_out)
+{
+    u32 value;
+    u32 next;
+
+    if ((aml[offset] == I2C_HID64_AML_QWORD_PREFIX) && ((offset + 8u) < aml_bytes))
+    {
+        *value_out = (u64)i2c_hid64_acpi_u32(&aml[offset + 1u])
+            | ((u64)i2c_hid64_acpi_u32(&aml[offset + 5u]) << 32);
+        return 1u;
+    }
+    if (i2c_hid64_aml_integer(aml, aml_bytes, offset, &value, &next) != 0u)
+    {
+        *value_out = value;
+        return 1u;
+    }
+    return 0u;
+}
+
+/* Value of Name(name, <integer>) anywhere in the table. */
+static u32 i2c_hid64_acpi_named_integer(const u8 *aml, u32 aml_bytes, u32 name, u64 *value_out)
+{
+    u32 offset;
+
+    for (offset = I2C_HID64_ACPI_TABLE_HEADER_BYTES; (offset + 6u) < aml_bytes; ++offset)
+    {
+        if ((aml[offset] == I2C_HID64_AML_NAME_OP)
+            && (i2c_hid64_acpi_u32(&aml[offset + 1u]) == name)
+            && (i2c_hid64_aml_integer64(aml, aml_bytes, offset + 5u, value_out) != 0u))
+        {
+            return 1u;
+        }
+    }
+    return 0u;
+}
+
+/* Physical base of a SystemMemory OperationRegion whose offset is a literal or a named integer. */
+static u32 i2c_hid64_acpi_region_base(const u8 *aml, u32 aml_bytes, u32 region, u64 *base_out)
+{
+    u32 offset;
+
+    for (offset = I2C_HID64_ACPI_TABLE_HEADER_BYTES; (offset + 12u) < aml_bytes; ++offset)
+    {
+        u32 cursor;
+
+        if ((aml[offset] != I2C_HID64_AML_EXT_OP) || (aml[offset + 1u] != I2C_HID64_AML_OPERATION_REGION_OP))
+        {
+            continue;
+        }
+        cursor = offset + 2u;
+        if (aml[cursor] == I2C_HID64_AML_ROOT_PREFIX)
+        {
+            ++cursor;
+        }
+        if ((i2c_hid64_acpi_u32(&aml[cursor]) != region)
+            || (aml[cursor + 4u] != I2C_HID64_ACPI_SYSTEM_MEMORY_SPACE))
+        {
+            continue;
+        }
+        cursor += 5u;
+        if (i2c_hid64_aml_integer64(aml, aml_bytes, cursor, base_out) != 0u)
+        {
+            return 1u;
+        }
+        if (aml[cursor] == I2C_HID64_AML_ROOT_PREFIX)
+        {
+            ++cursor;
+        }
+        if (((cursor + 4u) < aml_bytes) && (i2c_hid64_aml_lead_name_char(aml[cursor]) != 0u))
+        {
+            return i2c_hid64_acpi_named_integer(aml, aml_bytes, i2c_hid64_acpi_u32(&aml[cursor]), base_out);
+        }
+        return 0u;
+    }
+    return 0u;
+}
+
+/* Region and byte offset of a byte-aligned named field in any Field() list. */
+static u32 i2c_hid64_acpi_find_field(
+    const u8 *aml,
+    u32 aml_bytes,
+    u32 field_name,
+    u32 *region_out,
+    u32 *byte_offset_out,
+    u32 *bit_length_out)
+{
+    u32 offset;
+    u32 length;
+    u32 length_bytes;
+
+    for (offset = I2C_HID64_ACPI_TABLE_HEADER_BYTES; (offset + 8u) < aml_bytes; ++offset)
+    {
+        u32 cursor;
+        u32 end;
+        u32 region;
+        u32 bit_offset = 0u;
+        u32 bit_length;
+
+        if ((aml[offset] != I2C_HID64_AML_EXT_OP)
+            || (aml[offset + 1u] != I2C_HID64_AML_FIELD_OP)
+            || (i2c_hid64_aml_pkg_length(aml, aml_bytes, offset + 2u, &length, &length_bytes) == 0u))
+        {
+            continue;
+        }
+        cursor = offset + 2u + length_bytes;
+        end = offset + 2u + length;
+        if (end > aml_bytes)
+        {
+            continue;
+        }
+        if ((cursor < end) && (aml[cursor] == I2C_HID64_AML_ROOT_PREFIX))
+        {
+            ++cursor;
+        }
+        if (((cursor + 5u) > end) || (i2c_hid64_aml_lead_name_char(aml[cursor]) == 0u))
+        {
+            continue;
+        }
+        region = i2c_hid64_acpi_u32(&aml[cursor]);
+        cursor += 5u; /* region NameSeg plus FieldFlags */
+        while (cursor < end)
+        {
+            if (aml[cursor] == 0x00u)
+            {
+                if (i2c_hid64_aml_pkg_length(aml, end, cursor + 1u, &bit_length, &length_bytes) == 0u)
+                {
+                    break;
+                }
+                bit_offset += bit_length;
+                cursor += 1u + length_bytes;
+                continue;
+            }
+            if (aml[cursor] == 0x01u)
+            {
+                cursor += 3u;
+                continue;
+            }
+            if (aml[cursor] == 0x03u)
+            {
+                cursor += 4u;
+                continue;
+            }
+            if (aml[cursor] == 0x02u)
+            {
+                ++cursor;
+                continue;
+            }
+            if (((cursor + 5u) > end)
+                || (i2c_hid64_aml_lead_name_char(aml[cursor]) == 0u)
+                || (i2c_hid64_aml_pkg_length(aml, end, cursor + 4u, &bit_length, &length_bytes) == 0u))
+            {
+                break;
+            }
+            if ((i2c_hid64_acpi_u32(&aml[cursor]) == field_name) && ((bit_offset & 7u) == 0u))
+            {
+                *region_out = region;
+                *byte_offset_out = bit_offset >> 3;
+                *bit_length_out = bit_length;
+                return 1u;
+            }
+            bit_offset += bit_length;
+            cursor += 4u + length_bytes;
+        }
+    }
+    return 0u;
+}
+
+static u32 i2c_hid64_acpi_read_field(const u8 *aml, u32 aml_bytes, u32 field_name, u64 *value_out)
+{
+    u32 region;
+    u32 byte_offset;
+    u32 bit_length;
+    u64 region_base;
+    u64 value = 0ull;
+    u32 byte_count;
+    u32 index;
+
+    if ((i2c_hid64_acpi_find_field(aml, aml_bytes, field_name, &region, &byte_offset, &bit_length) == 0u)
+        || ((bit_length != 32u) && (bit_length != 64u))
+        || (i2c_hid64_acpi_region_base(aml, aml_bytes, region, &region_base) == 0u)
+        || (region_base == 0ull)
+        || (region_base > 0xFFFFFFFFull))
+    {
+        return 0u;
+    }
+
+    byte_count = bit_length >> 3;
+    for (index = 0u; index < byte_count; ++index)
+    {
+        u32 byte;
+
+        if (i2c_hid64_acpi_read_physical_byte((u32)region_base + byte_offset + index, &byte) == 0u)
+        {
+            return 0u;
+        }
+        value |= (u64)(byte & 0xFFu) << (index * 8u);
+    }
+    *value_out = value;
+    return 1u;
+}
+
+static void i2c_hid64_find_bar_window(void)
+{
+    u32 dsdt_bytes = 0u;
+    const u8 *dsdt = i2c_hid64_acpi_map_dsdt(&dsdt_bytes);
+    u64 base = 0ull;
+    u64 length = 0ull;
+
+    g_i2c_hid64_bar_window_source = I2C_HID64_BAR_WINDOW_NONE;
+    g_i2c_hid64_bar_window_base = 0ull;
+    g_i2c_hid64_bar_window_end = 0ull;
+    if (dsdt == 0)
+    {
+        return;
+    }
+    if ((i2c_hid64_acpi_read_field(dsdt, dsdt_bytes, I2C_HID64_ACPI_NAME_M64B, &base) != 0u)
+        && (i2c_hid64_acpi_read_field(dsdt, dsdt_bytes, I2C_HID64_ACPI_NAME_M64L, &length) != 0u)
+        && (base >= 0x100000000ull)
+        && (length >= 0x100000ull)
+        && ((base + length) > base))
+    {
+        g_i2c_hid64_bar_window_source = I2C_HID64_BAR_WINDOW_ACPI_64;
+        g_i2c_hid64_bar_window_base = base;
+        g_i2c_hid64_bar_window_end = base + length;
+        return;
+    }
+    if ((i2c_hid64_acpi_read_field(dsdt, dsdt_bytes, I2C_HID64_ACPI_NAME_M32B, &base) != 0u)
+        && (i2c_hid64_acpi_read_field(dsdt, dsdt_bytes, I2C_HID64_ACPI_NAME_M32L, &length) != 0u)
+        && (base >= 0x80000000ull)
+        && (length >= 0x100000ull)
+        && ((base + length) <= 0x100000000ull))
+    {
+        g_i2c_hid64_bar_window_source = I2C_HID64_BAR_WINDOW_ACPI_32;
+        g_i2c_hid64_bar_window_base = base;
+        g_i2c_hid64_bar_window_end = base + length;
+    }
+}
+
+/* Map a candidate placement, release the LPSS reset, and check the DesignWare ID. */
+static u32 i2c_hid64_controller_decodes(u64 physical_base)
+{
+    u32 comp_type;
+    u32 settle;
+
+    g_i2c_hid64_mapped = 0u;
+    if (i2c_hid64_map_physical(I2C_HID64_MAP_VIRTUAL_BASE, physical_base) == 0u)
+    {
+        g_i2c_hid64_mapped = 0u;
+        return I2C_HID64_BAR_REASON_MAP_FAILED;
+    }
+    if (i2c_hid64_read32(I2C_HID64_LPSS_PRIV_RESETS) != I2C_HID64_LPSS_PRIV_RESETS_RELEASE)
+    {
+        (void)i2c_hid64_write32(I2C_HID64_LPSS_PRIV_RESETS, I2C_HID64_LPSS_PRIV_RESETS_RELEASE);
+        for (settle = 0u; settle < 1000u; ++settle)
+        {
+            outb(0x80, 0u);
+        }
+    }
+    comp_type = i2c_hid64_read32(I2C_DW_IC_COMP_TYPE);
+    g_i2c_hid64_comp_type = comp_type;
+    g_i2c_hid64_mapped = 0u;
+    return (comp_type == I2C_DW_COMP_TYPE_VALUE) ? 0u : I2C_HID64_BAR_REASON_NO_DECODE;
+}
+
+static void i2c_hid64_assign_controller_bar(u32 address)
+{
+    u32 strategies[3];
+    u32 strategy_count = 0u;
+    u32 index;
+
+    if (g_i2c_hid64_bar_window_source != I2C_HID64_BAR_WINDOW_NONE)
+    {
+        strategies[strategy_count++] = 0u;
+        strategies[strategy_count++] = 1u;
+    }
+    strategies[strategy_count++] = 2u;
+
+    for (index = 0u; index < strategy_count; ++index)
+    {
+        u64 assigned = 0ull;
+        u64 size = 0ull;
+        u32 reason = pci64_assign_memory_bar(
+            address,
+            0u,
+            g_i2c_hid64_bar_window_base,
+            g_i2c_hid64_bar_window_end,
+            strategies[index],
+            &assigned,
+            &size);
+
+        g_i2c_hid64_bar_strategy = strategies[index];
+        if (reason == 0u)
+        {
+            reason = i2c_hid64_controller_decodes(assigned);
+            if (reason == 0u)
+            {
+                g_i2c_hid64_bar_status = I2C_HID64_BAR_STATUS_ASSIGNED;
+                g_i2c_hid64_bar_assigned_base = assigned;
+                g_i2c_hid64_bar_reason = 0u;
+                serial_write_string("[x64] i2c bar assigned\n");
+                return;
+            }
+            pci64_release_memory_bar(address, 0u);
+        }
+        g_i2c_hid64_bar_reason = reason;
+    }
+    g_i2c_hid64_bar_status = I2C_HID64_BAR_STATUS_FAILED;
+    serial_write_string("[x64] i2c bar assignment failed\n");
+}
+
+static void i2c_hid64_prepare_controllers(void)
+{
+    u32 addresses[2u + 8u];
+    u32 address_count = 0u;
+    u32 index;
+    u32 candidate;
+    u32 window_searched = 0u;
+
+    g_i2c_hid64_bar_status = I2C_HID64_BAR_STATUS_NOT_NEEDED;
+    g_i2c_hid64_bar_assigned_base = 0ull;
+    g_i2c_hid64_bar_reason = 0u;
+    g_i2c_hid64_bar_strategy = 0u;
+    g_i2c_hid64_power_state = 0xFFu;
+    g_i2c_hid64_comp_type = 0u;
+
+    addresses[address_count++] = pci64_lpss_i2c_address();
+    addresses[address_count++] = pci64_lpss_i2c_second_address();
+    for (candidate = 0u; (candidate < pci64_lpss_i2c_pointer_candidate_count()) && (address_count < 10u); ++candidate)
+    {
+        addresses[address_count++] = pci64_lpss_i2c_pointer_candidate_address(candidate);
+    }
+
+    for (index = 0u; index < address_count; ++index)
+    {
+        u32 address = addresses[index];
+        u32 seen = 0u;
+        u32 earlier;
+        u32 power_state;
+
+        if (address == 0xFFFFFFFFu)
+        {
+            continue;
+        }
+        for (earlier = 0u; earlier < index; ++earlier)
+        {
+            if (addresses[earlier] == address)
+            {
+                seen = 1u;
+            }
+        }
+        if (seen != 0u)
+        {
+            continue;
+        }
+
+        /* Serial IO controllers are often left in D3hot; a BAR placed then would be lost on wake. */
+        power_state = pci64_set_power_d0(address);
+        if (index == 0u)
+        {
+            g_i2c_hid64_power_state = power_state;
+        }
+        if (pci64_memory_bar_unassigned(address, 0u) != 0u)
+        {
+            if (window_searched == 0u)
+            {
+                i2c_hid64_find_bar_window();
+                window_searched = 1u;
+            }
+            i2c_hid64_assign_controller_bar(address);
+        }
+    }
+    pci64_lpss_i2c_refresh_bars();
+}
+
+u32 i2c_hid64_bar_assign_status(void)
+{
+    return g_i2c_hid64_bar_status;
+}
+
+u32 i2c_hid64_bar_window_source(void)
+{
+    return g_i2c_hid64_bar_window_source;
+}
+
+u64 i2c_hid64_bar_window_base(void)
+{
+    return g_i2c_hid64_bar_window_base;
+}
+
+u64 i2c_hid64_bar_window_end(void)
+{
+    return g_i2c_hid64_bar_window_end;
+}
+
+u64 i2c_hid64_bar_assigned_base(void)
+{
+    return g_i2c_hid64_bar_assigned_base;
+}
+
+u32 i2c_hid64_bar_assign_reason(void)
+{
+    return g_i2c_hid64_bar_reason;
+}
+
+u32 i2c_hid64_bar_assign_strategy(void)
+{
+    return g_i2c_hid64_bar_strategy;
+}
+
+u32 i2c_hid64_controller_power_state(void)
+{
+    return g_i2c_hid64_power_state;
+}
+
+u32 i2c_hid64_controller_comp_type(void)
+{
+    return g_i2c_hid64_comp_type;
+}
+
 void i2c_hid64_init(void)
 {
     u64 physical_base;
@@ -1884,6 +2356,7 @@ void i2c_hid64_init(void)
         return;
     }
 
+    i2c_hid64_prepare_controllers();
     flags = pci64_lpss_i2c_mmio_flags();
     pointer_candidate_count = pci64_lpss_i2c_pointer_candidate_count();
     physical_base = ((u64)pci64_lpss_i2c_base_high() << 32) | (u64)pci64_lpss_i2c_base_low();

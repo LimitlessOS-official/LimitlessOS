@@ -2262,6 +2262,538 @@ void pci64_init(const struct boot_info *boot_info)
     serial_write_string("[x64] I2C detect config-only complete\n");
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Memory BAR assignment for devices the firmware left unassigned. Intel
+ * laptops often leave the Serial IO I2C controllers (the touchpad bus) at
+ * base 0 for the OS to place, as Linux does. Free space is found by sizing
+ * every assigned BAR and bridge window, the same probe Linux runs at boot.
+ */
+#define PCI64_RANGE_LIMIT 128u
+#define PCI64_PM_CAPABILITY_ID 0x01u
+#define PCI64_PM_STATE_MASK 0x3u
+#define PCI64_D3_TO_D0_DELAY_IO_WRITES 12000u
+
+static u64 g_pci64_range_base[PCI64_RANGE_LIMIT];
+static u64 g_pci64_range_end[PCI64_RANGE_LIMIT];
+static u32 g_pci64_range_count = 0u;
+static u32 g_pci64_range_overflow = 0u;
+static u64 g_pci64_range_max_end_above_4g = 0ull;
+
+static u64 pci64_irq_save(void)
+{
+    u64 flags;
+
+    __asm__ volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void pci64_irq_restore(u64 flags)
+{
+    if ((flags & 0x200ull) != 0ull)
+    {
+        __asm__ volatile("sti" : : : "memory");
+    }
+}
+
+static void pci64_add_range(u64 base, u64 size)
+{
+    u64 end;
+
+    if ((size == 0ull) || (base == 0ull))
+    {
+        return;
+    }
+    end = base + size;
+    if (end < base)
+    {
+        end = 0xFFFFFFFFFFFFFFFFull;
+    }
+    if ((base >= 0x100000000ull) && (end > g_pci64_range_max_end_above_4g))
+    {
+        g_pci64_range_max_end_above_4g = end;
+    }
+    if (g_pci64_range_count >= PCI64_RANGE_LIMIT)
+    {
+        g_pci64_range_overflow = 1u;
+        return;
+    }
+    g_pci64_range_base[g_pci64_range_count] = base;
+    g_pci64_range_end[g_pci64_range_count] = end;
+    ++g_pci64_range_count;
+}
+
+static u64 pci64_low_bit(u64 value)
+{
+    return value & (~value + 1ull);
+}
+
+/* Size one memory BAR with decode off and interrupts masked; 0 for an absent or I/O BAR. */
+static u64 pci64_size_memory_bar(u32 bus, u32 device, u32 function, u32 offset)
+{
+    u32 command = pci64_read_config(bus, device, function, PCI_STATUS_COMMAND) & 0x0000FFFFu;
+    u32 original_low = pci64_read_config(bus, device, function, offset);
+    u32 original_high;
+    u32 size_low;
+    u32 size_high = 0xFFFFFFFFu;
+    u32 is_64bit;
+    u64 mask;
+    u64 flags;
+
+    if ((original_low & PCI_BAR_IO_SPACE) != 0u)
+    {
+        return 0ull;
+    }
+    is_64bit = ((original_low & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT) ? 1u : 0u;
+
+    flags = pci64_irq_save();
+    pci64_write_config_ecam(bus, device, function, PCI_STATUS_COMMAND, command & ~(PCI_COMMAND_MEMORY | 0x1u));
+    pci64_write_config_ecam(bus, device, function, offset, 0xFFFFFFFFu);
+    size_low = pci64_read_config(bus, device, function, offset);
+    pci64_write_config_ecam(bus, device, function, offset, original_low);
+    if (is_64bit != 0u)
+    {
+        original_high = pci64_read_config(bus, device, function, offset + 4u);
+        pci64_write_config_ecam(bus, device, function, offset + 4u, 0xFFFFFFFFu);
+        size_high = pci64_read_config(bus, device, function, offset + 4u);
+        pci64_write_config_ecam(bus, device, function, offset + 4u, original_high);
+    }
+    pci64_write_config_ecam(bus, device, function, PCI_STATUS_COMMAND, command);
+    pci64_irq_restore(flags);
+
+    if (((size_low & PCI_BAR_MEMORY_BASE_MASK) == 0u) && ((is_64bit == 0u) || (size_high == 0u)))
+    {
+        return 0ull;
+    }
+    mask = ((u64)size_high << 32) | (u64)(size_low & PCI_BAR_MEMORY_BASE_MASK);
+    return ~mask + 1ull;
+}
+
+static void pci64_collect_function_ranges(u32 bus, u32 device, u32 function)
+{
+    u32 header_type = (pci64_read_config(bus, device, function, 0x0Cu) >> 16) & 0x7Fu;
+    u32 bar_count = (header_type == 0u) ? 6u : ((header_type == 1u) ? 2u : 0u);
+    u32 bar;
+
+    for (bar = 0u; bar < bar_count; ++bar)
+    {
+        u32 offset = 0x10u + (bar * 4u);
+        u32 raw = pci64_read_config(bus, device, function, offset);
+        u64 base;
+        u64 size;
+        u32 is_64bit;
+
+        if ((raw & PCI_BAR_IO_SPACE) != 0u)
+        {
+            continue;
+        }
+        is_64bit = ((raw & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT) ? 1u : 0u;
+        base = (u64)(raw & PCI_BAR_MEMORY_BASE_MASK);
+        if (is_64bit != 0u)
+        {
+            base |= (u64)pci64_read_config(bus, device, function, offset + 4u) << 32;
+        }
+        if (base != 0ull)
+        {
+            size = pci64_size_memory_bar(bus, device, function, offset);
+            /* A BAR is aligned to its size, so its lowest set bit bounds it. */
+            pci64_add_range(base, (size != 0ull) ? size : pci64_low_bit(base));
+        }
+        if (is_64bit != 0u)
+        {
+            ++bar;
+        }
+    }
+
+    if (header_type == 1u)
+    {
+        u32 window = pci64_read_config(bus, device, function, 0x20u);
+        u64 memory_base = (u64)(window & 0x0000FFF0u) << 16;
+        u64 memory_limit = (u64)(window & 0xFFF00000u) | 0xFFFFFull;
+        u32 prefetch = pci64_read_config(bus, device, function, 0x24u);
+        u64 prefetch_base = (u64)(prefetch & 0x0000FFF0u) << 16;
+        u64 prefetch_limit = (u64)(prefetch & 0xFFF00000u) | 0xFFFFFull;
+
+        if (memory_limit > memory_base)
+        {
+            pci64_add_range(memory_base, memory_limit - memory_base + 1ull);
+        }
+        if ((prefetch & 0xFu) == 0x1u)
+        {
+            prefetch_base |= (u64)pci64_read_config(bus, device, function, 0x28u) << 32;
+            prefetch_limit |= (u64)pci64_read_config(bus, device, function, 0x2Cu) << 32;
+        }
+        if (prefetch_limit > prefetch_base)
+        {
+            pci64_add_range(prefetch_base, prefetch_limit - prefetch_base + 1ull);
+        }
+    }
+}
+
+static void pci64_collect_ranges(u32 skip_address)
+{
+    u32 start_bus = g_ecam_bus_start;
+    u32 end_bus = g_ecam_bus_end;
+    u32 bus;
+    u32 device;
+    u32 function;
+
+    g_pci64_range_count = 0u;
+    g_pci64_range_overflow = 0u;
+    g_pci64_range_max_end_above_4g = 0ull;
+    if (end_bus >= PCI_MAX_BUS)
+    {
+        end_bus = PCI_MAX_BUS - 1u;
+    }
+    pci64_add_range(g_ecam_base, ((u64)(end_bus - start_bus) + 1ull) * (u64)PCI_ECAM_BUS_BYTES);
+
+    for (bus = start_bus; bus <= end_bus; ++bus)
+    {
+        for (device = 0u; device < PCI_MAX_DEVICE; ++device)
+        {
+            u32 header;
+            u32 function_count;
+
+            if ((pci64_read_config(bus, device, 0u, 0x00u) & 0xFFFFu) == PCI_VENDOR_INVALID)
+            {
+                continue;
+            }
+            header = pci64_read_config(bus, device, 0u, 0x0Cu);
+            function_count = (((header >> 16) & PCI_HEADER_MULTIFUNCTION) != 0u) ? PCI_MAX_FUNCTION : 1u;
+            for (function = 0u; function < function_count; ++function)
+            {
+                if (((bus << 16) | (device << 8) | function) == skip_address)
+                {
+                    continue;
+                }
+                if ((pci64_read_config(bus, device, function, 0x00u) & 0xFFFFu) == PCI_VENDOR_INVALID)
+                {
+                    continue;
+                }
+                pci64_collect_function_ranges(bus, device, function);
+            }
+        }
+        if (bus == end_bus)
+        {
+            break;
+        }
+    }
+}
+
+static u32 pci64_range_overlap(u64 base, u64 end, u32 *index_out)
+{
+    u32 index;
+
+    for (index = 0u; index < g_pci64_range_count; ++index)
+    {
+        if ((base < g_pci64_range_end[index]) && (g_pci64_range_base[index] < end))
+        {
+            *index_out = index;
+            return 1u;
+        }
+    }
+    return 0u;
+}
+
+static u64 pci64_align_up(u64 value, u64 alignment)
+{
+    return (value + alignment - 1ull) & ~(alignment - 1ull);
+}
+
+/* Lowest (or highest) size-aligned gap inside [window_base, window_end); 0 when none. */
+static u64 pci64_find_gap(u64 window_base, u64 window_end, u64 size, u32 top_down)
+{
+    u64 candidate;
+    u32 index = 0u;
+    u32 guard;
+
+    if ((window_end <= window_base) || ((window_end - window_base) < size))
+    {
+        return 0ull;
+    }
+
+    if (top_down == 0u)
+    {
+        candidate = pci64_align_up(window_base, size);
+        for (guard = 0u; guard <= PCI64_RANGE_LIMIT; ++guard)
+        {
+            if ((candidate < window_base) || ((candidate + size) < candidate) || ((candidate + size) > window_end))
+            {
+                return 0ull;
+            }
+            if (pci64_range_overlap(candidate, candidate + size, &index) == 0u)
+            {
+                return candidate;
+            }
+            candidate = pci64_align_up(g_pci64_range_end[index], size);
+        }
+        return 0ull;
+    }
+
+    candidate = (window_end - size) & ~(size - 1ull);
+    for (guard = 0u; guard <= PCI64_RANGE_LIMIT; ++guard)
+    {
+        if ((candidate < window_base) || (candidate == 0ull))
+        {
+            return 0ull;
+        }
+        if (pci64_range_overlap(candidate, candidate + size, &index) == 0u)
+        {
+            return candidate;
+        }
+        if (g_pci64_range_base[index] < size)
+        {
+            return 0ull;
+        }
+        candidate = (g_pci64_range_base[index] - size) & ~(size - 1ull);
+    }
+    return 0ull;
+}
+
+u32 pci64_set_power_d0(u32 address)
+{
+    u32 bus = (address >> 16) & 0xFFu;
+    u32 device = (address >> 8) & 0x1Fu;
+    u32 function = address & 0x7u;
+    u32 pointer;
+    u32 guard;
+
+    if ((g_config_use_ecam == 0u)
+        || ((pci64_read_config(bus, device, function, PCI_STATUS_COMMAND) & PCI_STATUS_CAP_LIST) == 0u))
+    {
+        return 0xFFu;
+    }
+    pointer = pci64_read_config8(bus, device, function, PCI_CAPABILITY_POINTER) & 0xFCu;
+    for (guard = 0u; (pointer >= 0x40u) && (guard < 48u); ++guard)
+    {
+        u32 header = pci64_read_config(bus, device, function, pointer);
+
+        if ((header & 0xFFu) == PCI64_PM_CAPABILITY_ID)
+        {
+            u32 control = pci64_read_config(bus, device, function, pointer + 4u);
+            u32 state = control & PCI64_PM_STATE_MASK;
+
+            if (state != 0u)
+            {
+                u32 delay;
+
+                /* Leave PME status (write-1-to-clear) alone; D3hot to D0 needs 10 ms. */
+                pci64_write_config_ecam(bus, device, function, pointer + 4u, control & 0x00007FFCu);
+                for (delay = 0u; delay < PCI64_D3_TO_D0_DELAY_IO_WRITES; ++delay)
+                {
+                    outb(0x80, 0u);
+                }
+            }
+            return state;
+        }
+        pointer = (header >> 8) & 0xFCu;
+    }
+    return 0xFFu;
+}
+
+static void pci64_write_memory_bar(u32 bus, u32 device, u32 function, u32 offset, u32 is_64bit, u64 base)
+{
+    u32 command = pci64_read_config(bus, device, function, PCI_STATUS_COMMAND) & 0x0000FFFFu;
+
+    pci64_write_config_ecam(bus, device, function, PCI_STATUS_COMMAND, command & ~PCI_COMMAND_MEMORY);
+    pci64_write_config_ecam(bus, device, function, offset, (u32)(base & 0xFFFFFFF0ull));
+    if (is_64bit != 0u)
+    {
+        pci64_write_config_ecam(bus, device, function, offset + 4u, (u32)(base >> 32));
+    }
+    if (base != 0ull)
+    {
+        pci64_write_config_ecam(bus, device, function, PCI_STATUS_COMMAND, command | PCI_COMMAND_MEMORY);
+    }
+}
+
+/*
+ * strategy 0: lowest gap in the window; 1: highest gap in the window;
+ * 2: just above every assigned range above 4 GiB (no usable ACPI window).
+ * Returns 0 on success, or a nonzero reason code.
+ */
+u32 pci64_assign_memory_bar(
+    u32 address,
+    u32 bar_index,
+    u64 window_base,
+    u64 window_end,
+    u32 strategy,
+    u64 *assigned_out,
+    u64 *size_out)
+{
+    u32 bus = (address >> 16) & 0xFFu;
+    u32 device = (address >> 8) & 0x1Fu;
+    u32 function = address & 0x7u;
+    u32 offset = 0x10u + (bar_index * 4u);
+    u32 raw;
+    u32 is_64bit;
+    u64 size;
+    u64 candidate;
+    u64 readback;
+
+    if (assigned_out != 0)
+    {
+        *assigned_out = 0ull;
+    }
+    if (size_out != 0)
+    {
+        *size_out = 0ull;
+    }
+    if ((g_config_use_ecam == 0u) || (bar_index >= 6u) || (address == 0xFFFFFFFFu))
+    {
+        return 1u;
+    }
+    raw = pci64_read_config(bus, device, function, offset);
+    if ((raw & PCI_BAR_IO_SPACE) != 0u)
+    {
+        return 2u;
+    }
+    is_64bit = ((raw & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT) ? 1u : 0u;
+    size = pci64_size_memory_bar(bus, device, function, offset);
+    if ((size == 0ull) || ((size & (size - 1ull)) != 0ull))
+    {
+        return 3u;
+    }
+    if (size < 0x1000ull)
+    {
+        size = 0x1000ull;
+    }
+    if (size_out != 0)
+    {
+        *size_out = size;
+    }
+
+    pci64_collect_ranges(address);
+    if (g_pci64_range_overflow != 0u)
+    {
+        return 4u;
+    }
+
+    if (strategy == 2u)
+    {
+        if (g_pci64_range_max_end_above_4g == 0ull)
+        {
+            return 5u;
+        }
+        window_base = pci64_align_up(g_pci64_range_max_end_above_4g, 0x100000ull);
+        window_end = window_base + 0x40000000ull;
+    }
+    if (is_64bit == 0u)
+    {
+        if (window_base >= 0x100000000ull)
+        {
+            return 6u;
+        }
+        if (window_end > 0x100000000ull)
+        {
+            window_end = 0x100000000ull;
+        }
+    }
+
+    candidate = pci64_find_gap(window_base, window_end, size, (strategy == 1u) ? 1u : 0u);
+    if (candidate == 0ull)
+    {
+        return 7u;
+    }
+
+    pci64_write_memory_bar(bus, device, function, offset, is_64bit, candidate);
+    readback = (u64)(pci64_read_config(bus, device, function, offset) & PCI_BAR_MEMORY_BASE_MASK);
+    if (is_64bit != 0u)
+    {
+        readback |= (u64)pci64_read_config(bus, device, function, offset + 4u) << 32;
+    }
+    if (readback != candidate)
+    {
+        pci64_write_memory_bar(bus, device, function, offset, is_64bit, 0ull);
+        return 8u;
+    }
+    if (assigned_out != 0)
+    {
+        *assigned_out = candidate;
+    }
+    return 0u;
+}
+
+u32 pci64_memory_bar_unassigned(u32 address, u32 bar_index)
+{
+    u32 bus = (address >> 16) & 0xFFu;
+    u32 device = (address >> 8) & 0x1Fu;
+    u32 function = address & 0x7u;
+    u32 offset = 0x10u + (bar_index * 4u);
+    u32 raw;
+
+    if ((g_config_use_ecam == 0u) || (bar_index >= 6u) || (address == 0xFFFFFFFFu))
+    {
+        return 0u;
+    }
+    raw = pci64_read_config(bus, device, function, offset);
+    if ((raw & PCI_BAR_IO_SPACE) != 0u)
+    {
+        return 0u;
+    }
+    if ((raw & PCI_BAR_MEMORY_BASE_MASK) != 0u)
+    {
+        return 0u;
+    }
+    if (((raw & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT)
+        && (pci64_read_config(bus, device, function, offset + 4u) != 0u))
+    {
+        return 0u;
+    }
+    return 1u;
+}
+
+void pci64_release_memory_bar(u32 address, u32 bar_index)
+{
+    u32 bus = (address >> 16) & 0xFFu;
+    u32 device = (address >> 8) & 0x1Fu;
+    u32 function = address & 0x7u;
+    u32 offset = 0x10u + (bar_index * 4u);
+    u32 raw;
+
+    if ((g_config_use_ecam == 0u) || (bar_index >= 6u) || (address == 0xFFFFFFFFu))
+    {
+        return;
+    }
+    raw = pci64_read_config(bus, device, function, offset);
+    pci64_write_memory_bar(
+        bus,
+        device,
+        function,
+        offset,
+        ((raw & PCI_BAR_MEMORY_TYPE_MASK) == PCI_BAR_MEMORY_TYPE_64BIT) ? 1u : 0u,
+        0ull);
+}
+
+static u32 pci64_bar_raw_at(u32 address, u32 bar_index)
+{
+    return pci64_bar_raw((address >> 16) & 0xFFu, (address >> 8) & 0x1Fu, address & 0x7u, bar_index);
+}
+
+/* Re-read the LPSS I2C BARs after an assignment and rebuild their MMIO plans. */
+void pci64_lpss_i2c_refresh_bars(void)
+{
+    u32 index;
+
+    if (g_first_lpss_i2c_address != 0xFFFFFFFFu)
+    {
+        g_first_lpss_i2c_bar0 = pci64_bar_raw_at(g_first_lpss_i2c_address, 0u);
+        g_first_lpss_i2c_bar1 = pci64_bar_raw_at(g_first_lpss_i2c_address, 1u);
+    }
+    if (g_second_lpss_i2c_address != 0xFFFFFFFFu)
+    {
+        g_second_lpss_i2c_bar0 = pci64_bar_raw_at(g_second_lpss_i2c_address, 0u);
+        g_second_lpss_i2c_bar1 = pci64_bar_raw_at(g_second_lpss_i2c_address, 1u);
+    }
+    for (index = 0u; index < g_lpss_i2c_pointer_candidate_count; ++index)
+    {
+        g_lpss_i2c_pointer_candidate_bar0[index] = pci64_bar_raw_at(g_lpss_i2c_pointer_candidate_address[index], 0u);
+        g_lpss_i2c_pointer_candidate_bar1[index] = pci64_bar_raw_at(g_lpss_i2c_pointer_candidate_address[index], 1u);
+    }
+    pci64_update_lpss_i2c_mmio_plan();
+}
+#endif
+
 u32 pci64_device_count(u32 hardware_capability_handle, u32 owner_id)
 {
     return pci64_authorized_value(hardware_capability_handle, owner_id, g_device_count);

@@ -12,6 +12,16 @@
 #define I2C_HID64_ACPI_TELEMETRY_GPIO_PIN 6u
 
 void i2c_hid64_init(void);
+/* BAR assignment for an LPSS I2C controller the firmware left at base 0. */
+u32 i2c_hid64_bar_assign_status(void);
+u32 i2c_hid64_bar_window_source(void);
+u64 i2c_hid64_bar_window_base(void);
+u64 i2c_hid64_bar_window_end(void);
+u64 i2c_hid64_bar_assigned_base(void);
+u32 i2c_hid64_bar_assign_reason(void);
+u32 i2c_hid64_bar_assign_strategy(void);
+u32 i2c_hid64_controller_power_state(void);
+u32 i2c_hid64_controller_comp_type(void);
 void i2c_hid64_poll_keyboard(void);
 void i2c_hid64_poll_pointer(void);
 u32 i2c_hid64_controller_present(void);
