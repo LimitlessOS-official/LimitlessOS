@@ -224,7 +224,7 @@
 #define DISPLAY64_SETTINGS_POINTER_SLOW 1u
 #define DISPLAY64_SETTINGS_POINTER_NORMAL 2u
 #define DISPLAY64_SETTINGS_POINTER_FAST 3u
-#define DISPLAY64_TERMINAL_SCROLL_STEP_BYTES 512u
+#define DISPLAY64_TERMINAL_SCROLL_STEP_LINES 3u
 #define DISPLAY64_TERMINAL_SELECTION_BYTES 128u
 #define DISPLAY64_WM_MIN_WINDOW_WIDTH 180u
 #define DISPLAY64_WM_MIN_WINDOW_HEIGHT 120u
@@ -963,6 +963,15 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /*
+     * The UEFI loader maps a kernel window larger than the 16 MiB low alias;
+     * the extension above it (higher-half only) is reserved for large buffers.
+     * The low window is full of kernel image and holds the boot-media stage
+     * area, so the back buffer must never be carved from it.
+     */
+    g_display_back_buffer_next = DISPLAY64_KERNEL_HIGH_BASE + LIMITLESS_BOOT_KERNEL_EXTENSION_BASE;
+#else
     if (g_display_back_buffer_next == 0ull)
     {
         g_display_back_buffer_next = ((u64)__bss_end + (DISPLAY64_PAGE_BYTES - 1ull))
@@ -972,6 +981,7 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
             g_display_back_buffer_next += DISPLAY64_KERNEL_HIGH_BASE;
         }
     }
+#endif
 
     start = g_display_back_buffer_next;
     end = (start + bytes + (DISPLAY64_PAGE_BYTES - 1ull)) & ~(DISPLAY64_PAGE_BYTES - 1ull);
@@ -980,12 +990,16 @@ static u32 display64_compositor_allocate_back_buffer(u64 pixels, u64 bytes)
         return 0u;
     }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    limit = DISPLAY64_KERNEL_HIGH_BASE + LIMITLESS_BOOT_KERNEL_WINDOW_BYTES;
+#else
     limit = DISPLAY64_KERNEL_HIGH_BASE + (u64)g_display_boot_info->identity_map_bytes;
     if ((limit <= DISPLAY64_KERNEL_HIGH_BASE)
         || (limit > (DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES)))
     {
         limit = DISPLAY64_KERNEL_HIGH_BASE + DISPLAY64_KERNEL_FALLBACK_WINDOW_BYTES;
     }
+#endif
     if (end > limit)
     {
         return 0u;
@@ -1835,6 +1849,8 @@ static u32 display64_scroll_console_viewport(u32 *token)
 
     framebuffer = display64_draw_buffer();
     scroll_height = viewport_height - display64_line_advance();
+    /* One dirty mark for the whole shifted region, not one per pixel. */
+    display64_compositor_mark_dirty(g_display_console_x, g_display_console_y, viewport_width, scroll_height);
 
     for (row = 0u; row < scroll_height; ++row)
     {
@@ -1853,7 +1869,6 @@ static u32 display64_scroll_console_viewport(u32 *token)
         {
             u32 pixel = framebuffer[source_index + column];
             framebuffer[target_index + column] = pixel;
-            display64_compositor_mark_dirty(g_display_console_x + column, target_y, 1u, 1u);
             if (token != 0)
             {
                 *token = display64_mix_token(*token, pixel ^ (u32)(target_index + column));
@@ -4601,6 +4616,10 @@ static void display64_wm_focus_window(u32 handle)
     ++g_display_wm_focus_count;
 }
 
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+static u32 display64_desktop_taskbar_y(void);
+#endif
+
 static void display64_wm_move_window(u32 handle, u32 x, u32 y)
 {
     struct display64_window *window = display64_wm_find_window(handle);
@@ -4616,9 +4635,16 @@ static void display64_wm_move_window(u32 handle, u32 x, u32 y)
     max_x = (window->width < g_display_boot_info->framebuffer_width)
         ? (g_display_boot_info->framebuffer_width - window->width)
         : 0u;
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+    /* Keep windows above the taskbar so they never slide under the desktop chrome. */
+    max_y = (window->height < display64_desktop_taskbar_y())
+        ? (display64_desktop_taskbar_y() - window->height)
+        : 0u;
+#else
     max_y = (window->height < g_display_boot_info->framebuffer_height)
         ? (g_display_boot_info->framebuffer_height - window->height)
         : 0u;
+#endif
     window->x = display64_min_u32(x, max_x);
     window->y = display64_min_u32(y, max_y);
     display64_compositor_mark_dirty(window->x, window->y, window->width, window->height);
@@ -8598,6 +8624,114 @@ u32 display64_wm_process_keyboard_event(u8 value)
 }
 
 #if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/*
+ * Terminal scrollback renders the replay history minus a byte offset trimmed
+ * from its end. These helpers convert between that offset and whole lines so
+ * the wheel scrolls by lines and never past the start of the history.
+ */
+static u8 display64_terminal_replay_byte(u32 logical_index)
+{
+    return g_display_console_replay[(g_display_console_replay_head + logical_index) % DISPLAY64_CONSOLE_REPLAY_BYTES];
+}
+
+static u32 display64_terminal_rows_for_length(u32 length, u32 columns)
+{
+    return (length == 0u) ? 1u : ((length + columns - 1u) / columns);
+}
+
+/*
+ * Largest number of trailing lines that can be hidden before the first line
+ * of the history reaches the top of the viewport. Wrapped lines count as the
+ * number of rows they occupy.
+ */
+static u32 display64_terminal_max_scroll_lines(u32 columns, u32 visible_rows)
+{
+    u32 index;
+    u32 length = 0u;
+    u32 total_rows = 0u;
+    u32 lines = 0u;
+
+    if ((columns == 0u) || (visible_rows == 0u) || (g_display_console_replay_count == 0u))
+    {
+        return 0u;
+    }
+    for (index = 0u; index < g_display_console_replay_count; ++index)
+    {
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            total_rows += display64_terminal_rows_for_length(length, columns);
+            length = 0u;
+        }
+        else
+        {
+            ++length;
+        }
+    }
+    total_rows += display64_terminal_rows_for_length(length, columns);
+
+    length = 0u;
+    index = g_display_console_replay_count;
+    while ((total_rows > visible_rows) && (index != 0u))
+    {
+        --index;
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            total_rows -= display64_terminal_rows_for_length(length, columns);
+            ++lines;
+            length = 0u;
+        }
+        else
+        {
+            ++length;
+        }
+    }
+    return lines;
+}
+
+/* Byte offset that hides the last `lines` lines (ends the render before that newline). */
+static u32 display64_terminal_offset_for_lines(u32 lines)
+{
+    u32 index = g_display_console_replay_count;
+    u32 seen = 0u;
+
+    if (lines == 0u)
+    {
+        return 0u;
+    }
+    while (index != 0u)
+    {
+        --index;
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            ++seen;
+            if (seen == lines)
+            {
+                return g_display_console_replay_count - index;
+            }
+        }
+    }
+    return 0u;
+}
+
+static u32 display64_terminal_lines_for_offset(u32 offset)
+{
+    u32 index;
+    u32 lines = 0u;
+
+    if (offset > g_display_console_replay_count)
+    {
+        offset = g_display_console_replay_count;
+    }
+    for (index = g_display_console_replay_count - offset; index < g_display_console_replay_count; ++index)
+    {
+        if (display64_terminal_replay_byte(index) == (u8)'\n')
+        {
+            ++lines;
+        }
+    }
+    return lines;
+}
+
 u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
 {
     struct display64_window *window;
@@ -8635,32 +8769,37 @@ u32 display64_wm_process_mouse_wheel(s32 wheel_delta)
     }
     if ((window != 0) && display64_wm_window_is_terminal(window))
     {
+        u32 columns;
+        u32 visible_rows;
+        u32 max_lines;
+        u32 lines;
+
+        /* Configure the console geometry for this window before measuring rows. */
+        display64_wm_focus_and_route_console(window->handle);
+        columns = (display64_font_advance() != 0u)
+            ? (display64_console_viewport_width() / display64_font_advance())
+            : 0u;
+        visible_rows = (display64_line_advance() != 0u)
+            ? (display64_console_viewport_height() / display64_line_advance())
+            : 0u;
+        max_lines = display64_terminal_max_scroll_lines(columns, visible_rows);
+        lines = display64_terminal_lines_for_offset(g_display_terminal_scroll_offset);
         if (wheel_delta > 0)
         {
-            u32 max_offset = (g_display_console_replay_count > 1u)
-                ? (g_display_console_replay_count - 1u)
-                : 0u;
-            if (g_display_terminal_scroll_offset < max_offset)
+            lines += DISPLAY64_TERMINAL_SCROLL_STEP_LINES;
+            if (lines > max_lines)
             {
-                g_display_terminal_scroll_offset += DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
-                if (g_display_terminal_scroll_offset > max_offset)
-                {
-                    g_display_terminal_scroll_offset = max_offset;
-                }
+                lines = max_lines;
             }
-        }
-        else if (g_display_terminal_scroll_offset > DISPLAY64_TERMINAL_SCROLL_STEP_BYTES)
-        {
-            g_display_terminal_scroll_offset -= DISPLAY64_TERMINAL_SCROLL_STEP_BYTES;
         }
         else
         {
-            g_display_terminal_scroll_offset = 0u;
+            lines = (lines > DISPLAY64_TERMINAL_SCROLL_STEP_LINES) ? (lines - DISPLAY64_TERMINAL_SCROLL_STEP_LINES) : 0u;
         }
+        g_display_terminal_scroll_offset = display64_terminal_offset_for_lines(lines);
         ++g_display_terminal_scroll_count;
         ++g_display_terminal_action_count;
         ++g_display_gui_scroll_count;
-        display64_wm_focus_and_route_console(window->handle);
         display64_desktop_redraw_window_dirty(window);
         return 1u;
     }

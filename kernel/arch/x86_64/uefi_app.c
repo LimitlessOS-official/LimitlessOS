@@ -55,7 +55,8 @@
 #define LIMITLESS_UEFI_BOOT_MEMORY_MAP_PAGES ((LIMITLESS_UEFI_MEMORY_MAP_BYTES + LIMITLESS_UEFI_PAGE_BYTES - 1u) / LIMITLESS_UEFI_PAGE_BYTES)
 #define LIMITLESS_UEFI_SERIAL_TX_POLL_LIMIT 1024u
 #define LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES (LIMITLESS_UEFI_BOOT_IDENTITY_BYTES / LIMITLESS_UEFI_LARGE_PAGE_BYTES)
-#define LIMITLESS_UEFI_KERNEL_LINKED_WINDOW_PAGES (LIMITLESS_UEFI_BOOT_IDENTITY_BYTES / LIMITLESS_UEFI_PAGE_BYTES)
+#define LIMITLESS_UEFI_KERNEL_LINKED_WINDOW_PAGES (LIMITLESS_BOOT_KERNEL_WINDOW_BYTES / LIMITLESS_UEFI_PAGE_BYTES)
+#define LIMITLESS_UEFI_KERNEL_WINDOW_ENTRIES (LIMITLESS_BOOT_KERNEL_WINDOW_BYTES / LIMITLESS_UEFI_LARGE_PAGE_BYTES)
 #define LIMITLESS_UEFI_PAGE_BYTES 0x0000000000001000ull
 #define LIMITLESS_UEFI_KERNEL_LINKED_LOW_PAGES (LIMITLESS_UEFI_KERNEL_LINKED_OFFSET / LIMITLESS_UEFI_PAGE_BYTES)
 #define LIMITLESS_UEFI_PAGE_ENTRIES 512u
@@ -3138,7 +3139,8 @@ static void write_boot_handoff_line(
                 }
                 else
                 {
-                    for (kernel_page = 0u; kernel_page < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES; ++kernel_page)
+                    /* The higher-half alias covers the whole kernel window, including the extension. */
+                    for (kernel_page = 0u; kernel_page < (u32)LIMITLESS_UEFI_KERNEL_WINDOW_ENTRIES; ++kernel_page)
                     {
                         kernel_pd[kernel_page] =
                             (kernel_window_base + ((u64)kernel_page * LIMITLESS_UEFI_LARGE_PAGE_BYTES)) |
@@ -3337,7 +3339,7 @@ static void write_boot_handoff_line(
             }
 
             for (kernel_page = 0u;
-                 kernel_page < (u32)LIMITLESS_UEFI_BOOT_IDENTITY_ENTRIES && kernel_map_ready != 0u;
+                 kernel_page < (u32)LIMITLESS_UEFI_KERNEL_WINDOW_ENTRIES && kernel_map_ready != 0u;
                  ++kernel_page)
             {
                 u64 expected_kernel =

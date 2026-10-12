@@ -4,6 +4,17 @@ Last updated: 2026-09-27. Milestone narratives for M1–M192 are archived in [hi
 
 ## Current milestone
 
+### M199: Desktop back buffer, smooth drag, and terminal scrollback
+
+Reported from the local desktop: dragging windows was glitchy, and scrolling or clicking left cursor remnants and a broken scroll. Reproduced headless with QMP input and `screendump` captures.
+
+- **Root cause: no back buffer.** The compositor allocated its back buffer right after `.bss` inside the 16 MiB low window. The kernel image now ends at `0xF3AE40`, so the 4 MB buffer for 1280x800 never fit, and the compositor silently fell back to direct mode, drawing every redraw step straight onto the screen. Captures showed blank frames mid-drag, half-drawn windows, and a black box under the cursor. The loader now allocates a 32 MiB kernel window whose upper 16 MiB is mapped only in the higher half (`LIMITLESS_BOOT_KERNEL_WINDOW_BYTES` in `boot_info.h`), and the back buffer lives there. The low alias, the boot-media stage area, and the low-window budget are unchanged.
+- **Terminal scroll wiped the window.** Scrollback trimmed bytes from the end of the history, so on a short history each wheel notch erased the newest lines. Scrolling is now by whole lines (3 per notch) and stops once the first line of the history reaches the top; wrapped lines count by the rows they occupy.
+- **Scroll cost.** The console scroll marked the dirty region once per pixel (about half a million calls per scrolled line); it now marks the shifted region once.
+- **Windows under the taskbar.** Dragging could push a window under the taskbar and status strip; windows now stop above the taskbar.
+
+Accepted verification (2026-09-27): captures after the change show a clean cursor on the first desktop frame, fully drawn windows throughout a title-bar drag, no cursor remnants while scrolling and moving the mouse, and scrollback that reveals the start of `help` output and returns to the latest output. Build had no warnings; BIOS 923/1024 sectors and low-window reserve 545,216 B are unchanged. The loader allocated the 32 MiB window (`allocation-pages 8192`). `verify-qemu.ps1 -BootMedia uefi -HardwareDisplayGate`, `verify-qemu.ps1 -BootMedia disk`, `verify-boot-media-linux-handoff.ps1`, and the Enter-alone first-run test all passed. Not proven: physical MSI display behavior.
+
 ### M198: First-run account choice and real login/lock
 
 The first-run screen now offers an explicit choice: type a username (Enter) and then a password to create an account, or press Enter on the empty username to use the default account `limitless` / `limitless`. The default is picked automatically only after 60 seconds with no keyboard input at all, which keeps the M108 protection for machines whose keyboard driver is not working yet.

@@ -32,10 +32,16 @@ Exact byte counts shift slightly with compiler version; the gcc 15-era builds re
 
 Added in M193. This was the budget that actually broke in M191.
 
-- **What:** the kernel is linked at virtual `0x10000` and executes through a 16 MiB low alias (`0x0`–`0x1000000`). The loader maps that alias onto a 16 MiB kernel window it owns: physical `0x0` when the fixed placement succeeds, or a 2 MiB-aligned fallback window elsewhere (the usual case on OVMF and real firmware). The image footprint is `.text + .rodata + .data + .bss` up to the linker symbol `__kernel_end`; `.bss` alone is about 14.5 MB.
+- **What:** the kernel is linked at virtual `0x10000` and executes through a 16 MiB low alias (`0x0`–`0x1000000`). The loader maps that alias onto the first 16 MiB of the 32 MiB kernel window it owns (see the extension below): physical `0x0` when the fixed placement succeeds, or a 2 MiB-aligned fallback window elsewhere (the usual case on OVMF and real firmware). The image footprint is `.text + .rodata + .data + .bss` up to the linker symbol `__kernel_end`; `.bss` alone is about 14.5 MB.
 - **Stage area:** the top 256 KiB of the window, `LIMITLESS_BOOT_MEDIA_STAGE_BASE` = `0xFC0000` to `0x1000000`, holds boot-media files staged by the loader (the Linux app and interpreter, up to 128 KiB each).
 - **Contract:** defined once in `kernel/include/boot_info.h`. The build reads `__kernel_end` from the linked UEFI kernel with `nm`, throws if it crosses the stage base, warns under 128 KiB of reserve, and compiles the loader with `LIMITLESS_UEFI_KERNEL_IMAGE_END`; the loader has a matching `#error`. At run time `boot_media.c` rejects any staged range that is not inside the stage area and above `__kernel_end`.
 - **Why it exists:** before M193 the loader staged files at physical `0x100000` and punched those pages through the kernel's low alias. Once `.text` grew past `0x100000`, the staged interpreter replaced `syscall64_dispatch` and the kernel faulted before login. Nothing measured this, because the tracked "UEFI budget" only compared file size with the 2 MiB buffer.
+
+### Kernel window extension (M199)
+
+The loader-owned kernel window is 32 MiB (`LIMITLESS_BOOT_KERNEL_WINDOW_BYTES`). Only the first 16 MiB is aliased low; the upper 16 MiB (`LIMITLESS_BOOT_KERNEL_EXTENSION_BASE` onward) is reachable only through the higher-half alias and holds large kernel buffers. Today that is the compositor back buffer, which needs `width × height × 4` bytes (4 MB at 1280×800, 8.3 MB at 1920×1080; up to 2560×1600 fits).
+
+Before M199 the back buffer was carved from the low window right after `.bss`. With the kernel image ending at `0xF3AE40`, only about 0.8 MB remained, so the allocation always failed and the compositor silently fell back to direct mode, drawing every redraw step straight onto the screen. That was the cause of the flicker, drag artifacts and cursor remnants. In the low window it would also have overlapped the boot-media stage area.
 
 ## UEFI FAT12 boot image
 
