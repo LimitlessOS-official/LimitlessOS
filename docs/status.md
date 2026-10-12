@@ -4,6 +4,18 @@ Last updated: 2026-10-12. Milestone narratives for M1â€“M192 are archived in [hi
 
 ## Current milestone
 
+### M204: Touchpad controller BAR assignment
+
+The MSI laptop's touchpad bus, the Intel Serial IO I2C controller at 00:15.0, comes up with its 64-bit BAR0 unassigned (base 0), so the I2C HID driver had no registers to talk to. Linux assigns these itself; LimitlessOS now does too (UEFI only):
+
+- **Power and reset.** The controller is moved to D0 before anything else (a BAR set in D3hot can be lost on wake), and the LPSS private reset register (`0x204`) is released before the DesignWare block is programmed. Neither was done before, even for firmware-assigned BARs.
+- **Placement.** `pci64_assign_memory_bar` sizes the BAR, collects every assigned BAR (sized with decode off and interrupts masked, as Linux does at boot), every bridge window and the ECAM range, and takes a size-aligned gap. The window is the firmware's PCI root resource from the ACPI NVS fields `M64B`/`M64L` (else `M32B`/`M32L`). Strategies, in order: lowest gap in that window, highest gap in it, then just above every assigned range over 4 GiB.
+- **Validation.** After each placement the LPSS reset is released and `IC_COMP_TYPE` must read `0x44570140`. A placement that does not decode is undone and the next strategy runs.
+- **Bus speed.** SCL counts were 64/128 input clocks, which is over fast mode's 400 kHz at every LPSS input clock; now 260/400 (150–330 kHz).
+- **`hwval`** adds `i2c bar assign`, `i2c bar window` (with base/end), `i2c bar assigned`, `i2c bar strategy`, `i2c bar reason`, `i2c power state at boot`, and `i2c comp type`.
+
+Accepted verification (2026-10-12): QEMU has no LPSS controller, so the allocator was exercised on QEMU's xHCI controller in a throwaway build. The build unassigned its 64-bit BAR after the scan and re-placed it with each strategy (at `0x100000000`, `0x8FFFFC000`, and `0xC000100000`). The controller's capability register answered at every placement, and the gate's USB keyboard path then ran from the last one. On the committed code, `verify-qemu.ps1` UEFI (plain), UEFI `-HardwareDisplayGate`, and BIOS disk passed; build had no warnings; BIOS 923/1024 sectors unchanged. Not yet run on the laptop.
+
 ### M203: Laptop timer fallback and real xHCI command timeouts
 
 Photos from the MSI laptop running the M202 image ([hardware notes](hardware/msi-cyborg-15-a13ve.md#october-2026-capture-m202-image-fixed-in-m203)) showed two timing faults behind most of what failed there:
@@ -176,7 +188,8 @@ From user-supplied captures ([hardware/msi-cyborg-15-a13ve.md](hardware/msi-cybo
 - Boots the UEFI Product image to the desktop and shell; keyboard works.
 - Display layout correct at 1920x1080 (October 2026 photos).
 - **Fixed in M203, awaiting retest:** the PIT never ticked (uptime 0, clocks frozen); xHCI commands timed out, so the USB stick and USB receiver never enumerated.
-- **Open:** touchpad controller (I2C, 00:15.0) has an unassigned BAR, so the touchpad cannot be driven yet; the internal NVMe sits behind Intel VMD/RST and is not yet readable.
+- **M204, awaiting retest:** the touchpad controller (I2C, 00:15.0) had an unassigned BAR; the kernel now places and validates it.
+- **Open:** the internal NVMe sits behind Intel VMD/RST and is not yet readable.
 
 ## Known issues and limits
 

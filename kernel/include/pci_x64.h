@@ -181,6 +181,21 @@ u32 pci64_acpi_ssdt_total_bytes(void);
 u64 pci64_acpi_ssdt0(void);
 u32 pci64_acpi_ssdt0_bytes(void);
 #endif
+#if defined(LIMITLESS_X64_UEFI_KERNEL) && LIMITLESS_X64_UEFI_KERNEL
+/* Returns the previous power state (0-3), or 0xFF without a PM capability. */
+u32 pci64_set_power_d0(u32 address);
+u32 pci64_assign_memory_bar(
+    u32 address,
+    u32 bar_index,
+    u64 window_base,
+    u64 window_end,
+    u32 strategy,
+    u64 *assigned_out,
+    u64 *size_out);
+u32 pci64_memory_bar_unassigned(u32 address, u32 bar_index);
+void pci64_release_memory_bar(u32 address, u32 bar_index);
+void pci64_lpss_i2c_refresh_bars(void);
+#endif
 u32 pci64_lpss_i2c_hid_found(void);
 u32 pci64_lpss_i2c_count(void);
 u32 pci64_lpss_i2c_address(void);

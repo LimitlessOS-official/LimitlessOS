@@ -2227,6 +2227,27 @@ static u32 shell64_print_hardware_validation_status(u32 console_capability_handl
         owner_id,
         "i2c primary acpi resource needed: ",
         ((pci64_lpss_i2c_mmio_flags() & PCI64_LPSS_I2C_MMIO_FLAG_ACPI_RESOURCE_REQUIRED) != 0u) ? 1u : 0u);
+    {
+        static const char *const bar_status_names[3] = { "not needed\n", "assigned\n", "failed\n" };
+        static const char *const bar_window_names[3] = { "none\n", "acpi m64\n", "acpi m32\n" };
+        u32 bar_status = i2c_hid64_bar_assign_status();
+        u32 bar_window = i2c_hid64_bar_window_source();
+
+        (void)shell64_write_text(console_capability_handle, owner_id, "i2c bar assign: ");
+        (void)shell64_write_text(console_capability_handle, owner_id, bar_status_names[(bar_status < 3u) ? bar_status : 2u]);
+        (void)shell64_write_text(console_capability_handle, owner_id, "i2c bar window: ");
+        (void)shell64_write_text(console_capability_handle, owner_id, bar_window_names[(bar_window < 3u) ? bar_window : 0u]);
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar window base high: ", (u32)(i2c_hid64_bar_window_base() >> 32));
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar window base low: ", (u32)i2c_hid64_bar_window_base());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar window end high: ", (u32)(i2c_hid64_bar_window_end() >> 32));
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar window end low: ", (u32)i2c_hid64_bar_window_end());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar assigned high: ", (u32)(i2c_hid64_bar_assigned_base() >> 32));
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar assigned low: ", (u32)i2c_hid64_bar_assigned_base());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar strategy: ", i2c_hid64_bar_assign_strategy());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c bar reason: ", i2c_hid64_bar_assign_reason());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c power state at boot: ", i2c_hid64_controller_power_state());
+        (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c comp type: ", i2c_hid64_controller_comp_type());
+    }
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second pci: ", pci64_lpss_i2c_second_address());
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second bar0: ", pci64_lpss_i2c_second_bar0());
     (void)shell64_write_hex32_line(console_capability_handle, owner_id, "i2c second bar1: ", pci64_lpss_i2c_second_bar1());
